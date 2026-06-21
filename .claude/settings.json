@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv run *)",
+      "Bash(uv sync *)",
+      "Bash(uv add *)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -NonInteractive -Command \"Write-Host '>>> Completed a task series? Run /auto-improve to capture improvements.' -ForegroundColor Cyan\""
+          }
+        ]
+      }
+    ]
+  }
+}
