@@ -52,9 +52,9 @@ End-to-end GPT-5 driving the MCP server over stdio.
 
 Artifacts produced after a successful organize run.
 
-- [ ] E1 · `write_index` — emit `INDEX.md` (human-readable tree) and `manifest.json` (structured metadata)
-- [ ] E2 · `write_summary` — emit `SUMMARY.md` describing the directory's contents and changes made
-- [ ] E3 · File-naming heuristics — conventions for how the model should derive readable file names
+- [x] E1 · `write_index` — emit `INDEX.md` (human-readable tree) and `manifest.json` (structured metadata)
+- [x] E2 · `write_summary` — emit `SUMMARY.md` describing the directory's contents and changes made
+- [x] E3 · File-naming heuristics — conventions for how the model should derive readable file names
 
 ---
 
