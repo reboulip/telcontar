@@ -37,14 +37,14 @@ plans persisted to disk so sessions survive crashes and restarts.
 
 ---
 
-## v0.4.0 — Host: agent loop
+## v0.4.0 — Host: agent loop ✅
 
 End-to-end GPT-5 driving the MCP server over stdio.
 
-- [ ] D1 · MCP client connection — launch server as subprocess, connect over stdio
-- [ ] D2 · Tool-calling loop — feed tool results back into the GPT-5 context
-- [ ] D3 · Plan/approve/execute flow — present plan diff to user; gate `execute_plan` on approval
-- [ ] D4 · Rich CLI — formatted plan diffs, approval prompts, progress feedback
+- [x] D1 · MCP client connection — launch server as subprocess, connect over stdio
+- [x] D2 · Tool-calling loop — feed tool results back into the GPT-5 context
+- [x] D3 · Plan/approve/execute flow — present plan diff to user; gate `execute_plan` on approval
+- [x] D4 · Rich CLI — formatted plan diffs, approval prompts, progress feedback
 
 ---
 
