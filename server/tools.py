@@ -305,12 +305,104 @@ def _apply_op(op: "_plan.PlanOp") -> None:
         raise ValueError(f"Unknown op_type: {op.op_type!r}")
 
 
-def write_index(path: str) -> str:
-    raise NotImplementedError
+def write_index(target_dir: str, journal_path: Path) -> dict:
+    """Walk target_dir, emit INDEX.md (tree + journal changelog) and manifest.json."""
+    from datetime import datetime, timezone
+    import json as _json
+    from server import journal as _journal
+
+    root = Path(target_dir)
+    if not root.is_dir():
+        raise ValueError(f"Not a directory: {target_dir}")
+
+    now = datetime.now(timezone.utc)
+    generated = now.isoformat(timespec="seconds")
+
+    # Skip output files we're about to write
+    _SKIP = {"INDEX.md", "manifest.json", "SUMMARY.md"}
+
+    files: list[dict] = []
+    dirs: list[str] = []
+
+    def _walk(path: Path, prefix: str, lines: list[str]) -> None:
+        try:
+            entries = sorted(path.iterdir(), key=lambda e: (e.is_file(), e.name))
+        except PermissionError:
+            return
+        for i, entry in enumerate(entries):
+            if entry.name in _SKIP and entry.parent == root:
+                continue
+            connector = "└── " if i == len(entries) - 1 else "├── "
+            child_prefix = prefix + ("    " if i == len(entries) - 1 else "│   ")
+            if entry.is_dir():
+                lines.append(f"{prefix}{connector}{entry.name}/")
+                dirs.append(str(entry))
+                _walk(entry, child_prefix, lines)
+            else:
+                try:
+                    st = entry.stat()
+                    size_kb = st.st_size / 1024
+                    size_str = f"{size_kb:.1f} KB" if size_kb < 1024 else f"{size_kb / 1024:.1f} MB"
+                    files.append({
+                        "path": str(entry.relative_to(root)).replace("\\", "/"),
+                        "abs_path": str(entry),
+                        "size": st.st_size,
+                        "mtime": st.st_mtime,
+                    })
+                    lines.append(f"{prefix}{connector}{entry.name} ({size_str})")
+                except OSError:
+                    lines.append(f"{prefix}{connector}{entry.name}")
+
+    tree_lines: list[str] = [f"{root.name}/"]
+    _walk(root, "", tree_lines)
+
+    # Journal summary
+    all_entries = _journal.all_entries(journal_path)
+    op_counts: dict[str, int] = {}
+    for entry in all_entries:
+        op_type = entry.get("op_type", "unknown")
+        if op_type != "hard_stop":
+            op_counts[op_type] = op_counts.get(op_type, 0) + 1
+
+    changelog_lines: list[str] = []
+    if op_counts:
+        for op_type, count in sorted(op_counts.items()):
+            changelog_lines.append(f"- {count} {op_type}{'s' if count != 1 else ''}")
+        changelog_lines.append(f"- **Total operations:** {sum(op_counts.values())}")
+    else:
+        changelog_lines.append("- No operations recorded")
+
+    index_content = (
+        f"# Directory Index\n\n"
+        f"Generated: {generated}\n\n"
+        f"## Tree\n\n"
+        f"```\n{chr(10).join(tree_lines)}\n```\n\n"
+        f"## Changes Made\n\n"
+        f"{chr(10).join(changelog_lines)}\n"
+    )
+
+    manifest = {
+        "generated": generated,
+        "target": str(root),
+        "files": files,
+        "dirs": dirs,
+        "journal_summary": {"total_ops": sum(op_counts.values()), "by_type": op_counts},
+    }
+
+    index_path = root / "INDEX.md"
+    manifest_path = root / "manifest.json"
+    index_path.write_text(index_content, encoding="utf-8")
+    manifest_path.write_text(_json.dumps(manifest, indent=2), encoding="utf-8")
+
+    return {"index": str(index_path), "manifest": str(manifest_path)}
 
 
-def write_summary(path: str) -> str:
-    raise NotImplementedError
+def write_summary(target_dir: str, content: str) -> dict:
+    """Write LLM-composed prose to SUMMARY.md inside target_dir."""
+    p = Path(target_dir) / "SUMMARY.md"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(content, encoding="utf-8")
+    return {"written": str(p)}
 
 
 def undo_last(journal_path: Path, plans_dir: Path) -> dict:

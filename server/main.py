@@ -142,15 +142,16 @@ def execute_plan(plan_id: str) -> dict:
 
 
 @mcp.tool()
-def write_index(path: str) -> str:
-    """Emit INDEX.md and manifest.json for the organized tree at path."""
-    return tools.write_index(path)
+def write_index(path: str) -> dict:
+    """Emit INDEX.md (tree + changelog) and manifest.json for the organized tree at path."""
+    cfg = _get_settings()
+    return tools.write_index(path, cfg.journal_path)
 
 
 @mcp.tool()
-def write_summary(path: str) -> str:
-    """Emit SUMMARY.md describing the contents of the organized tree at path."""
-    return tools.write_summary(path)
+def write_summary(path: str, content: str) -> dict:
+    """Write LLM-composed prose to SUMMARY.md inside the directory at path."""
+    return tools.write_summary(path, content)
 
 
 # ── Recovery tools ───────────────────────────────────────────────────────────

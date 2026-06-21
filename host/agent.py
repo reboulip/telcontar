@@ -48,7 +48,7 @@ ApprovalCallback = Callable[[str, dict], Awaitable[ApprovalResult]]
 
 # ── System prompt ─────────────────────────────────────────────────────────────
 
-_SYSTEM_PROMPT = """\
+_SYSTEM_PROMPT_TEMPLATE = """\
 You are a local directory organizer assistant. Analyze the target directory and
 produce a clean, organized structure following these steps:
 
@@ -58,15 +58,47 @@ produce a clean, organized structure following these steps:
    propose_move, and propose_quarantine.
 4. Call review_plan for a deduplication pass before execution.
 5. Call execute_plan to apply the plan (the user reviews and approves first).
-6. Call write_summary on the target directory to produce SUMMARY.md.
-7. Respond with a final text summary (no tool calls) when fully done.
+6. Call write_index on the target directory to produce INDEX.md and manifest.json.
+7. Compose a Markdown summary (plain prose, 2-4 paragraphs) describing what the
+   directory contains and what changes were made, then call
+   write_summary(path=<target_dir>, content=<your prose>) to persist SUMMARY.md.
+8. Respond with a final text summary (no tool calls) when fully done.
 
 Safety rules — never break these:
 - Never delete files. Quarantine only.
 - Never overwrite existing files.
 - Always call review_plan before execute_plan.
-- If a hard stop occurs, explain what failed and offer to undo.\
+- If a hard stop occurs, explain what failed and offer to undo.
+
+{naming_section}\
 """
+
+_DEFAULT_NAMING_CONVENTIONS = """\
+## File-naming conventions
+
+When proposing renames, follow these rules:
+- Use lowercase letters and underscores (snake_case).
+- Replace spaces and hyphens with underscores.
+- Prefix dates in ISO format: YYYY-MM-DD (e.g. 2024-01-15_report.pdf).
+- Remove or transliterate special characters (accents, punctuation).
+- Keep the original file extension unchanged.
+- Drop redundant suffixes such as "final", "copy", "v2" when a date is present.
+- Avoid leading numbers unless they represent a meaningful sequence.
+"""
+
+
+def _load_naming_conventions(project_root: Path) -> str:
+    naming_path = project_root / ".organizer" / "NAMING.md"
+    if naming_path.is_file():
+        text = naming_path.read_text(encoding="utf-8").strip()
+        if text:
+            return text + "\n"
+    return _DEFAULT_NAMING_CONVENTIONS
+
+
+def _build_system_prompt(project_root: Path) -> str:
+    naming = _load_naming_conventions(project_root)
+    return _SYSTEM_PROMPT_TEMPLATE.format(naming_section=naming)
 
 _MAX_TURNS = 50
 
@@ -112,6 +144,7 @@ async def run_agent(
             session=session,
             on_event=on_event,
             on_approval_needed=on_approval_needed,
+            project_root=project_root,
         )
 
 
@@ -122,11 +155,15 @@ async def run_agent_loop(
     session: ClientSession,
     on_event: EventCallback,
     on_approval_needed: ApprovalCallback,
+    project_root: Path | None = None,
 ) -> str:
     """Run the GPT-5 tool-calling loop against an already-connected MCP session.
 
     Separated from run_agent so tests can inject a mock session directly.
     """
+    if project_root is None:
+        project_root = Path(__file__).resolve().parent.parent
+
     # Discover tools from the MCP server
     tools_response = await session.list_tools()
     openai_tools = [
@@ -144,7 +181,7 @@ async def run_agent_loop(
     ]
 
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "system", "content": _build_system_prompt(project_root)},
         {"role": "user", "content": f"Please organize the directory: {target}"},
     ]
 

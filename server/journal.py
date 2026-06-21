@@ -22,6 +22,17 @@ def last(journal_path: Path) -> dict | None:
     return json.loads(lines[-1])
 
 
+def all_entries(journal_path: Path) -> list[dict]:
+    """Return all journal entries in chronological order."""
+    if not journal_path.is_file():
+        return []
+    return [
+        json.loads(ln)
+        for ln in journal_path.read_text(encoding="utf-8").splitlines()
+        if ln.strip()
+    ]
+
+
 def pop_last(journal_path: Path) -> dict | None:
     """Remove and return the most recent journal entry; None if empty."""
     if not journal_path.is_file():
