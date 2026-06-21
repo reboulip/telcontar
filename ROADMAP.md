@@ -58,6 +58,15 @@ Artifacts produced after a successful organize run.
 
 ---
 
+## v0.6.0 — Detailed Requirements (TBD)
+
+Heuristics, domain skills, and core features for richer organization logic.
+_Placeholder — requirements to be defined._
+
+- [ ] G1 · TBD
+
+---
+
 ## v1.0.0 — Hardening
 
 Production-readiness and operator ergonomics.
