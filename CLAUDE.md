@@ -200,6 +200,12 @@ All git work and task orchestration is delegated to specialized agents and skill
 
 - **`/dev-pipeline`**: Full sprint orchestrator. Reads `ROADMAP.md`, implements all unchecked items in order on a `feat/` branch using the agents above, then squash-merges into `develop`. Start here when working through the roadmap.
 
+## ROADMAP conventions
+
+- All items must use `- [ ] X1 · description` format (checkbox + label). Plain `- ` bullets are invisible to dev-pipeline.
+- If an item depends on a later-listed item, note it inline: `(requires: C5)`. dev-pipeline uses this to detect and handle prerequisite inversion — implementing the dependency first and noting the reordering in the commit body.
+- Example: `- [ ] C3 · execute_plan — ... (requires: C5)`
+
 ## Roadmap / Future
 
 - Relax `APPROVAL_MODE` to `destructive_only` once trusted.
