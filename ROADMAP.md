@@ -27,11 +27,11 @@ Core inspection capabilities the agent uses to understand a directory before pro
 
 Stateful plan lifecycle and reversible execution.
 
-- Plan data model — structured list of proposed ops with a stable `plan_id`
-- `propose_rename`, `propose_move`, `propose_quarantine` — append ops to the active plan
-- `execute_plan` — apply approved ops atomically; write each to the undo journal
-- `undo_last` — revert the most recent journaled op
-- Journal module — append-only JSONL; `last` / `pop_last` helpers
+- [ ] C1 · Plan data model — structured list of proposed ops with a stable `plan_id`
+- [ ] C2 · `propose_rename`, `propose_move`, `propose_quarantine` — append ops to the active plan
+- [ ] C3 · `execute_plan` — apply approved ops atomically; write each to the undo journal
+- [ ] C4 · `undo_last` — revert the most recent journaled op
+- [ ] C5 · Journal module — append-only JSONL; `last` / `pop_last` helpers
 
 ---
 
@@ -39,10 +39,10 @@ Stateful plan lifecycle and reversible execution.
 
 End-to-end GPT-5 driving the MCP server over stdio.
 
-- MCP client connection — launch server as subprocess, connect over stdio
-- Tool-calling loop — feed tool results back into the GPT-5 context
-- Plan/approve/execute flow — present plan diff to user; gate `execute_plan` on approval
-- Rich CLI — formatted plan diffs, approval prompts, progress feedback
+- [ ] D1 · MCP client connection — launch server as subprocess, connect over stdio
+- [ ] D2 · Tool-calling loop — feed tool results back into the GPT-5 context
+- [ ] D3 · Plan/approve/execute flow — present plan diff to user; gate `execute_plan` on approval
+- [ ] D4 · Rich CLI — formatted plan diffs, approval prompts, progress feedback
 
 ---
 
@@ -50,9 +50,9 @@ End-to-end GPT-5 driving the MCP server over stdio.
 
 Artifacts produced after a successful organize run.
 
-- `write_index` — emit `INDEX.md` (human-readable tree) and `manifest.json` (structured metadata)
-- `write_summary` — emit `SUMMARY.md` describing the directory's contents and changes made
-- File-naming heuristics — conventions for how the model should derive readable file names
+- [ ] E1 · `write_index` — emit `INDEX.md` (human-readable tree) and `manifest.json` (structured metadata)
+- [ ] E2 · `write_summary` — emit `SUMMARY.md` describing the directory's contents and changes made
+- [ ] E3 · File-naming heuristics — conventions for how the model should derive readable file names
 
 ---
 
@@ -60,7 +60,7 @@ Artifacts produced after a successful organize run.
 
 Production-readiness and operator ergonomics.
 
-- End-to-end integration tests against a fixture directory
-- Robust error handling — bad paths, permission errors, partial plan failures
-- `APPROVAL_MODE=destructive_only` — let read-only ops run without approval
-- Packaging — verify `uv run organizer-host` and `uv run organizer-server` entry points work end-to-end
+- [ ] F1 · End-to-end integration tests against a fixture directory
+- [ ] F2 · Robust error handling — bad paths, permission errors, partial plan failures
+- [ ] F3 · `APPROVAL_MODE=destructive_only` — let read-only ops run without approval
+- [ ] F4 · Packaging — verify `uv run organizer-host` and `uv run organizer-server` entry points work end-to-end

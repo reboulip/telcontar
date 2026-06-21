@@ -26,17 +26,17 @@ Apply these rules in order (first match wins):
 | Changed file(s) | Run |
 |-----------------|-----|
 | `config/settings.py` only | Full suite — settings affect everything |
-| `server/tools.py` only | `tests/server/test_tools.py` |
-| `server/guards.py` only | `tests/server/test_guards.py` |
-| `server/journal.py` only | `tests/server/test_journal.py` |
-| `server/extract.py` only | `tests/server/test_extract.py` |
-| Multiple files in `server/` | All `tests/server/` |
-| Any file in `host/` | `tests/host/` (all host tests) |
+| `server/tools.py` only | `tests/test_tools_readonly.py tests/test_tools_write.py` |
+| `server/guards.py` only | `tests/test_guards.py` |
+| `server/extract.py` only | `tests/test_tools_readonly.py` (extract_text delegates here) |
+| `server/journal.py` only | `tests/test_journal.py` (when created) |
+| Multiple files in `server/` | Full `tests/` suite |
+| Any file in `host/` | `tests/test_host.py` (when created) |
 | Changes span `server/` + `host/` | Full suite |
 | Cross-cutting refactor or interface change | Full suite |
 | When in doubt | Full suite |
 
-> **Note:** These rules are placeholders until the `tests/` directory is built out. Update this table as test files are added. When a test file doesn't exist yet for a changed module, run the full suite.
+> **Note:** Update this table whenever new test files are added. When a test file doesn't exist yet for a changed module, run the full suite.
 
 State explicitly which files you selected and why before running.
 
