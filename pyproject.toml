@@ -18,6 +18,8 @@ dependencies = [
     "pydantic>=2.13",        # config + data validation
     "pydantic-settings>=2.14",  # Pydantic Settings integration
     "rich>=15.0",            # pretty CLI output / plan diffs
+    "textual>=0.80",         # full TUI framework (host app)
+    "plyer>=2.1",            # cross-platform desktop notifications
 ]
 
 [project.scripts]
@@ -32,6 +34,7 @@ dev = [
 ]
 test = [
     "pytest>=8.0",
+    "pytest-asyncio>=0.25",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -40,6 +43,9 @@ packages = ["host", "server", "config"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
 
 [tool.mypy]
 python_version = "3.12"

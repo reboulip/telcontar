@@ -36,7 +36,8 @@ Apply these rules in order (first match wins):
 | `server/tools.py` undo_last only | `tests/test_undo_last.py` |
 | `server/tools.py` review_plan only | `tests/test_review_plan.py` |
 | Multiple files in `server/` | Full `tests/` suite |
-| Any file in `host/` | `tests/test_host.py` (when created) |
+| `host/agent.py` only | `tests/test_host.py` |
+| Any file in `host/` | `tests/test_host.py` |
 | Changes span `server/` + `host/` | Full suite |
 | Cross-cutting refactor or interface change | Full suite |
 | When in doubt | Full suite |
