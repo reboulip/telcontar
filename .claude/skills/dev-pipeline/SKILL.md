@@ -18,7 +18,19 @@ Forecast for item N+1 runs **in the background** while item N is being implement
 
 ---
 
-## Step 0 — Branch setup
+## Step 0 — Design clarification
+
+Before any implementation, scan the unchecked items in the active milestone and identify non-obvious design decisions:
+- Output formats (file contents, JSON shape, Markdown structure)
+- Tool signatures (parameters, return types, who composes content — LLM or code)
+- LLM integration patterns (which side generates prose, when to call which tool)
+- Dependency ordering (does item N require item M to exist first)
+
+If **any** such decisions are ambiguous, call `AskUserQuestion` with focused, concrete options before proceeding to Step 1. Do not start forecasting or implementing until design is settled.
+
+---
+
+## Step 0.5 — Branch setup
 
 1. Ensure `develop` is up to date:
    ```bash
@@ -83,7 +95,10 @@ The Forecast Brief for item[0] is in context. Implement the item now:
 
 ## Step 5 — Test and commit
 
-**Test first:**
+**Scope table first:**
+If any new `tests/test_*.py` files were created for this item, update the scope table in `.claude/skills/test-select/SKILL.md` **before** calling test-select. Add the new file to the correct row(s) and update any catch-all rows (e.g. `server/tools.py only`). Do not defer this to auto-improve.
+
+**Test:**
 ```
 Skill("test-select")
 ```
