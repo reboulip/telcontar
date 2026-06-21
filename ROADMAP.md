@@ -25,13 +25,15 @@ Core inspection capabilities the agent uses to understand a directory before pro
 
 ## v0.3.0 — Server: plan, execution & journal
 
-Stateful plan lifecycle and reversible execution.
+Stateful plan lifecycle and reversible execution. Supports multiple concurrent
+plans persisted to disk so sessions survive crashes and restarts.
 
-- [ ] C1 · Plan data model — structured list of proposed ops with a stable `plan_id`
-- [ ] C2 · `propose_rename`, `propose_move`, `propose_quarantine` — append ops to the active plan
-- [ ] C3 · `execute_plan` — apply approved ops atomically; write each to the undo journal
-- [ ] C4 · `undo_last` — revert the most recent journaled op
-- [ ] C5 · Journal module — append-only JSONL; `last` / `pop_last` helpers
+- [x] C1 · Plan data model — structured list of proposed ops with a stable UUID `plan_id`; multiple plans may be active concurrently; each plan serialized as a JSON file under `.organizer/plans/`; states: `pending | approved | executing | done | failed | stopped`
+- [x] C2 · `propose_rename`, `propose_move`, `propose_quarantine` — append ops to a named plan (`plan_id` required); eager no-overwrite guard at proposal time; returns updated op list
+- [x] C3 · `execute_plan` — apply approved ops with per-op retry (up to 2 retries before marking failed); if more than 3 ops fail in a single run, trigger hard stop and write a detailed failure summary to the journal; each successful op journaled immediately; plan status updated on disk throughout
+- [x] C4 · `undo_last` — revert the most recent journaled op and remove it from the journal
+- [x] C5 · Journal module — append-only JSONL at `JOURNAL_PATH`; `last` / `pop_last` helpers; hard-stop entries use `op_type: "hard_stop"` with full failure context
+- [x] C6 · `review_plan` — deduplication pass before execution; flags ops sharing the same `(src, op_type)` pair; returns a highlighted report without modifying the plan
 
 ---
 

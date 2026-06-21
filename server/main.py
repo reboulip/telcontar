@@ -46,24 +46,64 @@ def extract_text(path: str, max_chars: int = 4000) -> str:
     return tools.extract_text(path, min(max_chars, cfg.max_snippet_chars))
 
 
+# ── Plan management tools ────────────────────────────────────────────────────
+
+@mcp.tool()
+def create_plan() -> dict:
+    """Create a new empty plan; returns plan_id and initial metadata."""
+    cfg = _get_settings()
+    return tools.create_plan(cfg.plans_dir)
+
+
+@mcp.tool()
+def get_plan(plan_id: str) -> dict:
+    """Load and return a plan by plan_id, including all proposed ops."""
+    cfg = _get_settings()
+    return tools.get_plan(plan_id, cfg.plans_dir)
+
+
+@mcp.tool()
+def list_plans() -> list:
+    """Return all plans with their current state and ops."""
+    cfg = _get_settings()
+    return tools.list_plans(cfg.plans_dir)
+
+
+@mcp.tool()
+def review_plan(plan_id: str) -> dict:
+    """Deduplication and pre-flight check; returns a report without modifying the plan."""
+    cfg = _get_settings()
+    return tools.review_plan(plan_id, cfg.plans_dir)
+
+
+@mcp.tool()
+def approve_plan(plan_id: str) -> dict:
+    """Transition a plan from pending to approved, authorizing execution."""
+    cfg = _get_settings()
+    return tools.approve_plan(plan_id, cfg.plans_dir)
+
+
 # ── Plan-building tools (write to plan, do not execute) ──────────────────────
 
 @mcp.tool()
-def propose_rename(path: str, new_name: str) -> str:
-    """Stage a rename operation in the current plan."""
-    return tools.propose_rename(path, new_name)
+def propose_rename(path: str, new_name: str, plan_id: str) -> dict:
+    """Stage a rename operation in the named plan."""
+    cfg = _get_settings()
+    return tools.propose_rename(path, new_name, plan_id, cfg.plans_dir)
 
 
 @mcp.tool()
-def propose_move(path: str, dest_dir: str) -> str:
-    """Stage a move operation in the current plan."""
-    return tools.propose_move(path, dest_dir)
+def propose_move(path: str, dest_dir: str, plan_id: str) -> dict:
+    """Stage a move operation in the named plan."""
+    cfg = _get_settings()
+    return tools.propose_move(path, dest_dir, plan_id, cfg.plans_dir)
 
 
 @mcp.tool()
-def propose_quarantine(path: str) -> str:
-    """Stage a quarantine operation in the current plan."""
-    return tools.propose_quarantine(path)
+def propose_quarantine(path: str, plan_id: str) -> dict:
+    """Stage a quarantine operation in the named plan."""
+    cfg = _get_settings()
+    return tools.propose_quarantine(path, plan_id, cfg.plans_dir, cfg.quarantine_dir)
 
 
 # ── Direct file operations ───────────────────────────────────────────────────
@@ -97,7 +137,8 @@ def update_file(path: str, content: str) -> dict:
 @mcp.tool()
 def execute_plan(plan_id: str) -> dict:
     """Apply all operations in an approved plan; journals each one."""
-    return tools.execute_plan(plan_id)
+    cfg = _get_settings()
+    return tools.execute_plan(plan_id, cfg.plans_dir, cfg.journal_path)
 
 
 @mcp.tool()
@@ -117,7 +158,8 @@ def write_summary(path: str) -> str:
 @mcp.tool()
 def undo_last() -> dict:
     """Revert the most recent journaled operation."""
-    return tools.undo_last()
+    cfg = _get_settings()
+    return tools.undo_last(cfg.journal_path, cfg.plans_dir)
 
 
 def main() -> None:

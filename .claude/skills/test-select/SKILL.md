@@ -26,10 +26,12 @@ Apply these rules in order (first match wins):
 | Changed file(s) | Run |
 |-----------------|-----|
 | `config/settings.py` only | Full suite — settings affect everything |
-| `server/tools.py` only | `tests/test_tools_readonly.py tests/test_tools_write.py` |
+| `server/tools.py` only | `tests/test_tools_readonly.py tests/test_tools_write.py tests/test_tools_propose.py` |
 | `server/guards.py` only | `tests/test_guards.py` |
 | `server/extract.py` only | `tests/test_tools_readonly.py` (extract_text delegates here) |
-| `server/journal.py` only | `tests/test_journal.py` (when created) |
+| `server/plan.py` only | `tests/test_plan.py` |
+| `server/journal.py` only | `tests/test_journal.py` |
+| `server/tools.py` execute_plan only | `tests/test_execute_plan.py` |
 | Multiple files in `server/` | Full `tests/` suite |
 | Any file in `host/` | `tests/test_host.py` (when created) |
 | Changes span `server/` + `host/` | Full suite |

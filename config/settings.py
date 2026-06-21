@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     approval_mode: Literal["always", "destructive_only", "never"] = "always"
     quarantine_dir: Path = Path("_quarantine")
     journal_path: Path = Path(".organizer/journal.jsonl")
+    plans_dir: Path = Path(".organizer/plans")
 
     # Egress / extraction
     max_snippet_chars: int = 4000
