@@ -13,10 +13,13 @@
 
 Core inspection capabilities the agent uses to understand a directory before proposing any changes.
 
-- `list_dir` — enumerate entries with size, type, and mtime
-- `read_file` — return text content up to `MAX_SNIPPET_CHARS`
-- `extract_text` — extract plain text from PDF/Office files via markitdown
-- `guards` module — no-overwrite check, safe quarantine path generation
+- [x] B1 · `list_dir` — enumerate entries with size, type, and mtime
+- [x] B2 · `read_file` — return text content up to `MAX_SNIPPET_CHARS`
+- [x] B3 · `extract_text` — extract plain text from PDF/Office files via markitdown
+- [x] B4 · `guards` module — no-overwrite check, safe quarantine path generation
+- [x] B5 · `move_file` — move a file to a destination directory, respecting the no-overwrite guard
+- [x] B6 · `rename_file` — rename a file in place, respecting the no-overwrite guard
+- [x] B7 · `create_file` / `update_file` — write or overwrite index output files (`INDEX.md`, `manifest.json`, `SUMMARY.md`)
 
 ---
 
