@@ -6,15 +6,14 @@ build-backend = "hatchling.build"
 name = "directory-organizer"
 version = "0.1.0"
 description = "MCP-based local directory organizer driven by GPT-5"
-readme = "CLAUDE.md"
+readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 
 dependencies = [
     "mcp>=1.28,<2",          # MCP Python SDK; cap at v2 stable boundary
     "openai>=2.43",          # OpenAI-compatible SDK (Azure / Mammouth)
-    "markitdown>=0.1.6",     # text extraction from Office/binary formats
-    "pypdf>=6.13",           # PDF text extraction
+    "markitdown>=0.1.6",     # text extraction from Office/binary formats (includes PDF via pypdf)
     "python-dotenv>=1.2",    # .env loading
     "pydantic>=2.13",        # config + data validation
     "pydantic-settings>=2.14",  # Pydantic Settings integration
