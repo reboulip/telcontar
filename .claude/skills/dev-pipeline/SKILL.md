@@ -142,15 +142,39 @@ After item[0] is committed:
 
 ---
 
-## Step 7 — Squash-merge into develop
+## Step 7 — Merge into develop
 
 When the last item is committed:
+
+**7a — Divergence check (do this BEFORE merging).** A squash-merge assumes the
+branch contains only this sprint's own commits. Verify that first:
 
 ```
 Agent({
   subagent_type: "repo-manager",
-  description: "Squash-merge feat/[milestone-slug] into develop",
-  prompt: "Squash-merge branch feat/[milestone-slug] into develop:\n  git checkout develop\n  git merge --squash feat/[milestone-slug]\n  git commit -m '[milestone]: complete sprint'\nThen delete the local feature branch."
+  description: "Report branch divergence before merge",
+  prompt: "Read-only: report `git log --oneline develop..feat/[milestone-slug]` and `git log --oneline -1 develop`. Do not merge or change anything."
+})
+```
+
+Compare the listed commits against the sprint's own implementation commits
+(one per ROADMAP item). If the branch contains **any commit you did not author
+this sprint** — e.g. a commit from a separate process landed on the branch base,
+or develop advanced underneath you — **do not blind-squash.** Surface the
+divergence and use `AskUserQuestion` to let the user choose the merge strategy
+(preserve all commits via fast-forward / non-squash, vs. squash the sprint
+commits while preserving the foreign commit, vs. squash everything). Only when
+the branch is exactly the sprint's own commits should you proceed straight to a
+squash.
+
+**7b — Merge.** Per the chosen strategy (squash is the default for a clean
+sprint-only branch):
+
+```
+Agent({
+  subagent_type: "repo-manager",
+  description: "Merge feat/[milestone-slug] into develop",
+  prompt: "Merge branch feat/[milestone-slug] into develop using <chosen strategy>:\n  git checkout develop\n  # squash:   git merge --squash feat/[milestone-slug] && git commit -m '[milestone]: complete sprint'\n  # ff-only:  git merge --ff-only feat/[milestone-slug]\nThen delete the local feature branch."
 })
 ```
 
