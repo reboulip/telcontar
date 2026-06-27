@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
+import zipfile
 from pathlib import Path
 
 from server import archive as _archive
@@ -587,6 +589,9 @@ def undo_last(journal_path: Path, plans_dir: Path) -> dict:
             "note": "Hard-stop entry removed; failed ops were never executed",
         }
 
+    if op_type == "compress":
+        return _undo_compress(entry, journal_path)
+
     src = entry["src"]
     dst = entry["dst"]
     target = Path(src)  # every undo restores the file to its original path
@@ -604,6 +609,154 @@ def undo_last(journal_path: Path, plans_dir: Path) -> dict:
         else:
             return {"undone": None, "error": f"Unknown op_type: {op_type!r}"}
     except (FileNotFoundError, FileExistsError, OSError) as exc:
+        return {"undone": None, "error": str(exc)}
+
+    _journal.pop_last(journal_path)
+    return {"undone": entry}
+
+
+# ── Quarantine compression ────────────────────────────────────────────────────
+
+_MANIFEST_NAME = "_telcontar_manifest.json"
+
+
+def _sha256_file(path: Path) -> str:
+    """Stream a file through sha256, returning its hex digest."""
+    h = hashlib.sha256()
+    with Path(path).open("rb") as fh:
+        for chunk in iter(lambda: fh.read(_CHECKSUM_CHUNK), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _safe_archive_path(directory: Path, name: str) -> Path:
+    """Return a non-colliding path for ``name`` inside ``directory`` — never clobber."""
+    dest = directory / name
+    if not dest.exists():
+        return dest
+    stem, suffix = Path(name).stem, Path(name).suffix
+    counter = 1
+    while True:
+        candidate = directory / f"{stem}_{counter}{suffix}"
+        if not candidate.exists():
+            return candidate
+        counter += 1
+
+
+def _verify_archive(archive: Path, files_meta: list[dict]) -> None:
+    """Raise OSError unless every file in the archive matches its recorded checksum."""
+    with zipfile.ZipFile(archive, "r") as zf:
+        bad = zf.testzip()
+        if bad is not None:
+            raise OSError(f"Archive verification failed (CRC error) for {bad!r} in {archive}")
+        for f in files_meta:
+            if hashlib.sha256(zf.read(f["name"])).hexdigest() != f["sha256"]:
+                raise OSError(f"Archive verification failed: checksum mismatch for {f['name']!r}")
+
+
+def compress_quarantine(
+    quarantine_dir: Path,
+    journal_path: Path,
+    delete_originals: bool = True,
+) -> dict:
+    """Losslessly bundle loose quarantined files into a verified zip archive.
+
+    Collects every top-level regular file currently in ``quarantine_dir`` (skipping
+    archives this tool itself produced), writes them into a single ZIP_DEFLATED
+    archive together with a checksum manifest, and verifies the archive byte-for-byte
+    against the originals. Only once verification passes are the originals optionally
+    removed to reclaim space. The whole operation is journaled so ``undo_last`` can
+    restore every file and delete the archive. Nothing is deleted before the archive
+    is verified, and existing archives are never overwritten.
+
+    Idempotent: re-running with no new loose files is a no-op.
+    """
+    from datetime import datetime, timezone
+
+    from server import journal as _journal
+
+    qdir = Path(quarantine_dir)
+    if not qdir.is_dir():
+        return {"archive": None, "files": 0, "note": "Quarantine directory does not exist"}
+
+    sources = sorted(
+        p
+        for p in qdir.iterdir()
+        if p.is_file() and not (p.suffix == ".zip" and p.name.startswith("quarantine_"))
+    )
+    if not sources:
+        return {"archive": None, "files": 0, "note": "No loose files to compress"}
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    archive = _safe_archive_path(qdir, f"quarantine_{stamp}.zip")
+
+    files_meta = [
+        {"name": src.name, "src": str(src), "sha256": _sha256_file(src), "size": src.stat().st_size}
+        for src in sources
+    ]
+    manifest = {f["name"]: {"src": f["src"], "sha256": f["sha256"]} for f in files_meta}
+
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for f in files_meta:
+            zf.write(f["src"], arcname=f["name"])
+        zf.writestr(_MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False, indent=2))
+
+    # Verify before deleting anything — bail out leaving originals untouched on failure.
+    _verify_archive(archive, files_meta)
+
+    deleted = False
+    if delete_originals:
+        for f in files_meta:
+            Path(f["src"]).unlink()
+        deleted = True
+
+    _journal.append(
+        journal_path,
+        {
+            "op_type": "compress",
+            "archive": str(archive),
+            "quarantine_dir": str(qdir),
+            "files": files_meta,
+            "deleted_originals": deleted,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
+    original_bytes = sum(f["size"] for f in files_meta)
+    return {
+        "archive": str(archive),
+        "files": len(files_meta),
+        "original_bytes": original_bytes,
+        "compressed_bytes": archive.stat().st_size,
+        "deleted_originals": deleted,
+        "verified": True,
+    }
+
+
+def _undo_compress(entry: dict, journal_path: Path) -> dict:
+    """Reverse a ``compress`` op: restore originals from the archive, drop the zip."""
+    from server import journal as _journal
+
+    archive = Path(entry["archive"])
+    files = entry.get("files", [])
+    deleted = entry.get("deleted_originals", False)
+
+    try:
+        if deleted:
+            if not archive.is_file():
+                return {"undone": None, "error": f"Archive missing, cannot restore: {archive}"}
+            # Pre-check every target so a mid-way collision can't half-restore.
+            for f in files:
+                check_no_overwrite(Path(f["src"]))
+            with zipfile.ZipFile(archive, "r") as zf:
+                for f in files:
+                    target = Path(f["src"])
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with zf.open(f["name"]) as srcf, target.open("wb") as out:
+                        shutil.copyfileobj(srcf, out)
+        if archive.is_file():
+            archive.unlink()
+    except (FileNotFoundError, FileExistsError, OSError, KeyError) as exc:
         return {"undone": None, "error": str(exc)}
 
     _journal.pop_last(journal_path)

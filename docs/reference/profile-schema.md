@@ -101,7 +101,7 @@ sections ci-dessus (une rubrique Markdown ## par section)..."""
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `template` | string | `""` | Name of the synthesis template. Currently `"project_synthesis"` is the only built-in. Reserved for future plugin expansion. |
+| `template` | string | `""` | Name of the synthesis template. The bundled profiles use `"project_synthesis"` (`is_it_project`), `"literature_synthesis"` (`research_papers`), and `"personal_synthesis"` (`personal_files`). The value is currently informational — the host renders `title`, `sections`, and `instructions` regardless of the name. Reserved for future plugin dispatch. |
 | `title` | string | `""` | Title of the synthesis document. Injected into the agent's "Project synthesis" prompt section as the SUMMARY.md heading. |
 | `sections` | list of strings | `[]` | Ordered list of section names. Each entry becomes one `##` heading in SUMMARY.md. The agent composes the sections in this order, drawing on `list_documents`, `get_registry`, `list_events`, `get_graph`, and `get_actors`. |
 | `instructions` | string | `""` | Prose writing rules injected verbatim at the end of the "Project synthesis" prompt section. Use this to set language, tone, and grounding constraints (e.g. "never invent a fact not present in the data"). |

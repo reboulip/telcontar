@@ -78,7 +78,9 @@ B. ORGANIZE the tree:
       delete them).
    7. Call review_plan for a deduplication pass.
    8. Call execute_plan to apply the plan (the user reviews and approves first).
-      Registry paths are reconciled automatically as files move.
+      Registry paths are reconciled automatically as files move. After execution,
+      you MAY call compress_quarantine to losslessly archive the quarantined files
+      and reclaim space (reversible via undo_last); skip it if nothing was quarantined.
 
 C. SYNTHESIZE:
    9. Record key project events as you go with create_event(sentence, date): one
@@ -209,6 +211,68 @@ def _build_system_prompt(project_root: Path, settings: Settings) -> str:
     )
 
 
+# ── Query mode ──────────────────────────────────────────────────────────────
+
+# Read-only allowlist for interactive query mode. Query mode answers natural
+# language questions over the corpus and must never mutate it: no plan,
+# execution, file-write, graph-build, event or archive tools are exposed.
+# Keep this in sync when adding new read-only inspection tools to the server.
+QUERY_ALLOWED_TOOLS = frozenset(
+    {
+        "list_dir",
+        "read_file",
+        "extract_text",
+        "compute_checksum",
+        "compare_documents",
+        "get_document",
+        "list_documents",
+        "get_registry",
+        "find_duplicates",
+        "find_modified_documents",
+        "list_events",
+        "get_graph",
+        "get_actors",
+        "list_archived",
+    }
+)
+
+_QUERY_SYSTEM_PROMPT_TEMPLATE = """\
+You are telcontar, a local document-intelligence assistant, in QUERY mode for the
+"{profile_name}" domain profile. The corpus has already been analyzed and recorded
+in a persistent memory registry, an event journal and a knowledge graph. Your job
+is to answer the user's questions about this corpus — nothing else.
+
+You have READ-ONLY tools. Use them to gather facts before answering:
+- list_documents / get_registry / get_document — the recorded documents and their
+  metadata (title, type, date, summary, provenance, entities, status).
+- list_events — the dated project timeline.
+- get_graph / get_actors — the knowledge graph and the ranked main actors.
+- find_duplicates / find_modified_documents — duplicate clusters and modified versions.
+- list_archived — documents removed from active memory.
+- list_dir / read_file / extract_text / compare_documents / compute_checksum — to
+  inspect a specific file's content when the registry is not enough.
+
+Rules:
+- Answer ONLY from the data returned by these tools. Never invent facts, dates,
+  authors or figures that the tools do not support. If the data does not answer the
+  question, say so plainly.
+- Cite specifics where helpful: document titles, dates, actor names, event sentences.
+- You CANNOT modify the corpus. There are no rename/move/quarantine/write tools here;
+  if the user asks to reorganize, explain that query mode is read-only.
+- Be concise and answer in the language the user asks in.
+
+{types_section}\
+"""
+
+
+def _build_query_system_prompt(project_root: Path, settings: Settings) -> str:
+    profile = _try_load_profile(project_root, settings)
+    return _QUERY_SYSTEM_PROMPT_TEMPLATE.format(
+        profile_name=profile.name if profile is not None else "default",
+        types_section=_build_types_section(profile),
+    )
+
+
 _MAX_TURNS = 50
 
 # ── MCP session ───────────────────────────────────────────────────────────────
@@ -231,6 +295,34 @@ async def mcp_session(project_root: Path) -> AsyncIterator[ClientSession]:
         async with ClientSession(read, write) as session:
             await session.initialize()
             yield session
+
+
+# ── Tool discovery ────────────────────────────────────────────────────────────
+
+
+async def _discover_openai_tools(
+    session: ClientSession, allowed: frozenset[str] | None = None
+) -> list[dict[str, Any]]:
+    """List MCP tools and convert them to OpenAI function specs.
+
+    When `allowed` is given, only tools whose name is in the set are exposed —
+    used by query mode to hide every mutating tool from the model.
+    """
+    tools_response = await session.list_tools()
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": t.name,
+                "description": t.description or "",
+                "parameters": t.inputSchema
+                if t.inputSchema
+                else {"type": "object", "properties": {}},
+            },
+        }
+        for t in tools_response.tools
+        if allowed is None or t.name in allowed
+    ]
 
 
 # ── Public entry points ───────────────────────────────────────────────────────
@@ -274,20 +366,7 @@ async def run_agent_loop(
         project_root = Path(__file__).resolve().parent.parent
 
     # Discover tools from the MCP server
-    tools_response = await session.list_tools()
-    openai_tools = [
-        {
-            "type": "function",
-            "function": {
-                "name": t.name,
-                "description": t.description or "",
-                "parameters": t.inputSchema
-                if t.inputSchema
-                else {"type": "object", "properties": {}},
-            },
-        }
-        for t in tools_response.tools
-    ]
+    openai_tools = await _discover_openai_tools(session)
 
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": _build_system_prompt(project_root, settings)},
@@ -342,6 +421,107 @@ async def run_agent_loop(
 
     on_event(AgentEvent("error", f"Reached maximum turns ({_MAX_TURNS}); stopping."))
     return f"Stopped: maximum turns ({_MAX_TURNS}) reached."
+
+
+async def run_query(
+    question: str,
+    settings: Settings,
+    llm: AsyncOpenAI,
+    on_event: EventCallback,
+    history: list[dict[str, Any]] | None = None,
+) -> tuple[str, list[dict[str, Any]]]:
+    """Answer one NL question over the corpus, launching a fresh MCP session.
+
+    Convenience wrapper around `run_query_loop` for callers that do not manage a
+    session themselves. For a multi-turn chat, keep a single session open and call
+    `run_query_loop` directly instead (one server subprocess for the whole chat).
+    """
+    project_root = Path(__file__).resolve().parent.parent
+    async with mcp_session(project_root) as session:
+        return await run_query_loop(
+            question=question,
+            settings=settings,
+            llm=llm,
+            session=session,
+            on_event=on_event,
+            history=history,
+            project_root=project_root,
+        )
+
+
+async def run_query_loop(
+    *,
+    question: str,
+    settings: Settings,
+    llm: AsyncOpenAI,
+    session: ClientSession,
+    on_event: EventCallback,
+    history: list[dict[str, Any]] | None = None,
+    project_root: Path | None = None,
+) -> tuple[str, list[dict[str, Any]]]:
+    """Answer one NL question over the corpus using read-only tools only.
+
+    `history` carries the conversation across questions: pass the list returned by
+    a previous call back in to preserve multi-turn context. When None, a fresh
+    history seeded with the query-mode system prompt is created. Returns the
+    answer text and the updated history.
+    """
+    if project_root is None:
+        project_root = Path(__file__).resolve().parent.parent
+
+    # Read-only tool subset — query mode never mutates the corpus.
+    openai_tools = await _discover_openai_tools(session, allowed=QUERY_ALLOWED_TOOLS)
+
+    if history is None:
+        history = [
+            {"role": "system", "content": _build_query_system_prompt(project_root, settings)}
+        ]
+    messages = history
+    messages.append({"role": "user", "content": question})
+
+    for _turn in range(_MAX_TURNS):
+        on_event(AgentEvent("thinking", "Calling LLM…"))
+
+        response = await llm.chat.completions.create(
+            model=settings.llm_model,
+            messages=messages,  # type: ignore[arg-type]
+            tools=openai_tools,  # type: ignore[arg-type]
+            tool_choice="auto",
+        )
+
+        choice = response.choices[0]
+        messages.append(choice.message.model_dump(exclude_none=True))
+
+        # No tool calls → the model has produced its answer
+        if not choice.message.tool_calls:
+            answer = choice.message.content or "(no answer)"
+            on_event(AgentEvent("done", answer))
+            return answer, messages
+
+        for tool_call in choice.message.tool_calls:
+            name = tool_call.function.name
+            args: dict[str, Any] = json.loads(tool_call.function.arguments or "{}")
+
+            # Defense in depth: the model can only see allowed tools, but never
+            # forward a mutating call even if it hallucinates one.
+            if name not in QUERY_ALLOWED_TOOLS:
+                result: Any = {"error": f"Tool {name!r} is not available in query mode."}
+            else:
+                on_event(AgentEvent("tool_call", f"{name}({_fmt_args(args)})"))
+                raw = await session.call_tool(name, args)
+                result = _extract_content(raw)
+                on_event(AgentEvent("tool_result", _fmt_result(result)))
+
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": json.dumps(result),
+                }
+            )
+
+    on_event(AgentEvent("error", f"Reached maximum turns ({_MAX_TURNS}); stopping."))
+    return f"Stopped: maximum turns ({_MAX_TURNS}) reached.", messages
 
 
 # ── Tool dispatch ─────────────────────────────────────────────────────────────

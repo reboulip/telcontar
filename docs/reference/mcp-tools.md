@@ -312,10 +312,54 @@ Revert the most recent journaled operation by inverting it and removing the jour
 | `move` | Move back to original directory |
 | `quarantine` | Move back from quarantine to original path |
 | `hard_stop` | Entry removed (no file operation needed; failed ops were never executed) |
+| `compress` | Each original file is restored from the archive into its recorded `src` path, then the zip is deleted. All targets are pre-checked for collisions before any file is written — a mid-way collision cannot leave files in a half-restored state. |
 
-Raises if the target path already exists (no-overwrite guarantee applies to undo as well).
+Raises if the target path already exists (no-overwrite guarantee applies to undo as well). For `compress` undo, if the archive file is missing and originals were deleted, an error is returned.
 
 **Returns:** `{undone: <original entry>}` on success, or `{undone: null, error: "..."}` on failure.
+
+---
+
+### `compress_quarantine`
+
+```python
+compress_quarantine(delete_originals: bool = True) -> dict
+```
+
+Losslessly bundle all loose top-level files in `QUARANTINE_DIR` into a single timestamped ZIP_DEFLATED archive and (optionally) reclaim space by deleting the originals.
+
+**What it does:**
+
+1. Collects every regular file at the top level of `QUARANTINE_DIR`, skipping any archive this tool already produced (files matching `quarantine_*.zip`).
+2. Computes a sha256 checksum for each source file.
+3. Writes all files into a new `quarantine_<UTC timestamp>.zip` (ZIP_DEFLATED) together with a `_telcontar_manifest.json` inside the archive recording each file's name and sha256.
+4. Verifies the archive byte-for-byte: runs `testzip` (CRC check) and re-hashes each member against the recorded sha256. Verification failure raises `OSError` — no originals are touched.
+5. Only after verification passes, if `delete_originals` is `True`, the source files are deleted.
+6. Appends a `compress` entry to the undo journal so `undo_last` can fully reverse the operation.
+
+**Idempotent:** if there are no loose files, the call is a no-op (`files: 0`). Never overwrites an existing archive (collision-safe naming appends `_1`, `_2`, … to the stem).
+
+This is the only tool that removes files from the working set besides quarantine itself — and it stays fully reversible via `undo_last`.
+
+**Parameters:**
+
+| Name | Type | Default | Description |
+|---|---|---|---|
+| `delete_originals` | bool | `True` | Delete the source files from quarantine after the archive is verified. Set to `False` to produce the archive without removing originals. |
+
+**Returns:**
+
+| Field | Type | Description |
+|---|---|---|
+| `archive` | str \| null | Absolute path of the created zip file, or `null` when no-op |
+| `files` | int | Number of files bundled |
+| `original_bytes` | int | Total uncompressed size in bytes |
+| `compressed_bytes` | int | Size of the resulting archive in bytes |
+| `deleted_originals` | bool | Whether the source files were deleted after verification |
+| `verified` | bool | Always `true` when an archive is created (the op would have raised otherwise) |
+| `note` | str | Present only when the call is a no-op; explains why (e.g. `"No loose files to compress"`) |
+
+**Safety category:** Recovery / space reclaim — journaled and reversible via `undo_last`. Destructive only after verified archive is written.
 
 ---
 
@@ -600,21 +644,22 @@ Create a directory and any missing parents. Idempotent and collision-safe: if th
 
 ## Tool availability by version
 
-| Tool | v0.2 | v0.3 | v0.4 | v0.5 | v0.6 | v0.7 | v0.8 |
-|---|---|---|---|---|---|---|---|
-| `list_dir`, `read_file`, `extract_text` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `compare_documents` | — | — | — | — | — | — | ✓ |
-| `move_file`, `rename_file`, `create_file`, `update_file` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `create_dir` | — | — | — | — | — | — | ✓ |
-| `compute_checksum` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `create_plan`, `get_plan`, `list_plans`, `approve_plan` | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `propose_rename`, `propose_move`, `propose_quarantine` | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `execute_plan`, `review_plan`, `undo_last` | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `record_document`, `get_document`, `list_documents` | — | — | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `get_registry`, `find_duplicates`, `find_modified_documents` | — | — | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `write_index`, `write_summary` | — | — | — | ✓ | ✓ | ✓ | ✓ |
-| `write_folder_readme` | — | — | — | — | — | — | ✓ |
-| `create_event`, `list_events` | — | — | — | — | — | ✓ | ✓ |
-| `build_graph`, `get_graph` | — | — | — | — | — | ✓ | ✓ |
-| `get_actors` | — | — | — | — | — | ✓ | ✓ |
-| `archive_document`, `list_archived` | — | — | — | — | — | ✓ | ✓ |
+| Tool | v0.2 | v0.3 | v0.4 | v0.5 | v0.6 | v0.7 | v0.8 | v0.9 |
+|---|---|---|---|---|---|---|---|---|
+| `list_dir`, `read_file`, `extract_text` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `compare_documents` | — | — | — | — | — | — | ✓ | ✓ |
+| `move_file`, `rename_file`, `create_file`, `update_file` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `create_dir` | — | — | — | — | — | — | ✓ | ✓ |
+| `compute_checksum` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `create_plan`, `get_plan`, `list_plans`, `approve_plan` | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `propose_rename`, `propose_move`, `propose_quarantine` | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `execute_plan`, `review_plan`, `undo_last` | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `record_document`, `get_document`, `list_documents` | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `get_registry`, `find_duplicates`, `find_modified_documents` | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `write_index`, `write_summary` | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `write_folder_readme` | — | — | — | — | — | — | ✓ | ✓ |
+| `create_event`, `list_events` | — | — | — | — | — | ✓ | ✓ | ✓ |
+| `build_graph`, `get_graph` | — | — | — | — | — | ✓ | ✓ | ✓ |
+| `get_actors` | — | — | — | — | — | ✓ | ✓ | ✓ |
+| `archive_document`, `list_archived` | — | — | — | — | — | ✓ | ✓ | ✓ |
+| `compress_quarantine` | — | — | — | — | — | — | — | ✓ |

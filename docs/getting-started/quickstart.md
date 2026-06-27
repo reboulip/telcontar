@@ -35,11 +35,14 @@ The Textual TUI starts with a **startup screen**:
 │  ┌─────────────────────────────────────┐│
 │  │ C:\Users\me\Documents\messy        ││
 │  └─────────────────────────────────────┘│
-│  [ Start ]                              │
+│  [ Organize ]  [ Query ]                │
 └─────────────────────────────────────────┘
 ```
 
-Enter the path to your messy directory and press **Start** (or hit Enter).
+Enter the path to your messy directory and press **Organize** (or hit Enter) to start the full analyze-and-reorganize workflow.
+
+!!! tip
+    **Query** opens a read-only chat over an already-analyzed corpus (registry must exist). Use it after a previous Organize run to ask natural-language questions without touching the files.
 
 ---
 
@@ -106,7 +109,7 @@ messy/
     └── copy_of_rapport_final_v3.docx
 ```
 
-A desktop notification fires when the agent is done. Press **q** to quit the TUI.
+A desktop notification fires when the agent is done. Press **g** to open query mode and ask questions about the corpus, or **q** to quit the TUI.
 
 ---
 

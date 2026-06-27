@@ -1,0 +1,133 @@
+# Profile #3 — Corpus de documents personnels / administratifs.
+#
+# Troisième profil de domaine, écrit uniquement sous forme de données pour
+# prouver que le moteur telcontar est piloté par profil et non façonné pour
+# l'IS/IT. Il encode un corpus de documents personnels d'un foyer : la
+# nomenclature des types de pièces, le modèle d'acteurs (émetteur / destinataire),
+# une synthèse en français et le nommage. Aucun changement de code n'a été requis.
+#
+# Note : contrairement aux deux autres profils, ce profil ne retient pas la
+# notion d'« auteur » (un relevé ou une facture n'a pas d'auteur au sens propre) :
+# le champ d'extraction optionnel « author » est volontairement absent et le
+# taxonomie des rôles privilégie émetteur / destinataire / organisme.
+
+name = "personal_files"
+description = "Corpus de documents personnels et administratifs d'un foyer."
+
+# --- Nomenclature des types de pièces -----------------------------------------
+# `record_document` valide le `type` de chaque document contre ces identifiants.
+
+[[document_types]]
+id = "facture"
+label = "Facture"
+description = "Facture ou reçu d'achat (énergie, télécom, commerce, santé…)."
+
+[[document_types]]
+id = "contrat"
+label = "Contrat"
+description = "Contrat ou convention (bail, assurance, abonnement, prêt)."
+
+[[document_types]]
+id = "releve_bancaire"
+label = "Relevé bancaire"
+description = "Relevé de compte, relevé de carte ou document bancaire."
+
+[[document_types]]
+id = "courrier_administratif"
+label = "Courrier administratif"
+description = "Courrier d'une administration ou d'un organisme (CAF, impôts, sécu)."
+
+[[document_types]]
+id = "attestation"
+label = "Attestation / justificatif"
+description = "Attestation, certificat ou justificatif (domicile, assurance, scolarité)."
+
+[[document_types]]
+id = "fiche_de_paie"
+label = "Fiche de paie"
+description = "Bulletin de salaire ou document lié à la rémunération."
+
+[[document_types]]
+id = "impot"
+label = "Document fiscal"
+description = "Avis d'imposition, déclaration de revenus ou document fiscal."
+
+[[document_types]]
+id = "sante"
+label = "Document de santé"
+description = "Document médical, remboursement, ordonnance ou mutuelle."
+
+[[document_types]]
+id = "notes"
+label = "Notes"
+description = "Notes personnelles non structurées."
+
+[[document_types]]
+id = "autre"
+label = "Autre (préciser)"
+description = "Type non couvert ci-dessus ; préciser dans les attributs."
+
+# --- Modèle d'acteurs ---------------------------------------------------------
+# Entités stockées sous {name, role, kind}. `salient_cap` borne le nombre
+# d'acteurs principaux (foyer, organismes récurrents) mis en avant.
+
+[entities]
+kinds = ["person", "org"]
+role_taxonomy = [
+    "titulaire",     # personne du foyer concernée par la pièce
+    "emetteur",      # qui a émis le document (organisme, entreprise)
+    "destinataire",  # à qui le document est adressé
+    "organisme",     # administration ou société tierce (kind = org)
+    "mentionne",     # personne ou entité simplement citée
+    "autre",
+]
+salient_cap = 5
+
+# --- Garde-fous d'extraction --------------------------------------------------
+# Les champs requis doivent toujours être produits ; les champs optionnels sont
+# « SI POSSIBLE » — laisser null plutôt qu'inventer. La notion d'auteur n'a pas
+# de sens ici et n'est donc pas un champ optionnel.
+
+[extraction]
+required = ["title", "summary", "provenance"]
+optional = ["date"]
+
+# --- Synthèse -----------------------------------------------------------------
+# Pilote le récit du corpus composé dans SUMMARY.md à partir du registre, du
+# journal d'évènements, du graphe de connaissance et des acteurs classés.
+
+[synthesis]
+template = "personal_synthesis"
+title = "Synthèse des documents personnels"
+sections = [
+    "Vue d'ensemble — nature du corpus et période couverte",
+    "Acteurs et organismes — foyer concerné et organismes récurrents, d'après les acteurs classés (get_actors)",
+    "Chronologie — pièces datées par ordre chronologique (journal d'évènements)",
+    "Pièces importantes — contrats, documents fiscaux et pièces à conserver (provenance)",
+    "Doublons et versions — duplicats et versions modifiées repérés",
+    "Points d'attention — échéances, pièces manquantes ou à renouveler, uniquement si étayés",
+]
+instructions = """\
+Rédige SUMMARY.md en français comme une synthèse structurée par les sections \
+ci-dessus (une rubrique Markdown ## par section). Appuie-toi sur le registre \
+(list_documents / get_registry), le journal d'évènements (list_events), le graphe \
+de connaissance (get_graph) et les acteurs classés (get_actors). Écris en prose \
+continue sous chaque titre ; n'invente jamais une date, un montant ou un organisme \
+absent des données et laisse une rubrique courte plutôt que de combler par des \
+suppositions."""
+
+# --- Nommage ------------------------------------------------------------------
+
+[naming]
+convention = "snake_case_iso_dates"
+instructions = """\
+Utilise des noms de fichier en snake_case. Préfixe par la date de la pièce au \
+format AAAA-MM-JJ lorsqu'elle est connue, suivie du type et de l'organisme \
+(ex. 2024-03-12_facture_edf.pdf). Translittère les accents et caractères \
+spéciaux en ASCII et conserve l'extension d'origine. Supprime les suffixes \
+redondants (« copie », « v2 ») quand la date suffit à distinguer la pièce."""
+
+# --- Puits de sortie ----------------------------------------------------------
+
+[sinks]
+default = ["local_markdown"]

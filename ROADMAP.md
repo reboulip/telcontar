@@ -94,10 +94,10 @@ Turn the file-organizer into a profile-driven document-intelligence engine: pers
 
 ## v0.9.0 — Interactive query + generality
 
-- [ ] J1 · Interactive query mode — NL questions over the registry/graph in the Textual TUI ("charger un doc pour l'interroger", generalized to the whole corpus)
-- [ ] J2 · Second profile — author a second domain profile (e.g. research-papers or personal-files) purely as data, proving the engine is profile-driven, not IS-IT-shaped
+- [x] J1 · Interactive query mode — NL questions over the registry/graph in the Textual TUI ("charger un doc pour l'interroger", generalized to the whole corpus)
+- [x] J2 · Second profile — author a second domain profile (e.g. research-papers or personal-files) purely as data, proving the engine is profile-driven, not IS-IT-shaped
 - [ ] J3 · [deferred/hard] Read content of links inside attachments — revisit egress policy first
-- [ ] J4 · [deferred] Lossless compression of quarantined archives
+- [x] J4 · Lossless compression of quarantined archives
 
 ---
 

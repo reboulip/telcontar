@@ -17,7 +17,8 @@ User
 │  │ host/app.py  │←→│  - builds system prompt     │  │
 │  │              │   │  - tool-calling loop        │  │
 │  │ Startup/     │   │  - approval gate            │  │
-│  │ Organizer/   │   │  - MCP client (stdio)       │  │
+│  │ Organizer/   │   │  - query loop (read-only)  │  │
+│  │ Query/       │   │  - MCP client (stdio)       │  │
 │  │ Approval     │   └────────────┬───────────────┘  │
 │  │ screens      │                │ stdio transport   │
 │  └──────────────┘                ▼                   │
@@ -90,6 +91,8 @@ The host can only call `execute_plan` on a plan in `approved` state. The `approv
 
 The MCP server has no delete tool. The `propose_quarantine` / `quarantine` path is the only way to remove files from the working tree. Quarantined files are moved to `QUARANTINE_DIR` and journaled — they can be recovered manually or via `undo_last`.
 
+`compress_quarantine` is the only other operation that removes bytes from disk (the original loose files in `QUARANTINE_DIR`, after a verified archive is produced). It is still fully reversible: `undo_last` restores each original from the archive and deletes the zip. No bytes leave the machine — compression only reclaims space within the local quarantine folder.
+
 ### Knowledge graph
 
 `server/graph.py` projects the registry and event journal into a node/edge graph persisted at `GRAPH_PATH` (`.organizer/graph.json`). The graph is a pure, reproducible derivation — no independent state. Node kinds: `document` (one per registry record), `entity` (deduplicated person/org by normalized name), `event` (one per recorded event). Edge types: doc→entity (role-typed), entity↔entity `co_occurrence` (weighted by shared documents), event→entity `mentions` (entity name found in event sentence). Exposed via `build_graph` (rebuild + persist + return), `get_graph` (return last persisted), and `get_actors` (entity nodes ranked by centrality, capped at `salient_cap`).
@@ -102,7 +105,7 @@ Telcontar maintains three append-only JSONL logs — each with a different purpo
 
 | Journal | Path | What it records | Drives |
 |---|---|---|---|
-| **Undo journal** | `JOURNAL_PATH` (`.organizer/journal.jsonl`) | Executed file operations (rename, move, quarantine) | `undo_last` |
+| **Undo journal** | `JOURNAL_PATH` (`.organizer/journal.jsonl`) | Executed file operations (rename, move, quarantine, compress) | `undo_last` |
 | **Event journal** | `EVENTS_PATH` (`.organizer/events.jsonl`) | Project narrative — verb-led, dated milestones | `list_events`, `build_graph` |
 | **Archive log** | `ARCHIVE_PATH` (`.organizer/archive.jsonl`) | Documents withdrawn from active memory: why and where the file went | `list_archived` |
 
@@ -147,6 +150,30 @@ Any sink name not in the built-in registry is treated as an external sink. If `e
 13. Agent sends final text (no tool calls) → loop ends
 14. Desktop notification fires
 ```
+
+---
+
+## Data flow (one query session)
+
+```
+1. User opens QueryScreen (from StartupScreen "Query" button, or "g" in OrganizerScreen)
+2. Host launches server subprocess (stdio) — same MCP server, same registry
+3. Host calls session.list_tools() → filters to QUERY_ALLOWED_TOOLS (read-only subset)
+4. Host sends query-mode system prompt (built from active profile) + user's first question
+5. GPT-5 responds with tool calls against the read-only allowlist
+6. Host dispatches to server via MCP (mutating tool names are blocked in the host even if
+   the model hallucinates one — defense in depth)
+7. Server executes tool, returns result
+8. Host feeds result back to GPT-5 as tool message
+9. Steps 5-8 repeat until the model produces a final text answer
+10. Answer is displayed in the RichLog; conversation history is threaded across questions
+    within the same session (the MCP session stays open for the whole chat)
+11. User types another question (goto step 4) or presses Esc to return to the previous screen
+```
+
+The query loop shares `_MAX_TURNS = 50` with the organize loop. `QUERY_ALLOWED_TOOLS` is a
+`frozenset` defined in `host/agent.py`; it covers inspection tools only — no plan, execution,
+write, graph-build, event-creation, or archive tools are exposed to the model.
 
 ---
 

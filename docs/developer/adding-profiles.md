@@ -13,7 +13,7 @@ Create a profile when you have a **different kind of document corpus** with its 
 - Naming convention
 - Language (the profile description and labels can be in any language)
 
-The bundled `is_it_project` profile is designed for French-language IS/IT project piles. For a different corpus, a sibling profile will give the agent much more relevant context.
+Three profiles ship with telcontar: `is_it_project` (French IS/IT project piles), `research_papers` (English academic corpora), and `personal_files` (French personal/administrative documents). Study any of them as a concrete reference when authoring a new one — they each demonstrate a different role model and extraction strategy.
 
 ---
 

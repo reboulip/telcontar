@@ -188,3 +188,62 @@ def test_bundled_is_it_project_synthesis_template() -> None:
     assert any("Acteurs" in s for s in syn["sections"])
     assert any("Chronologie" in s for s in syn["sections"])
     assert syn["instructions"].strip()
+
+
+# --- bundled profile #2: research_papers ------------------------------------
+
+
+def test_bundled_research_papers_loads() -> None:
+    p = load_profile("research_papers", _BUNDLED_PROFILES_DIR)
+    assert p.name == "research_papers"
+    ids = p.document_type_ids()
+    assert "journal_article" in ids
+    assert "preprint" in ids
+    assert "thesis" in ids
+    assert len(ids) >= 5
+    # scholarly roles, author retained
+    assert "author" in p.entity_roles()
+    assert "advisor" in p.entity_roles()
+    assert p.salient_cap == 5
+    # author is an optional extraction field here
+    assert p.extraction_fields() == {
+        "required": ["title", "summary", "provenance"],
+        "optional": ["date", "author"],
+    }
+    assert p.naming() == "first_author_year_keyword"
+    assert p.sinks_default == ["local_markdown"]
+    syn = p.synthesis()
+    assert syn["template"] == "literature_synthesis"
+    assert len(syn["sections"]) >= 5
+    assert syn["instructions"].strip()
+
+
+# --- bundled profile #3: personal_files -------------------------------------
+
+
+def test_bundled_personal_files_loads() -> None:
+    p = load_profile("personal_files", _BUNDLED_PROFILES_DIR)
+    assert p.name == "personal_files"
+    ids = p.document_type_ids()
+    assert "facture" in ids
+    assert "contrat" in ids
+    assert "impot" in ids
+    assert len(ids) >= 5
+    # issuer/recipient model; deliberately no "author" role
+    roles = p.entity_roles()
+    assert "emetteur" in roles
+    assert "destinataire" in roles
+    assert "author" not in roles
+    assert p.salient_cap == 5
+    # author is NOT an optional extraction field for this domain
+    assert p.extraction_fields() == {
+        "required": ["title", "summary", "provenance"],
+        "optional": ["date"],
+    }
+    assert p.naming() == "snake_case_iso_dates"
+    assert p.sinks_default == ["local_markdown"]
+    syn = p.synthesis()
+    assert syn["template"] == "personal_synthesis"
+    assert syn["title"] == "Synthèse des documents personnels"
+    assert len(syn["sections"]) >= 5
+    assert syn["instructions"].strip()

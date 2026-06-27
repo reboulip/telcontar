@@ -233,6 +233,15 @@ def undo_last() -> dict:
     return tools.undo_last(cfg.journal_path, cfg.plans_dir)
 
 
+@mcp.tool()
+def compress_quarantine(delete_originals: bool = True) -> dict:
+    """Losslessly compress loose quarantined files into a single verified zip archive
+    and reclaim space. The archive is checked byte-for-byte before any original is
+    removed, and the whole operation is reversible via undo_last."""
+    cfg = _get_settings()
+    return tools.compress_quarantine(cfg.quarantine_dir, cfg.journal_path, delete_originals)
+
+
 # ── Document registry (the engine's persistent memory) ───────────────────────
 
 

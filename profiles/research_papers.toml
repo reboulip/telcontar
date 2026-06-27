@@ -1,0 +1,128 @@
+# Profile #2 — Academic research-paper corpus.
+#
+# A second concrete domain profile, authored purely as data to prove telcontar's
+# engine is profile-driven and not IS/IT-shaped. It encodes an academic corpus:
+# the publication-type vocabulary, the scholarly entity model, citation-flavoured
+# synthesis and naming. No engine code changes were needed to add it.
+
+name = "research_papers"
+description = "Academic research-paper corpus (publications, preprints, theses, reviews)."
+
+# --- Document-type vocabulary -------------------------------------------------
+# `record_document` validates each document's `type` against these ids.
+
+[[document_types]]
+id = "journal_article"
+label = "Journal article"
+description = "Peer-reviewed article published in an academic journal."
+
+[[document_types]]
+id = "preprint"
+label = "Preprint"
+description = "Manuscript shared before peer review (e.g. arXiv, bioRxiv, SSRN)."
+
+[[document_types]]
+id = "conference_paper"
+label = "Conference paper"
+description = "Paper published in conference or workshop proceedings."
+
+[[document_types]]
+id = "review"
+label = "Review / survey"
+description = "Literature review, survey or systematic review of a field."
+
+[[document_types]]
+id = "thesis"
+label = "Thesis / dissertation"
+description = "Master's or doctoral thesis."
+
+[[document_types]]
+id = "book_chapter"
+label = "Book chapter"
+description = "Chapter in an edited volume or monograph."
+
+[[document_types]]
+id = "technical_report"
+label = "Technical report"
+description = "Working paper, white paper or institutional technical report."
+
+[[document_types]]
+id = "dataset_doc"
+label = "Dataset / supplementary"
+description = "Data paper, dataset description or supplementary material."
+
+[[document_types]]
+id = "notes"
+label = "Reading notes"
+description = "Personal reading notes or annotations, not a published work."
+
+[[document_types]]
+id = "autre"
+label = "Other (specify)"
+description = "Type not covered above; specify in attributes."
+
+# --- Entity / actor model -----------------------------------------------------
+# Entities are stored as {name, role, kind}. `salient_cap` bounds the number of
+# key researchers surfaced for the corpus.
+
+[entities]
+kinds = ["person", "org"]
+role_taxonomy = [
+    "author",        # primary author
+    "coauthor",      # co-author
+    "advisor",       # thesis advisor / supervisor
+    "editor",        # editor of the venue or volume
+    "reviewer",      # named reviewer
+    "cited",         # researcher cited / discussed
+    "institution",   # affiliation, lab or publisher (kind = org)
+    "autre",
+]
+salient_cap = 5
+
+# --- Extraction guardrails ----------------------------------------------------
+# Required fields must always be produced; optional fields are best-effort —
+# leave null rather than inventing (e.g. never guess an author or a date).
+
+[extraction]
+required = ["title", "summary", "provenance"]
+optional = ["date", "author"]
+
+# --- Synthesis ----------------------------------------------------------------
+# Drives the corpus narrative composed into SUMMARY.md from the registry, the
+# event journal, the knowledge graph and the ranked researchers.
+
+[synthesis]
+template = "literature_synthesis"
+title = "Research corpus synthesis"
+sections = [
+    "Overview — scope of the corpus and the research themes it covers",
+    "Key researchers — who appears most and in what role (authors, advisors, cited), from the ranked actors (get_actors)",
+    "Timeline — key dated milestones (publications, submissions), in chronological order from the event journal",
+    "Key works — the most significant papers and their contribution (provenance)",
+    "Themes & threads — recurring topics and how the works relate",
+    "Duplicates & versions — duplicate files and modified versions detected",
+    "Gaps & open questions — only where supported by the documents",
+]
+instructions = """\
+Write SUMMARY.md in English as a structured literature synthesis, one Markdown \
+## section per item above. Draw on the registry (list_documents / get_registry), \
+the event journal (list_events), the knowledge graph (get_graph) and the ranked \
+researchers (get_actors). Write continuous prose under each heading; never invent \
+a citation, author, venue or date absent from the data, and leave a section short \
+rather than padding it with guesses."""
+
+# --- Naming -------------------------------------------------------------------
+
+[naming]
+convention = "first_author_year_keyword"
+instructions = """\
+Use snake_case file names of the form firstauthor_year_keyword (e.g. \
+smith_2021_transformers.pdf). Use the first author's last name, the publication \
+year when known, and one or two keywords from the title. Transliterate accented \
+and special characters to ASCII and keep the original extension. Drop redundant \
+suffixes such as "final" or "v2" when the year already disambiguates."""
+
+# --- Output sinks -------------------------------------------------------------
+
+[sinks]
+default = ["local_markdown"]

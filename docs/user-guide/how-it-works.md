@@ -96,6 +96,40 @@ Because the registry is keyed by checksum, moving or renaming a file does **not*
 
 ---
 
+## Interactive query mode
+
+After a corpus has been analyzed (registry exists), telcontar offers a **read-only query mode** where you can ask natural-language questions about it without reorganizing anything.
+
+### How to start query mode
+
+- From the **startup screen**, press **Query** (the registry must already exist at `REGISTRY_PATH`).
+- From the **Organizer screen**, press **g** once organizing completes.
+
+### What happens
+
+The host opens a `QueryScreen` — a chat-style TUI with a `RichLog` output area and an `Input` bar. A single MCP server subprocess stays open for the whole session, and conversation history is threaded across questions so the model retains context.
+
+For each question:
+
+1. The host sends the query-mode system prompt (built from the active profile) plus the user's question to GPT-5.
+2. GPT-5 calls read-only tools to gather facts:
+   - `list_documents` / `get_registry` / `get_document` — recorded documents and their metadata
+   - `list_events` — the dated project timeline
+   - `get_graph` / `get_actors` — the knowledge graph and ranked main actors
+   - `find_duplicates` / `find_modified_documents` — duplicate clusters and modified versions
+   - `list_archived` — documents withdrawn from active memory
+   - `list_dir` / `read_file` / `extract_text` / `compare_documents` / `compute_checksum` — for ad-hoc file inspection
+3. The model produces an answer citing specifics (titles, dates, actor names, event sentences) drawn only from the tool results.
+4. The answer appears in the log; the next question can be typed immediately.
+
+### Safety guarantees in query mode
+
+The host exposes only the tools in `QUERY_ALLOWED_TOOLS` to the model — no plan, execution, write, `build_graph`, `create_event`, or archive tools are available. Even if the model were to name a mutating tool, the host blocks it before forwarding to the server (defense in depth). Query mode **cannot modify the corpus**.
+
+Press **Esc** to return to the previous screen.
+
+---
+
 ## The server's safety invariants
 
 The MCP server enforces four non-negotiable rules in code:

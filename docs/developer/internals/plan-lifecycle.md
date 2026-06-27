@@ -110,15 +110,19 @@ Example journal entries:
 
 Fields in normal operation entries:
 - timestamp: ISO 8601 timestamp when the operation was executed.
-- plan_id: References the plan this operation belongs to.
-- op_id: Index within the plan.
-- op_type: rename, move, quarantine.
-- src: Source path.
+- plan_id: References the plan this operation belongs to (not present for compress entries).
+- op_id: Index within the plan (not present for compress entries).
+- op_type: rename, move, quarantine, or compress.
+- src: Source path (rename, move, quarantine).
 - new_name (rename only): New name.
 - dest_dir (move only): Destination directory.
 - final_path (move only): Absolute path to the file after the move.
 - quarantine_path (quarantine only): Absolute path to the file in quarantine.
-- status: Always done for successful journal entries.
+- archive (compress only): Absolute path of the created zip archive.
+- quarantine_dir (compress only): Absolute path of the quarantine directory that was compressed.
+- files (compress only): List of `{name, src, sha256, size}` dicts — one per bundled file.
+- deleted_originals (compress only): Boolean — whether the source files were deleted after verification.
+- status: Always done for successful journal entries (not present for compress entries).
 
 Fields in hard_stop entries:
 - timestamp: When the hard stop was triggered.
@@ -232,6 +236,7 @@ Revert the most recent journaled operation.
    - **rename**: rename back to original name
    - **move**: move back to original directory
    - **quarantine**: move back from quarantine path to original path
+   - **compress**: restore each original file from the archive into its recorded `src` path, then delete the zip. All targets are pre-checked for collisions before any file is written. If `deleted_originals` was `False` (originals were kept), only the zip is deleted.
 5. On success, call pop_last() to remove the entry from the journal.
 6. Return the inverted operation.
 
@@ -239,6 +244,7 @@ Revert the most recent journaled operation.
 - If the original file no longer exists at the expected location, return an error.
 - If the destination of the undo operation already exists, raise FileExistsError and do not remove the journal entry.
 - Hard stops are skipped and never undone; the user must manually assess the situation.
+- For compress undo: if `deleted_originals` was `True` and the archive is missing, an error is returned without removing the journal entry.
 
 ## Journal Module
 

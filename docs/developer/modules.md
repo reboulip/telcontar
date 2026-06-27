@@ -181,9 +181,9 @@ The MCP host package. Drives the GPT-5 agent loop and presents the Textual TUI.
 
 ---
 
-### `host/agent.py` (~397 lines)
+### `host/agent.py`
 
-**Role:** The async agent loop. Fully decoupled from Textual — callers supply callbacks for events and approval so the module can be tested without a TUI.
+**Role:** The async agent loop — both organize and query modes. Fully decoupled from Textual — callers supply callbacks for events and approval so the module can be tested without a TUI.
 
 **Key types:**
 - `AgentEvent` — `{kind: EventKind, text, data}` emitted at each step
@@ -191,25 +191,33 @@ The MCP host package. Drives the GPT-5 agent loop and presents the Textual TUI.
 - `EventCallback` — `Callable[[AgentEvent], None]`
 - `ApprovalCallback` — `Callable[[str, dict], Awaitable[ApprovalResult]]`
 
+**Key constants:**
+- `QUERY_ALLOWED_TOOLS` — `frozenset` of read-only tool names exposed to the model in query mode (list/read/inspect tools; no plan, execute, write, build_graph, create_event, or archive tools)
+
 **Key functions:**
-- `run_agent(target, settings, llm, on_event, on_approval_needed)` — top-level entry; launches the MCP server subprocess via `mcp_session()`, then calls `run_agent_loop`
-- `run_agent_loop(target, settings, llm, session, ...)` — the actual GPT-5 tool-calling loop (injectable session for testing)
-- `_build_system_prompt(project_root, settings)` — assembles the system prompt from the active profile (document types, role taxonomy, naming instructions, extraction rules)
+- `run_agent(target, settings, llm, on_event, on_approval_needed)` — top-level organize entry; launches the MCP server subprocess via `mcp_session()`, then calls `run_agent_loop`
+- `run_agent_loop(target, settings, llm, session, ...)` — the actual GPT-5 tool-calling loop for organize mode (injectable session for testing)
+- `run_query(question, settings, llm, on_event, history)` — convenience entry for one query, launching its own MCP session
+- `run_query_loop(question, settings, llm, session, on_event, history, project_root)` — read-only tool-calling loop; threads `history` across calls for multi-turn context; returns `(answer, updated_history)`
+- `_discover_openai_tools(session, allowed)` — lists MCP tools and converts to OpenAI function specs; when `allowed` is given, only tools in the set are exposed (used by query mode)
+- `_build_system_prompt(project_root, settings)` — assembles the organize-mode system prompt from the active profile
+- `_build_query_system_prompt(project_root, settings)` — assembles the read-only query-mode system prompt from the active profile
 - `_handle_execute_plan(...)` — intercepts `execute_plan` calls to insert the approval gate before forwarding to the server
 
-**Turn limit:** `_MAX_TURNS = 50` — the loop raises an error event if the agent has not produced a final (no-tool-call) response within 50 turns.
+**Turn limit:** `_MAX_TURNS = 50` — both loops raise an error event if the model has not produced a final (no-tool-call) response within 50 turns.
 
 ---
 
-### `host/app.py` (~346 lines)
+### `host/app.py`
 
-**Role:** Textual TUI — three screens and one modal.
+**Role:** Textual TUI — four screens and one modal.
 
 | Class | Role |
 |---|---|
 | `OrganizerApp` | Root `App`; pushes `StartupScreen` on mount |
-| `StartupScreen` | Collects the target directory path from the user |
-| `OrganizerScreen` | Main view: file-tree sidebar + scrollable agent log; runs the agent in a Textual worker |
+| `StartupScreen` | Collects the target directory path; offers "Organize" and "Query" buttons. "Query" validates that `settings.registry_path` exists before proceeding |
+| `OrganizerScreen` | Main view: file-tree sidebar + scrollable agent log; runs the organize agent in a Textual worker; keybinding `g` pushes `QueryScreen` once organizing completes |
+| `QueryScreen` | Chat-style read-only Q&A screen: `RichLog` output + `Input` bar; keeps one MCP session open for the whole chat and threads conversation history across questions; `Esc` pops back to the previous screen |
 | `ApprovalModal` | Plan review: per-op checkboxes, Approve/Reject buttons; returns an `ApprovalResult` |
 
 **TUI layout (OrganizerScreen):**
@@ -219,11 +227,23 @@ The MCP host package. Drives the GPT-5 agent loop and presents the Textual TUI.
 │ DirectoryTree (28%)  │  RichLog (72%)                  │
 │                      │  (agent event stream)           │
 ├─ Status bar ───────────────────────────────────────────┤
-│ Footer (key bindings)                                  │
+│ Footer  [q] Quit  [g] Query corpus                     │
 └────────────────────────────────────────────────────────┘
 ```
 
-**Worker pattern:** `OrganizerScreen.on_mount` launches `_agent_worker` as a Textual worker. The worker is `async`, so it can `await` the approval modal via `app.push_screen_wait(ApprovalModal(...))`.
+**TUI layout (QueryScreen):**
+
+```
+┌─ Header ───────────────────────────────────────────────┐
+│ RichLog (1fr)                                          │
+│ (answer stream + tool call log)                        │
+├─ Status bar ───────────────────────────────────────────┤
+│ Input  "Ask a question about this corpus…"             │
+│ Footer  [Esc] Back  [Ctrl+C] Quit                      │
+└────────────────────────────────────────────────────────┘
+```
+
+**Worker pattern:** `OrganizerScreen.on_mount` launches `_agent_worker` as a Textual worker. The worker is `async`, so it can `await` the approval modal via `app.push_screen_wait(ApprovalModal(...))`. `QueryScreen` uses a `asyncio.Queue` to bridge the synchronous `Input.Submitted` event handler into the async `_query_worker` that drives `run_query_loop`.
 
 ---
 
