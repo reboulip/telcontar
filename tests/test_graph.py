@@ -16,7 +16,9 @@ def _reg(*records: DocumentRecord) -> Registry:
     return Registry(documents={r.checksum: r for r in records})
 
 
-def _doc(checksum: str, title: str, entities: list[dict] | None = None, **kw: object) -> DocumentRecord:
+def _doc(
+    checksum: str, title: str, entities: list[dict] | None = None, **kw: object
+) -> DocumentRecord:
     return DocumentRecord.new(
         checksum=checksum,
         path=kw.get("path", f"/p/{checksum}.txt"),  # type: ignore[arg-type]
@@ -56,7 +58,9 @@ class TestNodes:
         g = build(
             _reg(
                 _doc("c1", "A", entities=[{"name": "Alice", "role": "author", "kind": "person"}]),
-                _doc("c2", "B", entities=[{"name": "alice", "role": "mentioned", "kind": "person"}]),
+                _doc(
+                    "c2", "B", entities=[{"name": "alice", "role": "mentioned", "kind": "person"}]
+                ),
             ),
             [],
         )
@@ -89,7 +93,13 @@ class TestNodes:
 class TestEdges:
     def test_doc_entity_edge_uses_role(self) -> None:
         g = build(
-            _reg(_doc("c1", "A", entities=[{"name": "Bob", "role": "chef_de_projet", "kind": "person"}])),
+            _reg(
+                _doc(
+                    "c1",
+                    "A",
+                    entities=[{"name": "Bob", "role": "chef_de_projet", "kind": "person"}],
+                )
+            ),
             [],
         )
         edges = _edges_of_type(g, "chef_de_projet")
@@ -242,7 +252,9 @@ class TestGraphTools:
         reg_path = tmp_path / ".organizer" / "registry.json"
         events_path = tmp_path / ".organizer" / "events.jsonl"
         graph_path = tmp_path / ".organizer" / "graph.json"
-        reg = _reg(_doc("c1", "A", entities=[{"name": "Alice", "role": "author", "kind": "person"}]))
+        reg = _reg(
+            _doc("c1", "A", entities=[{"name": "Alice", "role": "author", "kind": "person"}])
+        )
         _registry.save(reg, reg_path)
         return reg_path, events_path, graph_path
 

@@ -57,7 +57,5 @@ def all_entries(archive_path: Path) -> list[dict]:
     if not archive_path.is_file():
         return []
     return [
-        json.loads(ln)
-        for ln in archive_path.read_text(encoding="utf-8").splitlines()
-        if ln.strip()
+        json.loads(ln) for ln in archive_path.read_text(encoding="utf-8").splitlines() if ln.strip()
     ]
