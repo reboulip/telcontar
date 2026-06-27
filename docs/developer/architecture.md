@@ -34,6 +34,7 @@ User
 │  │  server/profile.py   domain profile loader      ││
 │  │  server/guards.py    no-overwrite / allowlist   ││
 │  │  server/journal.py   append-only undo log       ││
+│  │  server/events.py    project event journal      ││
 │  │  server/extract.py   markitdown text extraction ││
 │  └─────────────────────────────────────────────────┘│
 │                          │                          │
@@ -122,8 +123,8 @@ config/settings.py  (Pydantic Settings)
   │
   ├──► host/agent.py  (LLM endpoint, approval mode, profile)
   │
-  └──► server/main.py  (plans_dir, journal_path, registry_path, quarantine_dir,
-                         max_snippet_chars, allowlist_dirs, profile)
+  └──► server/main.py  (plans_dir, journal_path, events_path, registry_path,
+                         quarantine_dir, max_snippet_chars, allowlist_dirs, profile)
 ```
 
 Both host and server load `Settings` independently at startup — there is no shared singleton across the process boundary. The server's `_get_settings()` is lazy-initialized and cached per process.

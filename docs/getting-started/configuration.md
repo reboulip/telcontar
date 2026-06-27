@@ -25,7 +25,8 @@ cp .env.example .env
 |---|---|---|---|
 | `APPROVAL_MODE` | no | `always` | When to require user approval. See [Approval Modes](../user-guide/approval-modes.md). |
 | `QUARANTINE_DIR` | no | `_quarantine` | Relative path (from the target directory) where clutter files are moved. Never deleted. |
-| `JOURNAL_PATH` | no | `.organizer/journal.jsonl` | Append-only undo journal. Relative to the project root. |
+| `JOURNAL_PATH` | no | `.organizer/journal.jsonl` | Append-only undo journal (file operations, drives `undo_last`). Relative to the project root. |
+| `EVENTS_PATH` | no | `.organizer/events.jsonl` | Append-only project event journal (narrative log, drives `create_event` / `list_events`). Relative to the project root. |
 
 ### Domain profile
 
@@ -81,7 +82,8 @@ Telcontar writes its state under `.organizer/` in the **project root** (not the 
 ```
 .organizer/
 ├── plans/          # One JSON file per plan
-├── journal.jsonl   # Append-only undo log
+├── journal.jsonl   # Append-only undo log (file operations)
+├── events.jsonl    # Append-only project event journal (narrative log)
 └── registry.json   # Document memory (sha256 → metadata)
 ```
 

@@ -266,5 +266,23 @@ def find_modified_documents() -> list:
     return tools.find_modified_documents(cfg.registry_path)
 
 
+# ── Project event journal (the project narrative) ────────────────────────────
+
+
+@mcp.tool()
+def create_event(sentence: str, date: str | None = None) -> dict:
+    """Record a project event: a short, verb-led sentence stamped with the date it
+    occurred (ISO YYYY-MM-DD, or null if unknown). Distinct from the undo journal."""
+    cfg = _get_settings()
+    return tools.create_event(sentence, date, cfg.events_path)
+
+
+@mcp.tool()
+def list_events() -> list:
+    """Return all recorded project events in chronological order."""
+    cfg = _get_settings()
+    return tools.list_events(cfg.events_path)
+
+
 def main() -> None:
     mcp.run(transport="stdio")

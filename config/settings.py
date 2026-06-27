@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     approval_mode: Literal["always", "destructive_only", "never"] = "always"
     quarantine_dir: Path = Path("_quarantine")
     journal_path: Path = Path(".organizer/journal.jsonl")
+    events_path: Path = Path(".organizer/events.jsonl")
     plans_dir: Path = Path(".organizer/plans")
 
     # Domain profile — adapts the engine to a kind of document corpus

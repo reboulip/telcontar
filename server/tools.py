@@ -6,6 +6,7 @@ import hashlib
 import shutil
 from pathlib import Path
 
+from server import events as _events
 from server import plan as _plan
 from server import registry as _registry
 from server.extract import extract as _extract
@@ -631,3 +632,27 @@ def find_modified_documents(registry_path: Path) -> list[list[dict]]:
     """Return groups sharing a title but differing in content (modified docs)."""
     reg = _registry.load(registry_path)
     return [[r.to_dict() for r in group] for group in reg.find_modified()]
+
+
+# ── Project event journal ──────────────────────────────────────────────────────
+
+
+def create_event(sentence: str, date: str | None, events_path: Path) -> dict:
+    """Append a verb-led, dated event to the project event journal.
+
+    Distinct from the undo journal: this records project narrative (what happened
+    and when), not reversible file operations. ``sentence`` should be a short,
+    verb-led statement; ``date`` is the ISO YYYY-MM-DD the event occurred (null
+    if unknown).
+    """
+    text = (sentence or "").strip()
+    if not text:
+        raise ValueError("Event sentence must be a non-empty string")
+    ev = _events.Event.new(sentence=text, date=date)
+    _events.append(events_path, ev)
+    return ev.to_dict()
+
+
+def list_events(events_path: Path) -> list[dict]:
+    """Return all recorded project events in chronological order."""
+    return [e.to_dict() for e in _events.all_events(events_path)]

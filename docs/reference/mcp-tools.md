@@ -332,6 +332,44 @@ Return groups of documents sharing a normalized title but with **different check
 
 ---
 
+## Event journal tools
+
+Record and retrieve the project narrative log. Each event is a short, verb-led sentence stamped with the date it occurred. The event journal is distinct from the undo journal: it captures *what happened in the project*, not reversible file operations.
+
+### `create_event`
+
+```python
+create_event(sentence: str, date: str | None = None) -> dict
+```
+
+Append a verb-led project event to the event journal at `EVENTS_PATH`. The file is created (including parent dirs) on first write.
+
+**Parameters:**
+
+| Name | Type | Description |
+|---|---|---|
+| `sentence` | str | Short, verb-led statement of the event (non-empty) |
+| `date` | str \| None | ISO `YYYY-MM-DD` date the event occurred; `null` if unknown |
+
+**Returns:** the full event record `{event_id, sentence, date, created_at}`.
+
+- `event_id`: UUID (str)
+- `created_at`: ISO 8601 UTC timestamp when the event was recorded
+
+---
+
+### `list_events`
+
+```python
+list_events() -> list[dict]
+```
+
+Return all recorded project events from `EVENTS_PATH` in chronological (append) order. Returns an empty list when no events have been recorded yet.
+
+**Returns:** list of `{event_id, sentence, date, created_at}` records.
+
+---
+
 ## Direct file utilities
 
 Lower-level tools used for writing index/summary files. Not normally called directly by the agent.
@@ -358,14 +396,15 @@ Write text content to disk. `create_file` enforces `check_no_overwrite`; `update
 
 ## Tool availability by version
 
-| Tool | v0.2 | v0.3 | v0.4 | v0.5 | v0.6 |
-|---|---|---|---|---|---|
-| `list_dir`, `read_file`, `extract_text` | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `move_file`, `rename_file`, `create_file`, `update_file` | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `compute_checksum` | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `create_plan`, `get_plan`, `list_plans`, `approve_plan` | — | ✓ | ✓ | ✓ | ✓ |
-| `propose_rename`, `propose_move`, `propose_quarantine` | — | ✓ | ✓ | ✓ | ✓ |
-| `execute_plan`, `review_plan`, `undo_last` | — | ✓ | ✓ | ✓ | ✓ |
-| `record_document`, `get_document`, `list_documents` | — | — | ✓ | ✓ | ✓ |
-| `get_registry`, `find_duplicates`, `find_modified_documents` | — | — | ✓ | ✓ | ✓ |
-| `write_index`, `write_summary` | — | — | — | ✓ | ✓ |
+| Tool | v0.2 | v0.3 | v0.4 | v0.5 | v0.6 | v0.7 |
+|---|---|---|---|---|---|---|
+| `list_dir`, `read_file`, `extract_text` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `move_file`, `rename_file`, `create_file`, `update_file` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `compute_checksum` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `create_plan`, `get_plan`, `list_plans`, `approve_plan` | — | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `propose_rename`, `propose_move`, `propose_quarantine` | — | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `execute_plan`, `review_plan`, `undo_last` | — | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `record_document`, `get_document`, `list_documents` | — | — | ✓ | ✓ | ✓ | ✓ |
+| `get_registry`, `find_duplicates`, `find_modified_documents` | — | — | ✓ | ✓ | ✓ | ✓ |
+| `write_index`, `write_summary` | — | — | — | ✓ | ✓ | ✓ |
+| `create_event`, `list_events` | — | — | — | — | — | ✓ |
