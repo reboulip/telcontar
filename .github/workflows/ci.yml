@@ -18,7 +18,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --group dev
+        run: uv sync --group dev --group test
 
       - name: Lint (ruff)
         run: uv run ruff check .
@@ -30,4 +30,4 @@ jobs:
         run: uv run mypy host server config || true
 
       - name: Test (pytest)
-        run: uv run pytest --tb=short -q
+        run: uv run --group test pytest --tb=short -q
