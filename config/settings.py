@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     max_snippet_chars: int = 4000
     # JSON array of absolute paths, e.g. '["C:/Users/me/docs"]'. Empty = no restriction.
     allowlist_dirs: list[Path] = Field(default_factory=list)
+    # Gate for non-local output sinks (e.g. a MediaWiki MCP integration). Built-in
+    # local_markdown is always allowed; external sinks require this flag = True.
+    egress_allow_external_sinks: bool = False
 
 
 def load() -> Settings:

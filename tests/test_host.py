@@ -351,6 +351,22 @@ def test_system_prompt_is_profile_driven() -> None:
     assert prompt.index("compute_checksum") < prompt.index("create_plan")
 
 
+def test_system_prompt_includes_taxonomy_classification() -> None:
+    from config.settings import load
+
+    from host.agent import _build_system_prompt
+
+    prompt = _build_system_prompt(_PROJECT_ROOT, load())
+
+    # the organize step now reasons about a target taxonomy and builds folders
+    assert "taxonomy" in prompt.lower()
+    assert "create_dir" in prompt
+    # classification reuses propose_move into the designed tree
+    assert "propose_move" in prompt
+    # the taxonomy is designed before the plan is staged
+    assert prompt.index("taxonomy") < prompt.index("create_plan")
+
+
 def test_system_prompt_includes_synthesis_template() -> None:
     from config.settings import load
 

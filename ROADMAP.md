@@ -84,11 +84,11 @@ Turn the file-organizer into a profile-driven document-intelligence engine: pers
 
 ## v0.8.0 — Organization, tree & output sinks
 
-- [ ] I1 · `create_dir` — collision-safe directory creation
-- [ ] I2 · Folder README writer — per-folder README of the arborescence
-- [ ] I3 · Taxonomy classification — relevant-tree reasoning in the host prompt (reuses `propose_move` + `write_index`)
-- [ ] I4 · `compare_documents(a, b)` — extract both + diff (e.g. successive COPIL slides)
-- [ ] I5 · Output-sink abstraction — `Sink` protocol; `local_markdown` default built-in; MediaWiki sink plugin (re-admits the gandalf wiki) behind an explicit egress allow-flag
+- [x] I1 · `create_dir` — collision-safe directory creation
+- [x] I2 · Folder README writer — per-folder README of the arborescence
+- [x] I3 · Taxonomy classification — relevant-tree reasoning in the host prompt (reuses `propose_move` + `write_index`)
+- [x] I4 · `compare_documents(a, b)` — extract both + diff (e.g. successive COPIL slides)
+- [x] I5 · Output-sink abstraction — `Sink` protocol; `local_markdown` default built-in; MediaWiki sink plugin (re-admits the gandalf wiki) behind an explicit egress allow-flag
 
 ---
 

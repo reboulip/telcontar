@@ -34,10 +34,11 @@ The registry is **content-addressed**: if you rename a file, telcontar still rec
 
 ### Phase B — Organize
 
-1. The agent calls `create_plan` to open a new plan
-2. It stages operations with `propose_rename`, `propose_move`, and `propose_quarantine`
-3. It calls `review_plan` for a deduplication pre-flight check
-4. It calls `execute_plan` — at this point the **approval gate** fires
+1. The agent designs a **relevant target taxonomy** — a small, shallow, readable folder tree derived from the document types and themes actually found in the corpus (e.g. grouped by document type, workstream, or phase). It creates each folder with `create_dir` (idempotent and collision-safe). Folders are only created for categories the corpus actually contains.
+2. The agent calls `create_plan` to open a new plan
+3. It stages operations with `propose_rename`, `propose_move` (filing each document into the taxonomy), and `propose_quarantine` for duplicates or clutter
+4. It calls `review_plan` for a deduplication pre-flight check
+5. It calls `execute_plan` — at this point the **approval gate** fires
 
 ### Phase C — Synthesize
 

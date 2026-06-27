@@ -68,6 +68,18 @@ def compute_checksum(path: str) -> dict:
     return tools.compute_checksum(path)
 
 
+@mcp.tool()
+def compare_documents(path_a: str, path_b: str, max_chars: int = 4000) -> dict:
+    """Extract text from two files and return a unified diff between them — e.g. to
+    compare successive versions of a document (two COPIL decks)."""
+    cfg = _get_settings()
+    from server.guards import check_allowlist
+
+    check_allowlist(Path(path_a), cfg.allowlist_dirs)
+    check_allowlist(Path(path_b), cfg.allowlist_dirs)
+    return tools.compare_documents(path_a, path_b, min(max_chars, cfg.max_snippet_chars))
+
+
 # ── Plan management tools ────────────────────────────────────────────────────
 
 
@@ -157,6 +169,12 @@ def update_file(path: str, content: str) -> dict:
     return tools.update_file(path, content)
 
 
+@mcp.tool()
+def create_dir(path: str) -> dict:
+    """Create a directory (and parents); idempotent if it already exists."""
+    return tools.create_dir(path)
+
+
 # ── Gated execution tools ────────────────────────────────────────────────────
 
 
@@ -175,10 +193,34 @@ def write_index(path: str) -> dict:
     return tools.write_index(path, cfg.journal_path)
 
 
+def _resolve_output_sinks() -> list:
+    """Resolve the active output sinks from the profile, gating external egress."""
+    from server.sinks import resolve_sinks
+
+    cfg = _get_settings()
+    profile = _get_profile()
+    return resolve_sinks(profile.sinks_default, allow_external=cfg.egress_allow_external_sinks)
+
+
+def _sink_results(results: list[dict]) -> dict:
+    """Collapse per-sink results to a single dict when only one sink is active."""
+    if len(results) == 1:
+        return results[0]
+    return {"sinks": results}
+
+
 @mcp.tool()
 def write_summary(path: str, content: str) -> dict:
-    """Write LLM-composed prose to SUMMARY.md inside the directory at path."""
-    return tools.write_summary(path, content)
+    """Write the LLM-composed project synthesis to the profile's active output
+    sink(s). The built-in local_markdown sink persists it as SUMMARY.md."""
+    return _sink_results([s.write_summary(path, content) for s in _resolve_output_sinks()])
+
+
+@mcp.tool()
+def write_folder_readme(path: str, content: str) -> dict:
+    """Write the LLM-composed per-folder description to the profile's active output
+    sink(s). The built-in local_markdown sink persists it as README.md."""
+    return _sink_results([s.write_folder_readme(path, content) for s in _resolve_output_sinks()])
 
 
 # ── Recovery tools ───────────────────────────────────────────────────────────

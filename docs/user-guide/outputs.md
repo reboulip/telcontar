@@ -65,6 +65,12 @@ A **GPT-5–authored narrative** structured according to the active profile's `[
 
 The agent draws on `list_documents` / `get_registry`, `list_events`, `get_graph`, and `get_actors` to compose the prose. It never invents facts absent from the data. `write_summary` persists the resulting Markdown unchanged — it is a pure sink with no transformation logic.
 
+### Per-folder `README.md`
+
+After writing `SUMMARY.md`, the agent writes a short `README.md` **inside each meaningful subfolder** of the organized tree. Each README is one or two paragraphs naming what that folder holds and its role in the arborescence, drawn from the documents the agent recorded there. Trivial or empty folders are skipped.
+
+These files are produced by `write_folder_readme` during the SYNTHESIZE phase. They are overwritten on each run, so re-running telcontar on an already-organized tree produces up-to-date READMEs without leaving stale files behind.
+
 ---
 
 ## State files (in `.organizer/`)

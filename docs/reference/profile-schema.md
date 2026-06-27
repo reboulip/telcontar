@@ -139,7 +139,7 @@ default = ["local_markdown"]
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `default` | list of strings | `["local_markdown"]` | Active output sinks. `"local_markdown"` writes `INDEX.md`, `manifest.json`, and `SUMMARY.md` to the target directory. Additional sinks are planned as plugins (v0.8.0+). |
+| `default` | list of strings | `["local_markdown"]` | Active output sinks by name. The built-in `"local_markdown"` sink writes `SUMMARY.md` and per-folder `README.md` files to the local filesystem (always allowed). Any other name is treated as an external sink and requires `EGRESS_ALLOW_EXTERNAL_SINKS=true`; external sinks are provided as separate MCP integrations, not built into this codebase. |
 
 ---
 

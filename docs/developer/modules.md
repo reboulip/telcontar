@@ -22,7 +22,7 @@ Detailed breakdown of every Python module in the codebase. For auto-generated AP
 
 The MCP server package. Launched as a subprocess by the host; communicates via stdio. Owns all file I/O, guardrails, and persistent state.
 
-### `server/main.py` (~270 lines)
+### `server/main.py` (~383 lines)
 
 **Role:** MCP server entrypoint. Registers all tools with FastMCP and wires each handler to `server/tools.py`. Lazy-initialises `Settings` and the active `Profile` on first use.
 
@@ -142,6 +142,20 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 | `all_entries(archive_path)` | Returns all entries in chronological order; empty list if no file |
 
 **Design note:** `archive_document` in `server/tools.py` coordinates the status flip in the registry, the quarantine move (journaled in the undo log for reversibility), and the append here. This module owns only the serialization.
+
+---
+
+### `server/sinks.py` (~76 lines)
+
+**Role:** Output-sink abstraction — defines where the engine's synthesized Markdown artifacts are emitted.
+
+**Key types:**
+- `Sink` — `runtime_checkable` Protocol with attributes `name: str`, `external: bool` and methods `write_summary(target_dir, content) -> dict`, `write_folder_readme(folder, content) -> dict`.
+- `LocalMarkdownSink` — the built-in sink (`name="local_markdown"`, `external=False`). Delegates to `tools.write_summary` and `tools.write_folder_readme`; writes files to the local filesystem.
+
+**Key function:** `resolve_sinks(names, *, allow_external) -> list[Sink]` — instantiates the sinks named in the profile's `[sinks] default` list. Built-in sinks are created directly. Any unrecognised name is treated as an external sink: raises `PermissionError` if `allow_external=False`, or `NotImplementedError` if `True` (external sinks are separate MCP integrations, not built into this codebase).
+
+**Design note:** `server/main.py` calls `resolve_sinks` inside `write_summary` and `write_folder_readme` handlers, passing `egress_allow_external_sinks` from `Settings`. A single-sink result is unwrapped; multiple sinks return `{"sinks": [...]}`.
 
 ---
 

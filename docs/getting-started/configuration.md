@@ -49,6 +49,7 @@ cp .env.example .env
 |---|---|---|---|
 | `MAX_SNIPPET_CHARS` | no | `4000` | Maximum characters returned by `read_file` and `extract_text`. Defense-in-depth cap even when full content is allowed. |
 | `ALLOWLIST_DIRS` | no | `""` | JSON array of absolute directory paths, e.g. `["C:/Users/me/docs"]`. When set, telcontar can only read content from these paths. Leave blank to allow any path. |
+| `EGRESS_ALLOW_EXTERNAL_SINKS` | no | `false` | Allow non-local output sinks (e.g. a MediaWiki MCP integration). The built-in `local_markdown` sink is always allowed regardless of this flag. Set to `true` only when you have connected a separate MCP sink integration and want its name listed in the profile's `[sinks] default`. |
 
 ---
 

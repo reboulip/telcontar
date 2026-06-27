@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from server.tools import write_index, write_summary
+from server.tools import write_folder_readme, write_index, write_summary
 from server import journal as _journal
 
 
@@ -152,6 +152,33 @@ class TestWriteSummary:
         nested = tmp_path / "a" / "b"
         write_summary(str(nested), "hi")
         assert (nested / "SUMMARY.md").read_text(encoding="utf-8") == "hi"
+
+
+# ── I2: write_folder_readme ───────────────────────────────────────────────────
+
+
+class TestWriteFolderReadme:
+    def test_creates_readme_md(self, tmp_path: Path) -> None:
+        folder = tmp_path / "decisions"
+        folder.mkdir()
+        result = write_folder_readme(str(folder), "Relevés de décision.")
+        assert (folder / "README.md").exists()
+        assert result["written"] == str(folder / "README.md")
+
+    def test_content_is_written_verbatim(self, tmp_path: Path) -> None:
+        prose = "# Decisions\n\nContient les relevés de décision du COPIL.\n"
+        write_folder_readme(str(tmp_path), prose)
+        assert (tmp_path / "README.md").read_text(encoding="utf-8") == prose
+
+    def test_overwrites_existing_readme(self, tmp_path: Path) -> None:
+        (tmp_path / "README.md").write_text("old", encoding="utf-8")
+        write_folder_readme(str(tmp_path), "new")
+        assert (tmp_path / "README.md").read_text(encoding="utf-8") == "new"
+
+    def test_creates_folder_if_missing(self, tmp_path: Path) -> None:
+        folder = tmp_path / "a" / "b"
+        write_folder_readme(str(folder), "hi")
+        assert (folder / "README.md").read_text(encoding="utf-8") == "hi"
 
 
 # ── E3: naming conventions ────────────────────────────────────────────────────

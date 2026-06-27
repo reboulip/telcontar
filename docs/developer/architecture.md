@@ -37,6 +37,7 @@ User
 │  │  server/events.py    project event journal      ││
 │  │  server/graph.py     knowledge graph projection ││
   │  │  server/archive.py   archived-documents log ││
+│  │  server/sinks.py    output-sink abstraction    ││
 │  │  server/extract.py   markitdown text extraction ││
 │  └─────────────────────────────────────────────────┘│
 │                          │                          │
@@ -107,6 +108,14 @@ Telcontar maintains three append-only JSONL logs — each with a different purpo
 
 `archive_document` writes to both the undo journal (the file move, so it stays reversible) and the archive log (the reason a document left memory). These two writes serve different purposes and are never merged.
 
+### Output-sink abstraction
+
+`server/sinks.py` defines a `Sink` protocol (`name`, `external`, `write_summary`, `write_folder_readme`) and a `resolve_sinks(names, allow_external)` factory. The MCP handlers for `write_summary` and `write_folder_readme` call `resolve_sinks` at request time, passing the profile's `[sinks] default` list and the `egress_allow_external_sinks` setting, then fan the call out to each resolved sink.
+
+The only built-in sink is `local_markdown` (`external=False`) — it delegates directly to `tools.write_summary` / `tools.write_folder_readme` and writes Markdown files to the local filesystem. It is always allowed regardless of `egress_allow_external_sinks`.
+
+Any sink name not in the built-in registry is treated as an external sink. If `egress_allow_external_sinks` is `False`, `resolve_sinks` raises `PermissionError` immediately (nothing leaves the machine without an explicit opt-in). If the flag is `True`, it raises `NotImplementedError` — external sinks (e.g. a MediaWiki wiki) are shipped as separate MCP integrations, not implemented in this codebase.
+
 ---
 
 ## Data flow (one organize session)
@@ -121,17 +130,22 @@ Telcontar maintains three append-only JSONL logs — each with a different purpo
 6. Server executes tool, returns result
 7. Host feeds result back to GPT-5 as tool message
 8. Steps 4-7 repeat (up to MAX_TURNS = 50)
-9. On execute_plan call:
-   a. Host fetches plan details (get_plan)
-   b. Host shows ApprovalModal to user
-   c. User approves (optionally deselecting ops)
-   d. Host calls approve_plan → execute_plan
-   e. Server applies ops, journals each, reconciles registry
-10. Agent calls build_graph → get_actors → list_events, then composes SUMMARY.md
+9. Agent designs a target taxonomy from the types/themes found, calls create_dir for
+   each folder (idempotent; no folder created for absent categories), then opens a
+   plan (create_plan) and stages propose_rename / propose_move / propose_quarantine ops
+10. On execute_plan call:
+    a. Host fetches plan details (get_plan)
+    b. Host shows ApprovalModal to user
+    c. User approves (optionally deselecting ops)
+    d. Host calls approve_plan → execute_plan
+    e. Server applies ops, journals each, reconciles registry
+11. Agent calls build_graph → get_actors → list_events, then composes SUMMARY.md
     from registry + events + graph + actors per the profile's [synthesis] template;
     calls write_index + write_summary to persist INDEX.md, manifest.json, SUMMARY.md
-11. Agent sends final text (no tool calls) → loop ends
-12. Desktop notification fires
+12. Agent calls write_folder_readme(path=<folder>, content=<markdown>) once per
+    meaningful folder of the organized tree; empty/trivial folders are skipped
+13. Agent sends final text (no tool calls) → loop ends
+14. Desktop notification fires
 ```
 
 ---
@@ -148,7 +162,7 @@ config/settings.py  (Pydantic Settings)
   │
   └──► server/main.py  (plans_dir, journal_path, events_path, registry_path,
                          graph_path, archive_path, quarantine_dir, max_snippet_chars,
-                         allowlist_dirs, profile)
+                         allowlist_dirs, egress_allow_external_sinks, profile)
 ```
 
 Both host and server load `Settings` independently at startup — there is no shared singleton across the process boundary. The server's `_get_settings()` is lazy-initialized and cached per process.

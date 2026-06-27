@@ -51,6 +51,7 @@ Apply these rules in order (first match wins):
 | `server/events.py` only | `tests/test_events.py` |
 | `server/graph.py` only | `tests/test_graph.py` |
 | `server/archive.py` only | `tests/test_archive.py` |
+| `server/sinks.py` only | `tests/test_sinks.py` |
 | `server/tools.py` propose_* only | `tests/test_tools_propose.py` |
 | `server/tools.py` execute_plan only | `tests/test_execute_plan.py` |
 | `server/tools.py` undo_last only | `tests/test_undo_last.py` |

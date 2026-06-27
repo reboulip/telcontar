@@ -68,6 +68,41 @@ def extract_text(path: str, max_chars: int) -> str:
     return _extract(p, max_chars)
 
 
+def compare_documents(path_a: str, path_b: str, max_chars: int) -> dict:
+    """Extract text from two files and return a unified diff between them.
+
+    Reuses the markitdown/pypdf extraction path, so it works on PDF/Office as
+    well as plain text. Each side is truncated to ``max_chars`` before diffing,
+    so the diff reflects only the extracted (possibly truncated) text — handy for
+    comparing successive versions (e.g. two COPIL slide decks). ``identical`` is
+    True when the extracted texts match exactly.
+    """
+    import difflib
+
+    pa, pb = Path(path_a), Path(path_b)
+    if not pa.is_file():
+        raise ValueError(f"Not a file: {path_a}")
+    if not pb.is_file():
+        raise ValueError(f"Not a file: {path_b}")
+    text_a = _extract(pa, max_chars)
+    text_b = _extract(pb, max_chars)
+    diff = "\n".join(
+        difflib.unified_diff(
+            text_a.splitlines(),
+            text_b.splitlines(),
+            fromfile=path_a,
+            tofile=path_b,
+            lineterm="",
+        )
+    )
+    return {
+        "path_a": str(pa),
+        "path_b": str(pb),
+        "identical": text_a == text_b,
+        "diff": diff,
+    }
+
+
 def compute_checksum(path: str) -> dict:
     """Compute the sha256 checksum of a file (chunk-streamed) as its unique id."""
     p = Path(path)
@@ -120,6 +155,21 @@ def update_file(path: str, content: str) -> dict:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content, encoding="utf-8")
     return {"updated": str(p)}
+
+
+def create_dir(path: str) -> dict:
+    """Create a directory (and any parents); idempotent if it already exists.
+
+    Collision-safe by construction: an existing directory is returned as-is
+    rather than raising, so the op can be re-run. Raises if ``path`` already
+    exists as a file (not a directory).
+    """
+    p = Path(path)
+    if p.is_file():
+        raise ValueError(f"Path exists and is a file, not a directory: {path}")
+    existed = p.is_dir()
+    p.mkdir(parents=True, exist_ok=True)
+    return {"created": str(p), "existed": existed}
 
 
 # ── Plan management ──────────────────────────────────────────────────────────
@@ -502,6 +552,19 @@ def write_index(target_dir: str, journal_path: Path) -> dict:
 def write_summary(target_dir: str, content: str) -> dict:
     """Write LLM-composed prose to SUMMARY.md inside target_dir."""
     p = Path(target_dir) / "SUMMARY.md"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(content, encoding="utf-8")
+    return {"written": str(p)}
+
+
+def write_folder_readme(folder: str, content: str) -> dict:
+    """Write LLM-composed prose to README.md inside a folder of the arborescence.
+
+    Thin sink, like ``write_summary``: the host composes a short description of
+    what the folder holds and its role in the organized tree; this just persists
+    it. Overwrites any existing README and creates the folder if needed.
+    """
+    p = Path(folder) / "README.md"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content, encoding="utf-8")
     return {"written": str(p)}

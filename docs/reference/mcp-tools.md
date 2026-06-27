@@ -55,6 +55,40 @@ Extract plain text from a PDF or Office file (docx, xlsx, pptx…) via **markitd
 
 ---
 
+### `compare_documents`
+
+```python
+compare_documents(path_a: str, path_b: str, max_chars: int = 4000) -> dict
+```
+
+Extract text from two files and return a unified diff between them. Uses the same markitdown/pypdf extraction path as `extract_text`, so it works on PDF and Office files as well as plain text. Each side is truncated to `max_chars` before diffing; the diff therefore reflects only the extracted (possibly truncated) text.
+
+Typical use case: comparing successive versions of a document (e.g. two COPIL slide decks).
+
+!!! note
+    The effective cap per side is `min(max_chars, MAX_SNIPPET_CHARS)`. Both paths are checked against `ALLOWLIST_DIRS` before extraction.
+
+**Parameters:**
+
+| Name | Type | Description |
+|---|---|---|
+| `path_a` | str | Absolute path to the first file |
+| `path_b` | str | Absolute path to the second file |
+| `max_chars` | int | Maximum characters to extract per side (default 4000) |
+
+**Returns:**
+
+| Field | Type | Description |
+|---|---|---|
+| `path_a` | str | Absolute path of the first file |
+| `path_b` | str | Absolute path of the second file |
+| `identical` | bool | `true` when the extracted texts match exactly |
+| `diff` | str | Unified diff string (empty when `identical` is `true`) |
+
+**Safety category:** Read-only — no filesystem writes.
+
+---
+
 ### `compute_checksum`
 
 ```python
@@ -225,7 +259,40 @@ Skips `INDEX.md`, `manifest.json`, and `SUMMARY.md` themselves from the tree.
 write_summary(path: str, content: str) -> dict
 ```
 
-Write `content` (LLM-composed prose) to `SUMMARY.md` in the directory at `path`. The agent calls this after composing the summary narrative itself.
+Write `content` (LLM-composed prose) to the active output sink(s) declared in the profile's `[sinks] default` list. The agent calls this after composing the summary narrative itself.
+
+The built-in `local_markdown` sink persists the content as `SUMMARY.md` in the directory at `path`. External sinks are gated behind `EGRESS_ALLOW_EXTERNAL_SINKS` and are provided as separate MCP integrations — they are not built into this codebase.
+
+**Returns:** When a single sink is active, returns that sink's result dict directly. When multiple sinks are active, returns `{"sinks": [<result per sink>, ...]}`.
+
+**Safety category:** Gated execution (writes to disk and/or external destinations). Subject to `APPROVAL_MODE`.
+
+---
+
+### `write_folder_readme`
+
+```python
+write_folder_readme(path: str, content: str) -> dict
+```
+
+Write `content` (LLM-composed prose) to the active output sink(s) declared in the profile's `[sinks] default` list. Called once per meaningful folder during the SYNTHESIZE phase — the agent composes one or two paragraphs naming what the folder holds and its role in the organized tree, drawn from the documents recorded there.
+
+The built-in `local_markdown` sink writes to `README.md` inside the folder at `path`. Behaviour of the local sink:
+
+- Overwrites any existing `README.md` in the folder (idempotent re-runs safe)
+- Creates the folder and any missing parent directories if they do not exist
+- Skips empty or trivial folders — it is the agent's responsibility not to call this for them
+
+**Parameters:**
+
+| Name | Type | Description |
+|---|---|---|
+| `path` | str | Absolute path to the folder that should receive a `README.md` (for the local sink) |
+| `content` | str | Markdown prose composed by the LLM |
+
+**Returns:** When a single sink is active, returns that sink's result dict directly (`{written}` for `local_markdown`). When multiple sinks are active, returns `{"sinks": [<result per sink>, ...]}`.
+
+**Safety category:** Gated execution (writes to disk and/or external destinations). Subject to `APPROVAL_MODE`.
 
 ---
 
@@ -519,22 +586,35 @@ update_file(path: str, content: str) -> dict   # overwrites or creates
 
 Write text content to disk. `create_file` enforces `check_no_overwrite`; `update_file` does not.
 
+### `create_dir`
+
+```python
+create_dir(path: str) -> dict
+```
+
+Create a directory and any missing parents. Idempotent and collision-safe: if the directory already exists it is returned without error. Raises `ValueError` if `path` already exists as a file.
+
+**Returns:** `{created, existed}` — `created` is the absolute path of the directory; `existed` is `true` if the directory was already present, `false` if it was newly created.
+
 ---
 
 ## Tool availability by version
 
-| Tool | v0.2 | v0.3 | v0.4 | v0.5 | v0.6 | v0.7 |
-|---|---|---|---|---|---|---|
-| `list_dir`, `read_file`, `extract_text` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `move_file`, `rename_file`, `create_file`, `update_file` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `compute_checksum` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `create_plan`, `get_plan`, `list_plans`, `approve_plan` | — | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `propose_rename`, `propose_move`, `propose_quarantine` | — | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `execute_plan`, `review_plan`, `undo_last` | — | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `record_document`, `get_document`, `list_documents` | — | — | ✓ | ✓ | ✓ | ✓ |
-| `get_registry`, `find_duplicates`, `find_modified_documents` | — | — | ✓ | ✓ | ✓ | ✓ |
-| `write_index`, `write_summary` | — | — | — | ✓ | ✓ | ✓ |
-| `create_event`, `list_events` | — | — | — | — | — | ✓ |
-| `build_graph`, `get_graph` | — | — | — | — | — | ✓ |
-| `get_actors` | — | — | — | — | — | ✓ |
-| `archive_document`, `list_archived` | — | — | — | — | — | ✓ |
+| Tool | v0.2 | v0.3 | v0.4 | v0.5 | v0.6 | v0.7 | v0.8 |
+|---|---|---|---|---|---|---|---|
+| `list_dir`, `read_file`, `extract_text` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `compare_documents` | — | — | — | — | — | — | ✓ |
+| `move_file`, `rename_file`, `create_file`, `update_file` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `create_dir` | — | — | — | — | — | — | ✓ |
+| `compute_checksum` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `create_plan`, `get_plan`, `list_plans`, `approve_plan` | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `propose_rename`, `propose_move`, `propose_quarantine` | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `execute_plan`, `review_plan`, `undo_last` | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `record_document`, `get_document`, `list_documents` | — | — | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `get_registry`, `find_duplicates`, `find_modified_documents` | — | — | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `write_index`, `write_summary` | — | — | — | ✓ | ✓ | ✓ | ✓ |
+| `write_folder_readme` | — | — | — | — | — | — | ✓ |
+| `create_event`, `list_events` | — | — | — | — | — | ✓ | ✓ |
+| `build_graph`, `get_graph` | — | — | — | — | — | ✓ | ✓ |
+| `get_actors` | — | — | — | — | — | ✓ | ✓ |
+| `archive_document`, `list_archived` | — | — | — | — | — | ✓ | ✓ |

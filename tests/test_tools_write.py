@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pathlib import Path
 
-from server.tools import move_file, rename_file, create_file, update_file
+from server.tools import create_dir, move_file, rename_file, create_file, update_file
 
 
 class TestMoveFile:
@@ -98,3 +98,30 @@ class TestUpdateFile:
         p = tmp_path / "nested" / "file.txt"
         update_file(str(p), "nested content")
         assert p.read_text() == "nested content"
+
+
+class TestCreateDir:
+    def test_creates_new_dir(self, tmp_path: Path) -> None:
+        p = tmp_path / "decisions"
+        result = create_dir(str(p))
+        assert p.is_dir()
+        assert result == {"created": str(p), "existed": False}
+
+    def test_creates_parents_recursively(self, tmp_path: Path) -> None:
+        p = tmp_path / "a" / "b" / "c"
+        result = create_dir(str(p))
+        assert p.is_dir()
+        assert result["existed"] is False
+
+    def test_idempotent_on_existing_dir(self, tmp_path: Path) -> None:
+        p = tmp_path / "docs"
+        p.mkdir()
+        result = create_dir(str(p))
+        assert p.is_dir()
+        assert result == {"created": str(p), "existed": True}
+
+    def test_raises_if_path_is_a_file(self, tmp_path: Path) -> None:
+        p = tmp_path / "file.txt"
+        p.write_text("x")
+        with pytest.raises(ValueError, match="is a file"):
+            create_dir(str(p))
