@@ -1,4 +1,4 @@
-﻿# Plan Lifecycle (v0.3.0)
+# Plan Lifecycle (v0.3.0)
 
 Design document for the plan + journal system that enables stateful, reversible operations across multiple concurrent sessions.
 
@@ -174,18 +174,6 @@ Propose moving a file to a different directory.
 3. Append the operation to the plan.
 4. Write the plan file.
 
-**Output:**
-```json
-{
-  "plan_id": "uuid-12345-abcde",
-  "op_id": 1,
-  "op_type": "move",
-  "src": "C:\\Users\\user\\folder\\file.docx",
-  "dest_dir": "C:\\Users\\user\\folder\\Documents",
-  "status": "pending"
-}
-```
-
 ### propose_quarantine(path: str) -> dict
 
 Propose moving a file to the quarantine directory.
@@ -199,18 +187,6 @@ Propose moving a file to the quarantine directory.
 3. Append the operation to the plan.
 4. Write the plan file.
 
-**Output:**
-```json
-{
-  "plan_id": "uuid-12345-abcde",
-  "op_id": 2,
-  "op_type": "quarantine",
-  "src": "C:\\Users\\user\\folder\\junk.tmp",
-  "quarantine_path": "C:\\Users\\user\\folder\\_quarantine\\junk.tmp",
-  "status": "pending"
-}
-```
-
 ## Reviewing a Plan
 
 ### review_plan(plan_id: str) -> dict
@@ -219,28 +195,9 @@ Scan a plan for issues without modifying it.
 
 **Processing:**
 1. Load the plan file for plan_id.
-2. Scan all operations for duplicate (src, op_type) pairs (e.g., two renames on the same file, or rename followed by move on the same file). Flag these as conflicts.
+2. Scan all operations for duplicate (src, op_type) pairs. Flag these as conflicts.
 3. Validate that all source files still exist.
 4. Return a report.
-
-**Output:**
-```json
-{
-  "plan_id": "uuid-12345-abcde",
-  "issues": [
-    {
-      "severity": "warning",
-      "message": "Duplicate operation detected",
-      "ops": [0, 2],
-      "details": "Operations 0 and 2 both target src 'C:\\Users\\user\\folder\\file.txt' with op_type 'rename'"
-    }
-  ],
-  "valid": true,
-  "ready_to_execute": true
-}
-```
-
-If all operations pass, valid is true and ready_to_execute is true. If issues exist, ready_to_execute is false and the user should resolve them or revise the plan.
 
 ## Executing a Plan
 
@@ -255,48 +212,11 @@ Apply all operations in an approved plan. Must be in approved state.
 4. For each operation in the plan (in order):
    a. Attempt to execute it (rename, move, or quarantine).
    b. On success: update operation status to done, append a journal entry, update plan file.
-   c. On failure: retry up to 2 times with exponential backoff. After 2 failed retries, mark operation status as failed, log the failure, and continue.
+   c. On failure: retry up to 2 times. After 2 failed retries, mark operation status as failed and continue.
 5. After all operations:
-   a. Count failed operations.
-   b. If failed count > 3, transition plan state to stopped, append a hard_stop journal entry with full context, and return early.
-   c. Otherwise, transition plan state to done and write to disk.
+   a. If failed count > 3, transition plan state to stopped, append a hard_stop journal entry.
+   b. Otherwise, transition plan state to done and write to disk.
 6. Return a summary.
-
-**Output (success):**
-```json
-{
-  "plan_id": "uuid-12345-abcde",
-  "state": "done",
-  "total_ops": 3,
-  "successful": 3,
-  "failed": 0,
-  "summary": "All operations completed successfully"
-}
-```
-
-**Output (hard stop):**
-```json
-{
-  "plan_id": "uuid-12345-abcde",
-  "state": "stopped",
-  "total_ops": 5,
-  "successful": 2,
-  "failed": 5,
-  "summary": "More than 3 operations failed. Plan stopped.",
-  "failures": [
-    {
-      "op_id": 1,
-      "op_type": "move",
-      "error": "PermissionError: Permission denied"
-    },
-    {
-      "op_id": 3,
-      "op_type": "rename",
-      "error": "FileNotFoundError: File not found"
-    }
-  ]
-}
-```
 
 ## Undoing Operations
 
@@ -307,28 +227,18 @@ Revert the most recent journaled operation.
 **Processing:**
 1. Load the journal.
 2. Call last() to read the most recent entry without removing it. If empty, return an error.
-3. If the entry is a hard_stop, skip it (hard stops are system state, not reversible operations) and read the previous operation.
+3. If the entry is a hard_stop, skip it and return a note.
 4. Invert the operation:
-   - **rename**: call rename_file with src set to the current location (same as src in the journal) and new_name set to the original name extracted from the journal.
-   - **move**: call move_file with src set to final_path (the destination) and dest_dir set to the original directory (extracted from the original src path).
-   - **quarantine**: call move_file with src set to quarantine_path and dest_dir set to the original parent directory of the file.
+   - **rename**: rename back to original name
+   - **move**: move back to original directory
+   - **quarantine**: move back from quarantine path to original path
 5. On success, call pop_last() to remove the entry from the journal.
 6. Return the inverted operation.
 
 **Edge cases:**
-- If the original file no longer exists at the expected location, raise an error with a message suggesting manual recovery.
+- If the original file no longer exists at the expected location, return an error.
 - If the destination of the undo operation already exists, raise FileExistsError and do not remove the journal entry.
 - Hard stops are skipped and never undone; the user must manually assess the situation.
-
-**Output:**
-```json
-{
-  "reversed": true,
-  "op_type": "rename",
-  "original_src": "C:\\Users\\user\\folder\\new_name.txt",
-  "reverted_to": "C:\\Users\\user\\folder\\old_name.txt"
-}
-```
 
 ## Journal Module
 
