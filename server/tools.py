@@ -678,3 +678,9 @@ def build_graph(registry_path: Path, events_path: Path, graph_path: Path) -> dic
 def get_graph(graph_path: Path) -> dict:
     """Return the persisted knowledge graph as {nodes, edges}; empty if never built."""
     return _graph.load(graph_path).to_dict()
+
+
+def get_actors(graph_path: Path, salient_cap: int) -> list[dict]:
+    """Return the project's main actors — top entities ranked from the persisted
+    graph, capped at ``salient_cap``. Build the graph first (build_graph)."""
+    return _graph.rank_actors(_graph.load(graph_path), salient_cap)

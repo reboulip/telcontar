@@ -129,6 +129,59 @@ def build(registry: _registry.Registry, events: list[_events.Event]) -> Graph:
     return Graph(nodes=nodes, edges=edges)
 
 
+def rank_actors(graph: Graph, cap: int) -> list[dict]:
+    """Rank entity nodes by how central they are to the corpus, capped at ``cap``.
+
+    Centrality is, in order: the number of documents referencing the entity
+    (primary), the total co-occurrence weight, then the event-mention count.
+    Ties break deterministically on the lowercased name. ``cap <= 0`` means no
+    limit. Each actor carries its component scores for transparency.
+    """
+    doc_count: dict[str, int] = defaultdict(int)
+    mention_count: dict[str, int] = defaultdict(int)
+    cooc_weight: dict[str, int] = defaultdict(int)
+
+    for e in graph.edges:
+        etype = e.get("type")
+        src = e.get("src", "")
+        dst = e.get("dst", "")
+        if etype == "co_occurrence":
+            weight = e.get("weight", 1)
+            cooc_weight[src] += weight
+            cooc_weight[dst] += weight
+        elif etype == "mentions" and src.startswith("event:"):
+            mention_count[dst] += 1
+        elif src.startswith("doc:"):
+            doc_count[dst] += 1
+
+    actors: list[dict] = []
+    for n in graph.nodes:
+        if n.get("kind") != "entity":
+            continue
+        eid = n["id"]
+        actors.append(
+            {
+                "id": eid,
+                "name": n.get("name", ""),
+                "entity_kind": n.get("entity_kind", ""),
+                "roles": list(n.get("roles", [])),
+                "document_count": doc_count.get(eid, 0),
+                "cooccurrence_weight": cooc_weight.get(eid, 0),
+                "mention_count": mention_count.get(eid, 0),
+            }
+        )
+
+    actors.sort(
+        key=lambda a: (
+            -a["document_count"],
+            -a["cooccurrence_weight"],
+            -a["mention_count"],
+            a["name"].lower(),
+        )
+    )
+    return actors[:cap] if cap and cap > 0 else actors
+
+
 def load(graph_path: Path) -> Graph:
     """Load the persisted graph; returns an empty Graph if the file is absent."""
     if not graph_path.is_file():

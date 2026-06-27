@@ -59,7 +59,7 @@ salient_cap = 5
 |---|---|---|---|
 | `kinds` | list of strings | `["person", "org"]` | Allowed values for the `kind` field in entity records. Not validated server-side but injected into the system prompt. |
 | `role_taxonomy` | list of strings | `[]` | Allowed `role` values in entity records. **Validated server-side** in `record_document` — an entity with a role not in this list raises `ValueError`. |
-| `salient_cap` | int | `5` | The maximum number of "key actors" the agent surfaces in the synthesis. Injected as a prompt instruction, not enforced. |
+| `salient_cap` | int | `5` | The maximum number of key actors returned by `get_actors` (hard cap in the tool) and surfaced in the synthesis (injected as a prompt instruction). A value of `0` or negative disables the cap and returns all actors. |
 
 ---
 

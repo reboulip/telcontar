@@ -56,7 +56,7 @@ Apply these rules in order (first match wins):
 | `server/tools.py` review_plan only | `tests/test_review_plan.py` |
 | `server/tools.py` registry tools only (record_document/get_registry/list_documents/get_document/find_duplicates/find_modified_documents) | `tests/test_tools_registry.py` |
 | `server/tools.py` event tools only (create_event/list_events) | `tests/test_events.py` |
-| `server/tools.py` graph tools only (build_graph/get_graph) | `tests/test_graph.py` |
+| `server/tools.py` graph tools only (build_graph/get_graph/get_actors) | `tests/test_graph.py` |
 | Multiple files in `server/` | Full `tests/` suite |
 | `host/agent.py` only | `tests/test_host.py tests/test_tools_outputs.py` |
 | Any file in `host/` | `tests/test_host.py tests/test_tools_outputs.py` |

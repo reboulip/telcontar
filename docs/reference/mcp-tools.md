@@ -414,6 +414,36 @@ Return the most recently persisted graph without rebuilding it. Returns `{nodes:
 
 ---
 
+### `get_actors`
+
+```python
+get_actors() -> list[dict]
+```
+
+Return the project's main actors — entity nodes ranked by centrality, capped at the active profile's `salient_cap`. `build_graph` must be called first; if no graph has been persisted the list is empty.
+
+**Ranking criteria** (applied in order, all ties break deterministically on lowercased name):
+
+1. Number of documents referencing the entity (`document_count`) — primary signal
+2. Total co-occurrence weight across all shared-document entity pairs (`cooccurrence_weight`)
+3. Number of event sentences containing the entity's normalized name (`mention_count`)
+
+**Returns:** list of actor dicts, most central first:
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | str | Node id (`entity:{normalized_name}`) |
+| `name` | str | Display name as recorded in the registry |
+| `entity_kind` | str | `"person"` or `"org"` (profile-defined) |
+| `roles` | list[str] | Union of all roles this entity appears under across documents |
+| `document_count` | int | Number of documents that reference this entity |
+| `cooccurrence_weight` | int | Sum of co-occurrence edge weights involving this entity |
+| `mention_count` | int | Number of event sentences that contain the entity's normalized name |
+
+The list is capped at `salient_cap` from the active profile (`[entities]` section). A `salient_cap` of `0` or negative returns all actors without a cap.
+
+---
+
 ## Direct file utilities
 
 Lower-level tools used for writing index/summary files. Not normally called directly by the agent.
@@ -453,3 +483,4 @@ Write text content to disk. `create_file` enforces `check_no_overwrite`; `update
 | `write_index`, `write_summary` | — | — | — | ✓ | ✓ | ✓ |
 | `create_event`, `list_events` | — | — | — | — | — | ✓ |
 | `build_graph`, `get_graph` | — | — | — | — | — | ✓ |
+| `get_actors` | — | — | — | — | — | ✓ |

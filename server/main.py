@@ -302,5 +302,13 @@ def get_graph() -> dict:
     return tools.get_graph(cfg.graph_path)
 
 
+@mcp.tool()
+def get_actors() -> list:
+    """Return the project's main actors — top entities ranked from the knowledge
+    graph, capped at the active profile's salient_cap. Build the graph first."""
+    cfg = _get_settings()
+    return tools.get_actors(cfg.graph_path, _get_profile().salient_cap)
+
+
 def main() -> None:
     mcp.run(transport="stdio")

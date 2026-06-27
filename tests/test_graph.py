@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 
 from server.events import Event
-from server.graph import Graph, build, load, save
+from server.graph import Graph, build, load, rank_actors, save
 from server.registry import DocumentRecord, Registry
-from server.tools import build_graph, get_graph
+from server.tools import build_graph, get_actors, get_graph
 
 
 def _reg(*records: DocumentRecord) -> Registry:
@@ -161,6 +161,76 @@ def test_load_missing_returns_empty(tmp_path: Path) -> None:
     assert load(tmp_path / "nope.json").to_dict() == {"nodes": [], "edges": []}
 
 
+# --- actors (H3) ------------------------------------------------------------
+
+
+def _author(name: str) -> dict:
+    return {"name": name, "role": "author", "kind": "person"}
+
+
+class TestRankActors:
+    def test_empty_graph_no_actors(self) -> None:
+        assert rank_actors(build(_reg(), []), 5) == []
+
+    def test_ranked_by_document_count(self) -> None:
+        g = build(
+            _reg(
+                _doc("c1", "A", entities=[_author("Alice")]),
+                _doc("c2", "B", entities=[_author("Alice")]),
+                _doc("c3", "C", entities=[_author("Bob")]),
+            ),
+            [],
+        )
+        actors = rank_actors(g, 5)
+        assert [a["name"] for a in actors] == ["Alice", "Bob"]
+        assert actors[0]["document_count"] == 2
+        assert actors[1]["document_count"] == 1
+
+    def test_cap_limits_results(self) -> None:
+        reg = _reg(*[_doc(f"c{i}", f"T{i}", entities=[_author(f"P{i}")]) for i in range(8)])
+        actors = rank_actors(build(reg, []), 3)
+        assert len(actors) == 3
+
+    def test_cap_zero_means_no_limit(self) -> None:
+        reg = _reg(*[_doc(f"c{i}", f"T{i}", entities=[_author(f"P{i}")]) for i in range(8)])
+        assert len(rank_actors(build(reg, []), 0)) == 8
+
+    def test_deterministic_name_tiebreak(self) -> None:
+        # equal document_count → ranked by lowercased name
+        g = build(
+            _reg(
+                _doc("c1", "A", entities=[_author("Zoe")]),
+                _doc("c2", "B", entities=[_author("Amir")]),
+            ),
+            [],
+        )
+        assert [a["name"] for a in rank_actors(g, 5)] == ["Amir", "Zoe"]
+
+    def test_cooccurrence_breaks_doc_count_tie(self) -> None:
+        # Bob and Carol each referenced by 2 docs; Bob also co-occurs with Alice.
+        g = build(
+            _reg(
+                _doc("c1", "A", entities=[_author("Bob"), _author("Alice")]),
+                _doc("c2", "B", entities=[_author("Bob"), _author("Alice")]),
+                _doc("c3", "C", entities=[_author("Carol")]),
+                _doc("c4", "D", entities=[_author("Carol")]),
+            ),
+            [],
+        )
+        actors = {a["name"]: a for a in rank_actors(g, 10)}
+        # Bob (doc=2, cooc>0) outranks Carol (doc=2, cooc=0)
+        names = [a["name"] for a in rank_actors(g, 10)]
+        assert names.index("Bob") < names.index("Carol")
+        assert actors["Bob"]["cooccurrence_weight"] == 2
+
+    def test_event_mentions_counted(self) -> None:
+        g = build(
+            _reg(_doc("c1", "A", entities=[_author("Alice")])),
+            [Event.new("Alice a validé", "2024-01-01")],
+        )
+        assert rank_actors(g, 5)[0]["mention_count"] == 1
+
+
 # --- tool wrappers ----------------------------------------------------------
 
 
@@ -190,3 +260,23 @@ class TestGraphTools:
 
     def test_get_graph_empty_when_never_built(self, tmp_path: Path) -> None:
         assert get_graph(tmp_path / "graph.json") == {"nodes": [], "edges": []}
+
+    def test_get_actors_reads_persisted_graph(self, paths: tuple[Path, Path, Path]) -> None:
+        reg_path, events_path, graph_path = paths
+        build_graph(reg_path, events_path, graph_path)
+        actors = get_actors(graph_path, 5)
+        assert [a["name"] for a in actors] == ["Alice"]
+
+    def test_get_actors_respects_cap(self, tmp_path: Path) -> None:
+        from server import registry as _registry
+
+        reg_path = tmp_path / "registry.json"
+        events_path = tmp_path / "events.jsonl"
+        graph_path = tmp_path / "graph.json"
+        reg = _reg(*[_doc(f"c{i}", f"T{i}", entities=[_author(f"P{i}")]) for i in range(6)])
+        _registry.save(reg, reg_path)
+        build_graph(reg_path, events_path, graph_path)
+        assert len(get_actors(graph_path, 2)) == 2
+
+    def test_get_actors_empty_when_no_graph(self, tmp_path: Path) -> None:
+        assert get_actors(tmp_path / "graph.json", 5) == []
