@@ -52,6 +52,12 @@ Read `ROADMAP.md`. The active milestone is the **first** `## vX.X.X` section con
 - The milestone label (e.g. `v0.1.0`).
 - The ordered list of unchecked items: label (A1, A2, …), title, full item text.
 
+**Deferred items are out of scope by default.** Any unchecked item whose text is
+tagged `[deferred]` or `[deferred/hard]` is NOT part of the sprint scope unless
+the user explicitly asks for it. In Step 0, list the in-scope (non-deferred) items
+and surface the deferred ones separately via `AskUserQuestion`, letting the user
+opt them in. Never silently implement a deferred item.
+
 If no unchecked items remain in any section, report sprint complete and skip to Step 6.
 
 ---
@@ -146,7 +152,21 @@ After item[0] is committed:
 
 When the last item is committed:
 
-**7a — Divergence check (do this BEFORE merging).** A squash-merge assumes the
+**7a — Format gate (do this BEFORE merging).** The `develop`→`main` PR has a
+`ruff format --check .` CI gate, so any format drift anywhere in the repo (even in
+files this sprint did not touch) will block that PR. Catch it now while on the
+feature branch:
+
+```bash
+uv run ruff format --check .
+```
+
+If it reports files that "would be reformatted," run `uv run ruff format .` to fix
+them, then re-run `--check` to confirm clean. Commit the formatting fix as its own
+commit via `repo-manager` (message: `chore: ruff format`) so it merges with the
+sprint. Then proceed to the divergence check.
+
+**7b — Divergence check (do this BEFORE merging).** A squash-merge assumes the
 branch contains only this sprint's own commits. Verify that first:
 
 ```
@@ -167,7 +187,7 @@ commits while preserving the foreign commit, vs. squash everything). Only when
 the branch is exactly the sprint's own commits should you proceed straight to a
 squash.
 
-**7b — Merge.** Per the chosen strategy (squash is the default for a clean
+**7c — Merge.** Per the chosen strategy (squash is the default for a clean
 sprint-only branch):
 
 ```
