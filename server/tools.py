@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
+import zipfile
 from pathlib import Path
 
+from server import archive as _archive
+from server import events as _events
+from server import graph as _graph
 from server import plan as _plan
 from server import registry as _registry
 from server.extract import extract as _extract
@@ -65,6 +70,41 @@ def extract_text(path: str, max_chars: int) -> str:
     return _extract(p, max_chars)
 
 
+def compare_documents(path_a: str, path_b: str, max_chars: int) -> dict:
+    """Extract text from two files and return a unified diff between them.
+
+    Reuses the markitdown/pypdf extraction path, so it works on PDF/Office as
+    well as plain text. Each side is truncated to ``max_chars`` before diffing,
+    so the diff reflects only the extracted (possibly truncated) text — handy for
+    comparing successive versions (e.g. two COPIL slide decks). ``identical`` is
+    True when the extracted texts match exactly.
+    """
+    import difflib
+
+    pa, pb = Path(path_a), Path(path_b)
+    if not pa.is_file():
+        raise ValueError(f"Not a file: {path_a}")
+    if not pb.is_file():
+        raise ValueError(f"Not a file: {path_b}")
+    text_a = _extract(pa, max_chars)
+    text_b = _extract(pb, max_chars)
+    diff = "\n".join(
+        difflib.unified_diff(
+            text_a.splitlines(),
+            text_b.splitlines(),
+            fromfile=path_a,
+            tofile=path_b,
+            lineterm="",
+        )
+    )
+    return {
+        "path_a": str(pa),
+        "path_b": str(pb),
+        "identical": text_a == text_b,
+        "diff": diff,
+    }
+
+
 def compute_checksum(path: str) -> dict:
     """Compute the sha256 checksum of a file (chunk-streamed) as its unique id."""
     p = Path(path)
@@ -117,6 +157,21 @@ def update_file(path: str, content: str) -> dict:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content, encoding="utf-8")
     return {"updated": str(p)}
+
+
+def create_dir(path: str) -> dict:
+    """Create a directory (and any parents); idempotent if it already exists.
+
+    Collision-safe by construction: an existing directory is returned as-is
+    rather than raising, so the op can be re-run. Raises if ``path`` already
+    exists as a file (not a directory).
+    """
+    p = Path(path)
+    if p.is_file():
+        raise ValueError(f"Path exists and is a file, not a directory: {path}")
+    existed = p.is_dir()
+    p.mkdir(parents=True, exist_ok=True)
+    return {"created": str(p), "existed": existed}
 
 
 # ── Plan management ──────────────────────────────────────────────────────────
@@ -504,6 +559,19 @@ def write_summary(target_dir: str, content: str) -> dict:
     return {"written": str(p)}
 
 
+def write_folder_readme(folder: str, content: str) -> dict:
+    """Write LLM-composed prose to README.md inside a folder of the arborescence.
+
+    Thin sink, like ``write_summary``: the host composes a short description of
+    what the folder holds and its role in the organized tree; this just persists
+    it. Overwrites any existing README and creates the folder if needed.
+    """
+    p = Path(folder) / "README.md"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(content, encoding="utf-8")
+    return {"written": str(p)}
+
+
 def undo_last(journal_path: Path, plans_dir: Path) -> dict:
     """Revert the most recent journaled op; only removes the entry on success."""
     from server import journal as _journal
@@ -520,6 +588,9 @@ def undo_last(journal_path: Path, plans_dir: Path) -> dict:
             "undone": "hard_stop",
             "note": "Hard-stop entry removed; failed ops were never executed",
         }
+
+    if op_type == "compress":
+        return _undo_compress(entry, journal_path)
 
     src = entry["src"]
     dst = entry["dst"]
@@ -538,6 +609,154 @@ def undo_last(journal_path: Path, plans_dir: Path) -> dict:
         else:
             return {"undone": None, "error": f"Unknown op_type: {op_type!r}"}
     except (FileNotFoundError, FileExistsError, OSError) as exc:
+        return {"undone": None, "error": str(exc)}
+
+    _journal.pop_last(journal_path)
+    return {"undone": entry}
+
+
+# ── Quarantine compression ────────────────────────────────────────────────────
+
+_MANIFEST_NAME = "_telcontar_manifest.json"
+
+
+def _sha256_file(path: Path) -> str:
+    """Stream a file through sha256, returning its hex digest."""
+    h = hashlib.sha256()
+    with Path(path).open("rb") as fh:
+        for chunk in iter(lambda: fh.read(_CHECKSUM_CHUNK), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _safe_archive_path(directory: Path, name: str) -> Path:
+    """Return a non-colliding path for ``name`` inside ``directory`` — never clobber."""
+    dest = directory / name
+    if not dest.exists():
+        return dest
+    stem, suffix = Path(name).stem, Path(name).suffix
+    counter = 1
+    while True:
+        candidate = directory / f"{stem}_{counter}{suffix}"
+        if not candidate.exists():
+            return candidate
+        counter += 1
+
+
+def _verify_archive(archive: Path, files_meta: list[dict]) -> None:
+    """Raise OSError unless every file in the archive matches its recorded checksum."""
+    with zipfile.ZipFile(archive, "r") as zf:
+        bad = zf.testzip()
+        if bad is not None:
+            raise OSError(f"Archive verification failed (CRC error) for {bad!r} in {archive}")
+        for f in files_meta:
+            if hashlib.sha256(zf.read(f["name"])).hexdigest() != f["sha256"]:
+                raise OSError(f"Archive verification failed: checksum mismatch for {f['name']!r}")
+
+
+def compress_quarantine(
+    quarantine_dir: Path,
+    journal_path: Path,
+    delete_originals: bool = True,
+) -> dict:
+    """Losslessly bundle loose quarantined files into a verified zip archive.
+
+    Collects every top-level regular file currently in ``quarantine_dir`` (skipping
+    archives this tool itself produced), writes them into a single ZIP_DEFLATED
+    archive together with a checksum manifest, and verifies the archive byte-for-byte
+    against the originals. Only once verification passes are the originals optionally
+    removed to reclaim space. The whole operation is journaled so ``undo_last`` can
+    restore every file and delete the archive. Nothing is deleted before the archive
+    is verified, and existing archives are never overwritten.
+
+    Idempotent: re-running with no new loose files is a no-op.
+    """
+    from datetime import datetime, timezone
+
+    from server import journal as _journal
+
+    qdir = Path(quarantine_dir)
+    if not qdir.is_dir():
+        return {"archive": None, "files": 0, "note": "Quarantine directory does not exist"}
+
+    sources = sorted(
+        p
+        for p in qdir.iterdir()
+        if p.is_file() and not (p.suffix == ".zip" and p.name.startswith("quarantine_"))
+    )
+    if not sources:
+        return {"archive": None, "files": 0, "note": "No loose files to compress"}
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    archive = _safe_archive_path(qdir, f"quarantine_{stamp}.zip")
+
+    files_meta = [
+        {"name": src.name, "src": str(src), "sha256": _sha256_file(src), "size": src.stat().st_size}
+        for src in sources
+    ]
+    manifest = {f["name"]: {"src": f["src"], "sha256": f["sha256"]} for f in files_meta}
+
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for f in files_meta:
+            zf.write(f["src"], arcname=f["name"])
+        zf.writestr(_MANIFEST_NAME, json.dumps(manifest, ensure_ascii=False, indent=2))
+
+    # Verify before deleting anything — bail out leaving originals untouched on failure.
+    _verify_archive(archive, files_meta)
+
+    deleted = False
+    if delete_originals:
+        for f in files_meta:
+            Path(f["src"]).unlink()
+        deleted = True
+
+    _journal.append(
+        journal_path,
+        {
+            "op_type": "compress",
+            "archive": str(archive),
+            "quarantine_dir": str(qdir),
+            "files": files_meta,
+            "deleted_originals": deleted,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+
+    original_bytes = sum(f["size"] for f in files_meta)
+    return {
+        "archive": str(archive),
+        "files": len(files_meta),
+        "original_bytes": original_bytes,
+        "compressed_bytes": archive.stat().st_size,
+        "deleted_originals": deleted,
+        "verified": True,
+    }
+
+
+def _undo_compress(entry: dict, journal_path: Path) -> dict:
+    """Reverse a ``compress`` op: restore originals from the archive, drop the zip."""
+    from server import journal as _journal
+
+    archive = Path(entry["archive"])
+    files = entry.get("files", [])
+    deleted = entry.get("deleted_originals", False)
+
+    try:
+        if deleted:
+            if not archive.is_file():
+                return {"undone": None, "error": f"Archive missing, cannot restore: {archive}"}
+            # Pre-check every target so a mid-way collision can't half-restore.
+            for f in files:
+                check_no_overwrite(Path(f["src"]))
+            with zipfile.ZipFile(archive, "r") as zf:
+                for f in files:
+                    target = Path(f["src"])
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with zf.open(f["name"]) as srcf, target.open("wb") as out:
+                        shutil.copyfileobj(srcf, out)
+        if archive.is_file():
+            archive.unlink()
+    except (FileNotFoundError, FileExistsError, OSError, KeyError) as exc:
         return {"undone": None, "error": str(exc)}
 
     _journal.pop_last(journal_path)
@@ -631,3 +850,128 @@ def find_modified_documents(registry_path: Path) -> list[list[dict]]:
     """Return groups sharing a title but differing in content (modified docs)."""
     reg = _registry.load(registry_path)
     return [[r.to_dict() for r in group] for group in reg.find_modified()]
+
+
+# ── Project event journal ──────────────────────────────────────────────────────
+
+
+def create_event(sentence: str, date: str | None, events_path: Path) -> dict:
+    """Append a verb-led, dated event to the project event journal.
+
+    Distinct from the undo journal: this records project narrative (what happened
+    and when), not reversible file operations. ``sentence`` should be a short,
+    verb-led statement; ``date`` is the ISO YYYY-MM-DD the event occurred (null
+    if unknown).
+    """
+    text = (sentence or "").strip()
+    if not text:
+        raise ValueError("Event sentence must be a non-empty string")
+    ev = _events.Event.new(sentence=text, date=date)
+    _events.append(events_path, ev)
+    return ev.to_dict()
+
+
+def list_events(events_path: Path) -> list[dict]:
+    """Return all recorded project events in chronological order."""
+    return [e.to_dict() for e in _events.all_events(events_path)]
+
+
+# ── Knowledge graph ────────────────────────────────────────────────────────────
+
+
+def build_graph(registry_path: Path, events_path: Path, graph_path: Path) -> dict:
+    """Rebuild the knowledge graph from the registry + event journal and persist it.
+
+    Pure projection: the result depends only on the current registry and events,
+    so it can be regenerated at any time. Returns the graph as {nodes, edges}.
+    """
+    reg = _registry.load(registry_path)
+    evs = _events.all_events(events_path)
+    g = _graph.build(reg, evs)
+    _graph.save(g, graph_path)
+    return g.to_dict()
+
+
+def get_graph(graph_path: Path) -> dict:
+    """Return the persisted knowledge graph as {nodes, edges}; empty if never built."""
+    return _graph.load(graph_path).to_dict()
+
+
+def get_actors(graph_path: Path, salient_cap: int) -> list[dict]:
+    """Return the project's main actors — top entities ranked from the persisted
+    graph, capped at ``salient_cap``. Build the graph first (build_graph)."""
+    return _graph.rank_actors(_graph.load(graph_path), salient_cap)
+
+
+# ── Archived-documents journal ──────────────────────────────────────────────────
+
+
+def archive_document(
+    checksum: str,
+    reason: str,
+    registry_path: Path,
+    quarantine_dir: Path,
+    journal_path: Path,
+    archive_path: Path,
+) -> dict:
+    """Withdraw a document from active memory ("retirer de la mémoire").
+
+    Flips the registry record's status to ``archived``, moves its file to the
+    quarantine dir (collision-safe, recorded in the undo journal so it stays
+    reversible via ``undo_last``), and appends an entry to the archive log. The
+    document is never deleted. If the file is already gone, the status flip and
+    log entry still happen (no move). Raises if the checksum is not recorded.
+    """
+    from datetime import datetime, timezone
+    from server import journal as _journal
+
+    reg = _registry.load(registry_path)
+    rec = reg.get(checksum)
+    if rec is None:
+        raise ValueError(f"No document recorded for checksum {checksum!r}")
+
+    original_path = rec.path
+    src = Path(original_path)
+    moved_dst: str | None = None
+
+    if src.is_file():
+        quarantine_dir.mkdir(parents=True, exist_ok=True)
+        dest = safe_quarantine_path(src, quarantine_dir)
+        check_no_overwrite(dest)
+        shutil.move(str(src), str(dest))
+        moved_dst = str(dest)
+        _journal.append(
+            journal_path,
+            {
+                "op_type": "quarantine",
+                "src": original_path,
+                "dst": moved_dst,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "reason": "archive_document",
+            },
+        )
+        rec.path = moved_dst
+
+    reg.set_status(checksum, "archived")
+    _registry.save(reg, registry_path)
+
+    entry = _archive.ArchiveEntry.new(
+        checksum=checksum,
+        title=rec.title,
+        reason=reason or "",
+        src=original_path,
+        dst=moved_dst,
+    )
+    _archive.append(archive_path, entry)
+
+    return {
+        "checksum": checksum,
+        "status": "archived",
+        "moved": moved_dst,
+        "archived": entry.to_dict(),
+    }
+
+
+def list_archived(archive_path: Path) -> list[dict]:
+    """Return all archived-document log entries in chronological order."""
+    return _archive.all_entries(archive_path)

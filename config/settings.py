@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     approval_mode: Literal["always", "destructive_only", "never"] = "always"
     quarantine_dir: Path = Path("_quarantine")
     journal_path: Path = Path(".organizer/journal.jsonl")
+    events_path: Path = Path(".organizer/events.jsonl")
     plans_dir: Path = Path(".organizer/plans")
 
     # Domain profile — adapts the engine to a kind of document corpus
@@ -32,11 +33,18 @@ class Settings(BaseSettings):
 
     # Document memory — persistent, content-addressed registry
     registry_path: Path = Path(".organizer/registry.json")
+    # Knowledge graph — derived projection of the registry + event journal
+    graph_path: Path = Path(".organizer/graph.json")
+    # Archived-documents journal — log of documents withdrawn from active memory
+    archive_path: Path = Path(".organizer/archive.jsonl")
 
     # Egress / extraction
     max_snippet_chars: int = 4000
     # JSON array of absolute paths, e.g. '["C:/Users/me/docs"]'. Empty = no restriction.
     allowlist_dirs: list[Path] = Field(default_factory=list)
+    # Gate for non-local output sinks (e.g. a MediaWiki MCP integration). Built-in
+    # local_markdown is always allowed; external sinks require this flag = True.
+    egress_allow_external_sinks: bool = False
 
 
 def load() -> Settings:

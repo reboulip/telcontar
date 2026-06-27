@@ -74,30 +74,30 @@ Turn the file-organizer into a profile-driven document-intelligence engine: pers
 ## v0.7.0 — Entity graph + project narrative
 
 - [x] H0 · chore: repo-wide `ruff format` — run `ruff format .` so CI's `ruff format --check .` gate passes (currently ~27/32 files are non-compliant, so the next develop→main PR would fail). Do this FIRST, as its own standalone commit, before any v0.7.0 feature work.
-- [ ] H1 · Event journal — `events.jsonl` + `create_event(sentence, date)` (verb-led, dated); distinct from the undo journal
-- [ ] H2 · Entity / knowledge graph — `server/graph.py`: project registry + events into nodes/edges at `.organizer/graph.json` (derived, reproducible from the registry)
-- [ ] H3 · Actors — top entities ranked from the graph, capped at the profile's `salient_cap`
-- [ ] H4 · Project synthesis — enrich `write_summary` to compose the project markdown from registry + events + graph, per the profile's `[synthesis]` template
-- [ ] H5 · Archived-documents journal — archive log + registry `status` ("retirer de la mémoire")
+- [x] H1 · Event journal — `events.jsonl` + `create_event(sentence, date)` (verb-led, dated); distinct from the undo journal
+- [x] H2 · Entity / knowledge graph — `server/graph.py`: project registry + events into nodes/edges at `.organizer/graph.json` (derived, reproducible from the registry)
+- [x] H3 · Actors — top entities ranked from the graph, capped at the profile's `salient_cap`
+- [x] H4 · Project synthesis — enrich `write_summary` to compose the project markdown from registry + events + graph, per the profile's `[synthesis]` template
+- [x] H5 · Archived-documents journal — archive log + registry `status` ("retirer de la mémoire")
 
 ---
 
 ## v0.8.0 — Organization, tree & output sinks
 
-- [ ] I1 · `create_dir` — collision-safe directory creation
-- [ ] I2 · Folder README writer — per-folder README of the arborescence
-- [ ] I3 · Taxonomy classification — relevant-tree reasoning in the host prompt (reuses `propose_move` + `write_index`)
-- [ ] I4 · `compare_documents(a, b)` — extract both + diff (e.g. successive COPIL slides)
-- [ ] I5 · Output-sink abstraction — `Sink` protocol; `local_markdown` default built-in; MediaWiki sink plugin (re-admits the gandalf wiki) behind an explicit egress allow-flag
+- [x] I1 · `create_dir` — collision-safe directory creation
+- [x] I2 · Folder README writer — per-folder README of the arborescence
+- [x] I3 · Taxonomy classification — relevant-tree reasoning in the host prompt (reuses `propose_move` + `write_index`)
+- [x] I4 · `compare_documents(a, b)` — extract both + diff (e.g. successive COPIL slides)
+- [x] I5 · Output-sink abstraction — `Sink` protocol; `local_markdown` default built-in; MediaWiki sink plugin (re-admits the gandalf wiki) behind an explicit egress allow-flag
 
 ---
 
 ## v0.9.0 — Interactive query + generality
 
-- [ ] J1 · Interactive query mode — NL questions over the registry/graph in the Textual TUI ("charger un doc pour l'interroger", generalized to the whole corpus)
-- [ ] J2 · Second profile — author a second domain profile (e.g. research-papers or personal-files) purely as data, proving the engine is profile-driven, not IS-IT-shaped
+- [x] J1 · Interactive query mode — NL questions over the registry/graph in the Textual TUI ("charger un doc pour l'interroger", generalized to the whole corpus)
+- [x] J2 · Second profile — author a second domain profile (e.g. research-papers or personal-files) purely as data, proving the engine is profile-driven, not IS-IT-shaped
 - [ ] J3 · [deferred/hard] Read content of links inside attachments — revisit egress policy first
-- [ ] J4 · [deferred] Lossless compression of quarantined archives
+- [x] J4 · Lossless compression of quarantined archives
 
 ---
 

@@ -6,7 +6,7 @@ import hashlib
 import pytest
 from pathlib import Path
 
-from server.tools import compute_checksum, list_dir, read_file, extract_text
+from server.tools import compare_documents, compute_checksum, list_dir, read_file, extract_text
 
 
 class TestListDir:
@@ -135,3 +135,44 @@ class TestComputeChecksum:
     def test_raises_for_nonexistent(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="Not a file"):
             compute_checksum(str(tmp_path / "missing.txt"))
+
+
+class TestCompareDocuments:
+    def test_diff_shows_changes(self, tmp_path: Path) -> None:
+        a = tmp_path / "v1.txt"
+        b = tmp_path / "v2.txt"
+        a.write_text("line one\nline two\nline three\n")
+        b.write_text("line one\nline TWO changed\nline three\n")
+        result = compare_documents(str(a), str(b), 1000)
+        assert result["identical"] is False
+        assert "-line two" in result["diff"]
+        assert "+line TWO changed" in result["diff"]
+
+    def test_identical_files_empty_diff(self, tmp_path: Path) -> None:
+        a = tmp_path / "a.txt"
+        b = tmp_path / "b.txt"
+        a.write_text("same content\nsecond line\n")
+        b.write_text("same content\nsecond line\n")
+        result = compare_documents(str(a), str(b), 1000)
+        assert result["identical"] is True
+        assert result["diff"] == ""
+
+    def test_truncates_each_side(self, tmp_path: Path) -> None:
+        a = tmp_path / "big_a.txt"
+        b = tmp_path / "big_b.txt"
+        a.write_text("x" * 500)
+        b.write_text("y" * 500)
+        result = compare_documents(str(a), str(b), 10)
+        assert "[... content truncated ...]" in result["diff"]
+
+    def test_raises_if_first_missing(self, tmp_path: Path) -> None:
+        b = tmp_path / "b.txt"
+        b.write_text("x")
+        with pytest.raises(ValueError, match="Not a file"):
+            compare_documents(str(tmp_path / "missing.txt"), str(b), 100)
+
+    def test_raises_if_second_missing(self, tmp_path: Path) -> None:
+        a = tmp_path / "a.txt"
+        a.write_text("x")
+        with pytest.raises(ValueError, match="Not a file"):
+            compare_documents(str(a), str(tmp_path / "missing.txt"), 100)

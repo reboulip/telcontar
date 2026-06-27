@@ -8,7 +8,13 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 
-from host.agent import AgentEvent, ApprovalResult, _extract_content, run_agent_loop
+from host.agent import (
+    AgentEvent,
+    ApprovalResult,
+    _extract_content,
+    run_agent_loop,
+    run_query_loop,
+)
 
 # ── Mock builders ─────────────────────────────────────────────────────────────
 
@@ -351,6 +357,40 @@ def test_system_prompt_is_profile_driven() -> None:
     assert prompt.index("compute_checksum") < prompt.index("create_plan")
 
 
+def test_system_prompt_includes_taxonomy_classification() -> None:
+    from config.settings import load
+
+    from host.agent import _build_system_prompt
+
+    prompt = _build_system_prompt(_PROJECT_ROOT, load())
+
+    # the organize step now reasons about a target taxonomy and builds folders
+    assert "taxonomy" in prompt.lower()
+    assert "create_dir" in prompt
+    # classification reuses propose_move into the designed tree
+    assert "propose_move" in prompt
+    # the taxonomy is designed before the plan is staged
+    assert prompt.index("taxonomy") < prompt.index("create_plan")
+
+
+def test_system_prompt_includes_synthesis_template() -> None:
+    from config.settings import load
+
+    from host.agent import _build_system_prompt
+
+    prompt = _build_system_prompt(_PROJECT_ROOT, load())
+
+    # the profile's synthesis template is injected
+    assert "Project synthesis" in prompt
+    assert "Synthèse du projet" in prompt
+    # synthesis tools are referenced in the workflow
+    assert "build_graph" in prompt
+    assert "get_actors" in prompt
+    assert "create_event" in prompt
+    # synthesis comes after the organize step
+    assert prompt.index("create_plan") < prompt.index("Project synthesis")
+
+
 def test_system_prompt_falls_back_without_profile() -> None:
     from host.agent import _build_system_prompt
 
@@ -359,3 +399,137 @@ def test_system_prompt_falls_back_without_profile() -> None:
 
     assert "Never delete files" in prompt
     assert '"default" domain profile' in prompt
+
+
+# ── Query mode ──────────────────────────────────────────────────────────────
+
+
+async def test_query_loop_returns_answer_and_history(tmp_path: Path) -> None:
+    events: list[AgentEvent] = []
+    answer, history = await run_query_loop(
+        question="What is in the corpus?",
+        settings=_settings(tmp_path),
+        llm=_llm(_text_response("Three documents.")),
+        session=_session(["list_documents"], {}),
+        on_event=events.append,
+        project_root=tmp_path,
+    )
+    assert answer == "Three documents."
+    assert any(e.kind == "done" for e in events)
+    assert history[0]["role"] == "system"
+    assert any(
+        m.get("role") == "user" and m.get("content") == "What is in the corpus?" for m in history
+    )
+
+
+async def test_query_loop_forwards_readonly_tool(tmp_path: Path) -> None:
+    s = _session(["list_documents"], {"list_documents": [{"title": "X"}]})
+    await run_query_loop(
+        question="list docs",
+        settings=_settings(tmp_path),
+        llm=_llm(_tool_response("list_documents", {}), _text_response("Listed.")),
+        session=s,
+        on_event=lambda _: None,
+        project_root=tmp_path,
+    )
+    s.call_tool.assert_any_call("list_documents", {})
+
+
+async def test_query_loop_exposes_only_readonly_tools(tmp_path: Path) -> None:
+    captured: list[Any] = []
+
+    llm = AsyncMock()
+
+    async def _create(**kwargs: Any) -> Any:
+        captured.append(kwargs.get("tools"))
+        return _text_response("ok")
+
+    llm.chat.completions.create.side_effect = _create
+
+    s = _session(["list_documents", "execute_plan", "propose_move", "get_actors"], {})
+    await run_query_loop(
+        question="hi",
+        settings=_settings(tmp_path),
+        llm=llm,
+        session=s,
+        on_event=lambda _: None,
+        project_root=tmp_path,
+    )
+
+    names = {t["function"]["name"] for t in captured[0]}
+    assert "list_documents" in names
+    assert "get_actors" in names
+    assert "execute_plan" not in names
+    assert "propose_move" not in names
+
+
+async def test_query_loop_refuses_mutating_tool_call(tmp_path: Path) -> None:
+    """Defense in depth: a hallucinated mutating call is never forwarded."""
+    s = _session(["list_documents"], {})
+    captured_msgs: list[list[dict]] = []
+
+    llm = AsyncMock()
+    responses = [_tool_response("execute_plan", {"plan_id": "x"}), _text_response("done")]
+
+    async def _create(**kwargs: Any) -> Any:
+        captured_msgs.append(list(kwargs.get("messages", [])))
+        return responses.pop(0)
+
+    llm.chat.completions.create.side_effect = _create
+
+    await run_query_loop(
+        question="please reorganize",
+        settings=_settings(tmp_path),
+        llm=llm,
+        session=s,
+        on_event=lambda _: None,
+        project_root=tmp_path,
+    )
+
+    called = [c[0][0] for c in s.call_tool.call_args_list]
+    assert "execute_plan" not in called
+
+    all_msgs = [m for batch in captured_msgs for m in batch]
+    tool_msgs = [m for m in all_msgs if m.get("role") == "tool"]
+    assert any("not available in query mode" in m.get("content", "") for m in tool_msgs)
+
+
+async def test_query_loop_threads_history(tmp_path: Path) -> None:
+    s = _session(["list_documents"], {})
+    _, history = await run_query_loop(
+        question="Q1",
+        settings=_settings(tmp_path),
+        llm=_llm(_text_response("A1")),
+        session=s,
+        on_event=lambda _: None,
+        project_root=tmp_path,
+    )
+    _, history2 = await run_query_loop(
+        question="Q2",
+        settings=_settings(tmp_path),
+        llm=_llm(_text_response("A2")),
+        session=s,
+        on_event=lambda _: None,
+        history=history,
+        project_root=tmp_path,
+    )
+    users = [m for m in history2 if m.get("role") == "user"]
+    assert len(users) == 2
+    assert history2[0]["role"] == "system"
+
+
+def test_query_system_prompt_is_readonly() -> None:
+    from config.settings import load
+
+    from host.agent import _build_query_system_prompt
+
+    prompt = _build_query_system_prompt(_PROJECT_ROOT, load())
+
+    # read-only registry/graph tools are offered
+    assert "list_documents" in prompt
+    assert "get_actors" in prompt
+    # no mutating tools are mentioned
+    assert "execute_plan" not in prompt
+    assert "propose_move" not in prompt
+    # the active profile's vocabulary is injected
+    assert "releve_de_decision" in prompt

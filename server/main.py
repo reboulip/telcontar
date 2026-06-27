@@ -68,6 +68,18 @@ def compute_checksum(path: str) -> dict:
     return tools.compute_checksum(path)
 
 
+@mcp.tool()
+def compare_documents(path_a: str, path_b: str, max_chars: int = 4000) -> dict:
+    """Extract text from two files and return a unified diff between them — e.g. to
+    compare successive versions of a document (two COPIL decks)."""
+    cfg = _get_settings()
+    from server.guards import check_allowlist
+
+    check_allowlist(Path(path_a), cfg.allowlist_dirs)
+    check_allowlist(Path(path_b), cfg.allowlist_dirs)
+    return tools.compare_documents(path_a, path_b, min(max_chars, cfg.max_snippet_chars))
+
+
 # ── Plan management tools ────────────────────────────────────────────────────
 
 
@@ -157,6 +169,12 @@ def update_file(path: str, content: str) -> dict:
     return tools.update_file(path, content)
 
 
+@mcp.tool()
+def create_dir(path: str) -> dict:
+    """Create a directory (and parents); idempotent if it already exists."""
+    return tools.create_dir(path)
+
+
 # ── Gated execution tools ────────────────────────────────────────────────────
 
 
@@ -175,10 +193,34 @@ def write_index(path: str) -> dict:
     return tools.write_index(path, cfg.journal_path)
 
 
+def _resolve_output_sinks() -> list:
+    """Resolve the active output sinks from the profile, gating external egress."""
+    from server.sinks import resolve_sinks
+
+    cfg = _get_settings()
+    profile = _get_profile()
+    return resolve_sinks(profile.sinks_default, allow_external=cfg.egress_allow_external_sinks)
+
+
+def _sink_results(results: list[dict]) -> dict:
+    """Collapse per-sink results to a single dict when only one sink is active."""
+    if len(results) == 1:
+        return results[0]
+    return {"sinks": results}
+
+
 @mcp.tool()
 def write_summary(path: str, content: str) -> dict:
-    """Write LLM-composed prose to SUMMARY.md inside the directory at path."""
-    return tools.write_summary(path, content)
+    """Write the LLM-composed project synthesis to the profile's active output
+    sink(s). The built-in local_markdown sink persists it as SUMMARY.md."""
+    return _sink_results([s.write_summary(path, content) for s in _resolve_output_sinks()])
+
+
+@mcp.tool()
+def write_folder_readme(path: str, content: str) -> dict:
+    """Write the LLM-composed per-folder description to the profile's active output
+    sink(s). The built-in local_markdown sink persists it as README.md."""
+    return _sink_results([s.write_folder_readme(path, content) for s in _resolve_output_sinks()])
 
 
 # ── Recovery tools ───────────────────────────────────────────────────────────
@@ -189,6 +231,15 @@ def undo_last() -> dict:
     """Revert the most recent journaled operation."""
     cfg = _get_settings()
     return tools.undo_last(cfg.journal_path, cfg.plans_dir)
+
+
+@mcp.tool()
+def compress_quarantine(delete_originals: bool = True) -> dict:
+    """Losslessly compress loose quarantined files into a single verified zip archive
+    and reclaim space. The archive is checked byte-for-byte before any original is
+    removed, and the whole operation is reversible via undo_last."""
+    cfg = _get_settings()
+    return tools.compress_quarantine(cfg.quarantine_dir, cfg.journal_path, delete_originals)
 
 
 # ── Document registry (the engine's persistent memory) ───────────────────────
@@ -264,6 +315,76 @@ def find_modified_documents() -> list:
     """Return groups sharing a title but differing in content (recently modified)."""
     cfg = _get_settings()
     return tools.find_modified_documents(cfg.registry_path)
+
+
+# ── Project event journal (the project narrative) ────────────────────────────
+
+
+@mcp.tool()
+def create_event(sentence: str, date: str | None = None) -> dict:
+    """Record a project event: a short, verb-led sentence stamped with the date it
+    occurred (ISO YYYY-MM-DD, or null if unknown). Distinct from the undo journal."""
+    cfg = _get_settings()
+    return tools.create_event(sentence, date, cfg.events_path)
+
+
+@mcp.tool()
+def list_events() -> list:
+    """Return all recorded project events in chronological order."""
+    cfg = _get_settings()
+    return tools.list_events(cfg.events_path)
+
+
+# ── Knowledge graph (derived from registry + events) ─────────────────────────
+
+
+@mcp.tool()
+def build_graph() -> dict:
+    """Rebuild the knowledge graph (documents, entities, events as nodes/edges)
+    from the registry and event journal, persist it, and return {nodes, edges}."""
+    cfg = _get_settings()
+    return tools.build_graph(cfg.registry_path, cfg.events_path, cfg.graph_path)
+
+
+@mcp.tool()
+def get_graph() -> dict:
+    """Return the persisted knowledge graph as {nodes, edges}; empty if never built."""
+    cfg = _get_settings()
+    return tools.get_graph(cfg.graph_path)
+
+
+@mcp.tool()
+def get_actors() -> list:
+    """Return the project's main actors — top entities ranked from the knowledge
+    graph, capped at the active profile's salient_cap. Build the graph first."""
+    cfg = _get_settings()
+    return tools.get_actors(cfg.graph_path, _get_profile().salient_cap)
+
+
+# ── Archived-documents journal ("retirer de la mémoire") ─────────────────────
+
+
+@mcp.tool()
+def archive_document(checksum: str, reason: str = "") -> dict:
+    """Withdraw a document from active memory: flip its registry status to archived,
+    move its file to quarantine (journaled, reversible via undo_last), and append to
+    the archive log. Never deletes. Identify the document by its checksum."""
+    cfg = _get_settings()
+    return tools.archive_document(
+        checksum,
+        reason,
+        cfg.registry_path,
+        cfg.quarantine_dir,
+        cfg.journal_path,
+        cfg.archive_path,
+    )
+
+
+@mcp.tool()
+def list_archived() -> list:
+    """Return all archived-document log entries in chronological order."""
+    cfg = _get_settings()
+    return tools.list_archived(cfg.archive_path)
 
 
 def main() -> None:

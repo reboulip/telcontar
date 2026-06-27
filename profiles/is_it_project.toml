@@ -83,9 +83,27 @@ required = ["title", "summary", "provenance"]
 optional = ["date", "author"]
 
 # --- Synthesis ----------------------------------------------------------------
+# Drives the project narrative the host composes into SUMMARY.md from the
+# registry, the event journal, the knowledge graph and the ranked actors.
 
 [synthesis]
 template = "project_synthesis"
+title = "Synthèse du projet"
+sections = [
+    "Vue d'ensemble — objet du corpus et état d'avancement général",
+    "Acteurs principaux — qui intervient et à quel titre (rôles), d'après les acteurs classés (get_actors)",
+    "Chronologie — les évènements clés datés (journal d'évènements), par ordre chronologique",
+    "Documents clés — les livrables majeurs et leur apport (provenance)",
+    "Doublons et versions — duplicats et versions modifiées repérés",
+    "Points d'attention — risques, manques ou décisions en suspens, uniquement si étayés",
+]
+instructions = """\
+Rédige SUMMARY.md en français comme une synthèse de projet structurée par les \
+sections ci-dessus (une rubrique Markdown ## par section). Appuie-toi sur le \
+registre (list_documents / get_registry), le journal d'évènements (list_events), \
+le graphe de connaissance (get_graph) et les acteurs classés (get_actors). \
+Écris en prose continue sous chaque titre ; n'invente jamais un fait absent des \
+données et laisse une rubrique courte plutôt que de combler par des suppositions."""
 
 # --- Naming -------------------------------------------------------------------
 
