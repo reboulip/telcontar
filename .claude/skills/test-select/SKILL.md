@@ -13,11 +13,26 @@ tools:
 
 ## Step 1 — Identify changed files
 
+Choose the diff base by where the work lives (the branch model is `feat/*` and
+`fix/*` sub-branch off `develop`, and `develop` integrates toward `main`):
+
 ```bash
-git diff --name-only $(git merge-base HEAD main)..HEAD
+# On a feat/* or fix/* branch (sub-branch of develop): base on develop
+git diff --name-only $(git merge-base HEAD develop)..HEAD
+
+# On develop directly: base on main (use origin/main if available)
+git diff --name-only $(git merge-base HEAD origin/main)..HEAD
 ```
 
-This captures all changes on the current branch (staged or committed) relative to `main`. If on `develop` directly, use `git diff --name-only origin/main..HEAD`.
+Also fold in uncommitted work so a pre-commit run sees staged/unstaged changes:
+
+```bash
+git status --porcelain
+```
+
+> **Why the base matters:** `main` is usually far behind `develop`, so basing a
+> feat-branch diff on `main` returns the *entire* `develop` history and defeats
+> scoped selection. Always base a feat/fix branch on `develop`.
 
 ## Step 2 — Select test scope
 
