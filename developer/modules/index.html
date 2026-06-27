@@ -1,0 +1,1789 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, GPT-5 backed">
+      
+      
+      
+      
+        <link rel="prev" href="../architecture/">
+      
+      
+        <link rel="next" href="../adding-profiles/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Module Reference - Telcontar</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#module-reference" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Telcontar" class="md-header__button md-logo" aria-label="Telcontar" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Telcontar
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Module Reference
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/rreboulleau/telcontar" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    telcontar
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../user-guide/how-it-works/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../reference/mcp-tools/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../architecture/" class="md-tabs__link">
+          
+  
+  
+  Developer Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Telcontar" class="md-nav__button md-logo" aria-label="Telcontar" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Telcontar
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/rreboulleau/telcontar" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    telcontar
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/how-it-works/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How It Works
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Domain Profiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/approval-modes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Approval Modes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user-guide/outputs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Outputs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/mcp-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/profile-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Profile Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_3" id="__nav_4_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/host/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    host
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/api/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Reference
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        config/
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="config/">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#configsettingspy-44-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        config/settings.py (~44 lines)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        server/
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="server/">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#servermainpy-383-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        server/main.py (~383 lines)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#servertoolspy-634-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        server/tools.py (~634 lines)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#serverplanpy-138-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        server/plan.py (~138 lines)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#serverregistrypy-243-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        server/registry.py (~243 lines)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#serverprofilepy-122-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        server/profile.py (~122 lines)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#serverguardspy-43-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        server/guards.py (~43 lines)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#serverjournalpy-48-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        server/journal.py (~48 lines)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#serverarchivepy-64-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        server/archive.py (~64 lines)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#serversinkspy-76-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        server/sinks.py (~76 lines)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#serverextractpy-18-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        server/extract.py (~18 lines)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#host" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        host/
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="host/">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#hostmainpy-9-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        host/main.py (~9 lines)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hostagentpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        host/agent.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hostapppy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        host/app.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#hostllmpy-18-lines" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        host/llm.py (~18 lines)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adding-profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding a Profile
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../internals/plan-lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals — Plan Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="module-reference">Module Reference<a class="headerlink" href="#module-reference" title="Permanent link">&para;</a></h1>
+<p>Detailed breakdown of every Python module in the codebase. For auto-generated API docs (docstrings, signatures), see the <a href="../../reference/api/server/">API Reference</a>.</p>
+<hr />
+<h2 id="config"><code>config/</code><a class="headerlink" href="#config" title="Permanent link">&para;</a></h2>
+<h3 id="configsettingspy-44-lines"><code>config/settings.py</code> (~44 lines)<a class="headerlink" href="#configsettingspy-44-lines" title="Permanent link">&para;</a></h3>
+<p><strong>Role:</strong> Single source of truth for all runtime configuration. Loads from <code>.env</code> (or environment variables) via Pydantic Settings.</p>
+<p><strong>Key class:</strong> <code>Settings</code> — a <code>BaseSettings</code> subclass with fields for LLM endpoint, safety, domain profile, document memory, and egress settings.</p>
+<p><strong>Key function:</strong> <code>load() -&gt; Settings</code> — instantiates and validates settings; called once per process.</p>
+<p><strong>Why it's structured this way:</strong> Both the host and the server import this module independently (they run in different processes). There is no shared singleton across the stdio boundary.</p>
+<hr />
+<h2 id="server"><code>server/</code><a class="headerlink" href="#server" title="Permanent link">&para;</a></h2>
+<p>The MCP server package. Launched as a subprocess by the host; communicates via stdio. Owns all file I/O, guardrails, and persistent state.</p>
+<h3 id="servermainpy-383-lines"><code>server/main.py</code> (~383 lines)<a class="headerlink" href="#servermainpy-383-lines" title="Permanent link">&para;</a></h3>
+<p><strong>Role:</strong> MCP server entrypoint. Registers all tools with FastMCP and wires each handler to <code>server/tools.py</code>. Lazy-initialises <code>Settings</code> and the active <code>Profile</code> on first use.</p>
+<p><strong>Key object:</strong> <code>mcp = FastMCP("directory-organizer")</code> — the FastMCP server instance.</p>
+<p><strong>Entrypoint:</strong> <code>main()</code> calls <code>mcp.run(transport="stdio")</code>.</p>
+<p><strong>Design note:</strong> This module is deliberately thin — it delegates all logic to <code>server/tools.py</code>. Tool parameters injected from config (e.g. <code>plans_dir</code>, <code>journal_path</code>) are resolved here and passed into the tool functions.</p>
+<hr />
+<h3 id="servertoolspy-634-lines"><code>server/tools.py</code> (~634 lines)<a class="headerlink" href="#servertoolspy-634-lines" title="Permanent link">&para;</a></h3>
+<p><strong>Role:</strong> All MCP tool implementations. Pure functions with no global state — they receive everything they need as arguments, making them directly testable without spawning an MCP server.</p>
+<p><strong>Groups of functions:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Group</th>
+<th>Functions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Read-only</td>
+<td><code>list_dir</code>, <code>read_file</code>, <code>extract_text</code>, <code>compute_checksum</code></td>
+</tr>
+<tr>
+<td>Direct file ops</td>
+<td><code>move_file</code>, <code>rename_file</code>, <code>create_file</code>, <code>update_file</code></td>
+</tr>
+<tr>
+<td>Plan management</td>
+<td><code>create_plan</code>, <code>get_plan</code>, <code>list_plans</code>, <code>review_plan</code>, <code>approve_plan</code></td>
+</tr>
+<tr>
+<td>Plan-building</td>
+<td><code>propose_rename</code>, <code>propose_move</code>, <code>propose_quarantine</code></td>
+</tr>
+<tr>
+<td>Gated execution</td>
+<td><code>execute_plan</code>, <code>write_index</code>, <code>write_summary</code></td>
+</tr>
+<tr>
+<td>Recovery</td>
+<td><code>undo_last</code></td>
+</tr>
+<tr>
+<td>Registry</td>
+<td><code>record_document</code>, <code>get_document</code>, <code>list_documents</code>, <code>get_registry</code>, <code>find_duplicates</code>, <code>find_modified_documents</code></td>
+</tr>
+<tr>
+<td>Event journal</td>
+<td><code>create_event</code>, <code>list_events</code></td>
+</tr>
+<tr>
+<td>Knowledge graph</td>
+<td><code>build_graph</code>, <code>get_graph</code>, <code>get_actors</code></td>
+</tr>
+<tr>
+<td>Archive</td>
+<td><code>archive_document</code>, <code>list_archived</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Internal helpers:</strong> <code>_apply_op</code> executes a single <code>PlanOp</code> against the filesystem; <code>_reconcile_op</code> updates the registry record's path/status after execution.</p>
+<hr />
+<h3 id="serverplanpy-138-lines"><code>server/plan.py</code> (~138 lines)<a class="headerlink" href="#serverplanpy-138-lines" title="Permanent link">&para;</a></h3>
+<p><strong>Role:</strong> Plan data model and disk persistence. Defines the state machine, serialization, and plan/op CRUD.</p>
+<p><strong>Key types:</strong>
+- <code>PlanState</code> — <code>Literal["pending", "approved", "executing", "done", "failed", "stopped"]</code>
+- <code>OpType</code> — <code>Literal["rename", "move", "quarantine"]</code>
+- <code>PlanOp</code> — dataclass with <code>op_id</code> (UUID), <code>op_type</code>, <code>src</code>, <code>dst</code>, <code>status</code>, <code>error</code>, <code>retries</code>
+- <code>Plan</code> — dataclass with <code>plan_id</code>, <code>state</code>, <code>ops: list[PlanOp]</code>, timestamps</p>
+<p><strong>State machine:</strong> <code>_VALID_TRANSITIONS</code> dict enforces which state transitions are legal. <code>Plan.transition()</code> validates and applies.</p>
+<p><strong>Persistence:</strong> One JSON file per plan at <code>{plans_dir}/{plan_id}.json</code>. <code>save()</code>, <code>load()</code>, <code>list_all()</code>.</p>
+<hr />
+<h3 id="serverregistrypy-243-lines"><code>server/registry.py</code> (~243 lines)<a class="headerlink" href="#serverregistrypy-243-lines" title="Permanent link">&para;</a></h3>
+<p><strong>Role:</strong> The engine's persistent document memory. Content-addressed (sha256 → <code>DocumentRecord</code>). Profile-agnostic — type validation lives in <code>tools.py</code>.</p>
+<p><strong>Key types:</strong>
+- <code>DocumentRecord</code> — one analyzed document. Fields: <code>checksum</code>, <code>path</code>, <code>title</code>, <code>type</code>, <code>summary</code>, <code>provenance</code>, <code>date</code>, <code>entities</code>, <code>attributes</code>, <code>status</code>, <code>first_seen</code>, <code>last_analyzed</code>.
+- <code>Registry</code> — in-memory view, keyed by checksum. Methods: <code>upsert</code>, <code>get</code>, <code>records</code>, <code>update_path</code>, <code>find_duplicates</code>, <code>find_modified</code>.</p>
+<p><strong><code>update_path</code>:</strong> Called by <code>execute_plan</code> after each successful op to reconcile the record's stored path with the file's new location. Matches by normalized path comparison (<code>os.path.normcase</code>/<code>normpath</code>) for Windows compatibility.</p>
+<p><strong><code>find_duplicates</code>:</strong> Union-find clustering by title-token Jaccard similarity (threshold 0.6) within the same type, or exact normalized-title match across types.</p>
+<p><strong>Persistence:</strong> Single JSON file at <code>registry_path</code>. <code>load()</code> returns an empty <code>Registry</code> if the file doesn't exist; <code>save()</code> writes pretty JSON with Unicode preserved.</p>
+<hr />
+<h3 id="serverprofilepy-122-lines"><code>server/profile.py</code> (~122 lines)<a class="headerlink" href="#serverprofilepy-122-lines" title="Permanent link">&para;</a></h3>
+<p><strong>Role:</strong> Load and validate a domain profile TOML file. Expose typed accessors used by the tools layer and the host's system prompt builder.</p>
+<p><strong>Key types:</strong>
+- <code>DocumentType</code> — <code>{id, label, description}</code>
+- <code>Profile</code> — fully parsed profile with accessors: <code>document_type_ids()</code>, <code>entity_roles()</code>, <code>extraction_fields()</code>, <code>naming()</code></p>
+<p><strong><code>load_profile(name, profiles_dir)</code>:</strong> Reads <code>{profiles_dir}/{name}.toml</code>, parses with <code>tomllib</code>, validates required fields (name, at least one document type, no duplicate type IDs), and returns a <code>Profile</code>.</p>
+<hr />
+<h3 id="serverguardspy-43-lines"><code>server/guards.py</code> (~43 lines)<a class="headerlink" href="#serverguardspy-43-lines" title="Permanent link">&para;</a></h3>
+<p><strong>Role:</strong> Three guardrail functions enforced before any file operation.</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>What it guards</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>check_no_overwrite(dest)</code></td>
+<td>Raises <code>FileExistsError</code> if <code>dest</code> already exists</td>
+</tr>
+<tr>
+<td><code>safe_quarantine_path(src, quarantine_dir)</code></td>
+<td>Returns a collision-safe path in quarantine (suffixes <code>_1</code>, <code>_2</code>, …)</td>
+</tr>
+<tr>
+<td><code>check_allowlist(path, allowlist_dirs)</code></td>
+<td>Raises <code>PermissionError</code> if <code>path</code> is not under any allowlisted directory</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Why separate:</strong> These rules are invariants that must hold across multiple tools. Centralising them in one module makes them easy to audit and test independently.</p>
+<hr />
+<h3 id="serverjournalpy-48-lines"><code>server/journal.py</code> (~48 lines)<a class="headerlink" href="#serverjournalpy-48-lines" title="Permanent link">&para;</a></h3>
+<p><strong>Role:</strong> Append-only JSONL helpers for the undo journal.</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>append(journal_path, entry)</code></td>
+<td>Appends one JSON entry + newline; creates parent dirs</td>
+</tr>
+<tr>
+<td><code>last(journal_path)</code></td>
+<td>Returns the last entry without removing it; <code>None</code> if empty</td>
+</tr>
+<tr>
+<td><code>all_entries(journal_path)</code></td>
+<td>Returns all entries in chronological order</td>
+</tr>
+<tr>
+<td><code>pop_last(journal_path)</code></td>
+<td>Removes and returns the last entry; rewrites the file</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Design note:</strong> <code>pop_last</code> rewrites the entire file minus the last line. For typical journal sizes (hundreds of entries) this is fine; for very large corpora a more efficient structure could be introduced later.</p>
+<hr />
+<h3 id="serverarchivepy-64-lines"><code>server/archive.py</code> (~64 lines)<a class="headerlink" href="#serverarchivepy-64-lines" title="Permanent link">&para;</a></h3>
+<p><strong>Role:</strong> Append-only JSONL log of documents withdrawn from active memory — the "retirer de la mémoire" audit trail. Distinct from the undo journal (which records reversible file ops) and the event journal (project narrative).</p>
+<p><strong>Key type:</strong> <code>ArchiveEntry</code> — dataclass with <code>{checksum, title, reason, src, dst, archived_at}</code>. <code>dst</code> is <code>null</code> when the file was already absent at archive time.</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>append(archive_path, entry)</code></td>
+<td>Appends one archive entry as a JSONL line; creates parent dirs</td>
+</tr>
+<tr>
+<td><code>all_entries(archive_path)</code></td>
+<td>Returns all entries in chronological order; empty list if no file</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Design note:</strong> <code>archive_document</code> in <code>server/tools.py</code> coordinates the status flip in the registry, the quarantine move (journaled in the undo log for reversibility), and the append here. This module owns only the serialization.</p>
+<hr />
+<h3 id="serversinkspy-76-lines"><code>server/sinks.py</code> (~76 lines)<a class="headerlink" href="#serversinkspy-76-lines" title="Permanent link">&para;</a></h3>
+<p><strong>Role:</strong> Output-sink abstraction — defines where the engine's synthesized Markdown artifacts are emitted.</p>
+<p><strong>Key types:</strong>
+- <code>Sink</code> — <code>runtime_checkable</code> Protocol with attributes <code>name: str</code>, <code>external: bool</code> and methods <code>write_summary(target_dir, content) -&gt; dict</code>, <code>write_folder_readme(folder, content) -&gt; dict</code>.
+- <code>LocalMarkdownSink</code> — the built-in sink (<code>name="local_markdown"</code>, <code>external=False</code>). Delegates to <code>tools.write_summary</code> and <code>tools.write_folder_readme</code>; writes files to the local filesystem.</p>
+<p><strong>Key function:</strong> <code>resolve_sinks(names, *, allow_external) -&gt; list[Sink]</code> — instantiates the sinks named in the profile's <code>[sinks] default</code> list. Built-in sinks are created directly. Any unrecognised name is treated as an external sink: raises <code>PermissionError</code> if <code>allow_external=False</code>, or <code>NotImplementedError</code> if <code>True</code> (external sinks are separate MCP integrations, not built into this codebase).</p>
+<p><strong>Design note:</strong> <code>server/main.py</code> calls <code>resolve_sinks</code> inside <code>write_summary</code> and <code>write_folder_readme</code> handlers, passing <code>egress_allow_external_sinks</code> from <code>Settings</code>. A single-sink result is unwrapped; multiple sinks return <code>{"sinks": [...]}</code>.</p>
+<hr />
+<h3 id="serverextractpy-18-lines"><code>server/extract.py</code> (~18 lines)<a class="headerlink" href="#serverextractpy-18-lines" title="Permanent link">&para;</a></h3>
+<p><strong>Role:</strong> Thin wrapper around markitdown for text extraction from binary formats.</p>
+<p><strong>Key function:</strong> <code>extract(path, max_chars) -&gt; str</code> — calls <code>MarkItDown().convert(path)</code>, returns <code>result.text_content</code> truncated to <code>max_chars</code>.</p>
+<p><strong>Single module-level instance:</strong> <code>_md = MarkItDown()</code> — markitdown is initialized once per server process.</p>
+<hr />
+<h2 id="host"><code>host/</code><a class="headerlink" href="#host" title="Permanent link">&para;</a></h2>
+<p>The MCP host package. Drives the GPT-5 agent loop and presents the Textual TUI.</p>
+<h3 id="hostmainpy-9-lines"><code>host/main.py</code> (~9 lines)<a class="headerlink" href="#hostmainpy-9-lines" title="Permanent link">&para;</a></h3>
+<p><strong>Role:</strong> CLI entrypoint. Instantiates <code>OrganizerApp</code> and calls <code>.run()</code>.</p>
+<p><strong>Entry point:</strong> <code>main()</code> is registered as the <code>organizer-host</code> script in <code>pyproject.toml</code>.</p>
+<hr />
+<h3 id="hostagentpy"><code>host/agent.py</code><a class="headerlink" href="#hostagentpy" title="Permanent link">&para;</a></h3>
+<p><strong>Role:</strong> The async agent loop — both organize and query modes. Fully decoupled from Textual — callers supply callbacks for events and approval so the module can be tested without a TUI.</p>
+<p><strong>Key types:</strong>
+- <code>AgentEvent</code> — <code>{kind: EventKind, text, data}</code> emitted at each step
+- <code>ApprovalResult</code> — <code>{approved: bool, removed_op_ids: list[str]}</code>
+- <code>EventCallback</code> — <code>Callable[[AgentEvent], None]</code>
+- <code>ApprovalCallback</code> — <code>Callable[[str, dict], Awaitable[ApprovalResult]]</code></p>
+<p><strong>Key constants:</strong>
+- <code>QUERY_ALLOWED_TOOLS</code> — <code>frozenset</code> of read-only tool names exposed to the model in query mode (list/read/inspect tools; no plan, execute, write, build_graph, create_event, or archive tools)</p>
+<p><strong>Key functions:</strong>
+- <code>run_agent(target, settings, llm, on_event, on_approval_needed)</code> — top-level organize entry; launches the MCP server subprocess via <code>mcp_session()</code>, then calls <code>run_agent_loop</code>
+- <code>run_agent_loop(target, settings, llm, session, ...)</code> — the actual GPT-5 tool-calling loop for organize mode (injectable session for testing)
+- <code>run_query(question, settings, llm, on_event, history)</code> — convenience entry for one query, launching its own MCP session
+- <code>run_query_loop(question, settings, llm, session, on_event, history, project_root)</code> — read-only tool-calling loop; threads <code>history</code> across calls for multi-turn context; returns <code>(answer, updated_history)</code>
+- <code>_discover_openai_tools(session, allowed)</code> — lists MCP tools and converts to OpenAI function specs; when <code>allowed</code> is given, only tools in the set are exposed (used by query mode)
+- <code>_build_system_prompt(project_root, settings)</code> — assembles the organize-mode system prompt from the active profile
+- <code>_build_query_system_prompt(project_root, settings)</code> — assembles the read-only query-mode system prompt from the active profile
+- <code>_handle_execute_plan(...)</code> — intercepts <code>execute_plan</code> calls to insert the approval gate before forwarding to the server</p>
+<p><strong>Turn limit:</strong> <code>_MAX_TURNS = 50</code> — both loops raise an error event if the model has not produced a final (no-tool-call) response within 50 turns.</p>
+<hr />
+<h3 id="hostapppy"><code>host/app.py</code><a class="headerlink" href="#hostapppy" title="Permanent link">&para;</a></h3>
+<p><strong>Role:</strong> Textual TUI — four screens and one modal.</p>
+<table>
+<thead>
+<tr>
+<th>Class</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>OrganizerApp</code></td>
+<td>Root <code>App</code>; pushes <code>StartupScreen</code> on mount</td>
+</tr>
+<tr>
+<td><code>StartupScreen</code></td>
+<td>Collects the target directory path; offers "Organize" and "Query" buttons. "Query" validates that <code>settings.registry_path</code> exists before proceeding</td>
+</tr>
+<tr>
+<td><code>OrganizerScreen</code></td>
+<td>Main view: file-tree sidebar + scrollable agent log; runs the organize agent in a Textual worker; keybinding <code>g</code> pushes <code>QueryScreen</code> once organizing completes</td>
+</tr>
+<tr>
+<td><code>QueryScreen</code></td>
+<td>Chat-style read-only Q&amp;A screen: <code>RichLog</code> output + <code>Input</code> bar; keeps one MCP session open for the whole chat and threads conversation history across questions; <code>Esc</code> pops back to the previous screen</td>
+</tr>
+<tr>
+<td><code>ApprovalModal</code></td>
+<td>Plan review: per-op checkboxes, Approve/Reject buttons; returns an <code>ApprovalResult</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>TUI layout (OrganizerScreen):</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>┌─ Header ───────────────────────────────────────────────┐
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>│ DirectoryTree (28%)  │  RichLog (72%)                  │
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>│                      │  (agent event stream)           │
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>├─ Status bar ───────────────────────────────────────────┤
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│ Footer  [q] Quit  [g] Query corpus                     │
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>└────────────────────────────────────────────────────────┘
+</code></pre></div>
+<p><strong>TUI layout (QueryScreen):</strong></p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>┌─ Header ───────────────────────────────────────────────┐
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>│ RichLog (1fr)                                          │
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>│ (answer stream + tool call log)                        │
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>├─ Status bar ───────────────────────────────────────────┤
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>│ Input  &quot;Ask a question about this corpus…&quot;             │
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>│ Footer  [Esc] Back  [Ctrl+C] Quit                      │
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>└────────────────────────────────────────────────────────┘
+</code></pre></div>
+<p><strong>Worker pattern:</strong> <code>OrganizerScreen.on_mount</code> launches <code>_agent_worker</code> as a Textual worker. The worker is <code>async</code>, so it can <code>await</code> the approval modal via <code>app.push_screen_wait(ApprovalModal(...))</code>. <code>QueryScreen</code> uses a <code>asyncio.Queue</code> to bridge the synchronous <code>Input.Submitted</code> event handler into the async <code>_query_worker</code> that drives <code>run_query_loop</code>.</p>
+<hr />
+<h3 id="hostllmpy-18-lines"><code>host/llm.py</code> (~18 lines)<a class="headerlink" href="#hostllmpy-18-lines" title="Permanent link">&para;</a></h3>
+<p><strong>Role:</strong> Factory function for the OpenAI-compatible client.</p>
+<p><strong>Key function:</strong> <code>make_client(settings) -&gt; AsyncOpenAI</code> — creates an <code>AsyncOpenAI</code> instance pointed at <code>settings.llm_base_url</code>. For Azure, it also injects <code>default_query={"api-version": ...}</code> so the Azure API version parameter is sent on every request.</p>
+<p><strong>Design note:</strong> No Mammouth-specific code is needed — Mammouth is OpenAI-compatible and only requires the <code>base_url</code> and <code>api_key</code> overrides.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "toc.integrate", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

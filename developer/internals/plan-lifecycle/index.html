@@ -1,0 +1,1745 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, GPT-5 backed">
+      
+      
+      
+      
+        <link rel="prev" href="../../contributing/">
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Internals — Plan Lifecycle - Telcontar</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#plan-lifecycle-v030" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="Telcontar" class="md-header__button md-logo" aria-label="Telcontar" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Telcontar
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Internals — Plan Lifecycle
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/rreboulleau/telcontar" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    telcontar
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../user-guide/how-it-works/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../reference/mcp-tools/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../architecture/" class="md-tabs__link">
+          
+  
+  
+  Developer Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="Telcontar" class="md-nav__button md-logo" aria-label="Telcontar" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Telcontar
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/rreboulleau/telcontar" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    telcontar
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/how-it-works/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How It Works
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Domain Profiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/approval-modes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Approval Modes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/outputs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Outputs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/mcp-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/profile-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Profile Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_3" id="__nav_4_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/api/server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/api/host/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    host
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/api/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adding-profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding a Profile
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals — Plan Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals — Plan Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#plan-states" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plan States
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Plan States">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#state-descriptions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        State Descriptions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#persistence" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Persistence
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Persistence">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#plan-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plan Files
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#journal-jsonl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Journal (JSONL)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#proposing-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Proposing Operations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Proposing Operations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#propose_renamepath-str-new_name-str-dict" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        propose_rename(path: str, new_name: str) -&gt; dict
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#propose_movepath-str-dest_dir-str-dict" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        propose_move(path: str, dest_dir: str) -&gt; dict
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#propose_quarantinepath-str-dict" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        propose_quarantine(path: str) -&gt; dict
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#reviewing-a-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reviewing a Plan
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Reviewing a Plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#review_planplan_id-str-dict" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        review_plan(plan_id: str) -&gt; dict
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#executing-a-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Executing a Plan
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Executing a Plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#execute_planplan_id-str-dict" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        execute_plan(plan_id: str) -&gt; dict
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#undoing-operations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Undoing Operations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Undoing Operations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#undo_last-dict" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        undo_last() -&gt; dict
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#journal-module" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Journal Module
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Journal Module">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#appendjournal_path-path-entry-dict-none" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        append(journal_path: Path, entry: dict) -&gt; None
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lastjournal_path-path-dict-none" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        last(journal_path: Path) -&gt; dict | None
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pop_lastjournal_path-path-dict-none" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        pop_last(journal_path: Path) -&gt; dict | None
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="plan-lifecycle-v030">Plan Lifecycle (v0.3.0)<a class="headerlink" href="#plan-lifecycle-v030" title="Permanent link">&para;</a></h1>
+<p>Design document for the plan + journal system that enables stateful, reversible operations across multiple concurrent sessions.</p>
+<h2 id="plan-states">Plan States<a class="headerlink" href="#plan-states" title="Permanent link">&para;</a></h2>
+<p>A plan moves through these states:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pending → approved → executing → done
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>        ↘ rejected
+</code></pre></div>
+<p>Or on failure:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>executing → stopped (if &gt;3 ops fail in a single run)
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>         → failed   (if execute_plan is called on a plan already in error state)
+</code></pre></div>
+<h3 id="state-descriptions">State Descriptions<a class="headerlink" href="#state-descriptions" title="Permanent link">&para;</a></h3>
+<p><strong>pending</strong>
+Initial state after propose_<em> calls. The plan contains a list of proposed operations but has not been approved by the user. Multiple proposals may accumulate in a single pending plan via repeated propose_</em> calls with the same plan_id.</p>
+<p><strong>approved</strong>
+User has reviewed the plan and explicitly approved it. Only plans in approved state may be executed. Approval is recorded but not persisted in this design—the host manages it in memory.</p>
+<p><strong>executing</strong>
+execute_plan is running. Operations are applied one by one. If an operation fails, the system retries up to 2 times before marking it failed. Each successful operation is journaled immediately. If more than 3 operations fail in a single execution run, the plan transitions to stopped and a hard_stop journal entry is written.</p>
+<p><strong>done</strong>
+All operations in the plan executed successfully. The plan persists on disk but is no longer acted upon.</p>
+<p><strong>stopped</strong>
+Execution encountered more than 3 failures in a single run. A detailed hard_stop journal entry documents the failure context. Requires manual intervention or undo_last to recover.</p>
+<p><strong>failed</strong>
+Reserved for future use: if execute_plan is called on a plan that is already in a terminal state.</p>
+<h2 id="persistence">Persistence<a class="headerlink" href="#persistence" title="Permanent link">&para;</a></h2>
+<p>Plans and journal entries are stored as flat files on disk. They persist across crashes and restarts, allowing for safe long-running or resumed operations.</p>
+<h3 id="plan-files">Plan Files<a class="headerlink" href="#plan-files" title="Permanent link">&para;</a></h3>
+<p>Location: .organizer/plans/<plan_id>.json</p>
+<p>Example plan file:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">{</span>
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">&quot;plan_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uuid-12345-abcde&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">  </span><span class="nt">&quot;created_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-06-21T14:23:45.123Z&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">&quot;state&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;pending&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">  </span><span class="nt">&quot;operations&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">      </span><span class="nt">&quot;op_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">      </span><span class="nt">&quot;op_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;rename&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">      </span><span class="nt">&quot;src&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;C:\\Users\\user\\folder\\old_name.txt&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">      </span><span class="nt">&quot;new_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;new_name.txt&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">      </span><span class="nt">&quot;proposed_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-06-21T14:23:45.123Z&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">      </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;pending&quot;</span>
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">    </span><span class="p">},</span>
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">      </span><span class="nt">&quot;op_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">      </span><span class="nt">&quot;op_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;move&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">      </span><span class="nt">&quot;src&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;C:\\Users\\user\\folder\\file.docx&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">      </span><span class="nt">&quot;dest_dir&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;C:\\Users\\user\\folder\\Documents&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">      </span><span class="nt">&quot;proposed_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-06-21T14:24:10.456Z&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="w">      </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;pending&quot;</span>
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a><span class="w">    </span><span class="p">},</span>
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a><span class="w">    </span><span class="p">{</span>
+<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a><span class="w">      </span><span class="nt">&quot;op_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
+<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a><span class="w">      </span><span class="nt">&quot;op_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;quarantine&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a><span class="w">      </span><span class="nt">&quot;src&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;C:\\Users\\user\\folder\\junk.tmp&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a><span class="w">      </span><span class="nt">&quot;proposed_at&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;2026-06-21T14:24:15.789Z&quot;</span><span class="p">,</span>
+<a id="__codelineno-2-27" name="__codelineno-2-27" href="#__codelineno-2-27"></a><span class="w">      </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;pending&quot;</span>
+<a id="__codelineno-2-28" name="__codelineno-2-28" href="#__codelineno-2-28"></a><span class="w">    </span><span class="p">}</span>
+<a id="__codelineno-2-29" name="__codelineno-2-29" href="#__codelineno-2-29"></a><span class="w">  </span><span class="p">]</span>
+<a id="__codelineno-2-30" name="__codelineno-2-30" href="#__codelineno-2-30"></a><span class="p">}</span>
+</code></pre></div>
+<p>Fields:
+- plan_id: Stable UUID identifying the plan. Multiple plans may be active concurrently.
+- created_at: ISO 8601 timestamp when the plan was first created.
+- state: Current state of the plan (pending, approved, executing, done, stopped, failed).
+- operations: List of proposed operations.
+  - op_id: Sequential index within the plan (0, 1, 2, ...).
+  - op_type: rename, move, or quarantine.
+  - src: Absolute path to the source file or directory.
+  - new_name (rename only): New name for the file (not a path).
+  - dest_dir (move only): Absolute path to the destination directory.
+  - proposed_at: ISO 8601 timestamp when the operation was proposed.
+  - status: Current status of the operation within the plan. May be pending, done, or failed.</p>
+<h3 id="journal-jsonl">Journal (JSONL)<a class="headerlink" href="#journal-jsonl" title="Permanent link">&para;</a></h3>
+<p>Location: .organizer/journal.jsonl (or value of JOURNAL_PATH)</p>
+<p>Format: One JSON object per line (JSONL). Each entry represents a single executed operation or a system event (hard stop).</p>
+<p>Example journal entries:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>{&quot;timestamp&quot;: &quot;2026-06-21T14:25:00.111Z&quot;, &quot;plan_id&quot;: &quot;uuid-12345-abcde&quot;, &quot;op_id&quot;: 0, &quot;op_type&quot;: &quot;rename&quot;, &quot;src&quot;: &quot;C:\\Users\\user\\folder\\old_name.txt&quot;, &quot;new_name&quot;: &quot;new_name.txt&quot;, &quot;status&quot;: &quot;done&quot;}
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>{&quot;timestamp&quot;: &quot;2026-06-21T14:25:01.222Z&quot;, &quot;plan_id&quot;: &quot;uuid-12345-abcde&quot;, &quot;op_id&quot;: 1, &quot;op_type&quot;: &quot;move&quot;, &quot;src&quot;: &quot;C:\\Users\\user\\folder\\file.docx&quot;, &quot;dest_dir&quot;: &quot;C:\\Users\\user\\folder\\Documents&quot;, &quot;final_path&quot;: &quot;C:\\Users\\user\\folder\\Documents\\file.docx&quot;, &quot;status&quot;: &quot;done&quot;}
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>{&quot;timestamp&quot;: &quot;2026-06-21T14:25:05.333Z&quot;, &quot;plan_id&quot;: &quot;uuid-12345-abcde&quot;, &quot;op_id&quot;: 2, &quot;op_type&quot;: &quot;quarantine&quot;, &quot;src&quot;: &quot;C:\\Users\\user\\folder\\junk.tmp&quot;, &quot;quarantine_path&quot;: &quot;C:\\Users\\user\\folder\\_quarantine\\junk.tmp&quot;, &quot;status&quot;: &quot;done&quot;}
+</code></pre></div>
+<p>Fields in normal operation entries:
+- timestamp: ISO 8601 timestamp when the operation was executed.
+- plan_id: References the plan this operation belongs to (not present for compress entries).
+- op_id: Index within the plan (not present for compress entries).
+- op_type: rename, move, quarantine, or compress.
+- src: Source path (rename, move, quarantine).
+- new_name (rename only): New name.
+- dest_dir (move only): Destination directory.
+- final_path (move only): Absolute path to the file after the move.
+- quarantine_path (quarantine only): Absolute path to the file in quarantine.
+- archive (compress only): Absolute path of the created zip archive.
+- quarantine_dir (compress only): Absolute path of the quarantine directory that was compressed.
+- files (compress only): List of <code>{name, src, sha256, size}</code> dicts — one per bundled file.
+- deleted_originals (compress only): Boolean — whether the source files were deleted after verification.
+- status: Always done for successful journal entries (not present for compress entries).</p>
+<p>Fields in hard_stop entries:
+- timestamp: When the hard stop was triggered.
+- plan_id: References the plan that encountered the failure.
+- op_type: Literally "hard_stop".
+- failed_count: Total operations that failed in this run.
+- stopped_at_op_id: Index of the operation that triggered the hard stop.
+- error_summary: Brief human-readable summary.
+- details: Array of failed operations with their errors.</p>
+<h2 id="proposing-operations">Proposing Operations<a class="headerlink" href="#proposing-operations" title="Permanent link">&para;</a></h2>
+<p>Proposal tools append operations to a plan without executing them.</p>
+<h3 id="propose_renamepath-str-new_name-str-dict">propose_rename(path: str, new_name: str) -&gt; dict<a class="headerlink" href="#propose_renamepath-str-new_name-str-dict" title="Permanent link">&para;</a></h3>
+<p>Propose renaming a file.</p>
+<p><strong>Inputs:</strong>
+- path: Absolute path to the file.
+- new_name: New name (not a path; e.g., "clean_filename.txt").</p>
+<p><strong>Processing:</strong>
+1. Validate that path is a file that exists.
+2. Check for collision: if a file named new_name already exists in the same directory, raise FileExistsError. This eager guard prevents invalid plans.
+3. Create or load the plan file for the given plan_id (from context or environment).
+4. Append a new operation object to the operations list.
+5. Write the plan file back to disk.</p>
+<p><strong>Output:</strong>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="p">{</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="nt">&quot;plan_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;uuid-12345-abcde&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nt">&quot;op_id&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">&quot;op_type&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;rename&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="nt">&quot;src&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;C:\\Users\\user\\folder\\old_name.txt&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">  </span><span class="nt">&quot;new_name&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;new_name.txt&quot;</span><span class="p">,</span>
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="nt">&quot;status&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;pending&quot;</span>
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="p">}</span>
+</code></pre></div></p>
+<h3 id="propose_movepath-str-dest_dir-str-dict">propose_move(path: str, dest_dir: str) -&gt; dict<a class="headerlink" href="#propose_movepath-str-dest_dir-str-dict" title="Permanent link">&para;</a></h3>
+<p>Propose moving a file to a different directory.</p>
+<p><strong>Inputs:</strong>
+- path: Absolute path to the file.
+- dest_dir: Absolute path to the destination directory.</p>
+<p><strong>Processing:</strong>
+1. Validate that path is a file and dest_dir is a directory.
+2. Check for collision: if a file with the same name already exists in dest_dir, raise FileExistsError.
+3. Append the operation to the plan.
+4. Write the plan file.</p>
+<h3 id="propose_quarantinepath-str-dict">propose_quarantine(path: str) -&gt; dict<a class="headerlink" href="#propose_quarantinepath-str-dict" title="Permanent link">&para;</a></h3>
+<p>Propose moving a file to the quarantine directory.</p>
+<p><strong>Inputs:</strong>
+- path: Absolute path to the file.</p>
+<p><strong>Processing:</strong>
+1. Validate that path is a file.
+2. Generate a safe destination path in QUARANTINE_DIR using safe_quarantine_path (handles collisions by suffixing).
+3. Append the operation to the plan.
+4. Write the plan file.</p>
+<h2 id="reviewing-a-plan">Reviewing a Plan<a class="headerlink" href="#reviewing-a-plan" title="Permanent link">&para;</a></h2>
+<h3 id="review_planplan_id-str-dict">review_plan(plan_id: str) -&gt; dict<a class="headerlink" href="#review_planplan_id-str-dict" title="Permanent link">&para;</a></h3>
+<p>Scan a plan for issues without modifying it.</p>
+<p><strong>Processing:</strong>
+1. Load the plan file for plan_id.
+2. Scan all operations for duplicate (src, op_type) pairs. Flag these as conflicts.
+3. Validate that all source files still exist.
+4. Return a report.</p>
+<h2 id="executing-a-plan">Executing a Plan<a class="headerlink" href="#executing-a-plan" title="Permanent link">&para;</a></h2>
+<h3 id="execute_planplan_id-str-dict">execute_plan(plan_id: str) -&gt; dict<a class="headerlink" href="#execute_planplan_id-str-dict" title="Permanent link">&para;</a></h3>
+<p>Apply all operations in an approved plan. Must be in approved state.</p>
+<p><strong>Processing:</strong>
+1. Load the plan file.
+2. Check state is approved; raise if not.
+3. Transition plan state to executing and write to disk.
+4. For each operation in the plan (in order):
+   a. Attempt to execute it (rename, move, or quarantine).
+   b. On success: update operation status to done, append a journal entry, update plan file.
+   c. On failure: retry up to 2 times. After 2 failed retries, mark operation status as failed and continue.
+5. After all operations:
+   a. If failed count &gt; 3, transition plan state to stopped, append a hard_stop journal entry.
+   b. Otherwise, transition plan state to done and write to disk.
+6. Return a summary.</p>
+<h2 id="undoing-operations">Undoing Operations<a class="headerlink" href="#undoing-operations" title="Permanent link">&para;</a></h2>
+<h3 id="undo_last-dict">undo_last() -&gt; dict<a class="headerlink" href="#undo_last-dict" title="Permanent link">&para;</a></h3>
+<p>Revert the most recent journaled operation.</p>
+<p><strong>Processing:</strong>
+1. Load the journal.
+2. Call last() to read the most recent entry without removing it. If empty, return an error.
+3. If the entry is a hard_stop, skip it and return a note.
+4. Invert the operation:
+   - <strong>rename</strong>: rename back to original name
+   - <strong>move</strong>: move back to original directory
+   - <strong>quarantine</strong>: move back from quarantine path to original path
+   - <strong>compress</strong>: restore each original file from the archive into its recorded <code>src</code> path, then delete the zip. All targets are pre-checked for collisions before any file is written. If <code>deleted_originals</code> was <code>False</code> (originals were kept), only the zip is deleted.
+5. On success, call pop_last() to remove the entry from the journal.
+6. Return the inverted operation.</p>
+<p><strong>Edge cases:</strong>
+- If the original file no longer exists at the expected location, return an error.
+- If the destination of the undo operation already exists, raise FileExistsError and do not remove the journal entry.
+- Hard stops are skipped and never undone; the user must manually assess the situation.
+- For compress undo: if <code>deleted_originals</code> was <code>True</code> and the archive is missing, an error is returned without removing the journal entry.</p>
+<h2 id="journal-module">Journal Module<a class="headerlink" href="#journal-module" title="Permanent link">&para;</a></h2>
+<p>Low-level append-only JSONL helpers in server/journal.py.</p>
+<h3 id="appendjournal_path-path-entry-dict-none">append(journal_path: Path, entry: dict) -&gt; None<a class="headerlink" href="#appendjournal_path-path-entry-dict-none" title="Permanent link">&para;</a></h3>
+<p>Append a single JSON object as a line to the journal. Creates the journal file and parent directory if they do not exist.</p>
+<h3 id="lastjournal_path-path-dict-none">last(journal_path: Path) -&gt; dict | None<a class="headerlink" href="#lastjournal_path-path-dict-none" title="Permanent link">&para;</a></h3>
+<p>Read the file, parse the last line as JSON, and return it. Returns None if the journal is empty or does not exist.</p>
+<h3 id="pop_lastjournal_path-path-dict-none">pop_last(journal_path: Path) -&gt; dict | None<a class="headerlink" href="#pop_lastjournal_path-path-dict-none" title="Permanent link">&para;</a></h3>
+<p>Remove the last line from the journal file, returning it. On empty journal, returns None. This is used by undo_last to commit the reversal.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "toc.integrate", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
