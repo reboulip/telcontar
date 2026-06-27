@@ -6,6 +6,7 @@ import hashlib
 import shutil
 from pathlib import Path
 
+from server import archive as _archive
 from server import events as _events
 from server import graph as _graph
 from server import plan as _plan
@@ -684,3 +685,77 @@ def get_actors(graph_path: Path, salient_cap: int) -> list[dict]:
     """Return the project's main actors — top entities ranked from the persisted
     graph, capped at ``salient_cap``. Build the graph first (build_graph)."""
     return _graph.rank_actors(_graph.load(graph_path), salient_cap)
+
+
+# ── Archived-documents journal ──────────────────────────────────────────────────
+
+
+def archive_document(
+    checksum: str,
+    reason: str,
+    registry_path: Path,
+    quarantine_dir: Path,
+    journal_path: Path,
+    archive_path: Path,
+) -> dict:
+    """Withdraw a document from active memory ("retirer de la mémoire").
+
+    Flips the registry record's status to ``archived``, moves its file to the
+    quarantine dir (collision-safe, recorded in the undo journal so it stays
+    reversible via ``undo_last``), and appends an entry to the archive log. The
+    document is never deleted. If the file is already gone, the status flip and
+    log entry still happen (no move). Raises if the checksum is not recorded.
+    """
+    from datetime import datetime, timezone
+    from server import journal as _journal
+
+    reg = _registry.load(registry_path)
+    rec = reg.get(checksum)
+    if rec is None:
+        raise ValueError(f"No document recorded for checksum {checksum!r}")
+
+    original_path = rec.path
+    src = Path(original_path)
+    moved_dst: str | None = None
+
+    if src.is_file():
+        quarantine_dir.mkdir(parents=True, exist_ok=True)
+        dest = safe_quarantine_path(src, quarantine_dir)
+        check_no_overwrite(dest)
+        shutil.move(str(src), str(dest))
+        moved_dst = str(dest)
+        _journal.append(
+            journal_path,
+            {
+                "op_type": "quarantine",
+                "src": original_path,
+                "dst": moved_dst,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "reason": "archive_document",
+            },
+        )
+        rec.path = moved_dst
+
+    reg.set_status(checksum, "archived")
+    _registry.save(reg, registry_path)
+
+    entry = _archive.ArchiveEntry.new(
+        checksum=checksum,
+        title=rec.title,
+        reason=reason or "",
+        src=original_path,
+        dst=moved_dst,
+    )
+    _archive.append(archive_path, entry)
+
+    return {
+        "checksum": checksum,
+        "status": "archived",
+        "moved": moved_dst,
+        "archived": entry.to_dict(),
+    }
+
+
+def list_archived(archive_path: Path) -> list[dict]:
+    """Return all archived-document log entries in chronological order."""
+    return _archive.all_entries(archive_path)

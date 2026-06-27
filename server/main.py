@@ -310,5 +310,31 @@ def get_actors() -> list:
     return tools.get_actors(cfg.graph_path, _get_profile().salient_cap)
 
 
+# ── Archived-documents journal ("retirer de la mémoire") ─────────────────────
+
+
+@mcp.tool()
+def archive_document(checksum: str, reason: str = "") -> dict:
+    """Withdraw a document from active memory: flip its registry status to archived,
+    move its file to quarantine (journaled, reversible via undo_last), and append to
+    the archive log. Never deletes. Identify the document by its checksum."""
+    cfg = _get_settings()
+    return tools.archive_document(
+        checksum,
+        reason,
+        cfg.registry_path,
+        cfg.quarantine_dir,
+        cfg.journal_path,
+        cfg.archive_path,
+    )
+
+
+@mcp.tool()
+def list_archived() -> list:
+    """Return all archived-document log entries in chronological order."""
+    cfg = _get_settings()
+    return tools.list_archived(cfg.archive_path)
+
+
 def main() -> None:
     mcp.run(transport="stdio")

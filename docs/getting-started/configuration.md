@@ -41,6 +41,7 @@ cp .env.example .env
 |---|---|---|---|
 | `REGISTRY_PATH` | no | `.organizer/registry.json` | Path to the persistent document registry (content-addressed, sha256-keyed). |
 | `GRAPH_PATH` | no | `.organizer/graph.json` | Path where the knowledge graph is persisted. Rebuilt on demand by `build_graph`; read without rebuilding by `get_graph`. |
+| `ARCHIVE_PATH` | no | `.organizer/archive.jsonl` | Append-only archive log: records every document withdrawn from active memory via `archive_document` (what was archived, why, and where the file moved). |
 
 ### Egress / extraction
 
@@ -85,6 +86,7 @@ Telcontar writes its state under `.organizer/` in the **project root** (not the 
 ├── plans/          # One JSON file per plan
 ├── journal.jsonl   # Append-only undo log (file operations)
 ├── events.jsonl    # Append-only project event journal (narrative log)
+├── archive.jsonl   # Append-only archive log (why a document left active memory)
 ├── registry.json   # Document memory (sha256 → metadata)
 └── graph.json      # Knowledge graph (derived from registry + events; rebuilt on demand)
 ```

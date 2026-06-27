@@ -36,6 +36,7 @@ User
 │  │  server/journal.py   append-only undo log       ││
 │  │  server/events.py    project event journal      ││
 │  │  server/graph.py     knowledge graph projection ││
+  │  │  server/archive.py   archived-documents log ││
 │  │  server/extract.py   markitdown text extraction ││
 │  └─────────────────────────────────────────────────┘│
 │                          │                          │
@@ -94,6 +95,18 @@ The MCP server has no delete tool. The `propose_quarantine` / `quarantine` path 
 
 `rank_actors` scores entities by: document count (primary), total co-occurrence weight, then event-mention count, with a deterministic lowercased-name tie-break. The cap comes from the active profile's `[entities].salient_cap` field and is enforced in the tool itself.
 
+### Three distinct journals
+
+Telcontar maintains three append-only JSONL logs — each with a different purpose:
+
+| Journal | Path | What it records | Drives |
+|---|---|---|---|
+| **Undo journal** | `JOURNAL_PATH` (`.organizer/journal.jsonl`) | Executed file operations (rename, move, quarantine) | `undo_last` |
+| **Event journal** | `EVENTS_PATH` (`.organizer/events.jsonl`) | Project narrative — verb-led, dated milestones | `list_events`, `build_graph` |
+| **Archive log** | `ARCHIVE_PATH` (`.organizer/archive.jsonl`) | Documents withdrawn from active memory: why and where the file went | `list_archived` |
+
+`archive_document` writes to both the undo journal (the file move, so it stays reversible) and the archive log (the reason a document left memory). These two writes serve different purposes and are never merged.
+
 ---
 
 ## Data flow (one organize session)
@@ -134,7 +147,7 @@ config/settings.py  (Pydantic Settings)
   ├──► host/agent.py  (LLM endpoint, approval mode, profile)
   │
   └──► server/main.py  (plans_dir, journal_path, events_path, registry_path,
-                         graph_path, quarantine_dir, max_snippet_chars,
+                         graph_path, archive_path, quarantine_dir, max_snippet_chars,
                          allowlist_dirs, profile)
 ```
 

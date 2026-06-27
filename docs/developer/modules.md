@@ -49,6 +49,9 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 | Gated execution | `execute_plan`, `write_index`, `write_summary` |
 | Recovery | `undo_last` |
 | Registry | `record_document`, `get_document`, `list_documents`, `get_registry`, `find_duplicates`, `find_modified_documents` |
+| Event journal | `create_event`, `list_events` |
+| Knowledge graph | `build_graph`, `get_graph`, `get_actors` |
+| Archive | `archive_document`, `list_archived` |
 
 **Internal helpers:** `_apply_op` executes a single `PlanOp` against the filesystem; `_reconcile_op` updates the registry record's path/status after execution.
 
@@ -124,6 +127,21 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 | `pop_last(journal_path)` | Removes and returns the last entry; rewrites the file |
 
 **Design note:** `pop_last` rewrites the entire file minus the last line. For typical journal sizes (hundreds of entries) this is fine; for very large corpora a more efficient structure could be introduced later.
+
+---
+
+### `server/archive.py` (~64 lines)
+
+**Role:** Append-only JSONL log of documents withdrawn from active memory — the "retirer de la mémoire" audit trail. Distinct from the undo journal (which records reversible file ops) and the event journal (project narrative).
+
+**Key type:** `ArchiveEntry` — dataclass with `{checksum, title, reason, src, dst, archived_at}`. `dst` is `null` when the file was already absent at archive time.
+
+| Function | Description |
+|---|---|
+| `append(archive_path, entry)` | Appends one archive entry as a JSONL line; creates parent dirs |
+| `all_entries(archive_path)` | Returns all entries in chronological order; empty list if no file |
+
+**Design note:** `archive_document` in `server/tools.py` coordinates the status flip in the registry, the quarantine move (journaled in the undo log for reversibility), and the append here. This module owns only the serialization.
 
 ---
 

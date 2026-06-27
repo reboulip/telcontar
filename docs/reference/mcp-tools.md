@@ -332,6 +332,59 @@ Return groups of documents sharing a normalized title but with **different check
 
 ---
 
+## Archived-documents journal tools
+
+Withdraw documents from active memory and inspect the archive log. The archive journal is distinct from the undo journal (reversible file ops) and the event journal (project narrative) — it is the durable record of *why a document left active memory*.
+
+### `archive_document`
+
+```python
+archive_document(checksum: str, reason: str = "") -> dict
+```
+
+Withdraw a document from active memory ("retirer de la mémoire"). Takes three actions atomically:
+
+1. Looks up the registry record for `checksum`; raises `ValueError` if not found.
+2. If the file exists at its recorded path, moves it to `QUARANTINE_DIR` (collision-safe via `safe_quarantine_path`) and appends a `quarantine` entry to the **undo journal** — so the move stays reversible via `undo_last`.
+3. Flips the registry record's `status` to `archived`.
+4. Appends an entry to the archive log at `ARCHIVE_PATH`.
+
+The document is never deleted. If the file is already gone when `archive_document` is called, steps 2's file move is skipped; the status flip and log entry still happen (`moved` is `null` in the response).
+
+**Parameters:**
+
+| Name | Type | Description |
+|---|---|---|
+| `checksum` | str | sha256 of the document to archive (the document's registry identity) |
+| `reason` | str | Human-readable reason for archiving; stored in the archive log (default `""`) |
+
+**Returns:**
+
+| Field | Type | Description |
+|---|---|---|
+| `checksum` | str | sha256 of the archived document |
+| `status` | str | Always `"archived"` |
+| `moved` | str \| null | Absolute path of the file in quarantine, or `null` if the file was already gone |
+| `archived` | dict | Full `ArchiveEntry` record: `{checksum, title, reason, src, dst, archived_at}` |
+
+---
+
+### `list_archived`
+
+```python
+list_archived() -> list[dict]
+```
+
+Return all entries from the archive log at `ARCHIVE_PATH` in chronological (append) order. Returns an empty list if no documents have been archived yet.
+
+**Returns:** list of `{checksum, title, reason, src, dst, archived_at}` records.
+
+- `src`: original file path at the time of archiving
+- `dst`: path in quarantine, or `null` if the file was not present
+- `archived_at`: ISO 8601 UTC timestamp
+
+---
+
 ## Event journal tools
 
 Record and retrieve the project narrative log. Each event is a short, verb-led sentence stamped with the date it occurred. The event journal is distinct from the undo journal: it captures *what happened in the project*, not reversible file operations.
@@ -484,3 +537,4 @@ Write text content to disk. `create_file` enforces `check_no_overwrite`; `update
 | `create_event`, `list_events` | — | — | — | — | — | ✓ |
 | `build_graph`, `get_graph` | — | — | — | — | — | ✓ |
 | `get_actors` | — | — | — | — | — | ✓ |
+| `archive_document`, `list_archived` | — | — | — | — | — | ✓ |

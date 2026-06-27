@@ -86,7 +86,10 @@ All state lives under `.organizer/` in the **project root** (not the target dire
 |---|---|
 | `.organizer/registry.json` | Document records keyed by sha256 — the engine's memory |
 | `.organizer/plans/<uuid>.json` | One JSON file per plan, with ops and state machine |
-| `.organizer/journal.jsonl` | Append-only undo log — every executed op recorded |
+| `.organizer/journal.jsonl` | Append-only undo log — every executed file op recorded |
+| `.organizer/events.jsonl` | Append-only project event journal — verb-led narrative entries |
+| `.organizer/graph.json` | Knowledge graph — derived from registry + events; rebuilt on demand |
+| `.organizer/archive.jsonl` | Append-only archive log — documents withdrawn from active memory |
 
 Because the registry is keyed by checksum, moving or renaming a file does **not** lose its analysis. The `execute_plan` function reconciles paths automatically as files move.
 
