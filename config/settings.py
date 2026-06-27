@@ -33,6 +33,8 @@ class Settings(BaseSettings):
 
     # Document memory — persistent, content-addressed registry
     registry_path: Path = Path(".organizer/registry.json")
+    # Knowledge graph — derived projection of the registry + event journal
+    graph_path: Path = Path(".organizer/graph.json")
 
     # Egress / extraction
     max_snippet_chars: int = 4000

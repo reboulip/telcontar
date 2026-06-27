@@ -284,5 +284,23 @@ def list_events() -> list:
     return tools.list_events(cfg.events_path)
 
 
+# ── Knowledge graph (derived from registry + events) ─────────────────────────
+
+
+@mcp.tool()
+def build_graph() -> dict:
+    """Rebuild the knowledge graph (documents, entities, events as nodes/edges)
+    from the registry and event journal, persist it, and return {nodes, edges}."""
+    cfg = _get_settings()
+    return tools.build_graph(cfg.registry_path, cfg.events_path, cfg.graph_path)
+
+
+@mcp.tool()
+def get_graph() -> dict:
+    """Return the persisted knowledge graph as {nodes, edges}; empty if never built."""
+    cfg = _get_settings()
+    return tools.get_graph(cfg.graph_path)
+
+
 def main() -> None:
     mcp.run(transport="stdio")

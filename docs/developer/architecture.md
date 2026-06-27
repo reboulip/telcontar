@@ -35,6 +35,7 @@ User
 │  │  server/guards.py    no-overwrite / allowlist   ││
 │  │  server/journal.py   append-only undo log       ││
 │  │  server/events.py    project event journal      ││
+│  │  server/graph.py     knowledge graph projection ││
 │  │  server/extract.py   markitdown text extraction ││
 │  └─────────────────────────────────────────────────┘│
 │                          │                          │
@@ -87,6 +88,10 @@ The host can only call `execute_plan` on a plan in `approved` state. The `approv
 
 The MCP server has no delete tool. The `propose_quarantine` / `quarantine` path is the only way to remove files from the working tree. Quarantined files are moved to `QUARANTINE_DIR` and journaled — they can be recovered manually or via `undo_last`.
 
+### Knowledge graph
+
+`server/graph.py` projects the registry and event journal into a node/edge graph persisted at `GRAPH_PATH` (`.organizer/graph.json`). The graph is a pure, reproducible derivation — no independent state. Node kinds: `document` (one per registry record), `entity` (deduplicated person/org by normalized name), `event` (one per recorded event). Edge types: doc→entity (role-typed), entity↔entity `co_occurrence` (weighted by shared documents), event→entity `mentions` (entity name found in event sentence). Exposed via `build_graph` (rebuild + persist + return) and `get_graph` (return last persisted).
+
 ---
 
 ## Data flow (one organize session)
@@ -124,7 +129,8 @@ config/settings.py  (Pydantic Settings)
   ├──► host/agent.py  (LLM endpoint, approval mode, profile)
   │
   └──► server/main.py  (plans_dir, journal_path, events_path, registry_path,
-                         quarantine_dir, max_snippet_chars, allowlist_dirs, profile)
+                         graph_path, quarantine_dir, max_snippet_chars,
+                         allowlist_dirs, profile)
 ```
 
 Both host and server load `Settings` independently at startup — there is no shared singleton across the process boundary. The server's `_get_settings()` is lazy-initialized and cached per process.

@@ -7,6 +7,7 @@ import shutil
 from pathlib import Path
 
 from server import events as _events
+from server import graph as _graph
 from server import plan as _plan
 from server import registry as _registry
 from server.extract import extract as _extract
@@ -656,3 +657,24 @@ def create_event(sentence: str, date: str | None, events_path: Path) -> dict:
 def list_events(events_path: Path) -> list[dict]:
     """Return all recorded project events in chronological order."""
     return [e.to_dict() for e in _events.all_events(events_path)]
+
+
+# ── Knowledge graph ────────────────────────────────────────────────────────────
+
+
+def build_graph(registry_path: Path, events_path: Path, graph_path: Path) -> dict:
+    """Rebuild the knowledge graph from the registry + event journal and persist it.
+
+    Pure projection: the result depends only on the current registry and events,
+    so it can be regenerated at any time. Returns the graph as {nodes, edges}.
+    """
+    reg = _registry.load(registry_path)
+    evs = _events.all_events(events_path)
+    g = _graph.build(reg, evs)
+    _graph.save(g, graph_path)
+    return g.to_dict()
+
+
+def get_graph(graph_path: Path) -> dict:
+    """Return the persisted knowledge graph as {nodes, edges}; empty if never built."""
+    return _graph.load(graph_path).to_dict()

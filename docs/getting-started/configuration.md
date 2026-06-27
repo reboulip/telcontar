@@ -40,6 +40,7 @@ cp .env.example .env
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `REGISTRY_PATH` | no | `.organizer/registry.json` | Path to the persistent document registry (content-addressed, sha256-keyed). |
+| `GRAPH_PATH` | no | `.organizer/graph.json` | Path where the knowledge graph is persisted. Rebuilt on demand by `build_graph`; read without rebuilding by `get_graph`. |
 
 ### Egress / extraction
 
@@ -84,7 +85,8 @@ Telcontar writes its state under `.organizer/` in the **project root** (not the 
 ├── plans/          # One JSON file per plan
 ├── journal.jsonl   # Append-only undo log (file operations)
 ├── events.jsonl    # Append-only project event journal (narrative log)
-└── registry.json   # Document memory (sha256 → metadata)
+├── registry.json   # Document memory (sha256 → metadata)
+└── graph.json      # Knowledge graph (derived from registry + events; rebuilt on demand)
 ```
 
 These files are gitignored by default and survive between runs.

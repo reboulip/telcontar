@@ -370,6 +370,50 @@ Return all recorded project events from `EVENTS_PATH` in chronological (append) 
 
 ---
 
+## Knowledge graph tools
+
+A derived, reproducible projection of the document registry and event journal into a node/edge graph persisted at `GRAPH_PATH` (default `.organizer/graph.json`). The graph holds no independent state — it can be rebuilt at any time from the registry and events.
+
+**Node kinds:**
+
+| Kind | Id format | What it represents |
+|---|---|---|
+| `document` | `doc:{checksum}` | One node per registry record |
+| `entity` | `entity:{normalized_name}` | Deduplicated person/org; carries the union of all roles it appears under across documents |
+| `event` | `event:{event_id}` | One node per recorded project event |
+
+**Edge types:**
+
+| Type | Direction | Description |
+|---|---|---|
+| *(role value, e.g. `author`, `mentioned`)* | doc → entity | Links a document to each of its entities; `type` is the entity's role on that document |
+| `co_occurrence` | entity ↔ entity | Connects pairs of entities that appear on the same document; `weight` = number of shared documents |
+| `mentions` | event → entity | Links an event to any entity whose normalized name appears in the event sentence |
+
+### `build_graph`
+
+```python
+build_graph() -> dict
+```
+
+Rebuild the knowledge graph from the current registry and event journal, persist it to `GRAPH_PATH`, and return the result. Safe to call repeatedly — each call produces a deterministic result and overwrites the previous file.
+
+**Returns:** `{nodes, edges}` where each node is a dict with at least `{id, kind}` and each edge is `{src, dst, type}` (plus `weight` for `co_occurrence` edges).
+
+---
+
+### `get_graph`
+
+```python
+get_graph() -> dict
+```
+
+Return the most recently persisted graph without rebuilding it. Returns `{nodes: [], edges: []}` if `build_graph` has never been called.
+
+**Returns:** `{nodes, edges}` — same shape as `build_graph`.
+
+---
+
 ## Direct file utilities
 
 Lower-level tools used for writing index/summary files. Not normally called directly by the agent.
@@ -408,3 +452,4 @@ Write text content to disk. `create_file` enforces `check_no_overwrite`; `update
 | `get_registry`, `find_duplicates`, `find_modified_documents` | — | — | ✓ | ✓ | ✓ | ✓ |
 | `write_index`, `write_summary` | — | — | — | ✓ | ✓ | ✓ |
 | `create_event`, `list_events` | — | — | — | — | — | ✓ |
+| `build_graph`, `get_graph` | — | — | — | — | — | ✓ |
