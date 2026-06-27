@@ -1,12 +1,17 @@
 """Tool implementations — called by the MCP server handlers in main.py."""
 from __future__ import annotations
 
+import hashlib
 import shutil
 from pathlib import Path
 
 from server import plan as _plan
+from server import registry as _registry
 from server.extract import extract as _extract
 from server.guards import check_no_overwrite, safe_quarantine_path
+from server.profile import Profile as _Profile
+
+_CHECKSUM_CHUNK = 65536
 
 
 def list_dir(path: str) -> dict:
@@ -53,6 +58,18 @@ def extract_text(path: str, max_chars: int) -> str:
     if not p.is_file():
         raise ValueError(f"Not a file: {path}")
     return _extract(p, max_chars)
+
+
+def compute_checksum(path: str) -> dict:
+    """Compute the sha256 checksum of a file (chunk-streamed) as its unique id."""
+    p = Path(path)
+    if not p.is_file():
+        raise ValueError(f"Not a file: {path}")
+    h = hashlib.sha256()
+    with p.open("rb") as f:
+        for chunk in iter(lambda: f.read(_CHECKSUM_CHUNK), b""):
+            h.update(chunk)
+    return {"path": str(p), "checksum": h.hexdigest()}
 
 
 def move_file(path: str, dest_dir: str) -> dict:
@@ -208,8 +225,19 @@ def propose_quarantine(path: str, plan_id: str, plans_dir: Path, quarantine_dir:
             "src": str(src), "dst": str(safe_dest), "status": op.status, "ops_count": len(p.ops)}
 
 
-def execute_plan(plan_id: str, plans_dir: Path, journal_path: Path) -> dict:
-    """Apply approved ops with per-op retry; hard-stop if >3 fail in one run."""
+def execute_plan(
+    plan_id: str,
+    plans_dir: Path,
+    journal_path: Path,
+    registry_path: Path | None = None,
+) -> dict:
+    """Apply approved ops with per-op retry; hard-stop if >3 fail in one run.
+
+    When ``registry_path`` points at a non-empty registry, each executed op also
+    reconciles the matching document record's path (and status, for quarantine)
+    so the checksum stays the identity while paths track moves. Registry-optional:
+    a missing/empty registry is a silent no-op.
+    """
     from datetime import datetime, timezone
     from server import journal as _journal
 
@@ -219,6 +247,12 @@ def execute_plan(plan_id: str, plans_dir: Path, journal_path: Path) -> dict:
 
     p.transition("executing")
     _plan.save(p, plans_dir)
+
+    reg: _registry.Registry | None = None
+    if registry_path is not None:
+        loaded = _registry.load(registry_path)
+        if loaded.documents:
+            reg = loaded
 
     completed_count = 0
     failed_ops: list[dict] = []
@@ -253,6 +287,8 @@ def execute_plan(plan_id: str, plans_dir: Path, journal_path: Path) -> dict:
                 "dst": op.dst,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
+            if reg is not None and registry_path is not None and _reconcile_op(reg, op):
+                _registry.save(reg, registry_path)
         else:
             op.status = "failed"
             op.error = last_error
@@ -282,6 +318,24 @@ def execute_plan(plan_id: str, plans_dir: Path, journal_path: Path) -> dict:
 
 
 _NON_RETRYABLE_ERRORS = (ValueError, FileNotFoundError, FileExistsError)
+
+
+def _reconcile_op(reg: "_registry.Registry", op: "_plan.PlanOp") -> bool:
+    """Update the registry record's location/status to match an executed op.
+
+    Returns True if a record was updated; False when the op's source file was
+    never recorded (registry-optional reconcile).
+    """
+    src = Path(op.src)
+    if op.op_type == "rename":
+        rec = reg.update_path(op.src, str(src.parent / op.dst))
+    elif op.op_type == "move":
+        rec = reg.update_path(op.src, str(Path(op.dst) / src.name))
+    elif op.op_type == "quarantine":
+        rec = reg.update_path(op.src, str(Path(op.dst)), status="quarantined")
+    else:
+        return False
+    return rec is not None
 
 
 def _apply_op(op: "_plan.PlanOp") -> None:
@@ -441,3 +495,91 @@ def undo_last(journal_path: Path, plans_dir: Path) -> dict:
 
     _journal.pop_last(journal_path)
     return {"undone": entry}
+
+
+# ── Document registry ─────────────────────────────────────────────────────────
+
+def record_document(
+    checksum: str,
+    path: str,
+    title: str,
+    type: str,
+    summary: str,
+    provenance: str,
+    date: str | None,
+    entities: list[dict] | None,
+    attributes: dict | None,
+    status: str,
+    registry_path: Path,
+    profile: _Profile,
+) -> dict:
+    """Upsert an analyzed document into the registry, validated against the profile.
+
+    ``type`` must be one of the active profile's document types. Entity ``role``
+    values, when present, must belong to the profile's role taxonomy. The author
+    guardrail (only include people explicitly named, never inferred) is a prompt
+    instruction, not enforced here.
+    """
+    valid_types = profile.document_type_ids()
+    if type not in valid_types:
+        raise ValueError(
+            f"Invalid document type {type!r}; profile {profile.name!r} allows: {valid_types}"
+        )
+    valid_roles = set(profile.entity_roles())
+    norm_entities: list[dict] = []
+    for e in entities or []:
+        name = e.get("name")
+        if not name:
+            raise ValueError(f"Entity missing 'name': {e!r}")
+        role = e.get("role", "")
+        if role and valid_roles and role not in valid_roles:
+            raise ValueError(
+                f"Invalid entity role {role!r}; profile {profile.name!r} allows: "
+                f"{sorted(valid_roles)}"
+            )
+        norm_entities.append({"name": name, "role": role, "kind": e.get("kind", "person")})
+
+    reg = _registry.load(registry_path)
+    rec = _registry.DocumentRecord.new(
+        checksum=checksum,
+        path=path,
+        title=title,
+        type=type,
+        summary=summary,
+        provenance=provenance,
+        date=date,
+        entities=norm_entities,
+        attributes=attributes or {},
+        status=status or "active",  # type: ignore[arg-type]
+    )
+    reg.upsert(rec)
+    _registry.save(reg, registry_path)
+    return rec.to_dict()
+
+
+def get_registry(registry_path: Path) -> dict:
+    """Return the entire registry as a dict for the host to reason over."""
+    return _registry.load(registry_path).to_dict()
+
+
+def list_documents(registry_path: Path) -> list[dict]:
+    """Return all document records, oldest first."""
+    return [r.to_dict() for r in _registry.load(registry_path).records()]
+
+
+def get_document(checksum: str, registry_path: Path) -> dict | None:
+    """Return a single document record by checksum, or None if absent."""
+    rec = _registry.load(registry_path).get(checksum)
+    return rec.to_dict() if rec is not None else None
+
+
+def find_duplicates(registry_path: Path) -> list[list[dict]]:
+    """Return fuzzy candidate-duplicate clusters for the host to judge."""
+    reg = _registry.load(registry_path)
+    return [[r.to_dict() for r in group] for group in reg.find_duplicates()]
+
+
+def find_modified_documents(registry_path: Path) -> list[list[dict]]:
+    """Return groups sharing a title but differing in content (modified docs)."""
+    reg = _registry.load(registry_path)
+    return [[r.to_dict() for r in group] for group in reg.find_modified()]

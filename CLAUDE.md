@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-A locally-run AI assistant that cleans up and organizes a directory tree: renaming files, moving them, quarantining clutter, building a searchable index, and producing an overall summary. The runner executes locally (all file operations stay on the machine); intelligence comes from GPT-5 via an OpenAI-compatible API endpoint.
+A locally-run, **profile-driven document-intelligence engine**. Given a directory of documents dumped in bulk, it analyzes each one (title, date, type, summary, author, mentioned people, why it's here), records them in a persistent content-addressed memory registry, detects duplicates and modified versions, organizes the tree (rename / move / quarantine), and synthesizes an overall summary — all locally. Everything domain-specific (the document-type vocabulary, entity/role model, extraction guardrails, naming, synthesis template, output sinks) is externalized into a declarative **domain profile**, so the same engine serves different kinds of corpora. The **IS/IT-project profile** (`profiles/is_it_project.toml`) ships as profile #1. Intelligence comes from GPT-5 via an OpenAI-compatible endpoint; the server stays deterministic (it persists what the model reasons out).
 
 **Architecture:** MCP-based (Stack B1).
 - A custom Python MCP server exposes guarded file-system tools.
@@ -60,12 +60,21 @@ APPROVAL_MODE=always # always | destructive_only | never
 QUARANTINE_DIR=_quarantine
 JOURNAL_PATH=.organizer/journal.jsonl
 
+# --- Domain profile ---
+PROFILE=is_it_project        # which profiles/<name>.toml to load
+PROFILES_DIR=profiles
+REGISTRY_PATH=.organizer/registry.json
+
 # --- Egress / extraction ---
 MAX_SNIPPET_CHARS=4000   # defense-in-depth even though full content is allowed
 ALLOWLIST_DIRS=          # optional: restrict content upload to these dirs
 ```
 
 > **Note:** Azure OpenAI and Mammouth are both OpenAI-compatible. Use the openai SDK with `base_url`/`api_key` overrides. For Azure, set `api_version` and the deployment-style endpoint; for Mammouth, the standard base URL. **No code change to switch — config only.**
+
+## Domain Profiles
+
+Everything domain-specific lives in a declarative TOML profile under `profiles/` (e.g. `profiles/is_it_project.toml`). A profile defines the document-type vocabulary, the entity/role taxonomy and salient-actor cap, the extraction fields (required vs optional "IF POSSIBLE" guardrails), the naming convention, the synthesis template, and the output sinks. The active profile is chosen by the `profile` setting (default `is_it_project`); the host composes its system prompt from it and `record_document` validates against it. Add a sibling `.toml` to adapt telcontar to a different corpus — no code change.
 
 ## Safety Model
 
@@ -105,6 +114,13 @@ Start at `always`; relax over time via config — no code changes.
 - `propose_move(path, dest_dir)`
 - `propose_quarantine(path)`
 
+**Document memory (registry):**
+- `compute_checksum(path)` — sha256 of a file, its unique content id.
+- `record_document(checksum, path, title, type, summary, provenance, date, entities)` — upsert an analyzed document into the registry; `type` is validated against the active profile, `entities` is a list of `{name, role, kind}` (author = an entity with role "author", only when explicit).
+- `get_registry()` / `list_documents()` / `get_document(checksum)` — read-only views of the registry.
+- `find_duplicates()` — fuzzy candidate-duplicate clusters (title-token similarity within a type) for the host to judge.
+- `find_modified_documents()` — documents sharing a title but differing in content (modified versions).
+
 **Gated execution** (respect `APPROVAL_MODE`):
 - `execute_plan(plan_id)` — apply approved ops; journal each one.
 - `write_index(path)` — emit Markdown index + JSON manifest.
@@ -114,6 +130,8 @@ Start at `always`; relax over time via config — no code changes.
 - `undo_last()` — revert the most recent journaled op.
 
 **No delete tool exists. Quarantine only.**
+
+> **Two journals:** the **undo journal** (`.organizer/journal.jsonl`, file operations, drives `undo_last`) is distinct from the future project **event journal**. `execute_plan` reconciles registry paths automatically as files move (the checksum stays the identity).
 
 ## Outputs
 
@@ -139,9 +157,13 @@ project/
 │   ├── tools.py            # tool implementations
 │   ├── guards.py           # collision/overwrite/quarantine rules
 │   ├── journal.py          # undo journal
-│   └── extract.py          # markitdown/pypdf text extraction
-└── config/
-    └── settings.py         # env loading + validation
+│   ├── extract.py          # markitdown/pypdf text extraction
+│   ├── profile.py          # domain profile loader
+│   └── registry.py         # document memory
+├── config/
+│   └── settings.py         # env loading + validation
+└── profiles/
+    └── is_it_project.toml  # domain profile #1
 ```
 
 ## Development Setup

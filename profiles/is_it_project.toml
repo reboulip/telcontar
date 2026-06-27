@@ -1,0 +1,103 @@
+# Profile #1 — IS/IT project document corpus.
+#
+# This is the first concrete domain profile for telcontar's profile-driven
+# document-intelligence engine. It encodes the corporate IS/IT project use case
+# (the original requirements) as data: the document-type vocabulary, the
+# stakeholder/entity model, the extraction guardrails, naming, and outputs.
+# Author a sibling .toml to adapt the engine to a different kind of corpus.
+
+name = "is_it_project"
+description = "Corporate IS/IT project document corpus (PMO-flavoured)."
+
+# --- Document-type vocabulary -------------------------------------------------
+# `record_document` validates each document's `type` against these ids.
+
+[[document_types]]
+id = "communication_formelle"
+label = "Communication formelle"
+description = "Note, courrier ou annonce officielle adressée aux parties prenantes."
+
+[[document_types]]
+id = "releve_de_decision"
+label = "Relevé de décision"
+description = "Compte rendu actant des décisions prises (instance, arbitrage)."
+
+[[document_types]]
+id = "document_de_travail"
+label = "Document de travail"
+description = "Livrable ou analyse en cours d'élaboration, non figé."
+
+[[document_types]]
+id = "support_copil"
+label = "Support de comité de pilotage"
+description = "Slides ou dossier présenté en COPIL."
+
+[[document_types]]
+id = "support_reunion"
+label = "Support de réunion de travail"
+description = "Support d'une réunion de travail opérationnelle."
+
+[[document_types]]
+id = "draft_officiel"
+label = "Draft de document officiel"
+description = "Version préparatoire d'un document destiné à être officialisé."
+
+[[document_types]]
+id = "notes"
+label = "Notes"
+description = "Notes personnelles ou de réunion, non structurées."
+
+[[document_types]]
+id = "echanges"
+label = "Échanges"
+description = "Fil d'e-mails ou de messages, correspondance."
+
+[[document_types]]
+id = "autre"
+label = "Autres (préciser)"
+description = "Type non couvert ci-dessus ; préciser dans les attributs."
+
+# --- Entity / actor model -----------------------------------------------------
+# Entities are stored as {name, role, kind}. `salient_cap` bounds the number of
+# "main actors" surfaced for the project (the 4-5 personnes guardrail).
+
+[entities]
+kinds = ["person", "org"]
+role_taxonomy = [
+    "author",          # auteur principal du document
+    "mentioned",       # personne mentionnée
+    "sponsor",         # commanditaire / sponsor
+    "chef_de_projet",  # chef de projet / PMO
+    "metier",          # référent métier
+    "prestataire",     # prestataire externe
+    "autre",
+]
+salient_cap = 5
+
+# --- Extraction guardrails ----------------------------------------------------
+# Required fields must always be produced by the analysis pass; optional fields
+# are "SI POSSIBLE" — leave null rather than inventing (e.g. the author garde-fou).
+
+[extraction]
+required = ["title", "summary", "provenance"]
+optional = ["date", "author"]
+
+# --- Synthesis ----------------------------------------------------------------
+
+[synthesis]
+template = "project_synthesis"
+
+# --- Naming -------------------------------------------------------------------
+
+[naming]
+convention = "snake_case_iso_dates"
+instructions = """\
+Use snake_case file names. Prefix with the document date as YYYY-MM-DD when known. \
+Transliterate accented and special characters to ASCII. Keep the original extension. \
+Drop redundant version suffixes when the date already disambiguates."""
+
+# --- Output sinks -------------------------------------------------------------
+# local_markdown is the only built-in sink for now; others are plugins (v0.8.0+).
+
+[sinks]
+default = ["local_markdown"]

@@ -155,7 +155,7 @@ class TestWriteSummary:
 class TestNamingConventions:
     def test_default_when_file_missing(self, tmp_path: Path) -> None:
         from host.agent import _load_naming_conventions
-        result = _load_naming_conventions(tmp_path)
+        result = _load_naming_conventions(tmp_path, None)
         assert "snake_case" in result or "underscore" in result.lower()
 
     def test_loads_custom_file(self, tmp_path: Path) -> None:
@@ -163,7 +163,7 @@ class TestNamingConventions:
         naming_path = tmp_path / ".organizer" / "NAMING.md"
         naming_path.parent.mkdir(parents=True)
         naming_path.write_text("## My Rules\n- Use CamelCase\n", encoding="utf-8")
-        result = _load_naming_conventions(tmp_path)
+        result = _load_naming_conventions(tmp_path, None)
         assert "CamelCase" in result
 
     def test_falls_back_to_default_for_empty_file(self, tmp_path: Path) -> None:
@@ -171,12 +171,14 @@ class TestNamingConventions:
         naming_path = tmp_path / ".organizer" / "NAMING.md"
         naming_path.parent.mkdir(parents=True)
         naming_path.write_text("   \n", encoding="utf-8")
-        result = _load_naming_conventions(tmp_path)
+        result = _load_naming_conventions(tmp_path, None)
         assert "underscore" in result.lower() or "snake_case" in result
 
     def test_system_prompt_contains_naming_section(self, tmp_path: Path) -> None:
+        from unittest.mock import MagicMock
+
         from host.agent import _build_system_prompt
-        prompt = _build_system_prompt(tmp_path)
+        prompt = _build_system_prompt(tmp_path, MagicMock())
         assert "naming" in prompt.lower() or "rename" in prompt.lower()
         assert "write_index" in prompt
         assert "write_summary" in prompt

@@ -20,6 +20,7 @@ from openai import AsyncOpenAI
 from config.settings import Settings
 from server.plan import load as _load_plan
 from server.plan import save as _save_plan
+from server.profile import Profile, load_profile
 
 # ── Event types ───────────────────────────────────────────────────────────────
 
@@ -49,20 +50,33 @@ ApprovalCallback = Callable[[str, dict], Awaitable[ApprovalResult]]
 # ── System prompt ─────────────────────────────────────────────────────────────
 
 _SYSTEM_PROMPT_TEMPLATE = """\
-You are a local directory organizer assistant. Analyze the target directory and
-produce a clean, organized structure following these steps:
+You are telcontar, a local document-intelligence assistant. You turn a messy
+directory of documents into structured knowledge and a clean, organized tree,
+using the "{profile_name}" domain profile. Work in this order:
 
-1. Call list_dir on the target to enumerate contents; recurse into subdirectories.
-2. Read files (read_file / extract_text) to understand their purpose.
-3. Create a plan with create_plan, then stage ops with propose_rename,
-   propose_move, and propose_quarantine.
-4. Call review_plan for a deduplication pass before execution.
-5. Call execute_plan to apply the plan (the user reviews and approves first).
-6. Call write_index on the target directory to produce INDEX.md and manifest.json.
-7. Compose a Markdown summary (plain prose, 2-4 paragraphs) describing what the
-   directory contains and what changes were made, then call
-   write_summary(path=<target_dir>, content=<your prose>) to persist SUMMARY.md.
-8. Respond with a final text summary (no tool calls) when fully done.
+A. ANALYZE each meaningful document and record it in the memory registry:
+   1. Read its content with read_file or extract_text (for PDF/Office).
+   2. Call compute_checksum to obtain its unique content id.
+   3. Derive its metadata and call record_document(checksum, path, title, type,
+      summary, provenance, date, entities):
+{extraction_rules}
+   4. Use find_duplicates and find_modified_documents to spot duplicates and
+      newer versions before deciding what to keep or quarantine.
+
+B. ORGANIZE the tree:
+   5. Create a plan with create_plan, then stage ops with propose_rename,
+      propose_move, and propose_quarantine. Quarantine useless or duplicate
+      documents (never delete them).
+   6. Call review_plan for a deduplication pass.
+   7. Call execute_plan to apply the plan (the user reviews and approves first).
+      Registry paths are reconciled automatically as files move.
+
+C. SYNTHESIZE:
+   8. Call write_index on the target directory to produce INDEX.md and manifest.json.
+   9. Compose a Markdown summary (plain prose, 2-4 paragraphs) describing what the
+      directory contains and what changed, then call
+      write_summary(path=<target_dir>, content=<your prose>) to persist SUMMARY.md.
+   10. Respond with a final text summary (no tool calls) when fully done.
 
 Safety rules — never break these:
 - Never delete files. Quarantine only.
@@ -70,7 +84,7 @@ Safety rules — never break these:
 - Always call review_plan before execute_plan.
 - If a hard stop occurs, explain what failed and offer to undo.
 
-{naming_section}\
+{types_section}{naming_section}\
 """
 
 _DEFAULT_NAMING_CONVENTIONS = """\
@@ -87,18 +101,67 @@ When proposing renames, follow these rules:
 """
 
 
-def _load_naming_conventions(project_root: Path) -> str:
+def _try_load_profile(project_root: Path, settings: Settings) -> Profile | None:
+    """Load the active profile, or return None if it cannot be resolved."""
+    try:
+        profiles_dir = Path(settings.profiles_dir)
+        if not profiles_dir.is_absolute():
+            profiles_dir = project_root / profiles_dir
+        return load_profile(str(settings.profile), profiles_dir)
+    except Exception:
+        return None
+
+
+def _build_extraction_rules(profile: Profile | None) -> str:
+    if profile is None:
+        type_ids = "the profile's document types"
+        roles = "author, mentioned"
+        cap = "a few"
+    else:
+        type_ids = ", ".join(profile.document_type_ids())
+        roles = ", ".join(profile.entity_roles()) or "author, mentioned"
+        cap = str(profile.salient_cap)
+    return (
+        "      - title: a clear, human-readable title (required).\n"
+        f"      - type: exactly one of [{type_ids}] (required).\n"
+        "      - summary: one paragraph capturing the content (required).\n"
+        "      - provenance: why this document is here / its knowledge contribution (required).\n"
+        "      - date: ISO YYYY-MM-DD if derivable from the document, else null (never guess).\n"
+        f"      - entities: people/organisations as {{name, role, kind}}; roles from [{roles}].\n"
+        '        Set an entity with role "author" ONLY if the author is explicitly named —\n'
+        f"        never infer one. Keep the main actors to about {cap}."
+    )
+
+
+def _build_types_section(profile: Profile | None) -> str:
+    if profile is None or not profile.document_types:
+        return ""
+    lines = ["## Document types\n"]
+    for dt in profile.document_types:
+        desc = f" — {dt.description}" if dt.description else ""
+        lines.append(f"- `{dt.id}` ({dt.label}){desc}")
+    return "\n".join(lines) + "\n\n"
+
+
+def _load_naming_conventions(project_root: Path, profile: Profile | None) -> str:
     naming_path = project_root / ".organizer" / "NAMING.md"
     if naming_path.is_file():
         text = naming_path.read_text(encoding="utf-8").strip()
         if text:
-            return text + "\n"
+            return "## File-naming conventions\n\n" + text + "\n"
+    if profile is not None and profile.naming_instructions.strip():
+        return "## File-naming conventions\n\n" + profile.naming_instructions.strip() + "\n"
     return _DEFAULT_NAMING_CONVENTIONS
 
 
-def _build_system_prompt(project_root: Path) -> str:
-    naming = _load_naming_conventions(project_root)
-    return _SYSTEM_PROMPT_TEMPLATE.format(naming_section=naming)
+def _build_system_prompt(project_root: Path, settings: Settings) -> str:
+    profile = _try_load_profile(project_root, settings)
+    return _SYSTEM_PROMPT_TEMPLATE.format(
+        profile_name=profile.name if profile is not None else "default",
+        extraction_rules=_build_extraction_rules(profile),
+        types_section=_build_types_section(profile),
+        naming_section=_load_naming_conventions(project_root, profile),
+    )
 
 _MAX_TURNS = 50
 
@@ -181,7 +244,7 @@ async def run_agent_loop(
     ]
 
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": _build_system_prompt(project_root)},
+        {"role": "system", "content": _build_system_prompt(project_root, settings)},
         {"role": "user", "content": f"Please organize the directory: {target}"},
     ]
 

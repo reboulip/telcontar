@@ -58,12 +58,45 @@ Artifacts produced after a successful organize run.
 
 ---
 
-## v0.6.0 — Detailed Requirements (TBD)
+## v0.6.0 — Engine core + IS-IT profile #1
 
-Heuristics, domain skills, and core features for richer organization logic.
-_Placeholder — requirements to be defined._
+Turn the file-organizer into a profile-driven document-intelligence engine: persistent content-addressed memory + a per-document analysis pass, with all domain-specific vocabulary externalized into a declarative profile. The supplied IS/IT-project requirements ship as the first profile.
 
-- [ ] G1 · TBD
+- [x] G1 · Domain profile loader — `server/profile.py`: load + validate a TOML profile via stdlib `tomllib`; resolve the active profile from a new `profile` setting; typed accessors (`document_type_ids()`, `entity_roles()`, `salient_cap`, `extraction_fields()`, `naming()`). Ship `profiles/is_it_project.toml` carrying the French document-type vocabulary (communication_formelle, releve_de_decision, document_de_travail, support_copil, support_reunion, draft_officiel, notes, echanges, autre), `salient_cap = 5`, and extraction required/optional fields. Config: add `profile` (default `is_it_project`) and `profiles_dir` (default `profiles/`)
+- [x] G2 · Document registry — `server/registry.py`: JSON store at `.organizer/registry.json` keyed by sha256 checksum; dataclass + `to_dict`/`from_dict` + load/save mirroring `server/plan.py`; record fields = checksum, path, title, date|null, type, summary, provenance, entities (list of {name, role, kind}), attributes, status (active|archived|quarantined), first_seen, last_analyzed. Config: add `registry_path` (default `.organizer/registry.json`)
+- [x] G3 · `compute_checksum` tool — sha256, chunk-streamed via `hashlib`; pure/deterministic
+- [x] G4 · `record_document` + registry read/query tools — `record_document` validates `type` against the active profile (not a hardcoded enum) and enforces the author guardrail (author optional, null unless explicit), upserts by checksum; `get_registry` / `list_documents` read-only dump; `find_duplicates` (exact-checksum collisions + candidate groups for the host to LLM-judge); `find_modified_documents` (same title, differing checksum) (requires: G1, G2, G3)
+- [x] G5 · Registry path reconcile — extend `execute_plan` (or add `sync_registry_paths`) to update each record's `path` and set `status="quarantined"` from the undo journal's `src → dst` after execution, so checksum stays the identity while paths track moves (requires: G2)
+- [x] G6 · Profile-driven host analysis pass — `host/agent.py`: compose the system prompt from the active profile (document types, extraction fields + guardrails, entity roles, naming), replacing the hardcoded `_SYSTEM_PROMPT_TEMPLATE` + `_DEFAULT_NAMING_CONVENTIONS` (keep `.organizer/NAMING.md` override); add the analysis pass (per doc: extract_text/read_file → derive metadata → compute_checksum → record_document); run order analyse → plan → approve/execute → reconcile (requires: G1, G4)
+
+---
+
+## v0.7.0 — Entity graph + project narrative
+
+- [ ] H1 · Event journal — `events.jsonl` + `create_event(sentence, date)` (verb-led, dated); distinct from the undo journal
+- [ ] H2 · Entity / knowledge graph — `server/graph.py`: project registry + events into nodes/edges at `.organizer/graph.json` (derived, reproducible from the registry)
+- [ ] H3 · Actors — top entities ranked from the graph, capped at the profile's `salient_cap`
+- [ ] H4 · Project synthesis — enrich `write_summary` to compose the project markdown from registry + events + graph, per the profile's `[synthesis]` template
+- [ ] H5 · Archived-documents journal — archive log + registry `status` ("retirer de la mémoire")
+
+---
+
+## v0.8.0 — Organization, tree & output sinks
+
+- [ ] I1 · `create_dir` — collision-safe directory creation
+- [ ] I2 · Folder README writer — per-folder README of the arborescence
+- [ ] I3 · Taxonomy classification — relevant-tree reasoning in the host prompt (reuses `propose_move` + `write_index`)
+- [ ] I4 · `compare_documents(a, b)` — extract both + diff (e.g. successive COPIL slides)
+- [ ] I5 · Output-sink abstraction — `Sink` protocol; `local_markdown` default built-in; MediaWiki sink plugin (re-admits the gandalf wiki) behind an explicit egress allow-flag
+
+---
+
+## v0.9.0 — Interactive query + generality
+
+- [ ] J1 · Interactive query mode — NL questions over the registry/graph in the Textual TUI ("charger un doc pour l'interroger", generalized to the whole corpus)
+- [ ] J2 · Second profile — author a second domain profile (e.g. research-papers or personal-files) purely as data, proving the engine is profile-driven, not IS-IT-shaped
+- [ ] J3 · [deferred/hard] Read content of links inside attachments — revisit egress policy first
+- [ ] J4 · [deferred] Lossless compression of quarantined archives
 
 ---
 

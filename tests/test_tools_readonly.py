@@ -1,10 +1,11 @@
-"""Tests for read-only server tools: list_dir, read_file, extract_text."""
+"""Tests for read-only server tools: list_dir, read_file, extract_text, compute_checksum."""
 from __future__ import annotations
 
+import hashlib
 import pytest
 from pathlib import Path
 
-from server.tools import list_dir, read_file, extract_text
+from server.tools import compute_checksum, list_dir, read_file, extract_text
 
 
 class TestListDir:
@@ -100,3 +101,36 @@ class TestExtractText:
     def test_raises_for_nonexistent(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="Not a file"):
             extract_text(str(tmp_path / "missing.pdf"), 100)
+
+
+class TestComputeChecksum:
+    def test_matches_hashlib_sha256(self, tmp_path: Path) -> None:
+        f = tmp_path / "doc.txt"
+        f.write_bytes(b"some bytes here")
+        result = compute_checksum(str(f))
+        assert result["checksum"] == hashlib.sha256(b"some bytes here").hexdigest()
+        assert result["path"] == str(f)
+
+    def test_identical_content_same_checksum(self, tmp_path: Path) -> None:
+        (tmp_path / "a.txt").write_bytes(b"dup")
+        (tmp_path / "b.txt").write_bytes(b"dup")
+        assert (
+            compute_checksum(str(tmp_path / "a.txt"))["checksum"]
+            == compute_checksum(str(tmp_path / "b.txt"))["checksum"]
+        )
+
+    def test_different_content_different_checksum(self, tmp_path: Path) -> None:
+        (tmp_path / "a.txt").write_bytes(b"one")
+        (tmp_path / "b.txt").write_bytes(b"two")
+        assert (
+            compute_checksum(str(tmp_path / "a.txt"))["checksum"]
+            != compute_checksum(str(tmp_path / "b.txt"))["checksum"]
+        )
+
+    def test_raises_for_directory(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="Not a file"):
+            compute_checksum(str(tmp_path))
+
+    def test_raises_for_nonexistent(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="Not a file"):
+            compute_checksum(str(tmp_path / "missing.txt"))

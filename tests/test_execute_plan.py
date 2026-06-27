@@ -7,8 +7,10 @@ from unittest.mock import patch
 
 import pytest
 
+from server import registry as _registry
 from server.journal import last as journal_last
 from server.plan import Plan, PlanOp, load, save
+from server.registry import DocumentRecord
 from server.tools import execute_plan
 
 
@@ -343,3 +345,100 @@ class TestExecutePlanJournal:
 
         result2 = execute_plan(p.plan_id, plans_dir, journal_path)
         assert result2["ops_completed"] == 0  # already completed op is skipped
+
+
+class TestExecutePlanRegistryReconcile:
+    def _seed(self, registry_path: Path, checksum: str, path: Path) -> None:
+        reg = _registry.Registry()
+        reg.upsert(DocumentRecord.new(
+            checksum=checksum, path=str(path), title="T", type="notes",
+            summary="s", provenance="p",
+        ))
+        _registry.save(reg, registry_path)
+
+    def test_rename_updates_registry_path(self, tmp_path: Path, plans_dir: Path, journal_path: Path) -> None:
+        registry_path = tmp_path / ".organizer" / "registry.json"
+        src = tmp_path / "old.txt"
+        src.write_text("x")
+        self._seed(registry_path, "c1", src)
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("rename", str(src), "new.txt"))
+        save(p, plans_dir)
+
+        execute_plan(p.plan_id, plans_dir, journal_path, registry_path)
+
+        rec = _registry.load(registry_path).get("c1")
+        assert rec is not None
+        assert rec.path == str(tmp_path / "new.txt")
+        assert rec.status == "active"
+
+    def test_move_updates_registry_path(self, tmp_path: Path, plans_dir: Path, journal_path: Path) -> None:
+        registry_path = tmp_path / ".organizer" / "registry.json"
+        src = tmp_path / "file.txt"
+        src.write_text("x")
+        dst_dir = tmp_path / "dest"
+        dst_dir.mkdir()
+        self._seed(registry_path, "c1", src)
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("move", str(src), str(dst_dir)))
+        save(p, plans_dir)
+
+        execute_plan(p.plan_id, plans_dir, journal_path, registry_path)
+
+        rec = _registry.load(registry_path).get("c1")
+        assert rec is not None
+        assert rec.path == str(dst_dir / "file.txt")
+
+    def test_quarantine_sets_status_and_path(self, tmp_path: Path, plans_dir: Path, journal_path: Path) -> None:
+        registry_path = tmp_path / ".organizer" / "registry.json"
+        src = tmp_path / "junk.txt"
+        src.write_text("x")
+        q_dest = tmp_path / "_q" / "junk.txt"
+        self._seed(registry_path, "c1", src)
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("quarantine", str(src), str(q_dest)))
+        save(p, plans_dir)
+
+        execute_plan(p.plan_id, plans_dir, journal_path, registry_path)
+
+        rec = _registry.load(registry_path).get("c1")
+        assert rec is not None
+        assert rec.path == str(q_dest)
+        assert rec.status == "quarantined"
+
+    def test_unrecorded_file_is_noop(self, tmp_path: Path, plans_dir: Path, journal_path: Path) -> None:
+        registry_path = tmp_path / ".organizer" / "registry.json"
+        recorded = tmp_path / "kept.txt"
+        recorded.write_text("x")
+        self._seed(registry_path, "c1", recorded)
+        # Move a DIFFERENT, unrecorded file
+        other = tmp_path / "other.txt"
+        other.write_text("y")
+        dst_dir = tmp_path / "dest"
+        dst_dir.mkdir()
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("move", str(other), str(dst_dir)))
+        save(p, plans_dir)
+
+        execute_plan(p.plan_id, plans_dir, journal_path, registry_path)
+
+        reg = _registry.load(registry_path)
+        assert len(reg.records()) == 1
+        assert reg.get("c1").path == str(recorded)  # type: ignore[union-attr]
+
+    def test_no_registry_file_is_not_created(self, tmp_path: Path, plans_dir: Path, journal_path: Path) -> None:
+        registry_path = tmp_path / ".organizer" / "registry.json"  # does not exist
+        src = tmp_path / "f.txt"
+        src.write_text("x")
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("rename", str(src), "g.txt"))
+        save(p, plans_dir)
+
+        execute_plan(p.plan_id, plans_dir, journal_path, registry_path)
+
+        assert not registry_path.exists()  # registry-optional: no spurious file

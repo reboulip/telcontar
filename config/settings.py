@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     journal_path: Path = Path(".organizer/journal.jsonl")
     plans_dir: Path = Path(".organizer/plans")
 
+    # Domain profile — adapts the engine to a kind of document corpus
+    profile: str = "is_it_project"
+    profiles_dir: Path = Path("profiles")
+
+    # Document memory — persistent, content-addressed registry
+    registry_path: Path = Path(".organizer/registry.json")
+
     # Egress / extraction
     max_snippet_chars: int = 4000
     # JSON array of absolute paths, e.g. '["C:/Users/me/docs"]'. Empty = no restriction.

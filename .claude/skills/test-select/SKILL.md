@@ -26,15 +26,18 @@ Apply these rules in order (first match wins):
 | Changed file(s) | Run |
 |-----------------|-----|
 | `config/settings.py` only | Full suite — settings affect everything |
-| `server/tools.py` only | `tests/test_tools_readonly.py tests/test_tools_write.py tests/test_tools_propose.py tests/test_execute_plan.py tests/test_undo_last.py tests/test_review_plan.py tests/test_tools_outputs.py` |
+| `server/tools.py` only | `tests/test_tools_readonly.py tests/test_tools_write.py tests/test_tools_propose.py tests/test_execute_plan.py tests/test_undo_last.py tests/test_review_plan.py tests/test_tools_outputs.py tests/test_tools_registry.py` |
 | `server/guards.py` only | `tests/test_guards.py` |
 | `server/extract.py` only | `tests/test_tools_readonly.py` (extract_text delegates here) |
 | `server/plan.py` only | `tests/test_plan.py` |
+| `server/profile.py` only | `tests/test_profile.py` |
+| `server/registry.py` only | `tests/test_registry.py` |
 | `server/journal.py` only | `tests/test_journal.py tests/test_tools_outputs.py` |
 | `server/tools.py` propose_* only | `tests/test_tools_propose.py` |
 | `server/tools.py` execute_plan only | `tests/test_execute_plan.py` |
 | `server/tools.py` undo_last only | `tests/test_undo_last.py` |
 | `server/tools.py` review_plan only | `tests/test_review_plan.py` |
+| `server/tools.py` registry tools only (record_document/get_registry/list_documents/get_document/find_duplicates/find_modified_documents) | `tests/test_tools_registry.py` |
 | Multiple files in `server/` | Full `tests/` suite |
 | `host/agent.py` only | `tests/test_host.py tests/test_tools_outputs.py` |
 | Any file in `host/` | `tests/test_host.py tests/test_tools_outputs.py` |

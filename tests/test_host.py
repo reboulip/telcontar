@@ -328,3 +328,36 @@ def test_extract_content_empty_content() -> None:
     r.content = []
     result = _extract_content(r)
     assert isinstance(result, str)
+
+
+# ── Profile-driven system prompt ───────────────────────────────────────────────
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_system_prompt_is_profile_driven() -> None:
+    from config.settings import load
+
+    from host.agent import _build_system_prompt
+
+    prompt = _build_system_prompt(_PROJECT_ROOT, load())
+
+    # analysis pass + memory tools are present
+    assert "compute_checksum" in prompt
+    assert "record_document" in prompt
+    # the active profile's vocabulary is injected
+    assert "releve_de_decision" in prompt
+    # the author guardrail is stated
+    assert "author" in prompt.lower()
+    # analysis precedes organization
+    assert prompt.index("compute_checksum") < prompt.index("create_plan")
+
+
+def test_system_prompt_falls_back_without_profile() -> None:
+    from host.agent import _build_system_prompt
+
+    # A MagicMock has no real profile/profiles_dir → profile load fails → fallback
+    prompt = _build_system_prompt(_PROJECT_ROOT, MagicMock())
+
+    assert "Never delete files" in prompt
+    assert '"default" domain profile' in prompt

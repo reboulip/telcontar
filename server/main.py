@@ -10,6 +10,7 @@ from server import tools
 mcp = FastMCP("directory-organizer")
 
 _settings = None
+_profile = None
 
 
 def _get_settings():
@@ -18,6 +19,15 @@ def _get_settings():
         from config.settings import load
         _settings = load()
     return _settings
+
+
+def _get_profile():
+    global _profile
+    if _profile is None:
+        from server.profile import load_profile
+        cfg = _get_settings()
+        _profile = load_profile(cfg.profile, cfg.profiles_dir)
+    return _profile
 
 
 # ── Read-only tools ──────────────────────────────────────────────────────────
@@ -44,6 +54,12 @@ def extract_text(path: str, max_chars: int = 4000) -> str:
     from server.guards import check_allowlist
     check_allowlist(Path(path), cfg.allowlist_dirs)
     return tools.extract_text(path, min(max_chars, cfg.max_snippet_chars))
+
+
+@mcp.tool()
+def compute_checksum(path: str) -> dict:
+    """Compute a file's sha256 checksum, used as its unique document id."""
+    return tools.compute_checksum(path)
 
 
 # ── Plan management tools ────────────────────────────────────────────────────
@@ -136,9 +152,10 @@ def update_file(path: str, content: str) -> dict:
 
 @mcp.tool()
 def execute_plan(plan_id: str) -> dict:
-    """Apply all operations in an approved plan; journals each one."""
+    """Apply all operations in an approved plan; journals each one and reconciles
+    registry paths so document records follow their files."""
     cfg = _get_settings()
-    return tools.execute_plan(plan_id, cfg.plans_dir, cfg.journal_path)
+    return tools.execute_plan(plan_id, cfg.plans_dir, cfg.journal_path, cfg.registry_path)
 
 
 @mcp.tool()
@@ -161,6 +178,80 @@ def undo_last() -> dict:
     """Revert the most recent journaled operation."""
     cfg = _get_settings()
     return tools.undo_last(cfg.journal_path, cfg.plans_dir)
+
+
+# ── Document registry (the engine's persistent memory) ───────────────────────
+
+@mcp.tool()
+def record_document(
+    checksum: str,
+    path: str,
+    title: str,
+    type: str,
+    summary: str,
+    provenance: str,
+    date: str | None = None,
+    entities: list[dict] | None = None,
+    attributes: dict | None = None,
+    status: str = "active",
+) -> dict:
+    """Record (upsert) an analyzed document in the registry, keyed by checksum.
+
+    `type` must be one of the active profile's document types. `entities` is a list
+    of {name, role, kind} — the author is just an entity with role "author".
+    Only include people explicitly named in the document; never infer an author.
+    `provenance` is the document's knowledge contribution (why it is here).
+    """
+    cfg = _get_settings()
+    return tools.record_document(
+        checksum=checksum,
+        path=path,
+        title=title,
+        type=type,
+        summary=summary,
+        provenance=provenance,
+        date=date,
+        entities=entities,
+        attributes=attributes,
+        status=status,
+        registry_path=cfg.registry_path,
+        profile=_get_profile(),
+    )
+
+
+@mcp.tool()
+def get_document(checksum: str) -> dict | None:
+    """Return a single registry record by checksum, or null if not recorded."""
+    cfg = _get_settings()
+    return tools.get_document(checksum, cfg.registry_path)
+
+
+@mcp.tool()
+def list_documents() -> list:
+    """Return all recorded documents with their metadata, oldest first."""
+    cfg = _get_settings()
+    return tools.list_documents(cfg.registry_path)
+
+
+@mcp.tool()
+def get_registry() -> dict:
+    """Return the entire document registry as a single object."""
+    cfg = _get_settings()
+    return tools.get_registry(cfg.registry_path)
+
+
+@mcp.tool()
+def find_duplicates() -> list:
+    """Return fuzzy candidate-duplicate clusters (same info / replaceable) to judge."""
+    cfg = _get_settings()
+    return tools.find_duplicates(cfg.registry_path)
+
+
+@mcp.tool()
+def find_modified_documents() -> list:
+    """Return groups sharing a title but differing in content (recently modified)."""
+    cfg = _get_settings()
+    return tools.find_modified_documents(cfg.registry_path)
 
 
 def main() -> None:
