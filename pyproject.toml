@@ -6,19 +6,20 @@ build-backend = "hatchling.build"
 name = "directory-organizer"
 version = "0.1.0"
 description = "MCP-based local directory organizer driven by GPT-5"
-readme = "CLAUDE.md"
+readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 
 dependencies = [
     "mcp>=1.28,<2",          # MCP Python SDK; cap at v2 stable boundary
     "openai>=2.43",          # OpenAI-compatible SDK (Azure / Mammouth)
-    "markitdown>=0.1.6",     # text extraction from Office/binary formats
-    "pypdf>=6.13",           # PDF text extraction
+    "markitdown>=0.1.6",     # text extraction from Office/binary formats (includes PDF via pypdf)
     "python-dotenv>=1.2",    # .env loading
     "pydantic>=2.13",        # config + data validation
     "pydantic-settings>=2.14",  # Pydantic Settings integration
     "rich>=15.0",            # pretty CLI output / plan diffs
+    "textual>=0.80",         # full TUI framework (host app)
+    "plyer>=2.1",            # cross-platform desktop notifications
 ]
 
 [project.scripts]
@@ -31,13 +32,23 @@ dev = [
     "ruff>=0.15",
     "mypy>=2.1",
 ]
+test = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.25",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["host", "server", "config"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"profiles" = "profiles"
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
 
 [tool.mypy]
 python_version = "3.12"
