@@ -11,8 +11,9 @@ Reads `ROADMAP.md`, finds all unchecked items in the active milestone, and drive
 
 1. **Forecast** (`feature-forecast` subagent, Haiku) — reads the codebase and produces a Forecast Brief for the item.
 2. **Implementation** — main session implements the item using the brief.
-3. **Tests** (`/test-select` skill) — gates the commit; red run blocks advance.
-4. **Commit** (`repo-manager` subagent, Haiku) — stages and commits on the feature branch.
+3. **Documentation** (`doc-keeper` subagent, Sonnet) — syncs README/docs to the change before it is committed.
+4. **Tests** (`/test-select` skill) — gates the commit; red run blocks advance.
+5. **Commit** (`repo-manager` subagent, Haiku) — stages and commits the code **and** doc changes on the feature branch.
 
 Forecast for item N+1 runs **in the background** while item N is being implemented, so the brief is ready with zero wait time.
 
@@ -90,6 +91,22 @@ The Forecast Brief for item[0] is in context. Implement the item now:
 - Follow the "Suggested implementation order" from the brief.
 - Edit only files under `host/`, `server/`, `config/`, `tests/`. Use direct Edit/Write tools.
 - Check off the item in `ROADMAP.md` (`- [ ]` → `- [x]`).
+
+---
+
+## Step 4.5 — Update documentation
+
+Once the item is implemented (before testing/commit), spawn `doc-keeper` so the docs land in the **same** commit as the code. Wait for its report.
+
+```
+Agent({
+  subagent_type: "doc-keeper",
+  description: "Update docs for [milestone] [label]",
+  prompt: "Item: [label] — [title]\n\nChanged files:\n[list of files edited/created in Step 4]\n\nSummary of change:\n[1-2 sentences: what the implementation did — new/changed MCP tools, signatures, config keys, behaviour]"
+})
+```
+
+Add any docs the agent reports as updated/created to the file list passed to `repo-manager` in Step 5. If it reports "None — internal/test-only," proceed with no doc changes.
 
 ---
 

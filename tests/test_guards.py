@@ -1,4 +1,5 @@
 """Tests for the guards module."""
+
 from __future__ import annotations
 
 import pytest

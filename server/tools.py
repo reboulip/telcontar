@@ -1,4 +1,5 @@
 """Tool implementations — called by the MCP server handlers in main.py."""
+
 from __future__ import annotations
 
 import hashlib
@@ -23,21 +24,25 @@ def list_dir(path: str) -> dict:
     for entry in sorted(p.iterdir(), key=lambda e: (e.is_file(), e.name)):
         try:
             st = entry.stat()
-            entries.append({
-                "name": entry.name,
-                "path": str(entry),
-                "type": "dir" if entry.is_dir() else "file",
-                "size": st.st_size,
-                "mtime": st.st_mtime,
-            })
+            entries.append(
+                {
+                    "name": entry.name,
+                    "path": str(entry),
+                    "type": "dir" if entry.is_dir() else "file",
+                    "size": st.st_size,
+                    "mtime": st.st_mtime,
+                }
+            )
         except OSError:
-            entries.append({
-                "name": entry.name,
-                "path": str(entry),
-                "type": "unknown",
-                "size": None,
-                "mtime": None,
-            })
+            entries.append(
+                {
+                    "name": entry.name,
+                    "path": str(entry),
+                    "type": "unknown",
+                    "size": None,
+                    "mtime": None,
+                }
+            )
     return {"path": str(p), "entries": entries}
 
 
@@ -116,6 +121,7 @@ def update_file(path: str, content: str) -> dict:
 
 # ── Plan management ──────────────────────────────────────────────────────────
 
+
 def create_plan(plans_dir: Path) -> dict:
     """Create a new empty plan and persist it to disk."""
     p = _plan.Plan.new()
@@ -171,6 +177,7 @@ def approve_plan(plan_id: str, plans_dir: Path) -> dict:
 
 # ── v0.3.0 stubs ────────────────────────────────────────────────────────────
 
+
 def propose_rename(path: str, new_name: str, plan_id: str, plans_dir: Path) -> dict:
     """Append a rename op to an existing pending plan; eager collision check."""
     src = Path(path)
@@ -184,8 +191,15 @@ def propose_rename(path: str, new_name: str, plan_id: str, plans_dir: Path) -> d
     op = _plan.PlanOp.new("rename", str(src), new_name)
     p.add_op(op)
     _plan.save(p, plans_dir)
-    return {"plan_id": plan_id, "op_id": op.op_id, "op_type": "rename",
-            "src": str(src), "dst": new_name, "status": op.status, "ops_count": len(p.ops)}
+    return {
+        "plan_id": plan_id,
+        "op_id": op.op_id,
+        "op_type": "rename",
+        "src": str(src),
+        "dst": new_name,
+        "status": op.status,
+        "ops_count": len(p.ops),
+    }
 
 
 def propose_move(path: str, dest_dir: str, plan_id: str, plans_dir: Path) -> dict:
@@ -204,8 +218,15 @@ def propose_move(path: str, dest_dir: str, plan_id: str, plans_dir: Path) -> dic
     op = _plan.PlanOp.new("move", str(src), str(dst_dir))
     p.add_op(op)
     _plan.save(p, plans_dir)
-    return {"plan_id": plan_id, "op_id": op.op_id, "op_type": "move",
-            "src": str(src), "dst": str(dst_dir), "status": op.status, "ops_count": len(p.ops)}
+    return {
+        "plan_id": plan_id,
+        "op_id": op.op_id,
+        "op_type": "move",
+        "src": str(src),
+        "dst": str(dst_dir),
+        "status": op.status,
+        "ops_count": len(p.ops),
+    }
 
 
 def propose_quarantine(path: str, plan_id: str, plans_dir: Path, quarantine_dir: Path) -> dict:
@@ -221,8 +242,15 @@ def propose_quarantine(path: str, plan_id: str, plans_dir: Path, quarantine_dir:
     op = _plan.PlanOp.new("quarantine", str(src), str(safe_dest))
     p.add_op(op)
     _plan.save(p, plans_dir)
-    return {"plan_id": plan_id, "op_id": op.op_id, "op_type": "quarantine",
-            "src": str(src), "dst": str(safe_dest), "status": op.status, "ops_count": len(p.ops)}
+    return {
+        "plan_id": plan_id,
+        "op_id": op.op_id,
+        "op_type": "quarantine",
+        "src": str(src),
+        "dst": str(safe_dest),
+        "status": op.status,
+        "ops_count": len(p.ops),
+    }
 
 
 def execute_plan(
@@ -279,42 +307,57 @@ def execute_plan(
         if success:
             op.status = "completed"
             completed_count += 1
-            _journal.append(journal_path, {
-                "op_type": op.op_type,
-                "plan_id": plan_id,
-                "op_id": op.op_id,
-                "src": op.src,
-                "dst": op.dst,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            })
+            _journal.append(
+                journal_path,
+                {
+                    "op_type": op.op_type,
+                    "plan_id": plan_id,
+                    "op_id": op.op_id,
+                    "src": op.src,
+                    "dst": op.dst,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                },
+            )
             if reg is not None and registry_path is not None and _reconcile_op(reg, op):
                 _registry.save(reg, registry_path)
         else:
             op.status = "failed"
             op.error = last_error
-            failed_ops.append({"op_id": op.op_id, "op_type": op.op_type,
-                                "src": op.src, "error": last_error})
+            failed_ops.append(
+                {"op_id": op.op_id, "op_type": op.op_type, "src": op.src, "error": last_error}
+            )
 
         _plan.save(p, plans_dir)
 
         if len(failed_ops) > 3:
-            _journal.append(journal_path, {
-                "op_type": "hard_stop",
-                "plan_id": plan_id,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "failed_count": len(failed_ops),
-                "failed_ops": failed_ops,
-                "reason": "Exceeded 3 failures; stopping plan execution",
-            })
+            _journal.append(
+                journal_path,
+                {
+                    "op_type": "hard_stop",
+                    "plan_id": plan_id,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "failed_count": len(failed_ops),
+                    "failed_ops": failed_ops,
+                    "reason": "Exceeded 3 failures; stopping plan execution",
+                },
+            )
             p.transition("stopped")
             _plan.save(p, plans_dir)
-            return {**p.to_dict(), "ops_completed": completed_count,
-                    "ops_failed": len(failed_ops), "hard_stop": True}
+            return {
+                **p.to_dict(),
+                "ops_completed": completed_count,
+                "ops_failed": len(failed_ops),
+                "hard_stop": True,
+            }
 
     p.transition("failed" if failed_ops else "done")
     _plan.save(p, plans_dir)
-    return {**p.to_dict(), "ops_completed": completed_count,
-            "ops_failed": len(failed_ops), "hard_stop": False}
+    return {
+        **p.to_dict(),
+        "ops_completed": completed_count,
+        "ops_failed": len(failed_ops),
+        "hard_stop": False,
+    }
 
 
 _NON_RETRYABLE_ERRORS = (ValueError, FileNotFoundError, FileExistsError)
@@ -397,12 +440,14 @@ def write_index(target_dir: str, journal_path: Path) -> dict:
                     st = entry.stat()
                     size_kb = st.st_size / 1024
                     size_str = f"{size_kb:.1f} KB" if size_kb < 1024 else f"{size_kb / 1024:.1f} MB"
-                    files.append({
-                        "path": str(entry.relative_to(root)).replace("\\", "/"),
-                        "abs_path": str(entry),
-                        "size": st.st_size,
-                        "mtime": st.st_mtime,
-                    })
+                    files.append(
+                        {
+                            "path": str(entry.relative_to(root)).replace("\\", "/"),
+                            "abs_path": str(entry),
+                            "size": st.st_size,
+                            "mtime": st.st_mtime,
+                        }
+                    )
                     lines.append(f"{prefix}{connector}{entry.name} ({size_str})")
                 except OSError:
                     lines.append(f"{prefix}{connector}{entry.name}")
@@ -471,8 +516,10 @@ def undo_last(journal_path: Path, plans_dir: Path) -> dict:
 
     if op_type == "hard_stop":
         _journal.pop_last(journal_path)
-        return {"undone": "hard_stop",
-                "note": "Hard-stop entry removed; failed ops were never executed"}
+        return {
+            "undone": "hard_stop",
+            "note": "Hard-stop entry removed; failed ops were never executed",
+        }
 
     src = entry["src"]
     dst = entry["dst"]
@@ -498,6 +545,7 @@ def undo_last(journal_path: Path, plans_dir: Path) -> dict:
 
 
 # ── Document registry ─────────────────────────────────────────────────────────
+
 
 def record_document(
     checksum: str,

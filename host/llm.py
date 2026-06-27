@@ -1,4 +1,5 @@
 """OpenAI-compatible client factory (Azure / Mammouth via base_url override)."""
+
 from __future__ import annotations
 
 from openai import AsyncOpenAI

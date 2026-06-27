@@ -1,4 +1,5 @@
 """Append-only undo journal (JSONL)."""
+
 from __future__ import annotations
 
 import json
@@ -27,9 +28,7 @@ def all_entries(journal_path: Path) -> list[dict]:
     if not journal_path.is_file():
         return []
     return [
-        json.loads(ln)
-        for ln in journal_path.read_text(encoding="utf-8").splitlines()
-        if ln.strip()
+        json.loads(ln) for ln in journal_path.read_text(encoding="utf-8").splitlines() if ln.strip()
     ]
 
 

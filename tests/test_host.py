@@ -1,4 +1,5 @@
 """Tests for host/agent.py — agent loop and plan approval gate."""
+
 from __future__ import annotations
 
 import json
@@ -6,7 +7,6 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 
 from host.agent import AgentEvent, ApprovalResult, _extract_content, run_agent_loop
 
@@ -59,9 +59,7 @@ def _tool_response(name: str, args: dict, call_id: str = "tc1") -> MagicMock:
     msg.content = None
     msg.model_dump.return_value = {
         "role": "assistant",
-        "tool_calls": [
-            {"id": call_id, "function": {"name": name, "arguments": json.dumps(args)}}
-        ],
+        "tool_calls": [{"id": call_id, "function": {"name": name, "arguments": json.dumps(args)}}],
     }
     choice = MagicMock()
     choice.message = msg

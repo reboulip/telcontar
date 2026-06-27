@@ -9,6 +9,7 @@ Modals
 ------
 ApprovalModal   — plan review with per-op checkboxes (inline removal)
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -99,11 +100,7 @@ class ApprovalModal(ModalScreen[ApprovalResult]):
 
     @on(Button.Pressed, "#approve-btn")
     def _approve(self) -> None:
-        removed = [
-            cb.name
-            for cb in self.query(Checkbox)
-            if not cb.value and cb.name
-        ]
+        removed = [cb.name for cb in self.query(Checkbox) if not cb.value and cb.name]
         self.dismiss(ApprovalResult(approved=True, removed_op_ids=removed))
 
     @on(Button.Pressed, "#reject-btn")
@@ -208,8 +205,7 @@ class OrganizerScreen(Screen):
             if result.approved:
                 removed = len(result.removed_op_ids)
                 self._log(
-                    f"[green]Approved[/green]"
-                    + (f"  ({removed} op(s) removed)" if removed else "")
+                    "[green]Approved[/green]" + (f"  ({removed} op(s) removed)" if removed else "")
                 )
             else:
                 self._log("[red]Rejected[/red] — sending feedback to agent")

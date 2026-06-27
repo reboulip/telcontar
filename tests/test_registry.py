@@ -1,4 +1,5 @@
 """Tests for the document registry (server/registry.py)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -55,8 +56,15 @@ def test_upsert_same_checksum_preserves_first_seen() -> None:
 
 def test_save_load_round_trip(registry_path: Path) -> None:
     reg = Registry()
-    reg.upsert(_rec("abc", "/p/a.txt", "Café résumé", date="2026-01-02",
-                    entities=[{"name": "Alice", "role": "author", "kind": "person"}]))
+    reg.upsert(
+        _rec(
+            "abc",
+            "/p/a.txt",
+            "Café résumé",
+            date="2026-01-02",
+            entities=[{"name": "Alice", "role": "author", "kind": "person"}],
+        )
+    )
     registry.save(reg, registry_path)
 
     loaded = registry.load(registry_path)

@@ -216,6 +216,8 @@ All git work and task orchestration is delegated to specialized agents and skill
 
 - **`feature-forecast`** (Haiku subagent, background): Pre-reads the codebase for the next ROADMAP item while the current item is being implemented. Invoked automatically by `/dev-pipeline` with `run_in_background: true`.
 
+- **`doc-keeper`** (Sonnet subagent): Documentation maintainer. Runs at the end of each feature implementation step (Step 4.5 of `/dev-pipeline`, before the commit), reads the changed source and the existing docs, and makes surgical updates to `README.md` and `docs/**` so the documentation stays in sync with the code. Edits docs only — never source, `ROADMAP.md`, or `CLAUDE.md`. Doc changes land in the same commit as the code.
+
 - **`/test-select`**: Select and run the minimal pytest scope for the current branch's changes. Call before every commit. Blocks commit if any test fails.
 
 - **`/auto-improve`**: At the end of a task series, scans the conversation for boilerplate instructions, repeated corrections, and automation opportunities. Proposes improvements to skills, hooks, or config. **Always asks before applying anything.** Run this at the end of each sprint.

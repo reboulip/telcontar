@@ -1,4 +1,5 @@
 """Collision, overwrite, and quarantine guardrails."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -37,6 +38,5 @@ def check_allowlist(path: Path, allowlist_dirs: list[Path]) -> None:
         except ValueError:
             continue
     raise PermissionError(
-        f"{path} is not within an allowed directory. "
-        f"Allowed: {[str(d) for d in allowlist_dirs]}"
+        f"{path} is not within an allowed directory. Allowed: {[str(d) for d in allowlist_dirs]}"
     )

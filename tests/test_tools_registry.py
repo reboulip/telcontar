@@ -1,4 +1,5 @@
 """Tests for the document-registry server tools (record_document + queries)."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -113,20 +114,44 @@ def test_get_registry_shape(reg_path: Path, profile: Profile) -> None:
 
 
 def test_find_modified_documents(reg_path: Path, profile: Profile) -> None:
-    _record(reg_path, profile, checksum="c1", path="/p/copil.pptx",
-            title="COPIL Projet X", type="support_copil")
-    _record(reg_path, profile, checksum="c2", path="/p/copil2.pptx",
-            title="COPIL Projet X", type="support_copil")
+    _record(
+        reg_path,
+        profile,
+        checksum="c1",
+        path="/p/copil.pptx",
+        title="COPIL Projet X",
+        type="support_copil",
+    )
+    _record(
+        reg_path,
+        profile,
+        checksum="c2",
+        path="/p/copil2.pptx",
+        title="COPIL Projet X",
+        type="support_copil",
+    )
     groups = find_modified_documents(reg_path)
     assert len(groups) == 1
     assert {r["checksum"] for r in groups[0]} == {"c1", "c2"}
 
 
 def test_find_duplicates(reg_path: Path, profile: Profile) -> None:
-    _record(reg_path, profile, checksum="c1", path="/p/v1.pptx",
-            title="Support COPIL Projet Apollo v1", type="support_copil")
-    _record(reg_path, profile, checksum="c2", path="/p/v2.pptx",
-            title="Support COPIL Projet Apollo v2", type="support_copil")
+    _record(
+        reg_path,
+        profile,
+        checksum="c1",
+        path="/p/v1.pptx",
+        title="Support COPIL Projet Apollo v1",
+        type="support_copil",
+    )
+    _record(
+        reg_path,
+        profile,
+        checksum="c2",
+        path="/p/v2.pptx",
+        title="Support COPIL Projet Apollo v2",
+        type="support_copil",
+    )
     clusters = find_duplicates(reg_path)
     assert len(clusters) == 1
     assert {r["checksum"] for r in clusters[0]} == {"c1", "c2"}

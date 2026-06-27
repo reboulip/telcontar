@@ -5,6 +5,7 @@ entity/role model, extraction guardrails, naming, synthesis template, output
 sinks) so the same engine can serve different kinds of document piles by
 swapping a TOML file. The bundled ``is_it_project`` profile is profile #1.
 """
+
 from __future__ import annotations
 
 import tomllib
@@ -79,9 +80,7 @@ class Profile:
 
         raw_types = d.get("document_types", [])
         if not raw_types:
-            raise ValueError(
-                f"Profile {name!r} must define at least one [[document_types]] entry"
-            )
+            raise ValueError(f"Profile {name!r} must define at least one [[document_types]] entry")
         document_types = [DocumentType.from_dict(t) for t in raw_types]
         ids = [t.id for t in document_types]
         if len(ids) != len(set(ids)):

@@ -1,4 +1,5 @@
 """Text extraction from binary formats (PDF, Office) via markitdown."""
+
 from __future__ import annotations
 
 from pathlib import Path

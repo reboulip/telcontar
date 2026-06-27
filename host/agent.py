@@ -3,6 +3,7 @@
 Fully decoupled from Textual — callers pass async callbacks for events and
 approval so this module can be exercised in plain pytest tests.
 """
+
 from __future__ import annotations
 
 import json
@@ -38,6 +39,7 @@ EventCallback = Callable[[AgentEvent], None]
 
 
 # ── Approval result ───────────────────────────────────────────────────────────
+
 
 @dataclass
 class ApprovalResult:
@@ -162,6 +164,7 @@ def _build_system_prompt(project_root: Path, settings: Settings) -> str:
         types_section=_build_types_section(profile),
         naming_section=_load_naming_conventions(project_root, profile),
     )
+
 
 _MAX_TURNS = 50
 

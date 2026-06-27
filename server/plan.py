@@ -1,4 +1,5 @@
 """Plan data model and disk persistence."""
+
 from __future__ import annotations
 
 import json

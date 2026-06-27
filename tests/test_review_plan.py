@@ -1,4 +1,5 @@
 """Tests for review_plan."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -88,7 +89,9 @@ class TestReviewPlanDuplicates:
         assert len(result["duplicates"]) == 1
         assert result["duplicates"][0]["op_type"] == "move"
 
-    def test_same_src_different_op_types_not_a_duplicate(self, tmp_path: Path, plans_dir: Path) -> None:
+    def test_same_src_different_op_types_not_a_duplicate(
+        self, tmp_path: Path, plans_dir: Path
+    ) -> None:
         p = Plan.new()
         src = str(tmp_path / "file.txt")
         p.ops.append(PlanOp.new("rename", src, "new.txt"))
@@ -113,12 +116,14 @@ class TestReviewPlanDuplicates:
         p = Plan.new()
         src_a = str(tmp_path / "a.txt")
         src_b = str(tmp_path / "b.txt")
-        p.ops.extend([
-            PlanOp.new("rename", src_a, "x.txt"),
-            PlanOp.new("rename", src_a, "y.txt"),
-            PlanOp.new("move", src_b, str(tmp_path / "dir1")),
-            PlanOp.new("move", src_b, str(tmp_path / "dir2")),
-        ])
+        p.ops.extend(
+            [
+                PlanOp.new("rename", src_a, "x.txt"),
+                PlanOp.new("rename", src_a, "y.txt"),
+                PlanOp.new("move", src_b, str(tmp_path / "dir1")),
+                PlanOp.new("move", src_b, str(tmp_path / "dir2")),
+            ]
+        )
         save(p, plans_dir)
 
         result = review_plan(p.plan_id, plans_dir)
@@ -159,10 +164,12 @@ class TestReviewPlanMissingSources:
     def test_is_valid_false_when_both_issues_present(self, tmp_path: Path, plans_dir: Path) -> None:
         p = Plan.new()
         src = str(tmp_path / "missing.txt")
-        p.ops.extend([
-            PlanOp.new("rename", src, "a.txt"),
-            PlanOp.new("rename", src, "b.txt"),
-        ])
+        p.ops.extend(
+            [
+                PlanOp.new("rename", src, "a.txt"),
+                PlanOp.new("rename", src, "b.txt"),
+            ]
+        )
         save(p, plans_dir)
         result = review_plan(p.plan_id, plans_dir)
         assert result["is_valid"] is False
@@ -176,6 +183,7 @@ class TestReviewPlanMissingSources:
         before = p.to_dict()
         review_plan(p.plan_id, plans_dir)
         from server.plan import load
+
         after = load(p.plan_id, plans_dir).to_dict()
         assert before["ops"] == after["ops"]
         assert before["state"] == after["state"]

@@ -8,6 +8,7 @@ the record (and its accumulated analysis) survives.
 This module is deliberately profile-agnostic: validation of a document's ``type``
 against the active profile lives in the tools layer, not here.
 """
+
 from __future__ import annotations
 
 import json
@@ -151,11 +152,7 @@ class Registry:
             key = _normalize_title(rec.title)
             if key:
                 groups.setdefault(key, []).append(rec)
-        return [
-            sorted(g, key=lambda r: r.last_analyzed)
-            for g in groups.values()
-            if len(g) > 1
-        ]
+        return [sorted(g, key=lambda r: r.last_analyzed) for g in groups.values() if len(g) > 1]
 
     def find_duplicates(self, threshold: float = 0.6) -> list[list[DocumentRecord]]:
         """Fuzzy candidate duplicate clusters for the host to judge.

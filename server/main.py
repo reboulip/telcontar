@@ -1,4 +1,5 @@
 """MCP server entrypoint — exposes file tools over stdio transport."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -17,6 +18,7 @@ def _get_settings():
     global _settings
     if _settings is None:
         from config.settings import load
+
         _settings = load()
     return _settings
 
@@ -25,12 +27,14 @@ def _get_profile():
     global _profile
     if _profile is None:
         from server.profile import load_profile
+
         cfg = _get_settings()
         _profile = load_profile(cfg.profile, cfg.profiles_dir)
     return _profile
 
 
 # ── Read-only tools ──────────────────────────────────────────────────────────
+
 
 @mcp.tool()
 def list_dir(path: str) -> dict:
@@ -43,6 +47,7 @@ def read_file(path: str, max_chars: int = 4000) -> str:
     """Return file content up to max_chars characters."""
     cfg = _get_settings()
     from server.guards import check_allowlist
+
     check_allowlist(Path(path), cfg.allowlist_dirs)
     return tools.read_file(path, min(max_chars, cfg.max_snippet_chars))
 
@@ -52,6 +57,7 @@ def extract_text(path: str, max_chars: int = 4000) -> str:
     """Extract plain text from a PDF or Office file via markitdown."""
     cfg = _get_settings()
     from server.guards import check_allowlist
+
     check_allowlist(Path(path), cfg.allowlist_dirs)
     return tools.extract_text(path, min(max_chars, cfg.max_snippet_chars))
 
@@ -63,6 +69,7 @@ def compute_checksum(path: str) -> dict:
 
 
 # ── Plan management tools ────────────────────────────────────────────────────
+
 
 @mcp.tool()
 def create_plan() -> dict:
@@ -101,6 +108,7 @@ def approve_plan(plan_id: str) -> dict:
 
 # ── Plan-building tools (write to plan, do not execute) ──────────────────────
 
+
 @mcp.tool()
 def propose_rename(path: str, new_name: str, plan_id: str) -> dict:
     """Stage a rename operation in the named plan."""
@@ -123,6 +131,7 @@ def propose_quarantine(path: str, plan_id: str) -> dict:
 
 
 # ── Direct file operations ───────────────────────────────────────────────────
+
 
 @mcp.tool()
 def move_file(path: str, dest_dir: str) -> dict:
@@ -150,6 +159,7 @@ def update_file(path: str, content: str) -> dict:
 
 # ── Gated execution tools ────────────────────────────────────────────────────
 
+
 @mcp.tool()
 def execute_plan(plan_id: str) -> dict:
     """Apply all operations in an approved plan; journals each one and reconciles
@@ -173,6 +183,7 @@ def write_summary(path: str, content: str) -> dict:
 
 # ── Recovery tools ───────────────────────────────────────────────────────────
 
+
 @mcp.tool()
 def undo_last() -> dict:
     """Revert the most recent journaled operation."""
@@ -181,6 +192,7 @@ def undo_last() -> dict:
 
 
 # ── Document registry (the engine's persistent memory) ───────────────────────
+
 
 @mcp.tool()
 def record_document(

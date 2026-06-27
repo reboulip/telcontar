@@ -1,4 +1,5 @@
 """Tests for E1 write_index, E2 write_summary, and E3 naming conventions."""
+
 from __future__ import annotations
 
 import json
@@ -12,6 +13,7 @@ from server import journal as _journal
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
 def _make_tree(root: Path) -> None:
     """Create a small fixture directory tree."""
     (root / "docs").mkdir()
@@ -23,6 +25,7 @@ def _make_tree(root: Path) -> None:
 
 
 # ── E1: write_index ───────────────────────────────────────────────────────────
+
 
 class TestWriteIndex:
     def test_creates_index_md_and_manifest_json(self, tmp_path: Path) -> None:
@@ -128,6 +131,7 @@ class TestWriteIndex:
 
 # ── E2: write_summary ─────────────────────────────────────────────────────────
 
+
 class TestWriteSummary:
     def test_creates_summary_md(self, tmp_path: Path) -> None:
         result = write_summary(str(tmp_path), "This is the summary.")
@@ -152,14 +156,17 @@ class TestWriteSummary:
 
 # ── E3: naming conventions ────────────────────────────────────────────────────
 
+
 class TestNamingConventions:
     def test_default_when_file_missing(self, tmp_path: Path) -> None:
         from host.agent import _load_naming_conventions
+
         result = _load_naming_conventions(tmp_path, None)
         assert "snake_case" in result or "underscore" in result.lower()
 
     def test_loads_custom_file(self, tmp_path: Path) -> None:
         from host.agent import _load_naming_conventions
+
         naming_path = tmp_path / ".organizer" / "NAMING.md"
         naming_path.parent.mkdir(parents=True)
         naming_path.write_text("## My Rules\n- Use CamelCase\n", encoding="utf-8")
@@ -168,6 +175,7 @@ class TestNamingConventions:
 
     def test_falls_back_to_default_for_empty_file(self, tmp_path: Path) -> None:
         from host.agent import _load_naming_conventions
+
         naming_path = tmp_path / ".organizer" / "NAMING.md"
         naming_path.parent.mkdir(parents=True)
         naming_path.write_text("   \n", encoding="utf-8")
@@ -178,6 +186,7 @@ class TestNamingConventions:
         from unittest.mock import MagicMock
 
         from host.agent import _build_system_prompt
+
         prompt = _build_system_prompt(tmp_path, MagicMock())
         assert "naming" in prompt.lower() or "rename" in prompt.lower()
         assert "write_index" in prompt

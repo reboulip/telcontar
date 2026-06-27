@@ -1,4 +1,5 @@
 """Tests for read-only server tools: list_dir, read_file, extract_text, compute_checksum."""
+
 from __future__ import annotations
 
 import hashlib
