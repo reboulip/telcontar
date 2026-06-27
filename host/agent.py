@@ -74,11 +74,17 @@ B. ORGANIZE the tree:
       Registry paths are reconciled automatically as files move.
 
 C. SYNTHESIZE:
-   8. Call write_index on the target directory to produce INDEX.md and manifest.json.
-   9. Compose a Markdown summary (plain prose, 2-4 paragraphs) describing what the
-      directory contains and what changed, then call
-      write_summary(path=<target_dir>, content=<your prose>) to persist SUMMARY.md.
-   10. Respond with a final text summary (no tool calls) when fully done.
+   8. Record key project events as you go with create_event(sentence, date): one
+      short, verb-led, dated sentence per milestone (e.g. a decision, a delivery).
+   9. Call build_graph to project the registry and events into the knowledge graph,
+      then get_actors for the ranked main actors and list_events for the timeline.
+   10. Call write_index on the target directory to produce INDEX.md and manifest.json.
+   11. Compose the project synthesis as Markdown from the registry (list_documents /
+      get_registry), the events (list_events), the graph (get_graph) and the actors
+      (get_actors), following the "Project synthesis" template below. Persist it with
+      write_summary(path=<target_dir>, content=<your markdown>). Never invent facts
+      not present in the data.
+   12. Respond with a final text summary (no tool calls) when fully done.
 
 Safety rules — never break these:
 - Never delete files. Quarantine only.
@@ -86,7 +92,7 @@ Safety rules — never break these:
 - Always call review_plan before execute_plan.
 - If a hard stop occurs, explain what failed and offer to undo.
 
-{types_section}{naming_section}\
+{types_section}{naming_section}{synthesis_section}\
 """
 
 _DEFAULT_NAMING_CONVENTIONS = """\
@@ -145,6 +151,29 @@ def _build_types_section(profile: Profile | None) -> str:
     return "\n".join(lines) + "\n\n"
 
 
+def _build_synthesis_section(profile: Profile | None) -> str:
+    """Render the profile's project-synthesis template into a prompt section."""
+    if profile is None:
+        return ""
+    sections = profile.synthesis_sections
+    instructions = profile.synthesis_instructions.strip()
+    if not sections and not instructions:
+        return ""
+    title = profile.synthesis_title.strip() or "Project synthesis"
+    lines = [
+        "## Project synthesis",
+        "",
+        f'When composing SUMMARY.md, structure it as "{title}" with one Markdown',
+        "section per item below, in this order:",
+    ]
+    for s in sections:
+        lines.append(f"- {s}")
+    if instructions:
+        lines.append("")
+        lines.append(instructions)
+    return "\n" + "\n".join(lines) + "\n"
+
+
 def _load_naming_conventions(project_root: Path, profile: Profile | None) -> str:
     naming_path = project_root / ".organizer" / "NAMING.md"
     if naming_path.is_file():
@@ -163,6 +192,7 @@ def _build_system_prompt(project_root: Path, settings: Settings) -> str:
         extraction_rules=_build_extraction_rules(profile),
         types_section=_build_types_section(profile),
         naming_section=_load_naming_conventions(project_root, profile),
+        synthesis_section=_build_synthesis_section(profile),
     )
 
 

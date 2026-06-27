@@ -85,11 +85,28 @@ The three universally required fields for `record_document` are `title`, `summar
 ```toml
 [synthesis]
 template = "project_synthesis"
+title = "Synthèse du projet"
+sections = [
+    "Vue d'ensemble — objet du corpus et état d'avancement général",
+    "Acteurs principaux — qui intervient et à quel titre",
+    "Chronologie — les évènements clés datés, par ordre chronologique",
+    "Documents clés — les livrables majeurs et leur apport",
+    "Doublons et versions — duplicats et versions modifiées repérés",
+    "Points d'attention — risques, manques ou décisions en suspens",
+]
+instructions = """\
+Rédige SUMMARY.md en français comme une synthèse de projet structurée par les \
+sections ci-dessus (une rubrique Markdown ## par section)..."""
 ```
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `template` | string | `""` | Name of the synthesis template to use. Currently `"project_synthesis"` is the only built-in. Reserved for future plugin expansion. |
+| `template` | string | `""` | Name of the synthesis template. Currently `"project_synthesis"` is the only built-in. Reserved for future plugin expansion. |
+| `title` | string | `""` | Title of the synthesis document. Injected into the agent's "Project synthesis" prompt section as the SUMMARY.md heading. |
+| `sections` | list of strings | `[]` | Ordered list of section names. Each entry becomes one `##` heading in SUMMARY.md. The agent composes the sections in this order, drawing on `list_documents`, `get_registry`, `list_events`, `get_graph`, and `get_actors`. |
+| `instructions` | string | `""` | Prose writing rules injected verbatim at the end of the "Project synthesis" prompt section. Use this to set language, tone, and grounding constraints (e.g. "never invent a fact not present in the data"). |
+
+`profile.synthesis()` returns all four fields as a dict `{template, title, sections, instructions}`. The host's `_build_synthesis_section` renders them into the agent's system prompt. `write_summary` is unchanged — it remains a plain sink that persists whatever Markdown the agent composes.
 
 ---
 
@@ -165,6 +182,20 @@ optional = ["date", "author"]
 
 [synthesis]
 template = "project_synthesis"
+title = "Contract corpus summary"
+sections = [
+    "Overview — what this corpus covers and its scope",
+    "Key parties — who appears and in what capacity",
+    "Timeline — dated milestones in chronological order",
+    "Key documents — major agreements and their significance",
+    "Duplicates and versions — redundant or superseded files",
+    "Points of attention — open items or risks, only if evidenced",
+]
+instructions = """\
+Write SUMMARY.md in English. Structure it with one ## section per item above. \
+Draw only on the registry (list_documents / get_registry), the event journal \
+(list_events), the knowledge graph (get_graph), and ranked actors (get_actors). \
+Never invent a fact not present in the data."""
 
 [naming]
 convention = "snake_case_iso_dates"

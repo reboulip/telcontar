@@ -46,6 +46,21 @@ Required fields: `title`, `summary`, `provenance`
 
 Optional (best-effort): `date`, `author`
 
+### Synthesis
+
+The profile defines a French-language project narrative for SUMMARY.md with the title **"Synthèse du projet"** and six ordered sections:
+
+| Order | Section |
+|---|---|
+| 1 | Vue d'ensemble — objet du corpus et état d'avancement général |
+| 2 | Acteurs principaux — qui intervient et à quel titre (rôles), d'après les acteurs classés (`get_actors`) |
+| 3 | Chronologie — les évènements clés datés (journal d'évènements), par ordre chronologique |
+| 4 | Documents clés — les livrables majeurs et leur apport (provenance) |
+| 5 | Doublons et versions — duplicats et versions modifiées repérés |
+| 6 | Points d'attention — risques, manques ou décisions en suspens, uniquement si étayés |
+
+The agent composes the prose for each section from the registry (`list_documents` / `get_registry`), the event journal (`list_events`), the knowledge graph (`get_graph`), and the ranked actors (`get_actors`). It never invents facts not present in the data. `write_summary` persists the resulting Markdown to `SUMMARY.md` in the target directory.
+
 ### Naming convention
 
 Files are renamed to `snake_case` with an ISO date prefix when known (`YYYY-MM-DD_`). Accents are transliterated, extensions kept, redundant version suffixes dropped.

@@ -101,7 +101,8 @@ The MCP server has no delete tool. The `propose_quarantine` / `quarantine` path 
 ```
 1. Host launches server subprocess (stdio)
 2. Host calls session.list_tools() → discovers all MCP tools
-3. Host sends system prompt (built from config + active profile) + user message
+3. Host sends system prompt (built from config + active profile: document types,
+   naming conventions, and synthesis template) + user message
 4. GPT-5 responds with tool calls
 5. Host dispatches to server via MCP
 6. Server executes tool, returns result
@@ -113,7 +114,9 @@ The MCP server has no delete tool. The `propose_quarantine` / `quarantine` path 
    c. User approves (optionally deselecting ops)
    d. Host calls approve_plan → execute_plan
    e. Server applies ops, journals each, reconciles registry
-10. Agent composes summary, calls write_index + write_summary
+10. Agent calls build_graph → get_actors → list_events, then composes SUMMARY.md
+    from registry + events + graph + actors per the profile's [synthesis] template;
+    calls write_index + write_summary to persist INDEX.md, manifest.json, SUMMARY.md
 11. Agent sends final text (no tool calls) → loop ends
 12. Desktop notification fires
 ```

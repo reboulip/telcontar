@@ -41,9 +41,11 @@ The registry is **content-addressed**: if you rename a file, telcontar still rec
 
 ### Phase C — Synthesize
 
-1. `write_index` walks the organized tree and emits `INDEX.md` + `manifest.json`
-2. The agent composes a narrative summary and calls `write_summary` to persist `SUMMARY.md`
-3. The agent responds with a final text summary and the loop ends
+1. Throughout the run, the agent records key project milestones with `create_event` — one short, verb-led, dated sentence per decision or delivery
+2. The agent calls `build_graph` to project the registry and events into the knowledge graph, then `get_actors` for the ranked main actors and `list_events` for the timeline
+3. `write_index` walks the organized tree and emits `INDEX.md` + `manifest.json`
+4. The agent composes the project narrative as Markdown — structured by the sections defined in the active profile's `[synthesis]` table — drawing on `list_documents`, `get_registry`, `list_events`, `get_graph`, and `get_actors`. It calls `write_summary` to persist the result as `SUMMARY.md`
+5. The agent responds with a final text summary and the loop ends
 
 ---
 

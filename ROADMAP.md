@@ -77,7 +77,7 @@ Turn the file-organizer into a profile-driven document-intelligence engine: pers
 - [x] H1 · Event journal — `events.jsonl` + `create_event(sentence, date)` (verb-led, dated); distinct from the undo journal
 - [x] H2 · Entity / knowledge graph — `server/graph.py`: project registry + events into nodes/edges at `.organizer/graph.json` (derived, reproducible from the registry)
 - [x] H3 · Actors — top entities ranked from the graph, capped at the profile's `salient_cap`
-- [ ] H4 · Project synthesis — enrich `write_summary` to compose the project markdown from registry + events + graph, per the profile's `[synthesis]` template
+- [x] H4 · Project synthesis — enrich `write_summary` to compose the project markdown from registry + events + graph, per the profile's `[synthesis]` template
 - [ ] H5 · Archived-documents journal — archive log + registry `status` ("retirer de la mémoire")
 
 ---

@@ -351,6 +351,24 @@ def test_system_prompt_is_profile_driven() -> None:
     assert prompt.index("compute_checksum") < prompt.index("create_plan")
 
 
+def test_system_prompt_includes_synthesis_template() -> None:
+    from config.settings import load
+
+    from host.agent import _build_system_prompt
+
+    prompt = _build_system_prompt(_PROJECT_ROOT, load())
+
+    # the profile's synthesis template is injected
+    assert "Project synthesis" in prompt
+    assert "Synthèse du projet" in prompt
+    # synthesis tools are referenced in the workflow
+    assert "build_graph" in prompt
+    assert "get_actors" in prompt
+    assert "create_event" in prompt
+    # synthesis comes after the organize step
+    assert prompt.index("create_plan") < prompt.index("Project synthesis")
+
+
 def test_system_prompt_falls_back_without_profile() -> None:
     from host.agent import _build_system_prompt
 

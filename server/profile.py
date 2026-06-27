@@ -45,6 +45,9 @@ class Profile:
     extraction_required: list[str]
     extraction_optional: list[str]
     synthesis_template: str
+    synthesis_title: str
+    synthesis_sections: list[str]
+    synthesis_instructions: str
     naming_convention: str
     naming_instructions: str
     sinks_default: list[str]
@@ -69,6 +72,15 @@ class Profile:
     def naming(self) -> str:
         """The naming convention id (e.g. ``snake_case_iso_dates``)."""
         return self.naming_convention
+
+    def synthesis(self) -> dict:
+        """The project-synthesis template: name, title, ordered sections, prose rules."""
+        return {
+            "template": self.synthesis_template,
+            "title": self.synthesis_title,
+            "sections": list(self.synthesis_sections),
+            "instructions": self.synthesis_instructions,
+        }
 
     # --- (de)serialization -------------------------------------------------
 
@@ -102,6 +114,9 @@ class Profile:
             extraction_required=list(extraction.get("required", [])),
             extraction_optional=list(extraction.get("optional", [])),
             synthesis_template=synthesis.get("template", ""),
+            synthesis_title=synthesis.get("title", ""),
+            synthesis_sections=list(synthesis.get("sections", [])),
+            synthesis_instructions=synthesis.get("instructions", ""),
             naming_convention=naming.get("convention", ""),
             naming_instructions=naming.get("instructions", ""),
             sinks_default=list(sinks.get("default", ["local_markdown"])),

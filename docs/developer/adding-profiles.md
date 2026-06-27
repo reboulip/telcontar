@@ -89,7 +89,33 @@ optional = ["date", "author"]
 
 `required` fields are injected as hard requirements in the agent's system prompt. `optional` fields are "best-effort" — the agent leaves them `null` rather than inventing a value. `title`, `summary`, and `provenance` are always required regardless of this setting; include them for clarity.
 
-### 6. Configure naming
+### 6. Configure the synthesis template
+
+```toml
+[synthesis]
+template = "project_synthesis"
+title = "My Corpus Summary"
+sections = [
+    "Overview — what this corpus covers",
+    "Key actors — who appears and in what role",
+    "Timeline — dated milestones in chronological order",
+    "Key documents — major items and their significance",
+    "Duplicates and versions — redundant or superseded files",
+    "Points of attention — open items or risks, only if evidenced",
+]
+instructions = """\
+Write SUMMARY.md in English. One ## section per item above. \
+Draw only on list_documents, list_events, get_graph, and get_actors. \
+Never invent a fact not present in the data."""
+```
+
+- `title` — the top-level heading written into SUMMARY.md
+- `sections` — ordered list; each entry becomes one `##` section the agent must compose
+- `instructions` — prose rules injected into the agent's "Project synthesis" system-prompt section; set language, tone, and grounding constraints here
+
+The host renders these three fields alongside `template` into the agent's system prompt via `_build_synthesis_section`. `write_summary` is a passive sink — it persists whatever Markdown the agent returns.
+
+### 7. Configure naming
 
 ```toml
 [naming]
@@ -102,14 +128,14 @@ Example: 2024-03-01_services_contract_acme.pdf"""
 
 The `instructions` string is injected verbatim into the system prompt under "File-naming conventions". Be concrete — include an example.
 
-### 7. Activate the profile
+### 8. Activate the profile
 
 ```ini
 # .env
 PROFILE=my_corpus
 ```
 
-### 8. Test it
+### 9. Test it
 
 Run the agent on a small sample directory and verify that:
 

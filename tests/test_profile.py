@@ -96,6 +96,23 @@ def test_naming(profiles_dir: Path) -> None:
     assert p.naming() == "snake_case"
 
 
+def test_synthesis_accessor_defaults_when_minimal(profiles_dir: Path) -> None:
+    # minimal profile only declares template = "generic"; title/sections absent
+    p = load_profile("test_profile", profiles_dir)
+    syn = p.synthesis()
+    assert syn["template"] == "generic"
+    assert syn["title"] == ""
+    assert syn["sections"] == []
+    assert syn["instructions"] == ""
+
+
+def test_synthesis_fields_absent_default_empty() -> None:
+    p = Profile.from_dict({"name": "p", "document_types": [{"id": "a"}]})
+    assert p.synthesis_title == ""
+    assert p.synthesis_sections == []
+    assert p.synthesis_instructions == ""
+
+
 def test_document_type_label_defaults_to_id() -> None:
     dt = DocumentType.from_dict({"id": "x"})
     assert dt.label == "x"
@@ -159,3 +176,15 @@ def test_bundled_is_it_project_loads() -> None:
     assert "author" in p.entity_roles()
     assert p.naming() == "snake_case_iso_dates"
     assert p.sinks_default == ["local_markdown"]
+
+
+def test_bundled_is_it_project_synthesis_template() -> None:
+    p = load_profile("is_it_project", _BUNDLED_PROFILES_DIR)
+    syn = p.synthesis()
+    assert syn["template"] == "project_synthesis"
+    assert syn["title"] == "Synthèse du projet"
+    # ordered narrative sections are present
+    assert len(syn["sections"]) >= 5
+    assert any("Acteurs" in s for s in syn["sections"])
+    assert any("Chronologie" in s for s in syn["sections"])
+    assert syn["instructions"].strip()
