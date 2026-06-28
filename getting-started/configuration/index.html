@@ -1331,9 +1331,8 @@
 
 
 <h1 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h1>
-<p>All settings are loaded from a <code>.env</code> file (or real environment variables) at startup. Copy <code>.env.example</code> to <code>.env</code> and edit it — no code changes required to switch between environments.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>cp<span class="w"> </span>.env.example<span class="w"> </span>.env
-</code></pre></div>
+<p>For most users, first-run configuration is handled entirely by the <strong>setup wizard</strong> that appears the first time you launch <code>organizer-host</code>. The wizard stores the API key in the OS credential store (Windows Credential Manager / macOS Keychain) and saves non-sensitive settings to <code>~/.telcontar/config.env</code>. You can revisit any setting at any time via the <strong>⚙ Settings</strong> button on the startup screen.</p>
+<p>The reference below is for <strong>advanced or developer use</strong>: env vars and a project-local <code>.env</code> file always take priority over <code>~/.telcontar/config.env</code> when both are present. No code changes are required to switch environments — config only.</p>
 <hr />
 <h2 id="full-reference">Full reference<a class="headerlink" href="#full-reference" title="Permanent link">&para;</a></h2>
 <h3 id="llm-endpoint">LLM endpoint<a class="headerlink" href="#llm-endpoint" title="Permanent link">&para;</a></h3>
@@ -1350,14 +1349,14 @@
 <tr>
 <td><code>LLM_BASE_URL</code></td>
 <td><strong>yes</strong></td>
-<td>—</td>
-<td>Base URL of the OpenAI-compatible endpoint.<br>Azure: <code>https://&lt;resource&gt;.openai.azure.com/openai/deployments/&lt;deployment&gt;</code><br>Mammouth: the standard Mammouth base URL</td>
+<td><code>""</code></td>
+<td>Base URL of the OpenAI-compatible endpoint.<br>Azure: <code>https://&lt;resource&gt;.openai.azure.com/openai/deployments/&lt;deployment&gt;</code><br>Mammouth: the standard Mammouth base URL.<br>Set by the wizard and stored in <code>~/.telcontar/config.env</code>.</td>
 </tr>
 <tr>
 <td><code>LLM_API_KEY</code></td>
 <td><strong>yes</strong></td>
-<td>—</td>
-<td>API key for the endpoint</td>
+<td><code>""</code></td>
+<td>API key for the endpoint. Set by the wizard and stored in the OS credential store; falls back to <code>~/.telcontar/config.env</code> if the keyring is unavailable.</td>
 </tr>
 <tr>
 <td><code>LLM_MODEL</code></td>
@@ -1503,17 +1502,17 @@
 <div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Mammouth (dev)</label><label for="__tabbed_1_2">Azure OpenAI (prod)</label></div>
 <div class="tabbed-content">
 <div class="tabbed-block">
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="na">LLM_BASE_URL</span><span class="o">=</span><span class="s">https://api.mammouth.ai/v1</span>
-<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="na">LLM_API_KEY</span><span class="o">=</span><span class="s">mam-...</span>
-<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="na">LLM_MODEL</span><span class="o">=</span><span class="s">gpt-5</span>
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="na">LLM_API_VERSION</span><span class="o">=</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="na">LLM_BASE_URL</span><span class="o">=</span><span class="s">https://api.mammouth.ai/v1</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="na">LLM_API_KEY</span><span class="o">=</span><span class="s">mam-...</span>
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="na">LLM_MODEL</span><span class="o">=</span><span class="s">gpt-5</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="na">LLM_API_VERSION</span><span class="o">=</span>
 </code></pre></div>
 </div>
 <div class="tabbed-block">
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="na">LLM_BASE_URL</span><span class="o">=</span><span class="s">https://my-resource.openai.azure.com/openai/deployments/gpt-5</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="na">LLM_API_KEY</span><span class="o">=</span><span class="s">az-...</span>
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="na">LLM_MODEL</span><span class="o">=</span><span class="s">gpt-5</span>
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="na">LLM_API_VERSION</span><span class="o">=</span><span class="s">2025-01-01-preview</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="na">LLM_BASE_URL</span><span class="o">=</span><span class="s">https://my-resource.openai.azure.com/openai/deployments/gpt-5</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="na">LLM_API_KEY</span><span class="o">=</span><span class="s">az-...</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="na">LLM_MODEL</span><span class="o">=</span><span class="s">gpt-5</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="na">LLM_API_VERSION</span><span class="o">=</span><span class="s">2025-01-01-preview</span>
 </code></pre></div>
 </div>
 </div>
@@ -1525,13 +1524,13 @@
 <hr />
 <h2 id="persistent-state-locations">Persistent state locations<a class="headerlink" href="#persistent-state-locations" title="Permanent link">&para;</a></h2>
 <p>Telcontar writes its state under <code>.organizer/</code> in the <strong>project root</strong> (not the target directory):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>.organizer/
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>├── plans/          # One JSON file per plan
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>├── journal.jsonl   # Append-only undo log (file operations)
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>├── events.jsonl    # Append-only project event journal (narrative log)
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>├── archive.jsonl   # Append-only archive log (why a document left active memory)
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>├── registry.json   # Document memory (sha256 → metadata)
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>└── graph.json      # Knowledge graph (derived from registry + events; rebuilt on demand)
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>.organizer/
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>├── plans/          # One JSON file per plan
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>├── journal.jsonl   # Append-only undo log (file operations)
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>├── events.jsonl    # Append-only project event journal (narrative log)
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>├── archive.jsonl   # Append-only archive log (why a document left active memory)
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>├── registry.json   # Document memory (sha256 → metadata)
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>└── graph.json      # Knowledge graph (derived from registry + events; rebuilt on demand)
 </code></pre></div>
 <p>These files are gitignored by default and survive between runs.</p>
 

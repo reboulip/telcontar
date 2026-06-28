@@ -1022,10 +1022,43 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#config.settings.is_configured" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        is_configured
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#config.settings.load" class="md-nav__link">
     <span class="md-ellipsis">
       
         load
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#config.settings.read_user_config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        read_user_config
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#config.settings.save_user_config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        save_user_config
       
     </span>
   </a>
@@ -1322,6 +1355,24 @@
 <div class="doc doc-object doc-function">
 
 
+<h3 id="config.settings.is_configured" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">is_configured</span><span class="p">()</span></code>
+
+<a href="#config.settings.is_configured" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>True if the minimum required settings (URL + API key) are present.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h3 id="config.settings.load" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">load</span><span class="p">()</span></code>
 
@@ -1330,7 +1381,49 @@
 
     <div class="doc doc-contents ">
 
-        <p>Load and validate settings from environment / .env file.</p>
+        <p>Load and validate settings, pulling the API key from the OS keyring if needed.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="config.settings.read_user_config" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">read_user_config</span><span class="p">()</span></code>
+
+<a href="#config.settings.read_user_config" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return the raw key→value pairs from ~/.telcontar/config.env (lowercase keys).</p>
+<p>Does NOT include the API key (stored in keyring); callers that need to
+check whether a key exists should call is_configured().</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="config.settings.save_user_config" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">save_user_config</span><span class="p">(</span><span class="n">updates</span><span class="p">)</span></code>
+
+<a href="#config.settings.save_user_config" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Persist settings to ~/.telcontar/config.env, storing the API key in the OS keyring.</p>
+<p>Non-sensitive values are written as plain KEY=VALUE lines.  The API key is
+stored via the OS credential manager (Windows Credential Manager, macOS
+Keychain, SecretService on Linux).  If keyring is unavailable, it falls
+back to the config file.</p>
 
 
     </div>

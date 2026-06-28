@@ -1315,38 +1315,35 @@
 </table>
 <hr />
 <h2 id="navigation">Navigation<a class="headerlink" href="#navigation" title="Permanent link">&para;</a></h2>
-<div class="grid cards" markdown>
-
-- **[Getting Started](getting-started/installation.md)**
-
-    Install, configure, and run telcontar on your first directory in under 10 minutes.
-
-- **[User Guide](user-guide/how-it-works.md)**
-
-    Understand the agent loop, approval flow, domain profiles, and output files.
-
-- **[MCP Tools Reference](reference/mcp-tools.md)**
-
-    Complete reference for all tools exposed by the MCP server, grouped by safety category.
-
-- **[Developer Guide](developer/architecture.md)**
-
-    Internals, module-by-module breakdown, and how to extend or contribute.
-
+<div class="grid cards">
+<ul>
+<li>
+<p><strong><a href="getting-started/installation/">Getting Started</a></strong></p>
+<p>Install, configure, and run telcontar on your first directory in under 10 minutes.</p>
+</li>
+<li>
+<p><strong><a href="user-guide/how-it-works/">User Guide</a></strong></p>
+<p>Understand the agent loop, approval flow, domain profiles, and output files.</p>
+</li>
+<li>
+<p><strong><a href="reference/mcp-tools/">MCP Tools Reference</a></strong></p>
+<p>Complete reference for all tools exposed by the MCP server, grouped by safety category.</p>
+</li>
+<li>
+<p><strong><a href="developer/architecture/">Developer Guide</a></strong></p>
+<p>Internals, module-by-module breakdown, and how to extend or contribute.</p>
+</li>
+</ul>
 </div>
-
 <hr />
 <h2 id="quick-example">Quick example<a class="headerlink" href="#quick-example" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Install</span>
-<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>uv<span class="w"> </span>sync
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>uv<span class="w"> </span>tool<span class="w"> </span>install<span class="w"> </span>git+https://github.com/rreboulleau/telcontar.git
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Configure (fill in LLM_BASE_URL and LLM_API_KEY)</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>cp<span class="w"> </span>.env.example<span class="w"> </span>.env
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Run</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>organizer-host
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Run (first launch opens the setup wizard)</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>organizer-host
 </code></pre></div>
-<p>The TUI asks for a target directory, then the agent analyses and organises it. Each plan of file operations is shown for your approval before anything is moved.</p>
+<p>The setup wizard guides you through entering your API key (stored securely in the OS credential store). The TUI then asks for a target directory, analyses it, and shows a plan of file operations for your approval before anything is moved.</p>
 <hr />
 <h2 id="design-principles">Design principles<a class="headerlink" href="#design-principles" title="Permanent link">&para;</a></h2>
 <ul>

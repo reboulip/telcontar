@@ -1110,6 +1110,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#host.app.ConfigScreen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ConfigScreen
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#host.app.OrganizerApp" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1153,6 +1164,17 @@
     <span class="md-ellipsis">
       
         QueryScreen
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#host.app.SetupScreen" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SetupScreen
       
     </span>
   </a>
@@ -1657,8 +1679,11 @@ answer text and the updated history.</p>
 
         <p>Textual TUI for the directory organizer host.</p>
 <h4 id="host.app--screens">Screens<a class="headerlink" href="#host.app--screens" title="Permanent link">&para;</a></h4>
-<p>StartupScreen   — target directory input
-OrganizerScreen — sidebar (static file tree) + agent log + footer status</p>
+<p>SetupScreen     — first-run configuration wizard (API key, profile)
+StartupScreen   — target directory input + entry to ConfigScreen
+ConfigScreen    — edit settings at any time
+OrganizerScreen — sidebar (static file tree) + agent log + footer status
+QueryScreen     — interactive NL Q&amp;A over an analyzed corpus</p>
 <h4 id="host.app--modals">Modals<a class="headerlink" href="#host.app--modals" title="Permanent link">&para;</a></h4>
 <p>ApprovalModal   — plan review with per-op checkboxes (inline removal)</p>
 
@@ -1698,6 +1723,54 @@ OrganizerScreen — sidebar (static file tree) + agent log + footer status</p>
 
 
         <p>Present plan ops to the user as a checklist; return an ApprovalResult.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h3 id="host.app.ConfigScreen" class="doc doc-heading">
+            <code>ConfigScreen</code>
+
+
+<a href="#host.app.ConfigScreen" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="textual.screen.Screen">Screen</span></code></p>
+
+
+
+        <p>Edit telcontar settings at any time after the initial setup.</p>
 
 
 
@@ -1860,6 +1933,56 @@ OrganizerScreen — sidebar (static file tree) + agent log + footer status</p>
         <p>Interactive read-only Q&amp;A over an already-analyzed corpus.</p>
 <p>Keeps a single MCP session open for the whole chat and threads the
 conversation history across questions for multi-turn context.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h3 id="host.app.SetupScreen" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">SetupScreen</span><span class="p">()</span></code>
+
+<a href="#host.app.SetupScreen" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="textual.screen.Screen">Screen</span></code></p>
+
+
+
+        <p>First-run configuration wizard.</p>
+<p>Guides non-technical users through API endpoint + key selection and
+document-profile choice.  Saves to ~/.telcontar/config.env and the OS
+credential store, then transitions to StartupScreen.</p>
 
 
 

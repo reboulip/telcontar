@@ -1457,9 +1457,35 @@
 <hr />
 <h2 id="config"><code>config/</code><a class="headerlink" href="#config" title="Permanent link">&para;</a></h2>
 <h3 id="configsettingspy-44-lines"><code>config/settings.py</code> (~44 lines)<a class="headerlink" href="#configsettingspy-44-lines" title="Permanent link">&para;</a></h3>
-<p><strong>Role:</strong> Single source of truth for all runtime configuration. Loads from <code>.env</code> (or environment variables) via Pydantic Settings.</p>
-<p><strong>Key class:</strong> <code>Settings</code> — a <code>BaseSettings</code> subclass with fields for LLM endpoint, safety, domain profile, document memory, and egress settings.</p>
-<p><strong>Key function:</strong> <code>load() -&gt; Settings</code> — instantiates and validates settings; called once per process.</p>
+<p><strong>Role:</strong> Single source of truth for all runtime configuration. Loads from <code>.env</code> (project-local, highest priority) then <code>~/.telcontar/config.env</code> (user-level fallback for installed-tool use) via Pydantic Settings; real environment variables override both.</p>
+<p><strong>Key class:</strong> <code>Settings</code> — a <code>BaseSettings</code> subclass with fields for LLM endpoint, safety, domain profile, document memory, and egress settings. <code>llm_base_url</code> and <code>llm_api_key</code> default to <code>""</code> so <code>Settings()</code> can be instantiated before the wizard runs.</p>
+<p><strong>Public functions:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>load() -&gt; Settings</code></td>
+<td>Instantiates <code>Settings</code>, injects the API key from the OS keyring if not in env/files, then validates that both <code>llm_base_url</code> and <code>llm_api_key</code> are present. Called once per process by the agent/query workers.</td>
+</tr>
+<tr>
+<td><code>is_configured() -&gt; bool</code></td>
+<td>Returns <code>True</code> if the minimum required settings (URL + API key from env, file, or keyring) are present. Called by <code>OrganizerApp.on_mount</code> to choose the startup screen.</td>
+</tr>
+<tr>
+<td><code>save_user_config(updates: dict[str, str]) -&gt; None</code></td>
+<td>Writes non-sensitive keys to <code>~/.telcontar/config.env</code>; stores the API key in the OS keyring (falls back to the config file if keyring is unavailable).</td>
+</tr>
+<tr>
+<td><code>read_user_config() -&gt; dict[str, str]</code></td>
+<td>Returns the raw key→value pairs from <code>~/.telcontar/config.env</code> (lowercase keys, no API key).</td>
+</tr>
+</tbody>
+</table>
 <p><strong>Why it's structured this way:</strong> Both the host and the server import this module independently (they run in different processes). There is no shared singleton across the stdio boundary.</p>
 <hr />
 <h2 id="server"><code>server/</code><a class="headerlink" href="#server" title="Permanent link">&para;</a></h2>
@@ -1670,7 +1696,7 @@
 <p><strong>Turn limit:</strong> <code>_MAX_TURNS = 50</code> — both loops raise an error event if the model has not produced a final (no-tool-call) response within 50 turns.</p>
 <hr />
 <h3 id="hostapppy"><code>host/app.py</code><a class="headerlink" href="#hostapppy" title="Permanent link">&para;</a></h3>
-<p><strong>Role:</strong> Textual TUI — four screens and one modal.</p>
+<p><strong>Role:</strong> Textual TUI — six screens/modals.</p>
 <table>
 <thead>
 <tr>
@@ -1681,11 +1707,19 @@
 <tbody>
 <tr>
 <td><code>OrganizerApp</code></td>
-<td>Root <code>App</code>; pushes <code>StartupScreen</code> on mount</td>
+<td>Root <code>App</code>; calls <code>is_configured()</code> on mount and routes to <code>SetupScreen</code> (first run) or <code>StartupScreen</code> (returning user)</td>
+</tr>
+<tr>
+<td><code>SetupScreen</code></td>
+<td>First-run wizard: welcome → AI service choice → URL + API key → document profile → done. Saves via <code>save_user_config()</code> / OS keyring. Transitions to <code>StartupScreen</code> when complete</td>
+</tr>
+<tr>
+<td><code>ConfigScreen</code></td>
+<td>Settings panel accessible at any time from <code>StartupScreen</code>. Fields: URL, API key (password input), document profile (Select), approval mode (Select with friendly labels). Saves back to <code>~/.telcontar/config.env</code> via <code>save_user_config()</code></td>
 </tr>
 <tr>
 <td><code>StartupScreen</code></td>
-<td>Collects the target directory path; offers "Organize" and "Query" buttons. "Query" validates that <code>settings.registry_path</code> exists before proceeding</td>
+<td>Collects the target directory path; offers "Organize", "Query", and "⚙ Settings" buttons. Keybinding <code>s</code> opens <code>ConfigScreen</code>. "Query" validates that <code>settings.registry_path</code> exists before proceeding</td>
 </tr>
 <tr>
 <td><code>OrganizerScreen</code></td>
