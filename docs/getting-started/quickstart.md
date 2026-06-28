@@ -1,31 +1,64 @@
 # Quick Start
 
-This walkthrough organizes a sample directory from scratch. It assumes you have completed [Installation](installation.md) and [Configuration](configuration.md).
+This walkthrough organizes a sample directory from scratch. It assumes you have completed [Installation](installation.md).
 
 ---
 
-## 1. Prepare a target directory
-
-Create or choose a directory with a few documents to organize:
-
-```
-C:\Users\me\Documents\messy\
-├── rapport final v3.docx
-├── copil jan 2024.pptx
-├── notes réunion.txt
-├── draft_contrat_v2_FINAL.docx
-└── copy of rapport final v3.docx
-```
-
----
-
-## 2. Launch telcontar
+## 1. Launch telcontar
 
 ```bash
 organizer-host
 ```
 
-The Textual TUI starts with a **startup screen**:
+---
+
+## 2. First-run setup wizard
+
+If this is your first time running telcontar, the **setup wizard** appears automatically. It takes about two minutes.
+
+```
+┌────────────────────────────────────────────────────┐
+│              Directory Organizer                   │
+│                                                    │
+│  Welcome! Let's get you set up in a couple of      │
+│  steps.                                            │
+│                                                    │
+│  To read and analyze your documents, this app      │
+│  needs to talk to an AI service. You'll need:      │
+│                                                    │
+│    • The web address of your AI service            │
+│    • An API key (your provider gives you this)     │
+│                                                    │
+│                        [ Get started → ]           │
+└────────────────────────────────────────────────────┘
+```
+
+**Step 1 — Choose your AI service:**
+
+Select your provider (Mammouth, Azure OpenAI, or another compatible service).
+
+**Step 2 — Enter your details:**
+
+Paste the service URL and your API key. The key is stored securely in your OS credential store (Windows Credential Manager or macOS Keychain) — it never touches a plain text file.
+
+**Step 3 — Choose your document type:**
+
+Pick the vocabulary that best matches what you'll organize:
+
+- **IS/IT project** — technical and business documents
+- **Personal files** — invoices, contracts, administrative records
+- **Research papers** — academic and scientific articles
+
+The wizard saves your settings and moves straight to the main screen. You will not see it again on subsequent launches.
+
+!!! tip
+    You can update any of these settings at any time using the **⚙ Settings** button on the main screen.
+
+---
+
+## 3. Choose a directory to organize
+
+The **startup screen** asks for a target directory:
 
 ```
 ┌─────────────────────────────────────────┐
@@ -35,7 +68,7 @@ The Textual TUI starts with a **startup screen**:
 │  ┌─────────────────────────────────────┐│
 │  │ C:\Users\me\Documents\messy        ││
 │  └─────────────────────────────────────┘│
-│  [ Organize ]  [ Query ]                │
+│  [ Organize ]  [ Query ]  [ ⚙ Settings ]│
 └─────────────────────────────────────────┘
 ```
 
@@ -46,7 +79,7 @@ Enter the path to your messy directory and press **Organize** (or hit Enter) to 
 
 ---
 
-## 3. Watch the agent work
+## 4. Watch the agent work
 
 The main screen shows a sidebar file tree on the left and a scrolling agent log on the right:
 
@@ -65,7 +98,7 @@ The agent reads, checksums, and records each document in the registry, then uses
 
 ---
 
-## 4. Review and approve the plan
+## 5. Review and approve the plan
 
 Once analysis is complete, the agent proposes a plan. A modal appears:
 
@@ -92,7 +125,7 @@ Once analysis is complete, the agent proposes a plan. A modal appears:
 
 ---
 
-## 5. See the results
+## 6. See the results
 
 After execution the agent synthesizes:
 
@@ -115,6 +148,6 @@ A desktop notification fires when the agent is done. Press **g** to open query m
 
 ## Next steps
 
-- Adjust `APPROVAL_MODE` in `.env` once you trust the agent — see [Approval Modes](../user-guide/approval-modes.md).
+- Adjust the approval level in **⚙ Settings** once you trust the agent — see [Approval Modes](../user-guide/approval-modes.md).
 - Understand the output files: [Outputs](../user-guide/outputs.md).
 - Learn how to create a profile for your own document corpus: [Adding a Profile](../developer/adding-profiles.md).

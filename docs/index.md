@@ -50,16 +50,13 @@ All file I/O stays on your machine. Only the text content needed for reasoning i
 
 ```bash
 # Install
-uv sync
+uv tool install git+https://github.com/rreboulleau/telcontar.git
 
-# Configure (fill in LLM_BASE_URL and LLM_API_KEY)
-cp .env.example .env
-
-# Run
+# Run (first launch opens the setup wizard)
 organizer-host
 ```
 
-The TUI asks for a target directory, then the agent analyses and organises it. Each plan of file operations is shown for your approval before anything is moved.
+The setup wizard guides you through entering your API key (stored securely in the OS credential store). The TUI then asks for a target directory, analyses it, and shows a plan of file operations for your approval before anything is moved.
 
 ---
 

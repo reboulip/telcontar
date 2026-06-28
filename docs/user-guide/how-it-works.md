@@ -17,6 +17,15 @@ Local filesystem  +  .organizer/ state
 
 ---
 
+## Startup flow
+
+When you run `organizer-host`, the app checks whether a minimum configuration (AI service URL + API key) is present:
+
+- **First run** — the **setup wizard** (`SetupScreen`) appears automatically. It guides you through choosing an AI provider, entering the service URL and API key, and selecting a document profile. The key is stored in the OS credential store (Windows Credential Manager / macOS Keychain); other settings go to `~/.telcontar/config.env`.
+- **Returning user** — the **startup screen** (`StartupScreen`) appears directly. It offers three actions: **Organize**, **Query**, and **⚙ Settings**. Press `s` or click **⚙ Settings** at any time to open the settings panel (`ConfigScreen`), where you can change the URL, API key, profile, and approval mode.
+
+---
+
 ## The agent loop
 
 When you point telcontar at a directory, the **host** launches the **server** as a subprocess and begins a GPT-5 tool-calling loop. The agent follows a fixed three-phase workflow:

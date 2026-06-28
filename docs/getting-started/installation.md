@@ -24,34 +24,34 @@
 
 ## Install telcontar
 
-```bash
-# Clone the repository
-git clone https://github.com/rreboulleau/telcontar.git
-cd telcontar
+=== "From GitHub (recommended)"
+    ```bash
+    uv tool install git+https://github.com/rreboulleau/telcontar.git
+    ```
 
-# Install all runtime dependencies
-uv sync
-```
+=== "From a local clone"
+    ```bash
+    git clone https://github.com/rreboulleau/telcontar.git
+    cd telcontar
+    uv tool install .
+    ```
 
-This creates a `.venv/` in the project root and installs all packages declared in `pyproject.toml`.
+`uv tool install` places `organizer-host` in your PATH so you can run it from any directory.
 
 ---
 
-## Configure
+## First run
+
+Launch the app once to complete the setup wizard:
 
 ```bash
-cp .env.example .env
+organizer-host
 ```
 
-Open `.env` and fill in at minimum:
+The wizard asks for your AI service URL and API key, then saves them securely (OS credential store on Windows and macOS, or `~/.telcontar/config.env` as fallback). No manual editing of config files required.
 
-```ini
-LLM_BASE_URL=https://your-endpoint/openai/deployments/gpt-5   # or Mammouth URL
-LLM_API_KEY=your-api-key
-LLM_API_VERSION=2025-01-01-preview   # Azure only; leave blank for Mammouth
-```
-
-All other settings have sensible defaults. See [Configuration](configuration.md) for the full reference.
+!!! tip
+    You can re-open the settings at any time from the main screen using the **⚙ Settings** button or pressing `s`.
 
 ---
 
@@ -59,9 +59,9 @@ All other settings have sensible defaults. See [Configuration](configuration.md)
 
 ```bash
 # Confirm the entry point resolves
-uv run organizer-host --help
+organizer-host --help
 
-# Run the test suite
+# Run the test suite (if you cloned the repo)
 uv run --group test pytest -q
 ```
 
@@ -74,4 +74,16 @@ uv run --group test pytest -q
 | `organizer-host` | Launches the Textual TUI (the normal way to use telcontar) |
 | `organizer-server` | Starts the MCP server over stdio (usually invoked automatically by the host) |
 
-Both are declared in `pyproject.toml` under `[project.scripts]` and are available after `uv sync`.
+---
+
+## Advanced: developer setup
+
+If you want to contribute or run the full test suite, clone and sync the dev dependencies instead:
+
+```bash
+git clone https://github.com/rreboulleau/telcontar.git
+cd telcontar
+uv sync --all-groups
+```
+
+For dev, point `LLM_BASE_URL`/`LLM_API_KEY` at Mammouth via a `.env` file in the project root.  See [Configuration](configuration.md) for the full reference.

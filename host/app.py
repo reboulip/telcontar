@@ -2,8 +2,11 @@
 
 Screens
 -------
-StartupScreen   — target directory input
+SetupScreen     — first-run configuration wizard (API key, profile)
+StartupScreen   — target directory input + entry to ConfigScreen
+ConfigScreen    — edit settings at any time
 OrganizerScreen — sidebar (static file tree) + agent log + footer status
+QueryScreen     — interactive NL Q&A over an analyzed corpus
 
 Modals
 ------
@@ -13,6 +16,7 @@ ApprovalModal   — plan review with per-op checkboxes (inline removal)
 from __future__ import annotations
 
 import asyncio
+import tomllib
 from pathlib import Path
 
 from textual import on
@@ -29,13 +33,50 @@ from textual.widgets import (
     Label,
     RichLog,
     Rule,
+    Select,
     Static,
 )
 
 from host.agent import AgentEvent, ApprovalResult
 
-# Repo root — host/app.py → host/ → project root. Used to launch the MCP server.
+# Package root: host/app.py → host/ → project root (or site-packages/).
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+# ── Profile helpers ───────────────────────────────────────────────────────────
+
+# Human-readable labels for built-in profiles.
+_PROFILE_LABELS: dict[str, str] = {
+    "is_it_project": "IS/IT project — technical and business documents",
+    "personal_files": "Personal files — invoices, contracts, administrative",
+    "research_papers": "Research papers — academic and scientific articles",
+}
+
+
+def _load_profile_options() -> list[tuple[str, str]]:
+    """Return [(display_label, profile_id), ...] for the Select widget.
+
+    Reads TOML files from the bundled profiles/ directory.  Falls back to a
+    single safe default if the directory cannot be found.
+    """
+    profiles_dir = _PROJECT_ROOT / "profiles"
+    options: list[tuple[str, str]] = []
+    try:
+        for path in sorted(profiles_dir.glob("*.toml")):
+            stem = path.stem
+            label = _PROFILE_LABELS.get(stem)
+            if label is None:
+                try:
+                    data = tomllib.loads(path.read_text(encoding="utf-8"))
+                    desc = data.get("description") or data.get("name") or stem
+                    label = desc
+                except Exception:
+                    label = stem
+            options.append((label, stem))
+    except Exception:
+        pass
+    return options or [("General documents", "is_it_project")]
+
 
 # ── Approval modal ────────────────────────────────────────────────────────────
 
@@ -112,6 +153,428 @@ class ApprovalModal(ModalScreen[ApprovalResult]):
         self.dismiss(ApprovalResult(approved=False))
 
 
+# ── Setup screen (first-run wizard) ──────────────────────────────────────────
+
+
+class SetupScreen(Screen):
+    """First-run configuration wizard.
+
+    Guides non-technical users through API endpoint + key selection and
+    document-profile choice.  Saves to ~/.telcontar/config.env and the OS
+    credential store, then transitions to StartupScreen.
+    """
+
+    DEFAULT_CSS = """
+    SetupScreen {
+        align: center middle;
+    }
+    #setup-panel {
+        width: 72%;
+        max-width: 84;
+        border: round $accent;
+        background: $surface;
+        padding: 2 4;
+    }
+    #setup-title {
+        text-style: bold;
+        text-align: center;
+        color: $accent;
+        width: 100%;
+        padding-bottom: 1;
+    }
+    .step-body {
+        color: $text-muted;
+        padding-bottom: 1;
+    }
+    .step-question {
+        text-style: bold;
+        padding-bottom: 1;
+    }
+    .step-hint {
+        color: $text-muted;
+        text-style: italic;
+        padding-bottom: 1;
+    }
+    .step-error {
+        color: $error;
+        height: 1;
+        padding-top: 0;
+    }
+    .step-input {
+        margin-bottom: 1;
+    }
+    .service-btn {
+        width: 100%;
+        margin-bottom: 1;
+    }
+    .step-nav {
+        height: 3;
+        align: right middle;
+        padding-top: 1;
+    }
+    .step-nav Button {
+        margin-left: 1;
+    }
+    """
+
+    BINDINGS = [("escape", "quit", "Quit")]
+
+    # ── Step indices ──────────────────────────────────────────────────────────
+    _STEP_IDS = [
+        "step-welcome",
+        "step-service",
+        "step-api",
+        "step-profile",
+        "step-done",
+    ]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._step = 0
+        self._service = "other"
+        self._pending_url = ""
+        self._pending_key = ""
+
+    def compose(self) -> ComposeResult:
+        profile_options = _load_profile_options()
+
+        yield Header()
+        with VerticalScroll():
+            with Container(id="setup-panel"):
+                yield Label("Directory Organizer", id="setup-title")
+
+                # ── Step 0: welcome ───────────────────────────────────────────
+                with Container(id="step-welcome"):
+                    yield Label(
+                        "Welcome! Let's get you set up in just a couple of steps.",
+                        classes="step-body",
+                    )
+                    yield Label(
+                        "To read and analyze your documents, this app needs to talk to "
+                        "an AI service. You'll need:\n\n"
+                        "  • The web address of your AI service\n"
+                        "  • An API key (your provider gives you this)",
+                        classes="step-body",
+                    )
+                    with Horizontal(classes="step-nav"):
+                        yield Button("Get started →", variant="primary", id="btn-welcome-next")
+
+                # ── Step 1: service selection ─────────────────────────────────
+                with Container(id="step-service"):
+                    yield Label("Which AI service will you use?", classes="step-question")
+                    yield Button("Mammouth", classes="service-btn", id="btn-svc-mammouth")
+                    yield Button("Azure OpenAI", classes="service-btn", id="btn-svc-azure")
+                    yield Button(
+                        "Other / I'll enter a URL", classes="service-btn", id="btn-svc-other"
+                    )
+
+                # ── Step 2: API details ───────────────────────────────────────
+                with Container(id="step-api"):
+                    yield Label("", id="url-hint", classes="step-hint")
+                    yield Label("Web address (URL) of your AI service:")
+                    yield Input(placeholder="https://…", id="input-url", classes="step-input")
+                    yield Label("Your API key:")
+                    yield Input(
+                        placeholder="Paste your key here",
+                        id="input-key",
+                        password=True,
+                        classes="step-input",
+                    )
+                    yield Label("", id="api-error", classes="step-error")
+                    with Horizontal(classes="step-nav"):
+                        yield Button("← Back", id="btn-api-back")
+                        yield Button("Next →", variant="primary", id="btn-api-next")
+
+                # ── Step 3: profile selection ─────────────────────────────────
+                with Container(id="step-profile"):
+                    yield Label(
+                        "What kind of documents will you organize?",
+                        classes="step-question",
+                    )
+                    yield Label(
+                        "This sets the vocabulary the AI uses to categorize files.",
+                        classes="step-body",
+                    )
+                    yield Select(
+                        options=profile_options,
+                        value=profile_options[0][1] if profile_options else Select.BLANK,
+                        id="select-profile",
+                    )
+                    yield Label("", id="profile-error", classes="step-error")
+                    with Horizontal(classes="step-nav"):
+                        yield Button("← Back", id="btn-profile-back")
+                        yield Button("Save & continue →", variant="primary", id="btn-profile-next")
+
+                # ── Step 4: done ──────────────────────────────────────────────
+                with Container(id="step-done"):
+                    yield Label(
+                        "You're all set!",
+                        id="setup-done-title",
+                    )
+                    yield Label(
+                        "Your settings have been saved securely.\n"
+                        "You can update them at any time via the Settings button "
+                        "on the main screen.",
+                        classes="step-body",
+                    )
+                    with Horizontal(classes="step-nav"):
+                        yield Button("Start Organizing →", variant="success", id="btn-done")
+
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self._show_step(0)
+
+    # ── Step navigation ────────────────────────────────────────────────────────
+
+    def _show_step(self, step: int) -> None:
+        self._step = step
+        for i, step_id in enumerate(self._STEP_IDS):
+            self.query_one(f"#{step_id}").display = i == step
+
+    # Welcome → service
+    @on(Button.Pressed, "#btn-welcome-next")
+    def _next_to_service(self) -> None:
+        self._show_step(1)
+
+    # Service selection → API details
+    @on(Button.Pressed, "#btn-svc-mammouth")
+    def _pick_mammouth(self) -> None:
+        self._service = "mammouth"
+        self.query_one("#url-hint", Label).update(
+            "Mammouth: paste the base URL from your Mammouth account dashboard."
+        )
+        self.query_one("#input-url", Input).placeholder = "https://api.mammouth.ai/v1"
+        self._show_step(2)
+
+    @on(Button.Pressed, "#btn-svc-azure")
+    def _pick_azure(self) -> None:
+        self._service = "azure"
+        self.query_one("#url-hint", Label).update(
+            "Azure OpenAI: use your deployment endpoint "
+            "(ends with /openai/deployments/<model-name>)."
+        )
+        self.query_one(
+            "#input-url", Input
+        ).placeholder = "https://your-resource.openai.azure.com/openai/deployments/gpt-5"
+        self._show_step(2)
+
+    @on(Button.Pressed, "#btn-svc-other")
+    def _pick_other(self) -> None:
+        self._service = "other"
+        self.query_one("#url-hint", Label).update(
+            "Enter the base URL of any OpenAI-compatible AI service."
+        )
+        self.query_one("#input-url", Input).placeholder = "https://…"
+        self._show_step(2)
+
+    # API details → back to service / forward to profile
+    @on(Button.Pressed, "#btn-api-back")
+    def _api_back(self) -> None:
+        self.query_one("#api-error", Label).update("")
+        self._show_step(1)
+
+    @on(Button.Pressed, "#btn-api-next")
+    def _api_next(self) -> None:
+        url = self.query_one("#input-url", Input).value.strip()
+        key = self.query_one("#input-key", Input).value.strip()
+        error = self.query_one("#api-error", Label)
+        if not url:
+            error.update("Please enter the web address of your AI service.")
+            return
+        if not key:
+            error.update("Please enter your API key.")
+            return
+        error.update("")
+        self._pending_url = url
+        self._pending_key = key
+        self._show_step(3)
+
+    # Profile → back to API / save and finish
+    @on(Button.Pressed, "#btn-profile-back")
+    def _profile_back(self) -> None:
+        self._show_step(2)
+
+    @on(Button.Pressed, "#btn-profile-next")
+    def _profile_next(self) -> None:
+        select = self.query_one("#select-profile", Select)
+        error = self.query_one("#profile-error", Label)
+        if select.value is Select.BLANK:
+            error.update("Please choose a document type.")
+            return
+        error.update("")
+        profile = str(select.value)
+
+        updates: dict[str, str] = {
+            "llm_base_url": self._pending_url,
+            "llm_api_key": self._pending_key,
+            "profile": profile,
+        }
+        if self._service == "azure":
+            updates["llm_api_version"] = "2025-01-01-preview"
+
+        from config.settings import save_user_config
+
+        save_user_config(updates)
+        self._show_step(4)
+
+    # Done → startup
+    @on(Button.Pressed, "#btn-done")
+    def _go_to_start(self) -> None:
+        self.app.push_screen(StartupScreen())
+
+
+# ── Config screen ─────────────────────────────────────────────────────────────
+
+
+class ConfigScreen(Screen):
+    """Edit telcontar settings at any time after the initial setup."""
+
+    DEFAULT_CSS = """
+    ConfigScreen {
+        align: center middle;
+    }
+    #config-panel {
+        width: 72%;
+        max-width: 84;
+        border: round $accent;
+        background: $surface;
+        padding: 2 4;
+    }
+    #config-title {
+        text-style: bold;
+        text-align: center;
+        color: $accent;
+        width: 100%;
+        padding-bottom: 1;
+    }
+    .cfg-label {
+        color: $text-muted;
+        padding-top: 1;
+    }
+    .cfg-input {
+        margin-bottom: 0;
+    }
+    #cfg-error {
+        color: $error;
+        height: 1;
+        padding-top: 1;
+    }
+    #cfg-buttons {
+        height: 3;
+        align: center middle;
+        padding-top: 1;
+    }
+    #cfg-buttons Button {
+        margin: 0 2;
+    }
+    """
+
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def compose(self) -> ComposeResult:
+        from config.settings import read_user_config
+
+        current = read_user_config()
+        profile_options = _load_profile_options()
+        approval_options: list[tuple[str, str]] = [
+            ("Always ask before any changes", "always"),
+            ("Only ask before moving or quarantining files", "destructive_only"),
+            ("Never ask — full automatic mode", "never"),
+        ]
+
+        current_profile = current.get("profile", "is_it_project")
+        current_approval = current.get("approval_mode", "always")
+        profile_value = (
+            current_profile
+            if any(v == current_profile for _, v in profile_options)
+            else (profile_options[0][1] if profile_options else Select.BLANK)
+        )
+        approval_value = (
+            current_approval
+            if any(v == current_approval for _, v in approval_options)
+            else "always"
+        )
+
+        yield Header()
+        with VerticalScroll():
+            with Container(id="config-panel"):
+                yield Label("Settings", id="config-title")
+
+                yield Label("AI service web address (URL):", classes="cfg-label")
+                yield Input(
+                    value=current.get("llm_base_url", ""),
+                    placeholder="https://…",
+                    id="cfg-url",
+                    classes="cfg-input",
+                )
+
+                yield Label("API key (leave empty to keep the saved key):", classes="cfg-label")
+                yield Input(
+                    placeholder="Paste a new key, or leave empty to keep the current one",
+                    id="cfg-key",
+                    password=True,
+                    classes="cfg-input",
+                )
+
+                yield Label("Document type:", classes="cfg-label")
+                yield Select(
+                    options=profile_options,
+                    value=profile_value,
+                    id="cfg-profile",
+                )
+
+                yield Label("How careful should the app be?", classes="cfg-label")
+                yield Select(
+                    options=approval_options,
+                    value=approval_value,
+                    id="cfg-approval",
+                )
+
+                yield Label("", id="cfg-error")
+                with Horizontal(id="cfg-buttons"):
+                    yield Button("Save", variant="primary", id="btn-cfg-save")
+                    yield Button("Cancel", id="btn-cfg-cancel")
+
+        yield Footer()
+
+    @on(Button.Pressed, "#btn-cfg-save")
+    def _save(self) -> None:
+        url = self.query_one("#cfg-url", Input).value.strip()
+        key = self.query_one("#cfg-key", Input).value.strip()
+        profile_select = self.query_one("#cfg-profile", Select)
+        approval_select = self.query_one("#cfg-approval", Select)
+
+        if not url:
+            self.query_one("#cfg-error", Label).update("Please enter the web address.")
+            return
+
+        updates: dict[str, str] = {
+            "llm_base_url": url,
+            "profile": (
+                str(profile_select.value)
+                if profile_select.value is not Select.BLANK
+                else "is_it_project"
+            ),
+            "approval_mode": (
+                str(approval_select.value)
+                if approval_select.value is not Select.BLANK
+                else "always"
+            ),
+        }
+        if key:
+            updates["llm_api_key"] = key
+
+        from config.settings import save_user_config
+
+        save_user_config(updates)
+        self.app.pop_screen()
+
+    @on(Button.Pressed, "#btn-cfg-cancel")
+    def action_cancel(self) -> None:
+        self.app.pop_screen()
+
+
 # ── Organizer screen ──────────────────────────────────────────────────────────
 
 
@@ -177,7 +640,7 @@ class OrganizerScreen(Screen):
             settings = load_settings()
         except Exception as exc:
             self._log(f"[bold red]Config error:[/bold red] {exc}")
-            self._set_status("Error — check .env")
+            self._set_status("Error — check settings")
             return
 
         llm = make_client(settings)
@@ -323,7 +786,7 @@ class QueryScreen(Screen):
             settings = load_settings()
         except Exception as exc:
             self._log(f"[bold red]Config error:[/bold red] {exc}")
-            self._set_status("Error — check .env")
+            self._set_status("Error — check settings")
             return
 
         llm = make_client(settings)
@@ -401,7 +864,7 @@ class StartupScreen(Screen):
     }
     """
 
-    BINDINGS = [("escape", "quit", "Quit")]
+    BINDINGS = [("escape", "quit", "Quit"), ("s", "settings", "Settings")]
 
     def compose(self) -> ComposeResult:
         yield Header()
@@ -416,8 +879,12 @@ class StartupScreen(Screen):
                 with Horizontal(id="startup-buttons"):
                     yield Button("Organize", variant="primary", id="organize-btn")
                     yield Button("Query", variant="success", id="query-btn")
+                    yield Button("⚙ Settings", id="settings-btn")
                 yield Label("", id="error-label")
         yield Footer()
+
+    def action_settings(self) -> None:
+        self.app.push_screen(ConfigScreen())
 
     def _get_target(self) -> Path | None:
         raw = self.query_one("#target-input", Input).value.strip()
@@ -427,6 +894,10 @@ class StartupScreen(Screen):
 
     def _show_error(self, msg: str) -> None:
         self.query_one("#error-label", Label).update(msg)
+
+    @on(Button.Pressed, "#settings-btn")
+    def _open_settings(self) -> None:
+        self.app.push_screen(ConfigScreen())
 
     @on(Button.Pressed, "#organize-btn")
     @on(Input.Submitted, "#target-input")
@@ -472,7 +943,12 @@ class OrganizerApp(App):
     SUB_TITLE = "Powered by GPT-5 + MCP"
 
     def on_mount(self) -> None:
-        self.push_screen(StartupScreen())
+        from config.settings import is_configured
+
+        if is_configured():
+            self.push_screen(StartupScreen())
+        else:
+            self.push_screen(SetupScreen())
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

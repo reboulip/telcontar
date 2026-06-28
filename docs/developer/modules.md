@@ -8,11 +8,18 @@ Detailed breakdown of every Python module in the codebase. For auto-generated AP
 
 ### `config/settings.py` (~44 lines)
 
-**Role:** Single source of truth for all runtime configuration. Loads from `.env` (or environment variables) via Pydantic Settings.
+**Role:** Single source of truth for all runtime configuration. Loads from `.env` (project-local, highest priority) then `~/.telcontar/config.env` (user-level fallback for installed-tool use) via Pydantic Settings; real environment variables override both.
 
-**Key class:** `Settings` — a `BaseSettings` subclass with fields for LLM endpoint, safety, domain profile, document memory, and egress settings.
+**Key class:** `Settings` — a `BaseSettings` subclass with fields for LLM endpoint, safety, domain profile, document memory, and egress settings. `llm_base_url` and `llm_api_key` default to `""` so `Settings()` can be instantiated before the wizard runs.
 
-**Key function:** `load() -> Settings` — instantiates and validates settings; called once per process.
+**Public functions:**
+
+| Function | Description |
+|---|---|
+| `load() -> Settings` | Instantiates `Settings`, injects the API key from the OS keyring if not in env/files, then validates that both `llm_base_url` and `llm_api_key` are present. Called once per process by the agent/query workers. |
+| `is_configured() -> bool` | Returns `True` if the minimum required settings (URL + API key from env, file, or keyring) are present. Called by `OrganizerApp.on_mount` to choose the startup screen. |
+| `save_user_config(updates: dict[str, str]) -> None` | Writes non-sensitive keys to `~/.telcontar/config.env`; stores the API key in the OS keyring (falls back to the config file if keyring is unavailable). |
+| `read_user_config() -> dict[str, str]` | Returns the raw key→value pairs from `~/.telcontar/config.env` (lowercase keys, no API key). |
 
 **Why it's structured this way:** Both the host and the server import this module independently (they run in different processes). There is no shared singleton across the stdio boundary.
 
@@ -210,12 +217,14 @@ The MCP host package. Drives the GPT-5 agent loop and presents the Textual TUI.
 
 ### `host/app.py`
 
-**Role:** Textual TUI — four screens and one modal.
+**Role:** Textual TUI — six screens/modals.
 
 | Class | Role |
 |---|---|
-| `OrganizerApp` | Root `App`; pushes `StartupScreen` on mount |
-| `StartupScreen` | Collects the target directory path; offers "Organize" and "Query" buttons. "Query" validates that `settings.registry_path` exists before proceeding |
+| `OrganizerApp` | Root `App`; calls `is_configured()` on mount and routes to `SetupScreen` (first run) or `StartupScreen` (returning user) |
+| `SetupScreen` | First-run wizard: welcome → AI service choice → URL + API key → document profile → done. Saves via `save_user_config()` / OS keyring. Transitions to `StartupScreen` when complete |
+| `ConfigScreen` | Settings panel accessible at any time from `StartupScreen`. Fields: URL, API key (password input), document profile (Select), approval mode (Select with friendly labels). Saves back to `~/.telcontar/config.env` via `save_user_config()` |
+| `StartupScreen` | Collects the target directory path; offers "Organize", "Query", and "⚙ Settings" buttons. Keybinding `s` opens `ConfigScreen`. "Query" validates that `settings.registry_path` exists before proceeding |
 | `OrganizerScreen` | Main view: file-tree sidebar + scrollable agent log; runs the organize agent in a Textual worker; keybinding `g` pushes `QueryScreen` once organizing completes |
 | `QueryScreen` | Chat-style read-only Q&A screen: `RichLog` output + `Input` bar; keeps one MCP session open for the whole chat and threads conversation history across questions; `Esc` pops back to the previous screen |
 | `ApprovalModal` | Plan review: per-op checkboxes, Approve/Reject buttons; returns an `ApprovalResult` |

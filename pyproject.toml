@@ -3,7 +3,7 @@ requires = ["hatchling>=1.30"]
 build-backend = "hatchling.build"
 
 [project]
-name = "directory-organizer"
+name = "telcontar"
 version = "0.1.0"
 description = "MCP-based local directory organizer driven by GPT-5"
 readme = "README.md"
@@ -20,6 +20,7 @@ dependencies = [
     "rich>=15.0",            # pretty CLI output / plan diffs
     "textual>=0.80",         # full TUI framework (host app)
     "plyer>=2.1",            # cross-platform desktop notifications
+    "keyring>=24.0",         # OS credential store for the API key
 ]
 
 [project.scripts]
