@@ -13,28 +13,24 @@ Local AI assistant that organizes a directory tree: renames files to readable na
 ## Setup
 
 ```bash
-# Install dependencies
-uv sync
-
-# Copy and fill in the config
-cp .env.example .env
-# Edit .env: set LLM_BASE_URL, LLM_API_KEY, and (for Azure) LLM_API_VERSION
+uv tool install git+https://github.com/rreboulleau/telcontar.git
 ```
+
+Then launch `organizer-host` once. On first run the **setup wizard** appears automatically — it collects your AI service URL and API key, stores the key in the OS credential store (Windows Credential Manager / macOS Keychain), and saves non-sensitive settings to `~/.telcontar/config.env`. No manual editing of config files required.
+
+For developer / contributor setup (clone + `uv sync`), see [docs/getting-started/installation.md](docs/getting-started/installation.md).
 
 ## Usage
 
 ```bash
-# Organize a directory (runs in APPROVAL_MODE=always by default)
-uv run python -m host.main --target "C:\path\to\messy\dir"
-
-# Run the MCP server standalone (usually launched automatically by the host)
-uv run python -m server.main
+organizer-host
 ```
 
-The Textual TUI opens with a startup screen that offers two actions:
+The Textual TUI opens. On first run the **setup wizard** appears; returning users land on the **startup screen**, which offers three actions:
 
 - **Organize** — analyze and reorganize the target directory (full agent loop).
 - **Query** — open an interactive read-only chat over the already-analyzed corpus (requires an existing registry at `REGISTRY_PATH`).
+- **⚙ Settings** — edit URL, API key, profile, and approval mode at any time (also accessible by pressing `s`).
 
 After organizing, press **g** in the Organizer screen to jump straight into query mode over the just-analyzed corpus.
 

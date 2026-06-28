@@ -11,10 +11,9 @@ uv sync --group dev
 
 # Install test dependencies separately
 uv sync --group test
-
-# Copy and fill in the config
-cp .env.example .env
 ```
+
+For dev, configure your LLM endpoint either by running `organizer-host` once (setup wizard) or by placing a project-local `.env` file with `LLM_BASE_URL` and `LLM_API_KEY`. See [Configuration](../getting-started/configuration.md) for the full reference.
 
 ---
 

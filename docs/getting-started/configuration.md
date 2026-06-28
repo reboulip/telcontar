@@ -1,10 +1,8 @@
 # Configuration
 
-All settings are loaded from a `.env` file (or real environment variables) at startup. Copy `.env.example` to `.env` and edit it — no code changes required to switch between environments.
+For most users, first-run configuration is handled entirely by the **setup wizard** that appears the first time you launch `organizer-host`. The wizard stores the API key in the OS credential store (Windows Credential Manager / macOS Keychain) and saves non-sensitive settings to `~/.telcontar/config.env`. You can revisit any setting at any time via the **⚙ Settings** button on the startup screen.
 
-```bash
-cp .env.example .env
-```
+The reference below is for **advanced or developer use**: env vars and a project-local `.env` file always take priority over `~/.telcontar/config.env` when both are present. No code changes are required to switch environments — config only.
 
 ---
 
@@ -14,8 +12,8 @@ cp .env.example .env
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `LLM_BASE_URL` | **yes** | — | Base URL of the OpenAI-compatible endpoint.<br>Azure: `https://<resource>.openai.azure.com/openai/deployments/<deployment>`<br>Mammouth: the standard Mammouth base URL |
-| `LLM_API_KEY` | **yes** | — | API key for the endpoint |
+| `LLM_BASE_URL` | **yes** | `""` | Base URL of the OpenAI-compatible endpoint.<br>Azure: `https://<resource>.openai.azure.com/openai/deployments/<deployment>`<br>Mammouth: the standard Mammouth base URL.<br>Set by the wizard and stored in `~/.telcontar/config.env`. |
+| `LLM_API_KEY` | **yes** | `""` | API key for the endpoint. Set by the wizard and stored in the OS credential store; falls back to `~/.telcontar/config.env` if the keyring is unavailable. |
 | `LLM_MODEL` | no | `gpt-5` | Model name passed in chat completion requests |
 | `LLM_API_VERSION` | no | `""` | Azure only — `api-version` query parameter (e.g. `2025-01-01-preview`). Leave blank for Mammouth. |
 
