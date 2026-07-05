@@ -467,7 +467,7 @@ async def run_agent_loop(
             name = tool_call.function.name
             args: dict[str, Any] = json.loads(tool_call.function.arguments or "{}")
 
-            on_event(AgentEvent("tool_call", f"{name}({_fmt_args(args)})"))
+            on_event(AgentEvent("tool_call", f"{name}({_fmt_args(args)})", data={"tool": name}))
 
             if name == _CLARIFY_TOOL_NAME:
                 result, clarification_used = await _handle_clarification(
@@ -586,7 +586,7 @@ async def run_query_loop(
             if name not in QUERY_ALLOWED_TOOLS:
                 result: Any = {"error": f"Tool {name!r} is not available in query mode."}
             else:
-                on_event(AgentEvent("tool_call", f"{name}({_fmt_args(args)})"))
+                on_event(AgentEvent("tool_call", f"{name}({_fmt_args(args)})", data={"tool": name}))
                 raw = await session.call_tool(name, args)
                 result = _extract_content(raw)
                 on_event(AgentEvent("tool_result", _fmt_result(result)))

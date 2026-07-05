@@ -409,3 +409,49 @@ async def test_organizer_status_bar_shows_token_usage(
         await pilot.pause(0.2)
         status = str(app.screen.query_one("#status-bar", Static).content)
         assert "12.3K in" in status
+
+
+# ── F10: macro-task narration in the conversation pane ───────────────────────
+
+
+async def test_organizer_narrates_macro_tasks_in_conversation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    async def fake_run_agent(
+        *, target, settings, llm, on_event, on_approval_needed, on_questions_needed=None
+    ):
+        on_event(AgentEvent("tool_call", "read_file(path='a')", data={"tool": "read_file"}))
+        # Same macro-task → must collapse to one narration line.
+        on_event(AgentEvent("tool_call", "extract_text(path='b')", data={"tool": "extract_text"}))
+        on_event(
+            AgentEvent("tool_call", "compute_checksum(path='a')", data={"tool": "compute_checksum"})
+        )
+        on_event(AgentEvent("done", "done"))
+        return "done"
+
+    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        await pilot.pause(0.2)
+        conversation = _richlog_text(app.screen.query_one("#conversation-log", RichLog))
+        timeline = _richlog_text(app.screen.query_one("#tool-timeline", RichLog))
+
+        # Plain-language narration lands in the conversation pane…
+        assert "Reading documents" in conversation
+        assert "Computing checksums" in conversation
+        # …and consecutive same-task calls collapse to a single line.
+        assert conversation.count("Reading documents") == 1
+        # Raw tool names stay in the timeline, not the conversation.
+        assert "read_file" in timeline
+        assert "read_file" not in conversation

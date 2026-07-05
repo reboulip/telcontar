@@ -44,6 +44,39 @@ from host.agent import AgentEvent, ApprovalResult, ClarificationResult
 # Package root: host/app.py → host/ → project root (or site-packages/).
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+# Friendly, plain-language narration for the conversation pane (F10). Maps each
+# MCP tool to the macro-task it belongs to; consecutive calls in the same macro
+# task collapse to a single line so the pane reads as progress, not a call log.
+_TOOL_NARRATION: dict[str, str] = {
+    "list_dir": "Scanning the directory…",
+    "read_file": "Reading documents…",
+    "extract_text": "Reading documents…",
+    "compute_checksum": "Computing checksums…",
+    "record_document": "Recording documents in memory…",
+    "find_duplicates": "Checking for duplicates…",
+    "find_modified_documents": "Checking for newer versions…",
+    "compare_documents": "Comparing documents…",
+    "create_dir": "Building the folder tree…",
+    "create_plan": "Planning changes…",
+    "propose_rename": "Planning changes…",
+    "propose_move": "Planning changes…",
+    "propose_quarantine": "Planning changes…",
+    "review_plan": "Reviewing the plan…",
+    "set_plan_rationale": "Summarizing the plan…",
+    "execute_plan": "Applying the plan…",
+    "compress_quarantine": "Archiving quarantined files…",
+    "create_event": "Recording project events…",
+    "build_graph": "Building the knowledge graph…",
+    "get_graph": "Building the knowledge graph…",
+    "get_actors": "Identifying the main actors…",
+    "list_events": "Reviewing the timeline…",
+    "write_index": "Writing the index…",
+    "write_summary": "Writing the summary…",
+    "write_folder_readme": "Describing folders…",
+    "archive_document": "Archiving documents…",
+    "ask_clarification": "Asking you for clarification…",
+}
+
 
 # ── Profile helpers ───────────────────────────────────────────────────────────
 
@@ -846,6 +879,7 @@ class OrganizerScreen(Screen):
         self._target = target
         self._status = "Initialising…"
         self._tokens = ""
+        self._last_narration = ""
         self._done = False
 
     def compose(self) -> ComposeResult:
@@ -881,6 +915,17 @@ class OrganizerScreen(Screen):
             line = f"{self._status}   ·   ⬍ {self._tokens}"
         self.query_one("#status-bar", Static).update(line)
 
+    def _narrate(self, tool: str) -> None:
+        """Log a plain-language macro-task line to the conversation pane (F10).
+
+        Consecutive calls in the same macro-task collapse to one line, so the pane
+        reads as progress narration rather than a raw tool-call log.
+        """
+        phrase = _TOOL_NARRATION.get(tool)
+        if phrase and phrase != self._last_narration:
+            self._last_narration = phrase
+            self._log(f"[dim italic]{phrase}[/dim italic]")
+
     def action_view_journal(self) -> None:
         project_root = Path(__file__).resolve().parent.parent
         self.app.push_screen(JournalScreen(project_root))
@@ -905,6 +950,7 @@ class OrganizerScreen(Screen):
                     self._set_status(event.text)
                 case "tool_call":
                     self._log_tool(f"[yellow]▶ {event.text}[/yellow]")
+                    self._narrate((event.data or {}).get("tool", ""))
                 case "tool_result":
                     self._log_tool(f"[dim]  {event.text}[/dim]")
                 case "plan_ready":
