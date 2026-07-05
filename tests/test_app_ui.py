@@ -4,6 +4,21 @@ These render real screens off-screen (no terminal needed) and inspect the
 compositor output as plain text, so CSS/layout regressions — e.g. a Label
 truncating instead of wrapping — are caught the same way a human eyeballing
 the TUI would catch them.
+
+Gotchas learned the hard way:
+- `Label`/`Static` expose their text via `.content`, not `.renderable`.
+- After a button handler calls `widget.update(...)`, scanning the screen via
+  `app.screen._compositor.render_strips()` can show stale/blank text even
+  after `await pilot.pause()` with a real delay — it's an unreliable way to
+  assert on freshly-updated content. Query the widget's own state instead:
+  `.content` for Label/Static, or `_richlog_text()` (below) for RichLog,
+  which reads `RichLog.lines` directly.
+- `pilot.click("#some-id")` needs the widget to actually be within the
+  visible viewport for the given `run_test(size=...)` — if the panel content
+  overflows, clicks can miss or land on the wrong element without raising
+  `OutOfBounds`. Size the test terminal generously, and click through
+  multi-step wizards in order (later steps are `display: none`, hence
+  un-clickable, until earlier steps have been advanced past).
 """
 
 from __future__ import annotations
