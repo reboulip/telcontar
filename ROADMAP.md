@@ -109,6 +109,7 @@ Production-readiness and operator ergonomics.
 - [x] F2 · Robust error handling — bad paths, permission errors, partial plan failures
 - [x] F3 · `APPROVAL_MODE=destructive_only` — let read-only ops run without approval
 - [x] F4 · Packaging — verify `uv run telcontar` and `uv run telcontar-server` entry points work end-to-end
+- [ ] K1 · Post-analysis clarification checkpoint — after the ANALYZE pass (before building the plan), the agent may surface a batch of clarifying questions when it hits real ambiguity (unclear document type, competing taxonomy groupings, ambiguous naming). `host/agent.py` gains a new `AgentEvent` kind (`"question"`) and an `on_questions_needed` callback (mirrors the existing `on_approval_needed` shape); `host/app.py` gets a `ClarificationModal` (mirrors `ApprovalModal`) shown at most once per run. The agent uses the answers to refine before calling `create_plan`; if the user has nothing to add, the agent proceeds with its own best judgement. System-prompt change: explicitly tell the agent it MAY ask questions at this checkpoint but must not stall waiting for answers indefinitely.
 - [ ] F5 · Fix TUI quit — bottom-left quit button and 'q' shortcut don't terminate the app [#10]
 - [ ] F6 · Fix query screen NoMatches error — `#query-log` widget lookup fails on QueryScreen [#9]
 - [ ] F7 · Fix rename+move sequencing — track file identity (checksum) across chained ops in a plan so a move following a rename in the same run succeeds [#6]
@@ -116,9 +117,3 @@ Production-readiness and operator ergonomics.
 - [ ] F9 · Token-consumption estimate — track and display input/output token counts per macro-step in readable format (12K, 3.5M) [#7]
 - [ ] F10 · Status messages via conversation pane — surface macro-task narration ("Reading files...", "Computing checksums...") while ops run in the side panel [#5]
 - [ ] F11 · Directory picker — replace the raw address field with a folder-browsing UI for selecting the target directory [#4]
-
----
-
-## v1.1.0 — Interactive clarification checkpoint
-
-- [ ] K1 · Post-analysis clarification checkpoint — after the ANALYZE pass (before building the plan), the agent may surface a batch of clarifying questions when it hits real ambiguity (unclear document type, competing taxonomy groupings, ambiguous naming). `host/agent.py` gains a new `AgentEvent` kind (`"question"`) and an `on_questions_needed` callback (mirrors the existing `on_approval_needed` shape); `host/app.py` gets a `ClarificationModal` (mirrors `ApprovalModal`) shown at most once per run. The agent uses the answers to refine before calling `create_plan`; if the user has nothing to add, the agent proceeds with its own best judgement. System-prompt change: explicitly tell the agent it MAY ask questions at this checkpoint but must not stall waiting for answers indefinitely.
