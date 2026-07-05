@@ -14,7 +14,7 @@ from server import graph as _graph
 from server import plan as _plan
 from server import registry as _registry
 from server.extract import extract as _extract
-from server.guards import check_no_overwrite, safe_quarantine_path
+from server.guards import check_no_overwrite, format_io_error, safe_quarantine_path
 from server.profile import Profile as _Profile
 
 _CHECKSUM_CHUNK = 65536
@@ -56,7 +56,10 @@ def read_file(path: str, max_chars: int) -> str:
     p = Path(path)
     if not p.is_file():
         raise ValueError(f"Not a file: {path}")
-    text = p.read_text(encoding="utf-8", errors="replace")
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise OSError(format_io_error("read", p, exc)) from exc
     if len(text) > max_chars:
         return text[:max_chars] + "\n\n[... content truncated ...]"
     return text
@@ -111,9 +114,12 @@ def compute_checksum(path: str) -> dict:
     if not p.is_file():
         raise ValueError(f"Not a file: {path}")
     h = hashlib.sha256()
-    with p.open("rb") as f:
-        for chunk in iter(lambda: f.read(_CHECKSUM_CHUNK), b""):
-            h.update(chunk)
+    try:
+        with p.open("rb") as f:
+            for chunk in iter(lambda: f.read(_CHECKSUM_CHUNK), b""):
+                h.update(chunk)
+    except OSError as exc:
+        raise OSError(format_io_error("read", p, exc)) from exc
     return {"path": str(p), "checksum": h.hexdigest()}
 
 
@@ -146,16 +152,22 @@ def create_file(path: str, content: str) -> dict:
     """Write content to path; raises if the file already exists."""
     p = Path(path)
     check_no_overwrite(p)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content, encoding="utf-8")
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+    except OSError as exc:
+        raise OSError(format_io_error("write", p, exc)) from exc
     return {"created": str(p)}
 
 
 def update_file(path: str, content: str) -> dict:
     """Overwrite or create content at path."""
     p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content, encoding="utf-8")
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+    except OSError as exc:
+        raise OSError(format_io_error("write", p, exc)) from exc
     return {"updated": str(p)}
 
 
@@ -170,7 +182,10 @@ def create_dir(path: str) -> dict:
     if p.is_file():
         raise ValueError(f"Path exists and is a file, not a directory: {path}")
     existed = p.is_dir()
-    p.mkdir(parents=True, exist_ok=True)
+    try:
+        p.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise OSError(format_io_error("create directory", p, exc)) from exc
     return {"created": str(p), "existed": existed}
 
 
@@ -437,22 +452,37 @@ def _reconcile_op(reg: "_registry.Registry", op: "_plan.PlanOp") -> bool:
 
 
 def _apply_op(op: "_plan.PlanOp") -> None:
-    """Execute a single planned op against the filesystem."""
+    """Execute a single planned op against the filesystem.
+
+    On an I/O failure the raw ``OSError`` is re-raised with a clearer message
+    (via ``format_io_error``) but the **same exception type**, so ``execute_plan``
+    keeps classifying it correctly — a transient ``PermissionError`` (e.g. a
+    Windows file lock) stays retryable, a ``FileNotFoundError`` stays fail-fast.
+    """
     src = Path(op.src)
     if op.op_type == "rename":
         dest = src.parent / op.dst
         check_no_overwrite(dest)
-        src.rename(dest)
+        try:
+            src.rename(dest)
+        except OSError as exc:
+            raise type(exc)(format_io_error("rename", src, exc)) from exc
     elif op.op_type == "move":
         dst_dir = Path(op.dst)
         dest = dst_dir / src.name
         check_no_overwrite(dest)
-        shutil.move(str(src), str(dest))
+        try:
+            shutil.move(str(src), str(dest))
+        except OSError as exc:
+            raise type(exc)(format_io_error("move", src, exc)) from exc
     elif op.op_type == "quarantine":
         dest = Path(op.dst)
         dest.parent.mkdir(parents=True, exist_ok=True)
         check_no_overwrite(dest)
-        shutil.move(str(src), str(dest))
+        try:
+            shutil.move(str(src), str(dest))
+        except OSError as exc:
+            raise type(exc)(format_io_error("quarantine", src, exc)) from exc
     else:
         raise ValueError(f"Unknown op_type: {op.op_type!r}")
 
@@ -545,8 +575,11 @@ def write_index(target_dir: str, journal_path: Path) -> dict:
 
     index_path = root / "INDEX.md"
     manifest_path = root / "manifest.json"
-    index_path.write_text(index_content, encoding="utf-8")
-    manifest_path.write_text(_json.dumps(manifest, indent=2), encoding="utf-8")
+    try:
+        index_path.write_text(index_content, encoding="utf-8")
+        manifest_path.write_text(_json.dumps(manifest, indent=2), encoding="utf-8")
+    except OSError as exc:
+        raise OSError(format_io_error("write", root, exc)) from exc
 
     return {"index": str(index_path), "manifest": str(manifest_path)}
 
@@ -554,8 +587,11 @@ def write_index(target_dir: str, journal_path: Path) -> dict:
 def write_summary(target_dir: str, content: str) -> dict:
     """Write LLM-composed prose to SUMMARY.md inside target_dir."""
     p = Path(target_dir) / "SUMMARY.md"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content, encoding="utf-8")
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+    except OSError as exc:
+        raise OSError(format_io_error("write", p, exc)) from exc
     return {"written": str(p)}
 
 
@@ -567,8 +603,11 @@ def write_folder_readme(folder: str, content: str) -> dict:
     it. Overwrites any existing README and creates the folder if needed.
     """
     p = Path(folder) / "README.md"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content, encoding="utf-8")
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+    except OSError as exc:
+        raise OSError(format_io_error("write", p, exc)) from exc
     return {"written": str(p)}
 
 

@@ -67,4 +67,4 @@ In `always` and `destructive_only` modes, when a plan is ready for execution the
 
 ## Hard stop
 
-Regardless of `APPROVAL_MODE`, if more than 3 operations fail during a single `execute_plan` run, the server triggers a **hard stop**: execution is halted, a `hard_stop` entry is written to the journal, and the agent is notified of the failures. The agent will then explain what went wrong and offer to undo.
+Regardless of `APPROVAL_MODE`, if more than 3 operations fail during a single `execute_plan` run, the server triggers a **hard stop**: execution is halted, a `hard_stop` entry is written to the journal, and the agent is notified of the failures. Each failed op's error message is clear and actionable (e.g. naming a locked file and hinting to close the program holding it), so the agent can explain precisely what went wrong. A transient lock is retried up to 3 times before being counted as a failure; a missing source file fails immediately. The agent will then explain what went wrong and offer to undo.

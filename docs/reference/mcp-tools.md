@@ -4,6 +4,9 @@ Complete reference for all tools exposed by the telcontar MCP server. Tools are 
 
 The server registers tools via FastMCP (`server/main.py`); the implementations live in `server/tools.py`.
 
+!!! note "Error messages"
+    Tools that touch disk (`read_file`, `compute_checksum`, `create_file`, `update_file`, `create_dir`, `execute_plan`, `write_index`, `write_summary`, `write_folder_readme`) re-raise I/O failures as a clear `Could not <action> <path>: <detail>` message instead of a raw traceback, with a plain-language hint for the two operator-actionable cases: a locked file (`... the file is open in another program — close it and retry`) and a plain permission denial (`... permission denied`). The original exception *type* is preserved, so `execute_plan`'s retry/fail-fast classification (below) is unaffected.
+
 ---
 
 ## Read-only tools
