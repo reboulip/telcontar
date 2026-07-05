@@ -388,6 +388,24 @@ def list_archived() -> list:
 
 
 def main() -> None:
+    import argparse
+    from importlib.metadata import PackageNotFoundError, version
+
+    def _version() -> str:
+        try:
+            return version("telcontar")
+        except PackageNotFoundError:  # pragma: no cover - source checkout without install
+            return "0.0.0+unknown"
+
+    parser = argparse.ArgumentParser(
+        prog="telcontar-server",
+        description="MCP stdio server exposing telcontar's guarded file tools.",
+    )
+    parser.add_argument("--version", action="version", version=f"telcontar-server {_version()}")
+    # Tolerate any extra args a launching MCP host may pass; --help/--version
+    # are handled here and exit before the (blocking) stdio server starts.
+    parser.parse_known_args()
+
     mcp.run(transport="stdio")
 
 

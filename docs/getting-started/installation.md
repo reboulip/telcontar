@@ -61,6 +61,9 @@ The wizard asks for your AI service URL and API key, then saves them securely (O
 # Confirm the entry point resolves
 telcontar --help
 
+# Check the installed version
+telcontar --version
+
 # Run the test suite (if you cloned the repo)
 uv run --group test pytest -q
 ```
@@ -73,6 +76,8 @@ uv run --group test pytest -q
 |---|---|
 | `telcontar` | Launches the Textual TUI (the normal way to use telcontar) |
 | `telcontar-server` | Starts the MCP server over stdio (usually invoked automatically by the host) |
+
+Both accept `--help` and `--version`, which print and exit immediately without launching the TUI or the server.
 
 ---
 
