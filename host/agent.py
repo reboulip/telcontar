@@ -26,7 +26,7 @@ from server.profile import Profile, load_profile
 # ── Event types ───────────────────────────────────────────────────────────────
 
 EventKind = Literal[
-    "thinking", "tool_call", "tool_result", "plan_ready", "question", "done", "error"
+    "thinking", "tool_call", "tool_result", "plan_ready", "question", "tokens", "done", "error"
 ]
 
 
@@ -442,6 +442,7 @@ async def run_agent_loop(
 
     on_event(AgentEvent("thinking", f"Starting agent for {target}"))
 
+    token_totals = {"in": 0, "out": 0}
     for _turn in range(_MAX_TURNS):
         on_event(AgentEvent("thinking", "Calling LLM…"))
 
@@ -451,6 +452,7 @@ async def run_agent_loop(
             tools=openai_tools,  # type: ignore[arg-type]
             tool_choice="auto",
         )
+        _accumulate_tokens(response, token_totals, on_event)
 
         choice = response.choices[0]
         messages.append(choice.message.model_dump(exclude_none=True))
@@ -554,6 +556,7 @@ async def run_query_loop(
     messages = history
     messages.append({"role": "user", "content": question})
 
+    token_totals = {"in": 0, "out": 0}
     for _turn in range(_MAX_TURNS):
         on_event(AgentEvent("thinking", "Calling LLM…"))
 
@@ -563,6 +566,7 @@ async def run_query_loop(
             tools=openai_tools,  # type: ignore[arg-type]
             tool_choice="auto",
         )
+        _accumulate_tokens(response, token_totals, on_event)
 
         choice = response.choices[0]
         messages.append(choice.message.model_dump(exclude_none=True))
@@ -744,6 +748,39 @@ def _fmt_args(args: dict[str, Any]) -> str:
     if len(items) > 2:
         parts.append("…")
     return ", ".join(parts)
+
+
+def _fmt_tokens(n: int) -> str:
+    """Compact human-readable token count: 512, 12K, 12.3K, 3.5M."""
+    if n < 1000:
+        return str(n)
+    if n < 1_000_000:
+        return f"{n / 1000:.1f}K".replace(".0K", "K")
+    return f"{n / 1_000_000:.1f}M".replace(".0M", "M")
+
+
+def _accumulate_tokens(response: Any, totals: dict[str, int], on_event: EventCallback) -> None:
+    """Add a response's token usage to the running totals and emit a `tokens` event.
+
+    OpenAI-compatible responses carry ``usage.prompt_tokens`` / ``completion_tokens``;
+    a missing ``usage`` (some endpoints omit it) is silently skipped.
+    """
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        return
+    prompt = getattr(usage, "prompt_tokens", 0)
+    completion = getattr(usage, "completion_tokens", 0)
+    if not isinstance(prompt, int) or not isinstance(completion, int):
+        return  # endpoint omitted real counts (or a test double) — nothing to add
+    totals["in"] += prompt
+    totals["out"] += completion
+    on_event(
+        AgentEvent(
+            "tokens",
+            f"{_fmt_tokens(totals['in'])} in / {_fmt_tokens(totals['out'])} out",
+            data={"in": totals["in"], "out": totals["out"]},
+        )
+    )
 
 
 def _fmt_result(result: Any) -> str:

@@ -375,3 +375,37 @@ async def test_approval_modal_without_rationale_has_no_rationale_widget(tmp_path
         await pilot.pause()
         with pytest.raises(NoMatches):
             app.screen.query_one("#plan-rationale")
+
+
+# ── F9: the status bar surfaces running token usage ──────────────────────────
+
+
+async def test_organizer_status_bar_shows_token_usage(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from textual.widgets import Static
+
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    async def fake_run_agent(
+        *, target, settings, llm, on_event, on_approval_needed, on_questions_needed=None
+    ):
+        on_event(AgentEvent("tokens", "12.3K in / 1.0K out", data={"in": 12300, "out": 1000}))
+        on_event(AgentEvent("done", "done"))
+        return "done"
+
+    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        await pilot.pause(0.2)
+        status = str(app.screen.query_one("#status-bar", Static).content)
+        assert "12.3K in" in status

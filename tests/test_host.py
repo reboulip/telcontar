@@ -695,3 +695,55 @@ def test_query_system_prompt_is_readonly() -> None:
     assert "propose_move" not in prompt
     # the active profile's vocabulary is injected
     assert "releve_de_decision" in prompt
+
+
+# ── F9: token-usage tracking ──────────────────────────────────────────────────
+
+
+def test_fmt_tokens_readable() -> None:
+    from host.agent import _fmt_tokens
+
+    assert _fmt_tokens(512) == "512"
+    assert _fmt_tokens(12_000) == "12K"
+    assert _fmt_tokens(12_300) == "12.3K"
+    assert _fmt_tokens(1_000_000) == "1M"
+    assert _fmt_tokens(3_500_000) == "3.5M"
+
+
+async def test_tokens_events_accumulate_across_turns(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    r1 = _tool_response("list_dir", {"path": "."})
+    r1.usage = SimpleNamespace(prompt_tokens=1000, completion_tokens=200)
+    r2 = _text_response("done")
+    r2.usage = SimpleNamespace(prompt_tokens=500, completion_tokens=100)
+
+    events: list[AgentEvent] = []
+    await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=_llm(r1, r2),
+        session=_session(["list_dir"], {"list_dir": {"entries": []}}),
+        on_event=events.append,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+    )
+
+    token_events = [e for e in events if e.kind == "tokens"]
+    assert len(token_events) == 2
+    assert token_events[-1].data == {"in": 1500, "out": 300}  # cumulative
+    assert "1.5K in" in token_events[-1].text
+    assert "300 out" in token_events[-1].text
+
+
+async def test_no_token_event_when_usage_absent(tmp_path: Path) -> None:
+    # Default mock responses expose no real int usage → no tokens events, no crash.
+    events: list[AgentEvent] = []
+    await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=_llm(_text_response("done")),
+        session=_session([], {}),
+        on_event=events.append,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+    )
+    assert not [e for e in events if e.kind == "tokens"]

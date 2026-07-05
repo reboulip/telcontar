@@ -845,6 +845,7 @@ class OrganizerScreen(Screen):
         super().__init__()
         self._target = target
         self._status = "Initialising…"
+        self._tokens = ""
         self._done = False
 
     def compose(self) -> ComposeResult:
@@ -868,7 +869,17 @@ class OrganizerScreen(Screen):
 
     def _set_status(self, text: str) -> None:
         self._status = text
-        self.query_one("#status-bar", Static).update(text)
+        self._refresh_status_bar()
+
+    def _set_tokens(self, usage: str) -> None:
+        self._tokens = usage
+        self._refresh_status_bar()
+
+    def _refresh_status_bar(self) -> None:
+        line = self._status
+        if self._tokens:
+            line = f"{self._status}   ·   ⬍ {self._tokens}"
+        self.query_one("#status-bar", Static).update(line)
 
     def action_view_journal(self) -> None:
         project_root = Path(__file__).resolve().parent.parent
@@ -900,6 +911,8 @@ class OrganizerScreen(Screen):
                     self._set_status("Waiting for plan approval…")
                 case "question":
                     self._set_status("Awaiting your answers…")
+                case "tokens":
+                    self._set_tokens(event.text)
                 case "done":
                     self._log(f"\n[bold green]✓ Done[/bold green]\n{event.text}")
                     self._set_status("Done")
@@ -1018,6 +1031,7 @@ class QueryScreen(Screen):
         super().__init__()
         self._target = target
         self._status = "Connecting…"
+        self._tokens = ""
         self._questions: asyncio.Queue[str] = asyncio.Queue()
 
     def compose(self) -> ComposeResult:
@@ -1051,8 +1065,18 @@ class QueryScreen(Screen):
 
     def _set_status(self, text: str) -> None:
         self._status = text
+        self._refresh_status_bar()
+
+    def _set_tokens(self, usage: str) -> None:
+        self._tokens = usage
+        self._refresh_status_bar()
+
+    def _refresh_status_bar(self) -> None:
+        line = self._status
+        if self._tokens:
+            line = f"{self._status}   ·   ⬍ {self._tokens}"
         try:
-            self.query_one("#query-status", Static).update(text)
+            self.query_one("#query-status", Static).update(line)
         except NoMatches:
             pass
 
@@ -1090,6 +1114,8 @@ class QueryScreen(Screen):
                     self._log_tool(f"[yellow]▶ {event.text}[/yellow]")
                 case "tool_result":
                     self._log_tool(f"[dim]  {event.text}[/dim]")
+                case "tokens":
+                    self._set_tokens(event.text)
                 case "error":
                     self._log(f"[bold red]✗ {event.text}[/bold red]")
 

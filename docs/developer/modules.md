@@ -193,7 +193,7 @@ The MCP host package. Drives the GPT-5 agent loop and presents the Textual TUI.
 **Role:** The async agent loop — both organize and query modes. Fully decoupled from Textual — callers supply callbacks for events and approval so the module can be tested without a TUI.
 
 **Key types:**
-- `AgentEvent` — `{kind: EventKind, text, data}` emitted at each step; `EventKind` includes `"question"` for the post-analysis clarification checkpoint alongside `"thinking"`, `"tool_call"`, `"tool_result"`, `"plan_ready"`, `"done"`, `"error"`
+- `AgentEvent` — `{kind: EventKind, text, data}` emitted at each step; `EventKind` includes `"question"` for the post-analysis clarification checkpoint and `"tokens"` for running LLM token-usage updates, alongside `"thinking"`, `"tool_call"`, `"tool_result"`, `"plan_ready"`, `"done"`, `"error"`
 - `ApprovalResult` — `{approved: bool, removed_op_ids: list[str]}`
 - `ClarificationResult` — `{answers: dict[str, str], provided: bool}`; answers from the post-analysis clarification checkpoint. `provided` is `False` when the user skipped / had nothing to add, in which case the agent proceeds with its own best judgement
 - `EventCallback` — `Callable[[AgentEvent], None]`
@@ -214,6 +214,8 @@ The MCP host package. Drives the GPT-5 agent loop and presents the Textual TUI.
 - `_build_query_system_prompt(project_root, settings)` — assembles the read-only query-mode system prompt from the active profile
 - `_handle_execute_plan(...)` — intercepts `execute_plan` calls to insert the approval gate before forwarding to the server
 - `_handle_clarification(args, on_event, on_questions_needed, already_used)` — intercepts calls to the host-side `ask_clarification` tool; enforces the at-most-once-per-run rule and the "nothing to add → proceed" path; emits a `"question"` `AgentEvent` and awaits the callback; never raises — degenerate input (no callback wired, already used, no questions) returns a note telling the agent to proceed with its own best judgement
+- `_accumulate_tokens(response, totals, on_event)` — reads `response.usage.prompt_tokens` / `completion_tokens` after each LLM call (both organize and query loops), adds them to the run's running total, and emits a `"tokens"` `AgentEvent` whose text is the compact rendering from `_fmt_tokens` (e.g. `"42.3K in / 5.1K out"`) and whose `data` carries the raw `{in, out}` totals; a no-op when the endpoint's response omits `usage`
+- `_fmt_tokens(n)` — compact human-readable token count: `512`, `12K`, `12.3K`, `3.5M`
 
 **Turn limit:** `_MAX_TURNS = 50` — both loops raise an error event if the model has not produced a final (no-tool-call) response within 50 turns.
 
@@ -229,8 +231,8 @@ The MCP host package. Drives the GPT-5 agent loop and presents the Textual TUI.
 | `SetupScreen` | First-run wizard: welcome → AI service choice → URL + API key → document profile → done. Saves via `save_user_config()` / OS keyring. Transitions to `StartupScreen` when complete |
 | `ConfigScreen` | Settings panel accessible at any time from `StartupScreen`. Fields: URL, API key (password input), document profile (Select), approval mode (Select with friendly labels). Saves back to `~/.telcontar/config.env` via `save_user_config()` |
 | `StartupScreen` | Collects the target directory path; offers "Organize", "Query", and "⚙ Settings" buttons. Keybinding `s` opens `ConfigScreen`. "Query" validates that `settings.registry_path` exists before proceeding |
-| `OrganizerScreen` | Main view: file-tree sidebar + scrollable agent log; runs the organize agent in a Textual worker; keybinding `g` pushes `QueryScreen` once organizing completes |
-| `QueryScreen` | Chat-style read-only Q&A screen: `RichLog` output + `Input` bar; keeps one MCP session open for the whole chat and threads conversation history across questions; `Esc` pops back to the previous screen |
+| `OrganizerScreen` | Main view: file-tree sidebar + scrollable agent log; runs the organize agent in a Textual worker; status bar shows the current phase plus a running token-usage total (`N in / M out`) once the LLM reports it; keybinding `g` pushes `QueryScreen` once organizing completes |
+| `QueryScreen` | Chat-style read-only Q&A screen: `RichLog` output + `Input` bar; keeps one MCP session open for the whole chat and threads conversation history across questions; status bar also shows a running token-usage total (`N in / M out`); `Esc` pops back to the previous screen |
 | `ApprovalModal` | Plan review: renders the plan's `rationale` (if set via `set_plan_rationale`) as `#plan-rationale` above the op checklist, then per-op checkboxes, Approve/Reject buttons; returns an `ApprovalResult` |
 | `ClarificationModal` | Post-analysis clarifying questions: one free-text `Input` per question, "Submit answers" / "Skip — best judgement" buttons; returns a `ClarificationResult`. Shown at most once per run, wired via `OrganizerScreen`'s `on_questions_needed` callback |
 
