@@ -23,6 +23,7 @@ from pathlib import Path
 from textual import on
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, ScrollableContainer, VerticalScroll
+from textual.css.query import NoMatches
 from textual.screen import ModalScreen, Screen
 from textual.widgets import (
     Button,
@@ -1028,14 +1029,25 @@ class QueryScreen(Screen):
         self.query_one("#query-input", Input).focus()
 
     def _log(self, text: str) -> None:
-        self.query_one("#query-log", RichLog).write(text)
+        # A background query worker can outlive the screen (e.g. the user pressed
+        # Esc to go back mid-query), so the widget may already be gone.
+        try:
+            self.query_one("#query-log", RichLog).write(text)
+        except NoMatches:
+            pass
 
     def _log_tool(self, text: str) -> None:
-        self.query_one("#query-timeline", RichLog).write(text)
+        try:
+            self.query_one("#query-timeline", RichLog).write(text)
+        except NoMatches:
+            pass
 
     def _set_status(self, text: str) -> None:
         self._status = text
-        self.query_one("#query-status", Static).update(text)
+        try:
+            self.query_one("#query-status", Static).update(text)
+        except NoMatches:
+            pass
 
     def action_back(self) -> None:
         self.app.pop_screen()

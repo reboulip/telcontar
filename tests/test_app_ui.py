@@ -302,3 +302,42 @@ async def test_query_screen_routes_tool_events_to_timeline(
         assert "Here is your answer." in conversation
         assert "list_documents" not in conversation
         assert "Here is your answer." not in timeline
+
+
+# ── F6: query-screen log helpers survive the screen being popped ──────────────
+
+
+async def test_query_screen_log_helpers_safe_after_pop(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A background query worker may call _log after the user pops the screen (#9)."""
+    from contextlib import asynccontextmanager
+
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+
+    @asynccontextmanager
+    async def fake_mcp_session(project_root):
+        yield None
+
+    async def fake_run_query_loop(**kwargs):
+        return "answer", []
+
+    monkeypatch.setattr("host.agent.mcp_session", fake_mcp_session)
+    monkeypatch.setattr("host.agent.run_query_loop", fake_run_query_loop)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(QueryScreen(tmp_path))
+        await pilot.pause()
+        screen = app.screen
+        app.pop_screen()
+        await pilot.pause()
+        # Widgets are gone now; the helpers must no-op, not raise NoMatches.
+        screen._log("late line")
+        screen._log_tool("late tool")
+        screen._set_status("late status")
