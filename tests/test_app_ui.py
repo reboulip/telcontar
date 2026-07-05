@@ -37,6 +37,7 @@ from host.app import (
     OrganizerScreen,
     QueryScreen,
     SetupScreen,
+    StartupScreen,
 )
 
 
@@ -208,6 +209,54 @@ async def test_organizer_screen_routes_tool_events_to_timeline(
         assert "All done" in conversation
         assert "list_dir" not in conversation
         assert "All done" not in timeline
+
+
+# ── F5: quit bindings actually terminate the app ──────────────────────────────
+
+
+async def test_organizer_screen_q_shortcut_quits(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("config.settings.is_configured", lambda: True)
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    async def fake_run_agent(**kwargs: object) -> str:
+        return "done"
+
+    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        await pilot.press("q")
+        await pilot.pause()
+        # The screen binding routes to app.quit, so the app actually exits.
+        assert app._exit is True
+
+
+async def test_startup_screen_escape_quits(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("config.settings.is_configured", lambda: True)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(StartupScreen())
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app._exit is True
 
 
 async def test_query_screen_routes_tool_events_to_timeline(

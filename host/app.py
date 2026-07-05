@@ -308,7 +308,7 @@ class SetupScreen(Screen):
     }
     """
 
-    BINDINGS = [("escape", "quit", "Quit")]
+    BINDINGS = [("escape", "app.quit", "Quit")]
 
     # ── Step indices ──────────────────────────────────────────────────────────
     _STEP_IDS = [
@@ -828,7 +828,7 @@ class OrganizerScreen(Screen):
     """
 
     BINDINGS = [
-        ("q", "quit", "Quit"),
+        ("q", "app.quit", "Quit"),
         ("g", "query_corpus", "Query corpus"),
         ("j", "view_journal", "Journal"),
     ]
@@ -1004,7 +1004,7 @@ class QueryScreen(Screen):
     }
     """
 
-    BINDINGS = [("escape", "back", "Back"), ("ctrl+c", "quit", "Quit")]
+    BINDINGS = [("escape", "back", "Back"), ("ctrl+c", "app.quit", "Quit")]
 
     def __init__(self, target: Path) -> None:
         super().__init__()
@@ -1136,7 +1136,7 @@ class StartupScreen(Screen):
     }
     """
 
-    BINDINGS = [("escape", "quit", "Quit"), ("s", "settings", "Settings")]
+    BINDINGS = [("escape", "app.quit", "Quit"), ("s", "settings", "Settings")]
 
     def compose(self) -> ComposeResult:
         yield Header()

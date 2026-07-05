@@ -110,7 +110,7 @@ Production-readiness and operator ergonomics.
 - [x] F3 · `APPROVAL_MODE=destructive_only` — let read-only ops run without approval
 - [x] F4 · Packaging — verify `uv run telcontar` and `uv run telcontar-server` entry points work end-to-end
 - [x] K1 · Post-analysis clarification checkpoint — after the ANALYZE pass (before building the plan), the agent may surface a batch of clarifying questions when it hits real ambiguity (unclear document type, competing taxonomy groupings, ambiguous naming). `host/agent.py` gains a new `AgentEvent` kind (`"question"`) and an `on_questions_needed` callback (mirrors the existing `on_approval_needed` shape); `host/app.py` gets a `ClarificationModal` (mirrors `ApprovalModal`) shown at most once per run. The agent uses the answers to refine before calling `create_plan`; if the user has nothing to add, the agent proceeds with its own best judgement. System-prompt change: explicitly tell the agent it MAY ask questions at this checkpoint but must not stall waiting for answers indefinitely.
-- [ ] F5 · Fix TUI quit — bottom-left quit button and 'q' shortcut don't terminate the app [#10]
+- [x] F5 · Fix TUI quit — bottom-left quit button and 'q' shortcut don't terminate the app [#10]
 - [ ] F6 · Fix query screen NoMatches error — `#query-log` widget lookup fails on QueryScreen [#9]
 - [ ] F7 · Fix rename+move sequencing — track file identity (checksum) across chained ops in a plan so a move following a rename in the same run succeeds [#6]
 - [ ] F8 · Plan-approval philosophy summary — present the plan's rationale in plain language alongside the detailed op list, rather than only the raw op list [#8]
