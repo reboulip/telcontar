@@ -185,7 +185,9 @@ async def test_organizer_screen_routes_tool_events_to_timeline(
     )
     monkeypatch.setattr("host.app._send_notification", lambda target: None)
 
-    async def fake_run_agent(*, target, settings, llm, on_event, on_approval_needed):
+    async def fake_run_agent(
+        *, target, settings, llm, on_event, on_approval_needed, on_questions_needed=None
+    ):
         on_event(AgentEvent("tool_call", "list_dir(path='.')"))
         on_event(AgentEvent("tool_result", "{'entries': []}"))
         on_event(AgentEvent("done", "All done."))

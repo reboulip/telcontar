@@ -10,7 +10,8 @@ QueryScreen     — interactive NL Q&A over an analyzed corpus
 
 Modals
 ------
-ApprovalModal   — plan review with per-op checkboxes (inline removal)
+ApprovalModal      — plan review with per-op checkboxes (inline removal)
+ClarificationModal — post-analysis clarifying questions with free-text answers
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ from textual.widgets import (
     Static,
 )
 
-from host.agent import AgentEvent, ApprovalResult
+from host.agent import AgentEvent, ApprovalResult, ClarificationResult
 
 # Package root: host/app.py → host/ → project root (or site-packages/).
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -151,6 +152,93 @@ class ApprovalModal(ModalScreen[ApprovalResult]):
     @on(Button.Pressed, "#reject-btn")
     def action_reject(self) -> None:
         self.dismiss(ApprovalResult(approved=False))
+
+
+# ── Clarification modal (K1) ─────────────────────────────────────────────────
+
+
+class ClarificationModal(ModalScreen[ClarificationResult]):
+    """Present the agent's clarifying questions as free-text inputs (K1).
+
+    Shown at most once per run, after the analysis pass. The user may answer any
+    subset and Submit, or Skip entirely — an empty result tells the agent to
+    proceed with its own best judgement.
+    """
+
+    DEFAULT_CSS = """
+    ClarificationModal {
+        align: center middle;
+    }
+    #clarify-dialog {
+        width: 70%;
+        max-height: 80%;
+        border: round $accent;
+        background: $surface;
+        padding: 1 2;
+    }
+    #clarify-title {
+        text-style: bold;
+        padding-bottom: 1;
+        color: $accent;
+    }
+    #clarify-scroll {
+        max-height: 20;
+    }
+    .clarify-q {
+        text-style: bold;
+        padding-top: 1;
+    }
+    .clarify-input {
+        margin-bottom: 1;
+    }
+    #clarify-buttons {
+        align: center middle;
+        padding-top: 1;
+        height: 3;
+    }
+    #clarify-buttons Button {
+        margin: 0 2;
+    }
+    """
+
+    BINDINGS = [("escape", "skip", "Skip")]
+
+    def __init__(self, questions: list[str]) -> None:
+        super().__init__()
+        self._questions = questions
+
+    def compose(self) -> ComposeResult:
+        with Container(id="clarify-dialog"):
+            yield Label(
+                f"The agent has {len(self._questions)} clarifying question(s)",
+                id="clarify-title",
+            )
+            yield Rule()
+            with ScrollableContainer(id="clarify-scroll"):
+                for i, question in enumerate(self._questions):
+                    yield Label(question, classes="clarify-q")
+                    yield Input(
+                        placeholder="Your answer (leave blank to skip this one)",
+                        id=f"clarify-input-{i}",
+                        classes="clarify-input",
+                    )
+            yield Rule()
+            with Horizontal(id="clarify-buttons"):
+                yield Button("Submit answers", variant="success", id="clarify-submit")
+                yield Button("Skip — best judgement", id="clarify-skip")
+
+    @on(Button.Pressed, "#clarify-submit")
+    def _submit(self) -> None:
+        answers: dict[str, str] = {}
+        for i, question in enumerate(self._questions):
+            value = self.query_one(f"#clarify-input-{i}", Input).value.strip()
+            if value:
+                answers[question] = value
+        self.dismiss(ClarificationResult(answers=answers, provided=bool(answers)))
+
+    @on(Button.Pressed, "#clarify-skip")
+    def action_skip(self) -> None:
+        self.dismiss(ClarificationResult(answers={}, provided=False))
 
 
 # ── Setup screen (first-run wizard) ──────────────────────────────────────────
@@ -802,6 +890,8 @@ class OrganizerScreen(Screen):
                     self._log_tool(f"[dim]  {event.text}[/dim]")
                 case "plan_ready":
                     self._set_status("Waiting for plan approval…")
+                case "question":
+                    self._set_status("Awaiting your answers…")
                 case "done":
                     self._log(f"\n[bold green]✓ Done[/bold green]\n{event.text}")
                     self._set_status("Done")
@@ -829,6 +919,20 @@ class OrganizerScreen(Screen):
                 self._log("[red]Rejected[/red] — sending feedback to agent")
             return result
 
+        async def on_questions_needed(questions: list[str]) -> ClarificationResult:
+            self._log(
+                f"[bold cyan]The agent has {len(questions)} clarifying question(s)[/bold cyan] "
+                "— awaiting your input…"
+            )
+            answer: ClarificationResult = await self.app.push_screen_wait(
+                ClarificationModal(questions)
+            )
+            if answer.provided:
+                self._log(f"[green]Answered {len(answer.answers)} question(s)[/green]")
+            else:
+                self._log("[dim]Skipped — the agent will use its best judgement[/dim]")
+            return answer
+
         try:
             await run_agent(
                 target=self._target,
@@ -836,6 +940,7 @@ class OrganizerScreen(Screen):
                 llm=llm,
                 on_event=on_event,
                 on_approval_needed=on_approval_needed,
+                on_questions_needed=on_questions_needed,
             )
         except Exception as exc:
             self._log(

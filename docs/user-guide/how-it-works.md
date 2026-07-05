@@ -41,6 +41,8 @@ For each document the agent:
 
 The registry is **content-addressed**: if you rename a file, telcontar still recognises it by checksum on the next run. Analysis results accumulate across sessions.
 
+Between Phase A and Phase B, the agent may pause **once** to ask the user a short batch of clarifying questions if it hit genuine ambiguity — see [The clarification checkpoint](#the-clarification-checkpoint) below.
+
 ### Phase B — Organize
 
 1. The agent designs a **relevant target taxonomy** — a small, shallow, readable folder tree derived from the document types and themes actually found in the corpus (e.g. grouped by document type, workstream, or phase). It creates each folder with `create_dir` (idempotent and collision-safe). Folders are only created for categories the corpus actually contains.
@@ -56,6 +58,37 @@ The registry is **content-addressed**: if you rename a file, telcontar still rec
 3. `write_index` walks the organized tree and emits `INDEX.md` + `manifest.json`
 4. The agent composes the project narrative as Markdown — structured by the sections defined in the active profile's `[synthesis]` table — drawing on `list_documents`, `get_registry`, `list_events`, `get_graph`, and `get_actors`. It calls `write_summary` to persist the result as `SUMMARY.md`
 5. The agent responds with a final text summary and the loop ends
+
+---
+
+## The clarification checkpoint
+
+After Phase A (Analyse) and before Phase B (Organize) begins, the agent **may** pause once to ask the user a short batch of clarifying questions — but only when it hits genuine ambiguity (unclear document type, competing taxonomy groupings, ambiguous naming). If there is no real ambiguity, the agent skips this and moves straight into Phase B with its own best judgement.
+
+This is a **host-side** capability, not an MCP server tool: `ask_clarification` is a synthetic tool the host injects into the model's tool list, and it is never forwarded to the MCP server.
+
+```
+Agent finishes Phase A (Analyse)
+       │
+       ▼
+Agent calls ask_clarification(questions)   (at most once per run)
+       │
+       ▼
+Host shows ClarificationModal — one free-text input per question
+       │
+   User reviews
+   ├── Submit answers (any subset, blanks are skipped)
+   │       │
+   │       ▼
+   │   Answers fed back to the agent to refine its decisions before create_plan
+   │
+   └── Skip — best judgement
+           │
+           ▼
+       Agent proceeds using its own judgement
+```
+
+A second call to `ask_clarification` in the same run is refused — the host tells the agent it already asked and to proceed with its own best judgement. The agent is instructed not to stall waiting for answers.
 
 ---
 

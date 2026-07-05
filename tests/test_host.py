@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 from host.agent import (
     AgentEvent,
     ApprovalResult,
+    ClarificationResult,
     _extract_content,
     run_agent_loop,
     run_query_loop,
@@ -313,6 +314,112 @@ async def test_never_mode_skips_approval_and_executes(tmp_path: Path) -> None:
     called_tools = [c[0][0] for c in s.call_tool.call_args_list]
     assert "approve_plan" in called_tools
     assert "execute_plan" in called_tools
+
+
+# ── Clarification checkpoint (K1) ─────────────────────────────────────────────
+
+
+async def _run_with_questions(
+    tmp_path: Path,
+    *,
+    responses: list[MagicMock],
+    on_questions_needed: AsyncMock | None,
+) -> tuple[list[list[dict]], list[Any]]:
+    """Drive the loop with a scripted LLM; capture per-turn messages and tools."""
+    captured_messages: list[list[dict]] = []
+    captured_tools: list[Any] = []
+    queue = list(responses)
+
+    llm = AsyncMock()
+
+    async def _create(**kwargs: Any) -> Any:
+        captured_messages.append(list(kwargs.get("messages", [])))
+        captured_tools.append(kwargs.get("tools"))
+        return queue.pop(0)
+
+    llm.chat.completions.create.side_effect = _create
+
+    await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=llm,
+        session=_session([], {}),
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+        on_questions_needed=on_questions_needed,
+    )
+    return captured_messages, captured_tools
+
+
+async def test_ask_clarification_feeds_answers_back_to_agent(tmp_path: Path) -> None:
+    on_questions = AsyncMock(
+        return_value=ClarificationResult(answers={"Group by?": "by phase"}, provided=True)
+    )
+    messages, _ = await _run_with_questions(
+        tmp_path,
+        responses=[
+            _tool_response("ask_clarification", {"questions": ["Group by?"]}),
+            _text_response("Thanks — proceeding."),
+        ],
+        on_questions_needed=on_questions,
+    )
+
+    on_questions.assert_called_once_with(["Group by?"])
+    tool_msgs = [m for batch in messages for m in batch if m.get("role") == "tool"]
+    assert any("by phase" in m.get("content", "") for m in tool_msgs)
+
+
+async def test_ask_clarification_at_most_once_per_run(tmp_path: Path) -> None:
+    on_questions = AsyncMock(return_value=ClarificationResult(answers={"q": "a"}, provided=True))
+    messages, _ = await _run_with_questions(
+        tmp_path,
+        responses=[
+            _tool_response("ask_clarification", {"questions": ["q1"]}, call_id="c1"),
+            _tool_response("ask_clarification", {"questions": ["q2"]}, call_id="c2"),
+            _text_response("done"),
+        ],
+        on_questions_needed=on_questions,
+    )
+
+    on_questions.assert_called_once()  # second call is refused by the once-guard
+    tool_msgs = [m for batch in messages for m in batch if m.get("role") == "tool"]
+    assert any("already asked" in m.get("content", "") for m in tool_msgs)
+
+
+async def test_ask_clarification_skip_tells_agent_to_proceed(tmp_path: Path) -> None:
+    on_questions = AsyncMock(return_value=ClarificationResult(answers={}, provided=False))
+    messages, _ = await _run_with_questions(
+        tmp_path,
+        responses=[
+            _tool_response("ask_clarification", {"questions": ["q1"]}),
+            _text_response("ok"),
+        ],
+        on_questions_needed=on_questions,
+    )
+
+    on_questions.assert_called_once()
+    tool_msgs = [m for batch in messages for m in batch if m.get("role") == "tool"]
+    assert any("best judgement" in m.get("content", "") for m in tool_msgs)
+
+
+async def test_clarification_tool_advertised_only_when_callback_present(tmp_path: Path) -> None:
+    # With a callback wired in, the synthetic tool is offered to the model.
+    _, tools_with = await _run_with_questions(
+        tmp_path,
+        responses=[_text_response("done")],
+        on_questions_needed=AsyncMock(return_value=ClarificationResult()),
+    )
+    names_with = {t["function"]["name"] for t in tools_with[0]}
+    assert "ask_clarification" in names_with
+
+    # Without a callback, it is not advertised.
+    _, tools_without = await _run_with_questions(
+        tmp_path,
+        responses=[_text_response("done")],
+        on_questions_needed=None,
+    )
+    names_without = {t["function"]["name"] for t in tools_without[0]}
+    assert "ask_clarification" not in names_without
 
 
 # ── Op removal ────────────────────────────────────────────────────────────────

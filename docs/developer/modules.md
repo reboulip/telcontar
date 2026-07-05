@@ -193,23 +193,27 @@ The MCP host package. Drives the GPT-5 agent loop and presents the Textual TUI.
 **Role:** The async agent loop — both organize and query modes. Fully decoupled from Textual — callers supply callbacks for events and approval so the module can be tested without a TUI.
 
 **Key types:**
-- `AgentEvent` — `{kind: EventKind, text, data}` emitted at each step
+- `AgentEvent` — `{kind: EventKind, text, data}` emitted at each step; `EventKind` includes `"question"` for the post-analysis clarification checkpoint alongside `"thinking"`, `"tool_call"`, `"tool_result"`, `"plan_ready"`, `"done"`, `"error"`
 - `ApprovalResult` — `{approved: bool, removed_op_ids: list[str]}`
+- `ClarificationResult` — `{answers: dict[str, str], provided: bool}`; answers from the post-analysis clarification checkpoint. `provided` is `False` when the user skipped / had nothing to add, in which case the agent proceeds with its own best judgement
 - `EventCallback` — `Callable[[AgentEvent], None]`
 - `ApprovalCallback` — `Callable[[str, dict], Awaitable[ApprovalResult]]`
+- `QuestionsCallback` — `Callable[[list[str]], Awaitable[ClarificationResult]]`
 
 **Key constants:**
 - `QUERY_ALLOWED_TOOLS` — `frozenset` of read-only tool names exposed to the model in query mode (list/read/inspect tools; no plan, execute, write, build_graph, create_event, or archive tools)
+- `_CLARIFY_TOOL_NAME` / `_CLARIFY_TOOL_SPEC` — the host-side synthetic tool `ask_clarification`. Never registered with or forwarded to the MCP server; appended to the OpenAI tool list only when a `QuestionsCallback` is wired in
 
 **Key functions:**
-- `run_agent(target, settings, llm, on_event, on_approval_needed)` — top-level organize entry; launches the MCP server subprocess via `mcp_session()`, then calls `run_agent_loop`
-- `run_agent_loop(target, settings, llm, session, ...)` — the actual GPT-5 tool-calling loop for organize mode (injectable session for testing)
+- `run_agent(target, settings, llm, on_event, on_approval_needed, on_questions_needed=None)` — top-level organize entry; launches the MCP server subprocess via `mcp_session()`, then calls `run_agent_loop`
+- `run_agent_loop(target, settings, llm, session, on_event, on_approval_needed, on_questions_needed=None, ...)` — the actual GPT-5 tool-calling loop for organize mode (injectable session for testing)
 - `run_query(question, settings, llm, on_event, history)` — convenience entry for one query, launching its own MCP session
 - `run_query_loop(question, settings, llm, session, on_event, history, project_root)` — read-only tool-calling loop; threads `history` across calls for multi-turn context; returns `(answer, updated_history)`
 - `_discover_openai_tools(session, allowed)` — lists MCP tools and converts to OpenAI function specs; when `allowed` is given, only tools in the set are exposed (used by query mode)
-- `_build_system_prompt(project_root, settings)` — assembles the organize-mode system prompt from the active profile
+- `_build_system_prompt(project_root, settings)` — assembles the organize-mode system prompt from the active profile, including an optional clarification-checkpoint note between the ANALYZE and ORGANIZE sections
 - `_build_query_system_prompt(project_root, settings)` — assembles the read-only query-mode system prompt from the active profile
 - `_handle_execute_plan(...)` — intercepts `execute_plan` calls to insert the approval gate before forwarding to the server
+- `_handle_clarification(args, on_event, on_questions_needed, already_used)` — intercepts calls to the host-side `ask_clarification` tool; enforces the at-most-once-per-run rule and the "nothing to add → proceed" path; emits a `"question"` `AgentEvent` and awaits the callback; never raises — degenerate input (no callback wired, already used, no questions) returns a note telling the agent to proceed with its own best judgement
 
 **Turn limit:** `_MAX_TURNS = 50` — both loops raise an error event if the model has not produced a final (no-tool-call) response within 50 turns.
 
@@ -228,6 +232,7 @@ The MCP host package. Drives the GPT-5 agent loop and presents the Textual TUI.
 | `OrganizerScreen` | Main view: file-tree sidebar + scrollable agent log; runs the organize agent in a Textual worker; keybinding `g` pushes `QueryScreen` once organizing completes |
 | `QueryScreen` | Chat-style read-only Q&A screen: `RichLog` output + `Input` bar; keeps one MCP session open for the whole chat and threads conversation history across questions; `Esc` pops back to the previous screen |
 | `ApprovalModal` | Plan review: per-op checkboxes, Approve/Reject buttons; returns an `ApprovalResult` |
+| `ClarificationModal` | Post-analysis clarifying questions: one free-text `Input` per question, "Submit answers" / "Skip — best judgement" buttons; returns a `ClarificationResult`. Shown at most once per run, wired via `OrganizerScreen`'s `on_questions_needed` callback |
 
 **TUI layout (OrganizerScreen):**
 
@@ -252,7 +257,7 @@ The MCP host package. Drives the GPT-5 agent loop and presents the Textual TUI.
 └────────────────────────────────────────────────────────┘
 ```
 
-**Worker pattern:** `OrganizerScreen.on_mount` launches `_agent_worker` as a Textual worker. The worker is `async`, so it can `await` the approval modal via `app.push_screen_wait(ApprovalModal(...))`. `QueryScreen` uses a `asyncio.Queue` to bridge the synchronous `Input.Submitted` event handler into the async `_query_worker` that drives `run_query_loop`.
+**Worker pattern:** `OrganizerScreen.on_mount` launches `_agent_worker` as a Textual worker. The worker is `async`, so it can `await` the approval modal via `app.push_screen_wait(ApprovalModal(...))`, and — when the agent calls `ask_clarification` — the clarification modal via `app.push_screen_wait(ClarificationModal(questions))`. `QueryScreen` uses a `asyncio.Queue` to bridge the synchronous `Input.Submitted` event handler into the async `_query_worker` that drives `run_query_loop`.
 
 ---
 

@@ -111,6 +111,15 @@ Telcontar maintains three append-only JSONL logs — each with a different purpo
 
 `archive_document` writes to both the undo journal (the file move, so it stays reversible) and the archive log (the reason a document left memory). These two writes serve different purposes and are never merged.
 
+### Post-analysis clarification checkpoint
+
+Between the ANALYZE and ORGANIZE phases, the agent may surface a batch of clarifying questions when it hits genuine ambiguity (unclear document type, competing taxonomy groupings, ambiguous naming). This is implemented entirely on the **host** side, not as an MCP server tool:
+
+- `host/agent.py` defines a synthetic tool spec, `ask_clarification`, that is appended to the OpenAI tool list only when the caller wires in an `on_questions_needed` callback (`QuestionsCallback = Callable[[list[str]], Awaitable[ClarificationResult]]`) — it is never registered with, or forwarded to, the MCP server.
+- When the model calls `ask_clarification`, `_handle_clarification` enforces the at-most-once-per-run rule and the "nothing to add → proceed" path, emits a `"question"` `AgentEvent` (with the questions in `data`), and awaits the callback.
+- `host/app.py` wires `on_questions_needed` to show `ClarificationModal` (mirrors `ApprovalModal`): one free-text `Input` per question, with **Submit answers** and **Skip — best judgement** buttons, returning a `ClarificationResult`.
+- If the user skips, submits no answers, or the checkpoint was already used this run, the tool result is a note telling the agent to proceed with its own best judgement — the agent is instructed never to stall waiting for answers.
+
 ### Output-sink abstraction
 
 `server/sinks.py` defines a `Sink` protocol (`name`, `external`, `write_summary`, `write_folder_readme`) and a `resolve_sinks(names, allow_external)` factory. The MCP handlers for `write_summary` and `write_folder_readme` call `resolve_sinks` at request time, passing the profile's `[sinks] default` list and the `egress_allow_external_sinks` setting, then fan the call out to each resolved sink.
@@ -125,7 +134,9 @@ Any sink name not in the built-in registry is treated as an external sink. If `e
 
 ```
 1. Host launches server subprocess (stdio)
-2. Host calls session.list_tools() → discovers all MCP tools
+2. Host calls session.list_tools() → discovers all MCP tools; if the caller wired in
+   an on_questions_needed callback, the host also appends its own host-side
+   ask_clarification tool spec (never forwarded to the server)
 3. Host sends system prompt (built from config + active profile: document types,
    naming conventions, and synthesis template) + user message
 4. GPT-5 responds with tool calls
@@ -133,22 +144,26 @@ Any sink name not in the built-in registry is treated as an external sink. If `e
 6. Server executes tool, returns result
 7. Host feeds result back to GPT-5 as tool message
 8. Steps 4-7 repeat (up to MAX_TURNS = 50)
-9. Agent designs a target taxonomy from the types/themes found, calls create_dir for
-   each folder (idempotent; no folder created for absent categories), then opens a
-   plan (create_plan) and stages propose_rename / propose_move / propose_quarantine ops
-10. On execute_plan call:
+9. Once analysis is far enough along, the agent MAY call ask_clarification once with a
+   short batch of questions; the host emits a "question" AgentEvent, shows
+   ClarificationModal, and feeds the user's answers (or a "proceed with best judgement"
+   note if skipped or already used) back as the tool result
+10. Agent designs a target taxonomy from the types/themes found, calls create_dir for
+    each folder (idempotent; no folder created for absent categories), then opens a
+    plan (create_plan) and stages propose_rename / propose_move / propose_quarantine ops
+11. On execute_plan call:
     a. Host fetches plan details (get_plan)
     b. Host shows ApprovalModal to user
     c. User approves (optionally deselecting ops)
     d. Host calls approve_plan → execute_plan
     e. Server applies ops, journals each, reconciles registry
-11. Agent calls build_graph → get_actors → list_events, then composes SUMMARY.md
+12. Agent calls build_graph → get_actors → list_events, then composes SUMMARY.md
     from registry + events + graph + actors per the profile's [synthesis] template;
     calls write_index + write_summary to persist INDEX.md, manifest.json, SUMMARY.md
-12. Agent calls write_folder_readme(path=<folder>, content=<markdown>) once per
+13. Agent calls write_folder_readme(path=<folder>, content=<markdown>) once per
     meaningful folder of the organized tree; empty/trivial folders are skipped
-13. Agent sends final text (no tool calls) → loop ends
-14. Desktop notification fires
+14. Agent sends final text (no tool calls) → loop ends
+15. Desktop notification fires
 ```
 
 ---

@@ -25,7 +25,9 @@ from server.profile import Profile, load_profile
 
 # ── Event types ───────────────────────────────────────────────────────────────
 
-EventKind = Literal["thinking", "tool_call", "tool_result", "plan_ready", "done", "error"]
+EventKind = Literal[
+    "thinking", "tool_call", "tool_result", "plan_ready", "question", "done", "error"
+]
 
 
 @dataclass
@@ -49,6 +51,54 @@ class ApprovalResult:
 
 ApprovalCallback = Callable[[str, dict], Awaitable[ApprovalResult]]
 
+
+# ── Clarification checkpoint (K1) ─────────────────────────────────────────────
+
+
+@dataclass
+class ClarificationResult:
+    """Answers from the post-analysis clarification checkpoint.
+
+    ``provided`` is False when the user skipped / had nothing to add, in which case
+    the agent proceeds with its own best judgement.
+    """
+
+    answers: dict[str, str] = field(default_factory=dict)
+    provided: bool = False
+
+
+QuestionsCallback = Callable[[list[str]], Awaitable[ClarificationResult]]
+
+# Host-side synthetic tool: never forwarded to the MCP server. The agent may call
+# it once, after ANALYZE and before create_plan, to surface a batch of clarifying
+# questions. Only advertised to the model when a QuestionsCallback is wired in.
+_CLARIFY_TOOL_NAME = "ask_clarification"
+_CLARIFY_TOOL_SPEC: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": _CLARIFY_TOOL_NAME,
+        "description": (
+            "Ask the user a short batch of clarifying questions ONCE, after you have "
+            "analyzed the documents but BEFORE building the plan (create_plan), when you "
+            "hit genuine ambiguity (unclear document type, competing taxonomy groupings, "
+            "ambiguous naming). Provide 1-5 concise questions and use the answers to refine "
+            "your decisions. Do NOT stall waiting for answers: if there is no real ambiguity, "
+            "skip this and proceed with your best judgement. Callable at most once per run."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "questions": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "1-5 short clarifying questions for the user.",
+                }
+            },
+            "required": ["questions"],
+        },
+    },
+}
+
 # ── System prompt ─────────────────────────────────────────────────────────────
 
 _SYSTEM_PROMPT_TEMPLATE = """\
@@ -64,6 +114,12 @@ A. ANALYZE each meaningful document and record it in the memory registry:
 {extraction_rules}
    4. Use find_duplicates and find_modified_documents to spot duplicates and
       newer versions before deciding what to keep or quarantine.
+
+   Optional clarification checkpoint: after ANALYZE and BEFORE building the plan,
+   if you hit genuine ambiguity (unclear document type, competing taxonomy
+   groupings, ambiguous naming), you MAY call ask_clarification ONCE with a short
+   batch of questions and use the answers to refine your decisions. Do not stall —
+   if there is no real ambiguity, skip it and proceed with your best judgement.
 
 B. ORGANIZE the tree:
    5. Design a relevant target taxonomy — a small, readable folder tree for THIS
@@ -334,6 +390,7 @@ async def run_agent(
     llm: AsyncOpenAI,
     on_event: EventCallback,
     on_approval_needed: ApprovalCallback,
+    on_questions_needed: QuestionsCallback | None = None,
 ) -> str:
     """Launch the MCP server and run the agent loop. Returns final summary text."""
     project_root = Path(__file__).resolve().parent.parent
@@ -345,6 +402,7 @@ async def run_agent(
             session=session,
             on_event=on_event,
             on_approval_needed=on_approval_needed,
+            on_questions_needed=on_questions_needed,
             project_root=project_root,
         )
 
@@ -356,6 +414,7 @@ async def run_agent_loop(
     session: ClientSession,
     on_event: EventCallback,
     on_approval_needed: ApprovalCallback,
+    on_questions_needed: QuestionsCallback | None = None,
     project_root: Path | None = None,
 ) -> str:
     """Run the GPT-5 tool-calling loop against an already-connected MCP session.
@@ -367,6 +426,11 @@ async def run_agent_loop(
 
     # Discover tools from the MCP server
     openai_tools = await _discover_openai_tools(session)
+    # Advertise the host-side clarification tool only when a callback is wired in.
+    if on_questions_needed is not None:
+        openai_tools = [*openai_tools, _CLARIFY_TOOL_SPEC]
+
+    clarification_used = False
 
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": _build_system_prompt(project_root, settings)},
@@ -400,14 +464,22 @@ async def run_agent_loop(
 
             on_event(AgentEvent("tool_call", f"{name}({_fmt_args(args)})"))
 
-            result = await _dispatch(
-                name=name,
-                args=args,
-                session=session,
-                settings=settings,
-                on_event=on_event,
-                on_approval_needed=on_approval_needed,
-            )
+            if name == _CLARIFY_TOOL_NAME:
+                result, clarification_used = await _handle_clarification(
+                    args=args,
+                    on_event=on_event,
+                    on_questions_needed=on_questions_needed,
+                    already_used=clarification_used,
+                )
+            else:
+                result = await _dispatch(
+                    name=name,
+                    args=args,
+                    session=session,
+                    settings=settings,
+                    on_event=on_event,
+                    on_approval_needed=on_approval_needed,
+                )
 
             on_event(AgentEvent("tool_result", _fmt_result(result)))
 
@@ -546,6 +618,54 @@ async def _dispatch(
         )
     raw = await session.call_tool(name, args)
     return _extract_content(raw)
+
+
+async def _handle_clarification(
+    *,
+    args: dict[str, Any],
+    on_event: EventCallback,
+    on_questions_needed: QuestionsCallback | None,
+    already_used: bool,
+) -> tuple[Any, bool]:
+    """Surface the agent's clarifying questions once; return (tool_result, used).
+
+    Enforces the at-most-once-per-run rule and the "nothing to add → proceed"
+    path. Never raises: on any degenerate input it returns a note telling the
+    agent to proceed with its own best judgement.
+    """
+    questions = [str(q).strip() for q in (args.get("questions") or []) if str(q).strip()]
+
+    if on_questions_needed is None:
+        return {
+            "note": "Clarification is unavailable here; proceed with your best judgement."
+        }, already_used
+    if already_used:
+        return (
+            {
+                "note": "You already asked your clarifying questions; proceed with your best judgement."
+            },
+            True,
+        )
+    if not questions:
+        return {"note": "No questions provided; proceed with your best judgement."}, already_used
+
+    on_event(
+        AgentEvent(
+            "question",
+            f"Asking {len(questions)} clarifying question(s)",
+            data={"questions": questions},
+        )
+    )
+    result = await on_questions_needed(questions)
+    if not result.provided or not result.answers:
+        return (
+            {
+                "answers": {},
+                "note": "The user had nothing to add; proceed with your best judgement.",
+            },
+            True,
+        )
+    return {"answers": result.answers}, True
 
 
 async def _handle_execute_plan(
