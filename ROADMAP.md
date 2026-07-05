@@ -105,7 +105,7 @@ Turn the file-organizer into a profile-driven document-intelligence engine: pers
 
 Production-readiness and operator ergonomics.
 
-- [ ] F1 · End-to-end integration tests against a fixture directory
+- [x] F1 · End-to-end integration tests against a fixture directory
 - [ ] F2 · Robust error handling — bad paths, permission errors, partial plan failures
 - [ ] F3 · `APPROVAL_MODE=destructive_only` — let read-only ops run without approval
 - [ ] F4 · Packaging — verify `uv run telcontar` and `uv run telcontar-server` entry points work end-to-end
