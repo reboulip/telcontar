@@ -27,7 +27,7 @@ Initial state after propose_* calls. The plan contains a list of proposed operat
 User has reviewed the plan and explicitly approved it. Only plans in approved state may be executed. Approval is recorded but not persisted in this design—the host manages it in memory.
 
 **executing**
-execute_plan is running. Operations are applied one by one. If an operation fails, the system retries up to 2 times before marking it failed. Each successful operation is journaled immediately. If more than 3 operations fail in a single execution run, the plan transitions to stopped and a hard_stop journal entry is written.
+execute_plan is running. Operations are applied one by one. If an operation fails, the system retries — 3 attempts total — before marking it failed. Each successful operation is journaled immediately. If more than 3 operations fail in a single execution run, the plan transitions to stopped and a hard_stop journal entry is written.
 
 **done**
 All operations in the plan executed successfully. The plan persists on disk but is no longer acted upon.
@@ -92,7 +92,7 @@ Fields:
   - new_name (rename only): New name for the file (not a path).
   - dest_dir (move only): Absolute path to the destination directory.
   - proposed_at: ISO 8601 timestamp when the operation was proposed.
-  - status: Current status of the operation within the plan. May be pending, done, or failed.
+  - status: Current status of the operation within the plan. May be pending, completed, or failed.
 
 ### Journal (JSONL)
 
@@ -214,13 +214,18 @@ Apply all operations in an approved plan. Must be in approved state.
 2. Check state is approved; raise if not.
 3. Transition plan state to executing and write to disk.
 4. For each operation in the plan (in order):
-   a. Attempt to execute it (rename, move, or quarantine).
-   b. On success: update operation status to done, append a journal entry, update plan file.
-   c. On failure: retry up to 2 times. After 2 failed retries, mark operation status as failed and continue.
+   a. Resolve the op's source: if an earlier op in this same run already relocated the file (see below), use its current path; otherwise use the op's original `src`.
+   b. Attempt to execute it (rename, move, or quarantine) against the resolved source.
+   c. On success: update operation status to completed, append a journal entry (recording the resolved source, not necessarily the original `src`), record the file's new location for later ops, update plan file.
+   d. On failure: retry — 3 attempts total. After the 3rd failed attempt, mark operation status as failed and continue.
 5. After all operations:
    a. If failed count > 3, transition plan state to stopped, append a hard_stop journal entry.
    b. Otherwise, transition plan state to done and write to disk.
 6. Return a summary.
+
+**Chained operations within a single run**
+
+Ops are staged against the file's original path (`src` at propose time). Within one `execute_plan` run, an earlier op may relocate a file before a later op that was staged against that same original path runs — the canonical case is a `rename` followed by a `move` on the same file. `execute_plan` tracks each file's current on-disk location in an in-memory map, keyed by the op's original `src`, and resolves that map before applying every op. So a rename A → B followed by a move (both staged against original path A) moves the *renamed* file B into the destination, landing at `dest/B` — not a stale reference to A. Each journal entry records the resolved (effective) source path actually used for that op, so `undo_last` continues to reverse operations against the correct on-disk locations, in reverse order.
 
 ## Undoing Operations
 

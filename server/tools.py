@@ -354,17 +354,26 @@ def execute_plan(
 
     completed_count = 0
     failed_ops: list[dict] = []
+    # Tracks each file's current on-disk path as ops relocate it within this run,
+    # keyed by the op's original src, so chained ops (rename then move) resolve (F7).
+    moved: dict[str, str] = {}
 
     for op in p.ops:
         if op.status != "pending":
             continue
 
+        # A file may have been relocated by an earlier op in this same run (e.g. a
+        # rename before a move). Ops reference the file's ORIGINAL path, so resolve
+        # that through ``moved`` to the file's current on-disk location.
+        src_path = moved.get(op.src, op.src)
+
         success = False
         last_error: str | None = None
+        new_location: str | None = None
 
         for attempt in range(3):
             try:
-                _apply_op(op)
+                new_location = _apply_op(op, src_path)
                 success = True
                 break
             except _NON_RETRYABLE_ERRORS as exc:
@@ -377,18 +386,19 @@ def execute_plan(
         if success:
             op.status = "completed"
             completed_count += 1
+            moved[op.src] = new_location  # type: ignore[assignment]
             _journal.append(
                 journal_path,
                 {
                     "op_type": op.op_type,
                     "plan_id": plan_id,
                     "op_id": op.op_id,
-                    "src": op.src,
+                    "src": src_path,
                     "dst": op.dst,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 },
             )
-            if reg is not None and registry_path is not None and _reconcile_op(reg, op):
+            if reg is not None and registry_path is not None and _reconcile_op(reg, op, src_path):
                 _registry.save(reg, registry_path)
         else:
             op.status = "failed"
@@ -433,33 +443,37 @@ def execute_plan(
 _NON_RETRYABLE_ERRORS = (ValueError, FileNotFoundError, FileExistsError)
 
 
-def _reconcile_op(reg: "_registry.Registry", op: "_plan.PlanOp") -> bool:
+def _reconcile_op(reg: "_registry.Registry", op: "_plan.PlanOp", src_path: str) -> bool:
     """Update the registry record's location/status to match an executed op.
 
-    Returns True if a record was updated; False when the op's source file was
-    never recorded (registry-optional reconcile).
+    ``src_path`` is the file's on-disk location *before* this op (which may differ
+    from ``op.src`` if an earlier op in the run already relocated it), so the record
+    is matched by where it currently is. Returns True if a record was updated; False
+    when the source file was never recorded (registry-optional reconcile).
     """
-    src = Path(op.src)
+    src = Path(src_path)
     if op.op_type == "rename":
-        rec = reg.update_path(op.src, str(src.parent / op.dst))
+        rec = reg.update_path(src_path, str(src.parent / op.dst))
     elif op.op_type == "move":
-        rec = reg.update_path(op.src, str(Path(op.dst) / src.name))
+        rec = reg.update_path(src_path, str(Path(op.dst) / src.name))
     elif op.op_type == "quarantine":
-        rec = reg.update_path(op.src, str(Path(op.dst)), status="quarantined")
+        rec = reg.update_path(src_path, str(Path(op.dst)), status="quarantined")
     else:
         return False
     return rec is not None
 
 
-def _apply_op(op: "_plan.PlanOp") -> None:
-    """Execute a single planned op against the filesystem.
+def _apply_op(op: "_plan.PlanOp", src_path: str) -> str:
+    """Execute a single planned op against the filesystem; return the new path.
 
-    On an I/O failure the raw ``OSError`` is re-raised with a clearer message
-    (via ``format_io_error``) but the **same exception type**, so ``execute_plan``
-    keeps classifying it correctly — a transient ``PermissionError`` (e.g. a
-    Windows file lock) stays retryable, a ``FileNotFoundError`` stays fail-fast.
+    ``src_path`` is the file's current on-disk location (which may differ from
+    ``op.src`` when an earlier op in the same run relocated it — e.g. a move that
+    follows a rename). On an I/O failure the raw ``OSError`` is re-raised with a
+    clearer message (via ``format_io_error``) but the **same exception type**, so
+    ``execute_plan`` keeps classifying it — a transient ``PermissionError`` (e.g.
+    a Windows file lock) stays retryable, a ``FileNotFoundError`` stays fail-fast.
     """
-    src = Path(op.src)
+    src = Path(src_path)
     if op.op_type == "rename":
         dest = src.parent / op.dst
         check_no_overwrite(dest)
@@ -467,6 +481,7 @@ def _apply_op(op: "_plan.PlanOp") -> None:
             src.rename(dest)
         except OSError as exc:
             raise type(exc)(format_io_error("rename", src, exc)) from exc
+        return str(dest)
     elif op.op_type == "move":
         dst_dir = Path(op.dst)
         dest = dst_dir / src.name
@@ -475,6 +490,7 @@ def _apply_op(op: "_plan.PlanOp") -> None:
             shutil.move(str(src), str(dest))
         except OSError as exc:
             raise type(exc)(format_io_error("move", src, exc)) from exc
+        return str(dest)
     elif op.op_type == "quarantine":
         dest = Path(op.dst)
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -483,6 +499,7 @@ def _apply_op(op: "_plan.PlanOp") -> None:
             shutil.move(str(src), str(dest))
         except OSError as exc:
             raise type(exc)(format_io_error("quarantine", src, exc)) from exc
+        return str(dest)
     else:
         raise ValueError(f"Unknown op_type: {op.op_type!r}")
 

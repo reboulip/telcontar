@@ -225,6 +225,7 @@ Apply all operations in an `approved` plan.
 - Non-retryable errors (`ValueError`, `FileNotFoundError`, `FileExistsError`) fail immediately
 - More than **3 cumulative failures** trigger a **hard stop** — execution halts, a `hard_stop` entry is appended to the journal, and the plan transitions to `stopped`
 - On success, each op is appended to the undo journal and the registry is path-reconciled
+- Ops chained within the same run resolve correctly: if an earlier op already relocated a file (e.g. a `rename` followed by a `move` on the same original path), the later op is applied to the file's current location, not its original path
 
 **Returns:**
 

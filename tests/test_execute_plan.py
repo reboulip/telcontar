@@ -491,3 +491,84 @@ class TestExecutePlanRegistryReconcile:
         execute_plan(p.plan_id, plans_dir, journal_path, registry_path)
 
         assert not registry_path.exists()  # registry-optional: no spurious file
+
+
+class TestExecutePlanChainedOps:
+    """F7: a file relocated by an earlier op is tracked so later ops still resolve."""
+
+    def test_move_after_rename_in_same_run(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        src = tmp_path / "old.txt"
+        src.write_text("x")
+        dest_dir = tmp_path / "dest"
+        dest_dir.mkdir()
+        p = Plan.new()
+        p.transition("approved")
+        # Both ops reference the ORIGINAL path (as the LLM builds them pre-execution).
+        p.ops.append(PlanOp.new("rename", str(src), "new.txt"))
+        p.ops.append(PlanOp.new("move", str(src), str(dest_dir)))
+        save(p, plans_dir)
+
+        result = execute_plan(p.plan_id, plans_dir, journal_path)
+
+        assert result["state"] == "done"
+        assert result["ops_completed"] == 2
+        assert result["ops_failed"] == 0
+        # Renamed then moved: lands at dest/new.txt (the renamed name is preserved).
+        assert (dest_dir / "new.txt").exists()
+        assert not (tmp_path / "new.txt").exists()
+        assert not src.exists()
+
+    def test_undo_reverses_chained_rename_then_move(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        from server.tools import undo_last
+
+        src = tmp_path / "old.txt"
+        src.write_text("x")
+        dest_dir = tmp_path / "dest"
+        dest_dir.mkdir()
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("rename", str(src), "new.txt"))
+        p.ops.append(PlanOp.new("move", str(src), str(dest_dir)))
+        save(p, plans_dir)
+        execute_plan(p.plan_id, plans_dir, journal_path)
+        assert (dest_dir / "new.txt").exists()
+
+        undo_last(journal_path, plans_dir)  # reverse the move
+        assert (tmp_path / "new.txt").exists()
+        assert not (dest_dir / "new.txt").exists()
+
+        undo_last(journal_path, plans_dir)  # reverse the rename
+        assert src.exists()
+        assert not (tmp_path / "new.txt").exists()
+
+    def test_registry_reconciles_across_chained_ops(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        registry_path = tmp_path / ".organizer" / "registry.json"
+        src = tmp_path / "old.txt"
+        src.write_text("hello")
+        dest_dir = tmp_path / "dest"
+        dest_dir.mkdir()
+        reg = _registry.Registry()
+        reg.upsert(
+            DocumentRecord.new(
+                checksum="c1", path=str(src), title="T", type="notes", summary="s", provenance="p"
+            )
+        )
+        _registry.save(reg, registry_path)
+
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("rename", str(src), "new.txt"))
+        p.ops.append(PlanOp.new("move", str(src), str(dest_dir)))
+        save(p, plans_dir)
+        execute_plan(p.plan_id, plans_dir, journal_path, registry_path)
+
+        rec = _registry.load(registry_path).get("c1")
+        assert rec is not None
+        assert rec.checksum == "c1"  # identity stays stable across both ops
+        assert rec.path == str(dest_dir / "new.txt")  # path tracked through the chain
