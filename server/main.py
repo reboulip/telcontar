@@ -389,3 +389,7 @@ def list_archived() -> list:
 
 def main() -> None:
     mcp.run(transport="stdio")
+
+
+if __name__ == "__main__":
+    main()

@@ -103,6 +103,43 @@ class TestExtractText:
         with pytest.raises(ValueError, match="Not a file"):
             extract_text(str(tmp_path / "missing.pdf"), 100)
 
+    def test_extracts_real_pdf(self, tmp_path: Path) -> None:
+        # Minimal hand-built single-page PDF with a text-drawing content stream.
+        # Regression guard for the markitdown[pdf] extra (pdfminer.six) — without
+        # it, extraction raises MissingDependencyException instead of returning text.
+        pdf_bytes = (
+            b"%PDF-1.4\n"
+            b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R "
+            b"/Resources << /Font << /F1 4 0 R >> >> "
+            b"/MediaBox [0 0 200 200] /Contents 5 0 R >>\nendobj\n"
+            b"4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n"
+            b"5 0 obj\n<< /Length 44 >>\nstream\n"
+            b"BT /F1 24 Tf 20 100 Td (Hello PDF) Tj ET\n"
+            b"endstream\nendobj\n"
+            b"xref\n0 6\n0000000000 65535 f \ntrailer\n<< /Size 6 /Root 1 0 R >>\n"
+            b"startxref\n0\n%%EOF"
+        )
+        f = tmp_path / "doc.pdf"
+        f.write_bytes(pdf_bytes)
+        result = extract_text(str(f), 1000)
+        assert "Hello PDF" in result
+
+    def test_extracts_real_xlsx(self, tmp_path: Path) -> None:
+        # Regression guard for the markitdown[xlsx] extra (openpyxl) — without it,
+        # extraction raises MissingDependencyException instead of returning text.
+        openpyxl = pytest.importorskip("openpyxl")
+        f = tmp_path / "sheet.xlsx"
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws["A1"] = "Hello"
+        ws["B1"] = "World"
+        wb.save(f)
+        result = extract_text(str(f), 1000)
+        assert "Hello" in result
+        assert "World" in result
+
 
 class TestComputeChecksum:
     def test_matches_hashlib_sha256(self, tmp_path: Path) -> None:
