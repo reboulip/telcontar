@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# telcontar runtime artifacts (undo journal, plans, registry, graph, events, archive)
+.organizer/
