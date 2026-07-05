@@ -184,7 +184,7 @@ The MCP host package. Drives the GPT-5 agent loop and presents the Textual TUI.
 
 **Role:** CLI entrypoint. Instantiates `OrganizerApp` and calls `.run()`.
 
-**Entry point:** `main()` is registered as the `organizer-host` script in `pyproject.toml`.
+**Entry point:** `main()` is registered as the `telcontar` script in `pyproject.toml`.
 
 ---
 

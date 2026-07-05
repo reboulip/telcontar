@@ -76,7 +76,7 @@ def load() -> Settings:
 
     if not settings.llm_base_url or not settings.llm_api_key:
         raise ValueError(
-            "LLM endpoint not configured. Launch organizer-host and complete the setup wizard."
+            "LLM endpoint not configured. Launch telcontar and complete the setup wizard."
         )
 
     return settings

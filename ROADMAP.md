@@ -108,4 +108,10 @@ Production-readiness and operator ergonomics.
 - [ ] F1 · End-to-end integration tests against a fixture directory
 - [ ] F2 · Robust error handling — bad paths, permission errors, partial plan failures
 - [ ] F3 · `APPROVAL_MODE=destructive_only` — let read-only ops run without approval
-- [ ] F4 · Packaging — verify `uv run organizer-host` and `uv run organizer-server` entry points work end-to-end
+- [ ] F4 · Packaging — verify `uv run telcontar` and `uv run telcontar-server` entry points work end-to-end
+
+---
+
+## v1.1.0 — Interactive clarification checkpoint
+
+- [ ] K1 · Post-analysis clarification checkpoint — after the ANALYZE pass (before building the plan), the agent may surface a batch of clarifying questions when it hits real ambiguity (unclear document type, competing taxonomy groupings, ambiguous naming). `host/agent.py` gains a new `AgentEvent` kind (`"question"`) and an `on_questions_needed` callback (mirrors the existing `on_approval_needed` shape); `host/app.py` gets a `ClarificationModal` (mirrors `ApprovalModal`) shown at most once per run. The agent uses the answers to refine before calling `create_plan`; if the user has nothing to add, the agent proceeds with its own best judgement. System-prompt change: explicitly tell the agent it MAY ask questions at this checkpoint but must not stall waiting for answers indefinitely.

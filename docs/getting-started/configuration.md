@@ -1,6 +1,6 @@
 # Configuration
 
-For most users, first-run configuration is handled entirely by the **setup wizard** that appears the first time you launch `organizer-host`. The wizard stores the API key in the OS credential store (Windows Credential Manager / macOS Keychain) and saves non-sensitive settings to `~/.telcontar/config.env`. You can revisit any setting at any time via the **⚙ Settings** button on the startup screen.
+For most users, first-run configuration is handled entirely by the **setup wizard** that appears the first time you launch `telcontar`. The wizard stores the API key in the OS credential store (Windows Credential Manager / macOS Keychain) and saves non-sensitive settings to `~/.telcontar/config.env`. You can revisit any setting at any time via the **⚙ Settings** button on the startup screen.
 
 The reference below is for **advanced or developer use**: env vars and a project-local `.env` file always take priority over `~/.telcontar/config.env` when both are present. No code changes are required to switch environments — config only.
 

@@ -63,7 +63,8 @@ Apply these rules in order (first match wins):
 | `server/tools.py` archive tools only (archive_document/list_archived) | `tests/test_archive.py tests/test_undo_last.py` |
 | Multiple files in `server/` | Full `tests/` suite |
 | `host/agent.py` only | `tests/test_host.py tests/test_tools_outputs.py` |
-| Any file in `host/` | `tests/test_host.py tests/test_tools_outputs.py` |
+| `host/app.py` only | `tests/test_app_ui.py` |
+| Any file in `host/` | `tests/test_host.py tests/test_tools_outputs.py tests/test_app_ui.py` |
 | Changes span `server/` + `host/` | Full suite |
 | Cross-cutting refactor or interface change | Full suite |
 | When in doubt | Full suite |

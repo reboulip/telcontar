@@ -7,7 +7,7 @@ This walkthrough organizes a sample directory from scratch. It assumes you have 
 ## 1. Launch telcontar
 
 ```bash
-organizer-host
+telcontar
 ```
 
 ---

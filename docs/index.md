@@ -50,10 +50,10 @@ All file I/O stays on your machine. Only the text content needed for reasoning i
 
 ```bash
 # Install
-uv tool install git+https://github.com/rreboulleau/telcontar.git
+uv tool install git+https://github.com/reboulip/telcontar.git
 
 # Run (first launch opens the setup wizard)
-organizer-host
+telcontar
 ```
 
 The setup wizard guides you through entering your API key (stored securely in the OS credential store). The TUI then asks for a target directory, analyses it, and shows a plan of file operations for your approval before anything is moved.

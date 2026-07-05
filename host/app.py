@@ -183,14 +183,17 @@ class SetupScreen(Screen):
         padding-bottom: 1;
     }
     .step-body {
+        width: 100%;
         color: $text-muted;
         padding-bottom: 1;
     }
     .step-question {
+        width: 100%;
         text-style: bold;
         padding-bottom: 1;
     }
     .step-hint {
+        width: 100%;
         color: $text-muted;
         text-style: italic;
         padding-bottom: 1;
@@ -449,6 +452,7 @@ class ConfigScreen(Screen):
         padding-bottom: 1;
     }
     .cfg-label {
+        width: 100%;
         color: $text-muted;
         padding-top: 1;
     }
@@ -575,6 +579,95 @@ class ConfigScreen(Screen):
         self.app.pop_screen()
 
 
+# ── Journal screen ────────────────────────────────────────────────────────────
+
+
+def _resolve_journal_path(project_root: Path) -> Path:
+    from config.settings import Settings
+
+    journal_path = Settings().journal_path
+    if not journal_path.is_absolute():
+        journal_path = project_root / journal_path
+    return journal_path
+
+
+def _fmt_journal_entry(entry: dict) -> str:
+    ts = entry.get("timestamp", "?")
+    op_type = entry.get("op_type", "?")
+    if op_type == "hard_stop":
+        reason = entry.get("reason", "")
+        failed = entry.get("failed_count", len(entry.get("failed_ops", [])))
+        lines = [f"[bold red]{ts}  HARD STOP[/bold red]  ({failed} op(s) failed) — {reason}"]
+        for fop in entry.get("failed_ops", []):
+            lines.append(
+                f"    [red]✗ {fop.get('op_type', '?')}[/red]  {fop.get('src', '?')}"
+                f"  — {fop.get('error', '')}"
+            )
+        return "\n".join(lines)
+    src = entry.get("src", "?")
+    dst = entry.get("dst")
+    target = f"  →  {dst}" if dst else ""
+    return f"[dim]{ts}[/dim]  {op_type:<10}  {src}{target}"
+
+
+class JournalScreen(ModalScreen[None]):
+    """Read-only view of the full undo journal, newest entries last.
+
+    Reads `.organizer/journal.jsonl` directly from disk (local file, same
+    machine) rather than through an MCP tool — this is a debugging aid, not an
+    agent capability.
+    """
+
+    DEFAULT_CSS = """
+    JournalScreen {
+        align: center middle;
+    }
+    #journal-dialog {
+        width: 90%;
+        max-height: 85%;
+        border: round $accent;
+        background: $surface;
+        padding: 1 2;
+    }
+    #journal-title {
+        width: 100%;
+        text-style: bold;
+        padding-bottom: 1;
+        color: $accent;
+    }
+    #journal-scroll {
+        max-height: 25;
+    }
+    """
+
+    BINDINGS = [("escape", "close", "Close"), ("j", "close", "Close")]
+
+    def __init__(self, project_root: Path) -> None:
+        super().__init__()
+        self._project_root = project_root
+
+    def compose(self) -> ComposeResult:
+        from server.journal import all_entries
+
+        journal_path = _resolve_journal_path(self._project_root)
+        entries = all_entries(journal_path) if journal_path.is_file() else []
+
+        with Container(id="journal-dialog"):
+            yield Label(f"Operation journal  ·  {journal_path}", id="journal-title")
+            yield Rule()
+            with VerticalScroll(id="journal-scroll"):
+                if entries:
+                    for entry in entries:
+                        yield Static(_fmt_journal_entry(entry), markup=True)
+                else:
+                    yield Label("[dim]No operations recorded yet.[/dim]", markup=True)
+            yield Rule()
+            yield Label("[dim]Press Esc or j to close.[/dim]", markup=True)
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
 # ── Organizer screen ──────────────────────────────────────────────────────────
 
 
@@ -604,7 +697,11 @@ class OrganizerScreen(Screen):
     }
     """
 
-    BINDINGS = [("q", "quit", "Quit"), ("g", "query_corpus", "Query corpus")]
+    BINDINGS = [
+        ("q", "quit", "Quit"),
+        ("g", "query_corpus", "Query corpus"),
+        ("j", "view_journal", "Journal"),
+    ]
 
     def __init__(self, target: Path) -> None:
         super().__init__()
@@ -631,6 +728,10 @@ class OrganizerScreen(Screen):
         self._status = text
         self.query_one("#status-bar", Static).update(text)
 
+    def action_view_journal(self) -> None:
+        project_root = Path(__file__).resolve().parent.parent
+        self.app.push_screen(JournalScreen(project_root))
+
     async def _agent_worker(self) -> None:
         from config.settings import load as load_settings
         from host.agent import run_agent
@@ -639,7 +740,7 @@ class OrganizerScreen(Screen):
         try:
             settings = load_settings()
         except Exception as exc:
-            self._log(f"[bold red]Config error:[/bold red] {exc}")
+            self._log(f"[bold red]Config error:[/bold red] {_fmt_exc(exc)}")
             self._set_status("Error — check settings")
             return
 
@@ -659,7 +760,10 @@ class OrganizerScreen(Screen):
                     self._log(f"\n[bold green]✓ Done[/bold green]\n{event.text}")
                     self._set_status("Done")
                 case "error":
-                    self._log(f"[bold red]✗ {event.text}[/bold red]")
+                    self._log(
+                        f"[bold red]✗ {event.text}[/bold red]\n"
+                        "[dim]Press j to view the operation journal for details.[/dim]"
+                    )
                     self._set_status("Error")
 
         async def on_approval_needed(plan_id: str, plan_data: dict) -> ApprovalResult:
@@ -688,7 +792,10 @@ class OrganizerScreen(Screen):
                 on_approval_needed=on_approval_needed,
             )
         except Exception as exc:
-            self._log(f"[bold red]Agent error:[/bold red] {exc}")
+            self._log(
+                f"[bold red]Agent error:[/bold red] {_fmt_exc(exc)}\n"
+                "[dim]Press j to view the operation journal for details.[/dim]"
+            )
             self._set_status("Error")
             return
 
@@ -785,7 +892,7 @@ class QueryScreen(Screen):
         try:
             settings = load_settings()
         except Exception as exc:
-            self._log(f"[bold red]Config error:[/bold red] {exc}")
+            self._log(f"[bold red]Config error:[/bold red] {_fmt_exc(exc)}")
             self._set_status("Error — check settings")
             return
 
@@ -821,7 +928,7 @@ class QueryScreen(Screen):
                     self._log(f"[green]{answer}[/green]")
                     self._set_status("Ready — ask a question.")
         except Exception as exc:
-            self._log(f"[bold red]Query error:[/bold red] {exc}")
+            self._log(f"[bold red]Query error:[/bold red] {_fmt_exc(exc)}")
             self._set_status("Error")
 
 
@@ -921,7 +1028,7 @@ class StartupScreen(Screen):
         try:
             settings = load_settings()
         except Exception as exc:
-            self._show_error(f"Config error: {exc}")
+            self._show_error(f"Config error: {_fmt_exc(exc)}")
             return
         registry = settings.registry_path
         if not registry.is_absolute():
@@ -952,6 +1059,11 @@ class OrganizerApp(App):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+def _fmt_exc(exc: Exception) -> str:
+    """Format an exception with its type so errors are actionable, not just a message."""
+    return f"{type(exc).__name__}: {exc}"
 
 
 def _fmt_op(op: dict) -> str:

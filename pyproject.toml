@@ -24,14 +24,15 @@ dependencies = [
 ]
 
 [project.scripts]
-organizer-host   = "host.main:main"
-organizer-server = "server.main:main"
+telcontar        = "host.main:main"
+telcontar-server = "server.main:main"
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
     "ruff>=0.15",
     "mypy>=2.1",
+    "textual-dev>=1.8.0",
 ]
 test = [
     "pytest>=8.0",

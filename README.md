@@ -13,17 +13,17 @@ Local AI assistant that organizes a directory tree: renames files to readable na
 ## Setup
 
 ```bash
-uv tool install git+https://github.com/rreboulleau/telcontar.git
+uv tool install git+https://github.com/reboulip/telcontar.git
 ```
 
-Then launch `organizer-host` once. On first run the **setup wizard** appears automatically — it collects your AI service URL and API key, stores the key in the OS credential store (Windows Credential Manager / macOS Keychain), and saves non-sensitive settings to `~/.telcontar/config.env`. No manual editing of config files required.
+Then launch `telcontar` once. On first run the **setup wizard** appears automatically — it collects your AI service URL and API key, stores the key in the OS credential store (Windows Credential Manager / macOS Keychain), and saves non-sensitive settings to `~/.telcontar/config.env`. No manual editing of config files required.
 
 For developer / contributor setup (clone + `uv sync`), see [docs/getting-started/installation.md](docs/getting-started/installation.md).
 
 ## Usage
 
 ```bash
-organizer-host
+telcontar
 ```
 
 The Textual TUI opens. On first run the **setup wizard** appears; returning users land on the **startup screen**, which offers three actions:

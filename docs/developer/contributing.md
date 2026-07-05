@@ -3,7 +3,7 @@
 ## Development setup
 
 ```bash
-git clone https://github.com/rreboulleau/telcontar.git
+git clone https://github.com/reboulip/telcontar.git
 cd telcontar
 
 # Install runtime + dev dependencies
@@ -13,7 +13,7 @@ uv sync --group dev
 uv sync --group test
 ```
 
-For dev, configure your LLM endpoint either by running `organizer-host` once (setup wizard) or by placing a project-local `.env` file with `LLM_BASE_URL` and `LLM_API_KEY`. See [Configuration](../getting-started/configuration.md) for the full reference.
+For dev, configure your LLM endpoint either by running `telcontar` once (setup wizard) or by placing a project-local `.env` file with `LLM_BASE_URL` and `LLM_API_KEY`. See [Configuration](../getting-started/configuration.md) for the full reference.
 
 ---
 
