@@ -255,3 +255,28 @@ class TestPlanPersistence:
         result = list_all(plans_dir)
         assert len(result) == 1
         assert result[0].plan_id == good.plan_id
+
+
+class TestPlanRationale:
+    def test_default_is_empty(self) -> None:
+        assert Plan.new().rationale == ""
+
+    def test_round_trips_through_dict(self) -> None:
+        p = Plan.new()
+        p.rationale = "Grouped by workstream; drafts quarantined."
+        restored = Plan.from_dict(p.to_dict())
+        assert restored.rationale == "Grouped by workstream; drafts quarantined."
+
+    def test_from_dict_defaults_when_absent(self) -> None:
+        # Backward-compat: plan files written before F8 have no 'rationale' key.
+        d = Plan.new().to_dict()
+        del d["rationale"]
+        assert Plan.from_dict(d).rationale == ""
+
+    def test_survives_disk_round_trip(self, tmp_path: Path) -> None:
+        plans_dir = tmp_path / "plans"
+        plans_dir.mkdir()
+        p = Plan.new()
+        p.rationale = "why"
+        save(p, plans_dir)
+        assert load(p.plan_id, plans_dir).rationale == "why"

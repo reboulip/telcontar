@@ -49,7 +49,8 @@ Between Phase A and Phase B, the agent may pause **once** to ask the user a shor
 2. The agent calls `create_plan` to open a new plan
 3. It stages operations with `propose_rename`, `propose_move` (filing each document into the taxonomy), and `propose_quarantine` for duplicates or clutter
 4. It calls `review_plan` for a deduplication pre-flight check
-5. It calls `execute_plan` — at this point the **approval gate** fires
+5. It calls `set_plan_rationale` with a short plain-language paragraph explaining the plan's philosophy — how it grouped, renamed, and quarantined documents and why. The host shows this above the op list in the approval modal
+6. It calls `execute_plan` — at this point the **approval gate** fires
 
 ### Phase C — Synthesize
 

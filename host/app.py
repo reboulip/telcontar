@@ -102,6 +102,10 @@ class ApprovalModal(ModalScreen[ApprovalResult]):
         padding-bottom: 1;
         color: $accent;
     }
+    #plan-rationale {
+        padding: 0 0 1 0;
+        color: $text-muted;
+    }
     #ops-scroll {
         max-height: 20;
     }
@@ -124,11 +128,14 @@ class ApprovalModal(ModalScreen[ApprovalResult]):
 
     def compose(self) -> ComposeResult:
         ops = self._plan_data.get("ops", [])
+        rationale = (self._plan_data.get("rationale") or "").strip()
         with Container(id="approval-dialog"):
             yield Label(
                 f"Plan Review  ·  {self._plan_id[:8]}  ·  {len(ops)} op(s)",
                 id="plan-title",
             )
+            if rationale:
+                yield Static(rationale, id="plan-rationale")
             yield Rule()
             with ScrollableContainer(id="ops-scroll"):
                 if ops:

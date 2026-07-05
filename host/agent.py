@@ -132,7 +132,10 @@ B. ORGANIZE the tree:
       naming convention, propose_move to file each document into its folder in the
       taxonomy, and propose_quarantine for useless or duplicate documents (never
       delete them).
-   7. Call review_plan for a deduplication pass.
+   7. Call review_plan for a deduplication pass, then call set_plan_rationale(plan_id,
+      rationale) with a short plain-language paragraph explaining the plan's philosophy —
+      how you grouped, renamed and quarantined the documents and why. It is shown to the
+      user above the op list when they review the plan.
    8. Call execute_plan to apply the plan (the user reviews and approves first).
       Registry paths are reconciled automatically as files move. After execution,
       you MAY call compress_quarantine to losslessly archive the quarantined files

@@ -113,7 +113,7 @@ Production-readiness and operator ergonomics.
 - [x] F5 · Fix TUI quit — bottom-left quit button and 'q' shortcut don't terminate the app [#10]
 - [x] F6 · Fix query screen NoMatches error — `#query-log` widget lookup fails on QueryScreen [#9]
 - [x] F7 · Fix rename+move sequencing — track file identity (checksum) across chained ops in a plan so a move following a rename in the same run succeeds [#6]
-- [ ] F8 · Plan-approval philosophy summary — present the plan's rationale in plain language alongside the detailed op list, rather than only the raw op list [#8]
+- [x] F8 · Plan-approval philosophy summary — present the plan's rationale in plain language alongside the detailed op list, rather than only the raw op list [#8]
 - [ ] F9 · Token-consumption estimate — track and display input/output token counts per macro-step in readable format (12K, 3.5M) [#7]
 - [ ] F10 · Status messages via conversation pane — surface macro-task narration ("Reading files...", "Computing checksums...") while ops run in the side panel [#5]
 - [ ] F11 · Directory picker — replace the raw address field with a folder-browsing UI for selecting the target directory [#4]

@@ -237,6 +237,19 @@ def review_plan(plan_id: str, plans_dir: Path) -> dict:
     }
 
 
+def set_plan_rationale(plan_id: str, rationale: str, plans_dir: Path) -> dict:
+    """Attach the agent's plain-language rationale to a plan (shown at approval).
+
+    A short paragraph explaining the plan's philosophy — how the taxonomy was
+    chosen, why documents were grouped/renamed/quarantined the way they were —
+    surfaced above the raw op list in the approval modal (F8).
+    """
+    p = _plan.load(plan_id, plans_dir)
+    p.rationale = (rationale or "").strip()
+    _plan.save(p, plans_dir)
+    return p.to_dict()
+
+
 def approve_plan(plan_id: str, plans_dir: Path) -> dict:
     """Transition a plan from pending → approved."""
     p = _plan.load(plan_id, plans_dir)

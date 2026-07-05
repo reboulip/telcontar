@@ -118,6 +118,13 @@ def approve_plan(plan_id: str) -> dict:
     return tools.approve_plan(plan_id, cfg.plans_dir)
 
 
+@mcp.tool()
+def set_plan_rationale(plan_id: str, rationale: str) -> dict:
+    """Attach a plain-language rationale to a plan (shown above the ops at approval)."""
+    cfg = _get_settings()
+    return tools.set_plan_rationale(plan_id, rationale, cfg.plans_dir)
+
+
 # ── Plan-building tools (write to plan, do not execute) ──────────────────────
 
 

@@ -51,7 +51,7 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 |---|---|
 | Read-only | `list_dir`, `read_file`, `extract_text`, `compute_checksum` |
 | Direct file ops | `move_file`, `rename_file`, `create_file`, `update_file` |
-| Plan management | `create_plan`, `get_plan`, `list_plans`, `review_plan`, `approve_plan` |
+| Plan management | `create_plan`, `get_plan`, `list_plans`, `review_plan`, `approve_plan`, `set_plan_rationale` |
 | Plan-building | `propose_rename`, `propose_move`, `propose_quarantine` |
 | Gated execution | `execute_plan`, `write_index`, `write_summary` |
 | Recovery | `undo_last` |
@@ -72,7 +72,7 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 - `PlanState` — `Literal["pending", "approved", "executing", "done", "failed", "stopped"]`
 - `OpType` — `Literal["rename", "move", "quarantine"]`
 - `PlanOp` — dataclass with `op_id` (UUID), `op_type`, `src`, `dst`, `status`, `error`, `retries`
-- `Plan` — dataclass with `plan_id`, `state`, `ops: list[PlanOp]`, timestamps
+- `Plan` — dataclass with `plan_id`, `state`, `ops: list[PlanOp]`, timestamps, `rationale: str = ""` (agent's plain-language explanation, set via `set_plan_rationale`; round-trips through `to_dict`/`from_dict`, backward-compatible with older plan files via `d.get`)
 
 **State machine:** `_VALID_TRANSITIONS` dict enforces which state transitions are legal. `Plan.transition()` validates and applies.
 
@@ -231,7 +231,7 @@ The MCP host package. Drives the GPT-5 agent loop and presents the Textual TUI.
 | `StartupScreen` | Collects the target directory path; offers "Organize", "Query", and "⚙ Settings" buttons. Keybinding `s` opens `ConfigScreen`. "Query" validates that `settings.registry_path` exists before proceeding |
 | `OrganizerScreen` | Main view: file-tree sidebar + scrollable agent log; runs the organize agent in a Textual worker; keybinding `g` pushes `QueryScreen` once organizing completes |
 | `QueryScreen` | Chat-style read-only Q&A screen: `RichLog` output + `Input` bar; keeps one MCP session open for the whole chat and threads conversation history across questions; `Esc` pops back to the previous screen |
-| `ApprovalModal` | Plan review: per-op checkboxes, Approve/Reject buttons; returns an `ApprovalResult` |
+| `ApprovalModal` | Plan review: renders the plan's `rationale` (if set via `set_plan_rationale`) as `#plan-rationale` above the op checklist, then per-op checkboxes, Approve/Reject buttons; returns an `ApprovalResult` |
 | `ClarificationModal` | Post-analysis clarifying questions: one free-text `Input` per question, "Submit answers" / "Skip — best judgement" buttons; returns a `ClarificationResult`. Shown at most once per run, wired via `OrganizerScreen`'s `on_questions_needed` callback |
 
 **TUI layout (OrganizerScreen):**

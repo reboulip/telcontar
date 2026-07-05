@@ -214,3 +214,18 @@ class TestProposeQuarantine:
         q_dir = tmp_path / "_q"
         with pytest.raises(ValueError, match="pending"):
             propose_quarantine(str(src), pending_plan.plan_id, plans_dir, q_dir)
+
+
+class TestSetPlanRationale:
+    def test_persists_and_strips_rationale(self, plans_dir: Path, pending_plan: Plan) -> None:
+        from server.tools import set_plan_rationale
+
+        out = set_plan_rationale(pending_plan.plan_id, "  Grouped by phase.  ", plans_dir)
+        assert out["rationale"] == "Grouped by phase."
+        assert load(pending_plan.plan_id, plans_dir).rationale == "Grouped by phase."
+
+    def test_empty_rationale_is_blank(self, plans_dir: Path, pending_plan: Plan) -> None:
+        from server.tools import set_plan_rationale
+
+        out = set_plan_rationale(pending_plan.plan_id, "", plans_dir)
+        assert out["rationale"] == ""

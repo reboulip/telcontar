@@ -173,6 +173,22 @@ Transition a plan from `pending` → `approved`. Must be called before `execute_
 
 ---
 
+### `set_plan_rationale`
+
+```python
+set_plan_rationale(plan_id: str, rationale: str) -> dict
+```
+
+Attach the agent's plain-language rationale to a plan — a short paragraph explaining the plan's philosophy (how documents were grouped, renamed, and quarantined, and why). The host's `ApprovalModal` displays it above the op checklist when the user reviews the plan. The agent is expected to call this after `review_plan` and before `execute_plan`.
+
+Passing an empty or whitespace-only `rationale` clears it (stored as `""`). Not itself gated by `APPROVAL_MODE` — it only mutates plan metadata, no filesystem write.
+
+**Returns:** the full updated plan dict (same shape as `get_plan`).
+
+**Safety category:** Plan-building / plan-mutation — writes to the plan file on disk but performs no filesystem operation outside `.organizer/plans/`.
+
+---
+
 ## Plan-building tools
 
 Append proposed file operations to an existing `pending` plan. Each call performs an eager collision check at proposal time — no operation will overwrite an existing file.

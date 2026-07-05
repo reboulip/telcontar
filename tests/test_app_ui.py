@@ -341,3 +341,37 @@ async def test_query_screen_log_helpers_safe_after_pop(
         screen._log("late line")
         screen._log_tool("late tool")
         screen._set_status("late status")
+
+
+# ── F8: approval modal shows the agent's plan rationale ───────────────────────
+
+
+async def test_approval_modal_shows_rationale(tmp_path: Path) -> None:
+    from textual.widgets import Static
+
+    from host.app import ApprovalModal
+
+    plan_data = {
+        "ops": [{"op_type": "move", "src": "/a/b.pdf", "dst": "/sorted", "op_id": "o1"}],
+        "rationale": "Grouped COPIL decks as a dated series; drafts quarantined.",
+    }
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(ApprovalModal("abc12345", plan_data))
+        await pilot.pause()
+        rationale = app.screen.query_one("#plan-rationale", Static)
+        assert "COPIL decks" in str(rationale.content)
+
+
+async def test_approval_modal_without_rationale_has_no_rationale_widget(tmp_path: Path) -> None:
+    from textual.css.query import NoMatches
+
+    from host.app import ApprovalModal
+
+    plan_data = {"ops": [], "rationale": ""}
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(ApprovalModal("abc12345", plan_data))
+        await pilot.pause()
+        with pytest.raises(NoMatches):
+            app.screen.query_one("#plan-rationale")

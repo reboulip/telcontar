@@ -85,6 +85,7 @@ Fields:
 - plan_id: Stable UUID identifying the plan. Multiple plans may be active concurrently.
 - created_at: ISO 8601 timestamp when the plan was first created.
 - state: Current state of the plan (pending, approved, executing, done, stopped, failed).
+- rationale: Plain-language explanation of the plan's philosophy, set via `set_plan_rationale(plan_id, rationale)`. Empty string (`""`) by default and when not yet set. Displayed above the op list in the host's approval modal (not shown in the example below, which predates this field).
 - operations: List of proposed operations.
   - op_id: Sequential index within the plan (0, 1, 2, ...).
   - op_type: rename, move, or quarantine.

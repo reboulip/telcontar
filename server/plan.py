@@ -57,6 +57,7 @@ class Plan:
     ops: list[PlanOp]
     created_at: str
     updated_at: str
+    rationale: str = ""  # agent's plain-language explanation of the plan (F8)
 
     @classmethod
     def new(cls) -> "Plan":
@@ -91,6 +92,7 @@ class Plan:
             "ops": [asdict(op) for op in self.ops],
             "created_at": self.created_at,
             "updated_at": self.updated_at,
+            "rationale": self.rationale,
         }
 
     @classmethod
@@ -101,6 +103,7 @@ class Plan:
             ops=[PlanOp.from_dict(op) for op in d["ops"]],
             created_at=d["created_at"],
             updated_at=d["updated_at"],
+            rationale=d.get("rationale", ""),
         )
 
 

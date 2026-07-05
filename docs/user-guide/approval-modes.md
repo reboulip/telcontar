@@ -57,6 +57,7 @@ Start at `always`. Relax via config — no code changes required, no restart oth
 
 In `always` and `destructive_only` modes, when a plan is ready for execution the host presents an **ApprovalModal**:
 
+- **A plan rationale**, if the agent attached one via `set_plan_rationale`, is shown as a short plain-language paragraph above the op checklist — explaining how the plan groups, renames, and quarantines documents and why
 - **Each proposed operation** is listed as a checked checkbox
 - You can **uncheck** individual ops to skip them (the rest still execute)
 - **Approve** confirms the checked ops and triggers `execute_plan`
