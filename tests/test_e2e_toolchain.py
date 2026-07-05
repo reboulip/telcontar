@@ -89,8 +89,12 @@ def fixture_dir(tmp_path: Path) -> Path:
     kickoff = "Compte-rendu de la réunion de lancement du projet Telcontar.\n"
     (incoming / "kickoff.txt").write_text(kickoff, encoding="utf-8")
     (incoming / "kickoff_dup.txt").write_text(kickoff, encoding="utf-8")
-    (incoming / "budget.md").write_text("# Budget\n\nNotes sur le budget prévisionnel.\n", encoding="utf-8")
-    (incoming / "junk.txt").write_text("brouillon sans intérêt à mettre en quarantaine\n", encoding="utf-8")
+    (incoming / "budget.md").write_text(
+        "# Budget\n\nNotes sur le budget prévisionnel.\n", encoding="utf-8"
+    )
+    (incoming / "junk.txt").write_text(
+        "brouillon sans intérêt à mettre en quarantaine\n", encoding="utf-8"
+    )
     return root
 
 
@@ -205,9 +209,7 @@ class TestRegistryRecording:
 
 
 class TestPlanBuilding:
-    def test_propose_review_approve_flow(
-        self, fixture_dir: Path, plans_dir: Path
-    ) -> None:
+    def test_propose_review_approve_flow(self, fixture_dir: Path, plans_dir: Path) -> None:
         src = str(fixture_dir / "incoming" / "kickoff.txt")
         dest = str(fixture_dir / "sorted")
         plan_id = create_plan(plans_dir)["plan_id"]
@@ -222,9 +224,7 @@ class TestPlanBuilding:
         approved = approve_plan(plan_id, plans_dir)
         assert approved["state"] == "approved"
 
-    def test_review_plan_flags_duplicate_ops(
-        self, fixture_dir: Path, plans_dir: Path
-    ) -> None:
+    def test_review_plan_flags_duplicate_ops(self, fixture_dir: Path, plans_dir: Path) -> None:
         src = str(fixture_dir / "incoming" / "kickoff.txt")
         dest = str(fixture_dir / "sorted")
         plan_id = create_plan(plans_dir)["plan_id"]
@@ -350,9 +350,7 @@ class TestUndo:
         assert src.exists()
         assert not quarantined.exists()
 
-    def test_undo_empty_journal_returns_error(
-        self, journal_path: Path, plans_dir: Path
-    ) -> None:
+    def test_undo_empty_journal_returns_error(self, journal_path: Path, plans_dir: Path) -> None:
         out = undo_last(journal_path, plans_dir)
         assert out["undone"] is None
         assert "No operations" in out["error"]

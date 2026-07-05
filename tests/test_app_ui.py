@@ -30,7 +30,14 @@ import pytest
 from textual.widgets import Input, Label, RichLog
 
 from host.agent import AgentEvent
-from host.app import ConfigScreen, JournalScreen, OrganizerApp, OrganizerScreen, QueryScreen, SetupScreen
+from host.app import (
+    ConfigScreen,
+    JournalScreen,
+    OrganizerApp,
+    OrganizerScreen,
+    QueryScreen,
+    SetupScreen,
+)
 
 
 def _rendered_lines(app: OrganizerApp) -> list[str]:
@@ -173,7 +180,8 @@ async def test_organizer_screen_routes_tool_events_to_timeline(
     from config.settings import Settings
 
     monkeypatch.setattr(
-        "config.settings.load", lambda: Settings(llm_base_url="https://example.com", llm_api_key="k")
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
     )
     monkeypatch.setattr("host.app._send_notification", lambda target: None)
 
@@ -208,14 +216,17 @@ async def test_query_screen_routes_tool_events_to_timeline(
     from config.settings import Settings
 
     monkeypatch.setattr(
-        "config.settings.load", lambda: Settings(llm_base_url="https://example.com", llm_api_key="k")
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
     )
 
     @asynccontextmanager
     async def fake_mcp_session(project_root):
         yield None
 
-    async def fake_run_query_loop(*, question, settings, llm, session, on_event, history, project_root):
+    async def fake_run_query_loop(
+        *, question, settings, llm, session, on_event, history, project_root
+    ):
         on_event(AgentEvent("tool_call", "list_documents()"))
         on_event(AgentEvent("tool_result", "[]"))
         return "Here is your answer.", history or []
