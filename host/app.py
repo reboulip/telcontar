@@ -5,7 +5,7 @@ Screens
 SetupScreen     — first-run configuration wizard (API key, profile)
 StartupScreen   — target directory input + entry to ConfigScreen
 ConfigScreen    — edit settings at any time
-OrganizerScreen — sidebar (static file tree) + agent log + footer status
+OrganizerScreen — file tree + conversation log + tool-execution timeline + status
 QueryScreen     — interactive NL Q&A over an analyzed corpus
 
 Modals
@@ -237,6 +237,7 @@ class SetupScreen(Screen):
         self._service = "other"
         self._pending_url = ""
         self._pending_key = ""
+        self._pending_model = ""
 
     def compose(self) -> ComposeResult:
         profile_options = _load_profile_options()
@@ -283,6 +284,9 @@ class SetupScreen(Screen):
                         password=True,
                         classes="step-input",
                     )
+                    yield Label("", id="model-hint", classes="step-hint")
+                    yield Label("Model name:")
+                    yield Input(placeholder="e.g. gpt-5", id="input-model", classes="step-input")
                     yield Label("", id="api-error", classes="step-error")
                     with Horizontal(classes="step-nav"):
                         yield Button("← Back", id="btn-api-back")
@@ -348,6 +352,10 @@ class SetupScreen(Screen):
             "Mammouth: paste the base URL from your Mammouth account dashboard."
         )
         self.query_one("#input-url", Input).placeholder = "https://api.mammouth.ai/v1"
+        self.query_one("#model-hint", Label).update(
+            "Check the model list in your Mammouth dashboard — it must match exactly."
+        )
+        self.query_one("#input-model", Input).placeholder = "e.g. gpt-5"
         self._show_step(2)
 
     @on(Button.Pressed, "#btn-svc-azure")
@@ -360,6 +368,11 @@ class SetupScreen(Screen):
         self.query_one(
             "#input-url", Input
         ).placeholder = "https://your-resource.openai.azure.com/openai/deployments/gpt-5"
+        self.query_one("#model-hint", Label).update(
+            "The deployment name you created in Azure OpenAI Studio "
+            "(often, but not always, the same as the model)."
+        )
+        self.query_one("#input-model", Input).placeholder = "e.g. gpt-5"
         self._show_step(2)
 
     @on(Button.Pressed, "#btn-svc-other")
@@ -369,6 +382,10 @@ class SetupScreen(Screen):
             "Enter the base URL of any OpenAI-compatible AI service."
         )
         self.query_one("#input-url", Input).placeholder = "https://…"
+        self.query_one("#model-hint", Label).update(
+            "The exact model identifier documented by your provider."
+        )
+        self.query_one("#input-model", Input).placeholder = "e.g. gpt-4o"
         self._show_step(2)
 
     # API details → back to service / forward to profile
@@ -381,6 +398,7 @@ class SetupScreen(Screen):
     def _api_next(self) -> None:
         url = self.query_one("#input-url", Input).value.strip()
         key = self.query_one("#input-key", Input).value.strip()
+        model = self.query_one("#input-model", Input).value.strip()
         error = self.query_one("#api-error", Label)
         if not url:
             error.update("Please enter the web address of your AI service.")
@@ -388,9 +406,13 @@ class SetupScreen(Screen):
         if not key:
             error.update("Please enter your API key.")
             return
+        if not model:
+            error.update("Please enter the model name.")
+            return
         error.update("")
         self._pending_url = url
         self._pending_key = key
+        self._pending_model = model
         self._show_step(3)
 
     # Profile → back to API / save and finish
@@ -411,6 +433,7 @@ class SetupScreen(Screen):
         updates: dict[str, str] = {
             "llm_base_url": self._pending_url,
             "llm_api_key": self._pending_key,
+            "llm_model": self._pending_model,
             "profile": profile,
         }
         if self._service == "azure":
@@ -521,6 +544,14 @@ class ConfigScreen(Screen):
                     classes="cfg-input",
                 )
 
+                yield Label("Model name:", classes="cfg-label")
+                yield Input(
+                    value=current.get("llm_model", "gpt-5"),
+                    placeholder="e.g. gpt-5",
+                    id="cfg-model",
+                    classes="cfg-input",
+                )
+
                 yield Label("Document type:", classes="cfg-label")
                 yield Select(
                     options=profile_options,
@@ -546,15 +577,20 @@ class ConfigScreen(Screen):
     def _save(self) -> None:
         url = self.query_one("#cfg-url", Input).value.strip()
         key = self.query_one("#cfg-key", Input).value.strip()
+        model = self.query_one("#cfg-model", Input).value.strip()
         profile_select = self.query_one("#cfg-profile", Select)
         approval_select = self.query_one("#cfg-approval", Select)
 
         if not url:
             self.query_one("#cfg-error", Label).update("Please enter the web address.")
             return
+        if not model:
+            self.query_one("#cfg-error", Label).update("Please enter the model name.")
+            return
 
         updates: dict[str, str] = {
             "llm_base_url": url,
+            "llm_model": model,
             "profile": (
                 str(profile_select.value)
                 if profile_select.value is not Select.BLANK
@@ -672,7 +708,7 @@ class JournalScreen(ModalScreen[None]):
 
 
 class OrganizerScreen(Screen):
-    """Main screen: static file-tree sidebar + scrollable agent log."""
+    """Main screen: file-tree sidebar + conversation log + tool-execution timeline."""
 
     DEFAULT_CSS = """
     OrganizerScreen {
@@ -682,12 +718,18 @@ class OrganizerScreen(Screen):
         height: 1fr;
     }
     #file-tree {
-        width: 28%;
+        width: 22%;
         border-right: solid $accent-darken-2;
     }
-    #agent-log {
-        width: 72%;
+    #conversation-log {
+        width: 48%;
         padding: 0 1;
+        border-right: solid $accent-darken-2;
+    }
+    #tool-timeline {
+        width: 30%;
+        padding: 0 1;
+        color: $text-muted;
     }
     #status-bar {
         height: 1;
@@ -713,7 +755,8 @@ class OrganizerScreen(Screen):
         yield Header(show_clock=True)
         with Horizontal(id="main-split"):
             yield DirectoryTree(str(self._target), id="file-tree")
-            yield RichLog(id="agent-log", highlight=True, markup=True, wrap=True)
+            yield RichLog(id="conversation-log", highlight=True, markup=True, wrap=True)
+            yield RichLog(id="tool-timeline", highlight=True, markup=True, wrap=True)
         yield Static(self._status, id="status-bar")
         yield Footer()
 
@@ -722,7 +765,10 @@ class OrganizerScreen(Screen):
         self.run_worker(self._agent_worker(), exclusive=True)
 
     def _log(self, text: str) -> None:
-        self.query_one("#agent-log", RichLog).write(text)
+        self.query_one("#conversation-log", RichLog).write(text)
+
+    def _log_tool(self, text: str) -> None:
+        self.query_one("#tool-timeline", RichLog).write(text)
 
     def _set_status(self, text: str) -> None:
         self._status = text
@@ -751,9 +797,9 @@ class OrganizerScreen(Screen):
                 case "thinking":
                     self._set_status(event.text)
                 case "tool_call":
-                    self._log(f"[yellow]▶ {event.text}[/yellow]")
+                    self._log_tool(f"[yellow]▶ {event.text}[/yellow]")
                 case "tool_result":
-                    self._log(f"[dim]  {event.text}[/dim]")
+                    self._log_tool(f"[dim]  {event.text}[/dim]")
                 case "plan_ready":
                     self._set_status("Waiting for plan approval…")
                 case "done":
@@ -828,9 +874,18 @@ class QueryScreen(Screen):
     QueryScreen {
         layout: vertical;
     }
-    #query-log {
+    #query-split {
         height: 1fr;
+    }
+    #query-log {
+        width: 65%;
         padding: 0 1;
+        border-right: solid $accent-darken-2;
+    }
+    #query-timeline {
+        width: 35%;
+        padding: 0 1;
+        color: $text-muted;
     }
     #query-input {
         dock: bottom;
@@ -854,7 +909,9 @@ class QueryScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
-        yield RichLog(id="query-log", highlight=True, markup=True, wrap=True)
+        with Horizontal(id="query-split"):
+            yield RichLog(id="query-log", highlight=True, markup=True, wrap=True)
+            yield RichLog(id="query-timeline", highlight=True, markup=True, wrap=True)
         yield Static(self._status, id="query-status")
         yield Input(placeholder="Ask a question about this corpus…", id="query-input")
         yield Footer()
@@ -867,6 +924,9 @@ class QueryScreen(Screen):
 
     def _log(self, text: str) -> None:
         self.query_one("#query-log", RichLog).write(text)
+
+    def _log_tool(self, text: str) -> None:
+        self.query_one("#query-timeline", RichLog).write(text)
 
     def _set_status(self, text: str) -> None:
         self._status = text
@@ -903,9 +963,9 @@ class QueryScreen(Screen):
                 case "thinking":
                     self._set_status(event.text)
                 case "tool_call":
-                    self._log(f"[yellow]▶ {event.text}[/yellow]")
+                    self._log_tool(f"[yellow]▶ {event.text}[/yellow]")
                 case "tool_result":
-                    self._log(f"[dim]  {event.text}[/dim]")
+                    self._log_tool(f"[dim]  {event.text}[/dim]")
                 case "error":
                     self._log(f"[bold red]✗ {event.text}[/bold red]")
 
