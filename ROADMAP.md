@@ -107,7 +107,7 @@ Production-readiness and operator ergonomics.
 
 - [x] F1 · End-to-end integration tests against a fixture directory
 - [x] F2 · Robust error handling — bad paths, permission errors, partial plan failures
-- [ ] F3 · `APPROVAL_MODE=destructive_only` — let read-only ops run without approval
+- [x] F3 · `APPROVAL_MODE=destructive_only` — let read-only ops run without approval
 - [ ] F4 · Packaging — verify `uv run telcontar` and `uv run telcontar-server` entry points work end-to-end
 - [ ] F5 · Fix TUI quit — bottom-left quit button and 'q' shortcut don't terminate the app [#10]
 - [ ] F6 · Fix query screen NoMatches error — `#query-log` widget lookup fails on QueryScreen [#9]

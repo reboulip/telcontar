@@ -564,7 +564,16 @@ async def _handle_execute_plan(
 
     on_event(AgentEvent("plan_ready", f"Plan {plan_id[:8]} ready for review", data=plan_data))
 
-    approval = await on_approval_needed(plan_id, plan_data if isinstance(plan_data, dict) else {})
+    # APPROVAL_MODE gate. execute_plan is the sole gated op (read-only tools are
+    # never gated, so they always run free). In "never" mode we skip the approval
+    # callback and auto-approve; "always" and "destructive_only" both require an
+    # explicit human approval before any file is touched.
+    if settings.approval_mode == "never":
+        approval = ApprovalResult(approved=True)
+    else:
+        approval = await on_approval_needed(
+            plan_id, plan_data if isinstance(plan_data, dict) else {}
+        )
 
     if not approval.approved:
         return {"error": "Plan rejected by user. Revise and resubmit."}

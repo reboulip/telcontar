@@ -211,7 +211,7 @@ Stage moving `path` to `QUARANTINE_DIR`. Unlike `propose_rename` and `propose_mo
 
 ## Gated execution tools
 
-Execute operations or write output. Subject to `APPROVAL_MODE`.
+Execute operations or write output. `execute_plan` is the sole tool subject to `APPROVAL_MODE` — it performs the plan's moves, renames, and quarantines, and is gated in `always` and `destructive_only`, auto-approved in `never`. `write_index`, `write_summary`, and `write_folder_readme` write output directly and are never gated, in any mode.
 
 ### `execute_plan`
 
@@ -236,6 +236,8 @@ Apply all operations in an `approved` plan.
 | `ops_failed` | int | Failed ops |
 | `hard_stop` | bool | True if execution was cut short |
 | `ops` | list | Full op list with per-op status and error |
+
+**Safety category:** Gated execution — the host routes this call through the approval callback in `always` and `destructive_only`; in `never` it is auto-approved. This is the only tool ever subject to `APPROVAL_MODE`.
 
 ---
 
@@ -268,7 +270,7 @@ The built-in `local_markdown` sink persists the content as `SUMMARY.md` in the d
 
 **Returns:** When a single sink is active, returns that sink's result dict directly. When multiple sinks are active, returns `{"sinks": [<result per sink>, ...]}`.
 
-**Safety category:** Gated execution (writes to disk and/or external destinations). Subject to `APPROVAL_MODE`.
+**Safety category:** Writes to disk and/or external destinations. Not gated by `APPROVAL_MODE` — runs immediately in every mode.
 
 ---
 
@@ -295,7 +297,7 @@ The built-in `local_markdown` sink writes to `README.md` inside the folder at `p
 
 **Returns:** When a single sink is active, returns that sink's result dict directly (`{written}` for `local_markdown`). When multiple sinks are active, returns `{"sinks": [<result per sink>, ...]}`.
 
-**Safety category:** Gated execution (writes to disk and/or external destinations). Subject to `APPROVAL_MODE`.
+**Safety category:** Writes to disk and/or external destinations. Not gated by `APPROVAL_MODE` — runs immediately in every mode.
 
 ---
 

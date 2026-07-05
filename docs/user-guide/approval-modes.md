@@ -8,7 +8,7 @@ The `APPROVAL_MODE` setting controls when telcontar pauses and asks for user con
 
 ### `always` (default)
 
-Every plan — whether it contains moves, renames, quarantines, or only index/summary writes — requires explicit user approval before execution.
+`execute_plan` — the tool that applies a plan's moves, renames, and quarantines — requires explicit user approval before it runs. Read-only tools (`list_dir`, `read_file`, `extract_text`, registry/graph queries, …) and the output-writing tools (`write_index`, `write_summary`, `write_folder_readme`) are never routed through the approval gate; they always run freely, in every mode.
 
 **Best for:** initial use, unfamiliar document corpora, any situation where you want full control.
 
@@ -18,9 +18,9 @@ APPROVAL_MODE=always
 
 ### `destructive_only`
 
-Only plans containing moves, renames, or quarantines require approval. Read-only operations (building indexes and summaries) run freely without gating.
+`execute_plan` is the only tool ever subject to the approval gate, and it is inherently the destructive step (it performs the moves/renames/quarantines) — so in practice `destructive_only` gates it exactly like `always` does. Read-only tools and the output-writing tools (`write_index`, `write_summary`, `write_folder_readme`) already run freely without gating in every mode, so this setting does not change their behaviour.
 
-**Best for:** once you trust the agent's analysis and just want to speed up the index/summary step.
+**Best for:** once you trust the agent's analysis and want the same gate as `always`, without implying that anything else is held back.
 
 ```ini
 APPROVAL_MODE=destructive_only

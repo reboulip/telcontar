@@ -91,10 +91,11 @@ def _llm(*responses: MagicMock) -> AsyncMock:
     return m
 
 
-def _settings(plans_dir: Path) -> MagicMock:
+def _settings(plans_dir: Path, approval_mode: str = "always") -> MagicMock:
     cfg = MagicMock()
     cfg.llm_model = "gpt-5"
     cfg.plans_dir = plans_dir
+    cfg.approval_mode = approval_mode
     return cfg
 
 
@@ -258,6 +259,60 @@ async def test_approved_plan_calls_approve_before_execute(tmp_path: Path) -> Non
     assert "approve_plan" in call_order
     assert "execute_plan" in call_order
     assert call_order.index("approve_plan") < call_order.index("execute_plan")
+
+
+# ── APPROVAL_MODE gate (F3) ───────────────────────────────────────────────────
+
+
+def _approval_session() -> AsyncMock:
+    plan_data = {"plan_id": "abc", "ops": [], "state": "pending"}
+    s = AsyncMock()
+    s.list_tools.return_value = _list_tools(["execute_plan", "get_plan", "approve_plan"])
+
+    async def _call(name: str, args: dict | None = None) -> MagicMock:
+        return _mcp_result(plan_data if name == "get_plan" else {"ok": True})
+
+    s.call_tool.side_effect = _call
+    return s
+
+
+async def _run_execute(tmp_path: Path, *, approval_mode: str, on_approval: AsyncMock) -> AsyncMock:
+    s = _approval_session()
+    await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path, approval_mode),
+        llm=_llm(_tool_response("execute_plan", {"plan_id": "abc"}), _text_response("Done.")),
+        session=s,
+        on_event=lambda _: None,
+        on_approval_needed=on_approval,
+    )
+    return s
+
+
+async def test_always_mode_requires_approval(tmp_path: Path) -> None:
+    on_approval = AsyncMock(return_value=ApprovalResult(approved=True))
+    await _run_execute(tmp_path, approval_mode="always", on_approval=on_approval)
+    on_approval.assert_called_once()
+
+
+async def test_destructive_only_mode_requires_approval(tmp_path: Path) -> None:
+    # execute_plan is destructive, so destructive_only still gates it (read-only
+    # ops run free because they are never routed through the approval callback).
+    on_approval = AsyncMock(return_value=ApprovalResult(approved=True))
+    await _run_execute(tmp_path, approval_mode="destructive_only", on_approval=on_approval)
+    on_approval.assert_called_once()
+
+
+async def test_never_mode_skips_approval_and_executes(tmp_path: Path) -> None:
+    on_approval = AsyncMock(return_value=ApprovalResult(approved=True))
+    s = await _run_execute(tmp_path, approval_mode="never", on_approval=on_approval)
+
+    # The approval callback is never invoked...
+    on_approval.assert_not_called()
+    # ...yet the plan is still approved and executed on the server.
+    called_tools = [c[0][0] for c in s.call_tool.call_args_list]
+    assert "approve_plan" in called_tools
+    assert "execute_plan" in called_tools
 
 
 # ── Op removal ────────────────────────────────────────────────────────────────
