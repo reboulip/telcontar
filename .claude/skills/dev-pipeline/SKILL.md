@@ -183,18 +183,24 @@ this sprint** — e.g. a commit from a separate process landed on the branch bas
 or develop advanced underneath you — **do not blind-squash.** Surface the
 divergence and use `AskUserQuestion` to let the user choose the merge strategy
 (preserve all commits via fast-forward / non-squash, vs. squash the sprint
-commits while preserving the foreign commit, vs. squash everything). Only when
-the branch is exactly the sprint's own commits should you proceed straight to a
-squash.
+commits while preserving the foreign commit, vs. squash everything). When the
+branch is exactly the sprint's own commits **and** is a clean fast-forward
+(`git log --oneline feat/[milestone-slug]..develop` is empty), proceed straight
+to a **fast-forward** merge (`git merge --ff-only`) — this preserves the
+per-feature commits, matching CLAUDE.md's "one commit per feature" rule and
+keeping a readable history on `develop` (which flows verbatim to `main`, since
+`develop`→`main` is a no-squash PR). Only squash if the user explicitly prefers
+to collapse the whole sprint into one commit.
 
-**7c — Merge.** Per the chosen strategy (squash is the default for a clean
-sprint-only branch):
+**7c — Merge.** Per the chosen strategy (**fast-forward, preserving the
+per-feature commits, is the default** for a clean fast-forwardable sprint-only
+branch; squash only on request):
 
 ```
 Agent({
   subagent_type: "repo-manager",
   description: "Merge feat/[milestone-slug] into develop",
-  prompt: "Merge branch feat/[milestone-slug] into develop using <chosen strategy>:\n  git checkout develop\n  # squash:   git merge --squash feat/[milestone-slug] && git commit -m '[milestone]: complete sprint'\n  # ff-only:  git merge --ff-only feat/[milestone-slug]\nThen delete the local feature branch."
+  prompt: "Merge branch feat/[milestone-slug] into develop using <chosen strategy>:\n  git checkout develop\n  # ff-only (DEFAULT for a clean fast-forwardable branch):  git merge --ff-only feat/[milestone-slug]\n  # squash (only on request):  git merge --squash feat/[milestone-slug] && git commit -m '[milestone]: complete sprint'\nThen delete the local feature branch."
 })
 ```
 
