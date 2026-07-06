@@ -48,7 +48,12 @@ If **any** such decisions are ambiguous, call `AskUserQuestion` with focused, co
 
 ## Step 1 — Find the active milestone
 
-Read `ROADMAP.md`. The active milestone is the **first** `## vX.X.X` section containing at least one unchecked item (`- [ ]`). Extract:
+**(Re-)read `ROADMAP.md` now — *after* branch setup (Step 0.5) — as the source of
+truth. Do NOT rely on any earlier read of the roadmap (e.g. one taken during Step 0):
+a separate process may commit roadmap changes to `develop` between an initial read and
+the branch being cut, so a stale read can silently drop whole milestone items.** The
+active milestone is the **first** `## vX.X.X` section containing at least one unchecked
+item (`- [ ]`). Extract:
 - The milestone label (e.g. `v0.1.0`).
 - The ordered list of unchecked items: label (A1, A2, …), title, full item text.
 
