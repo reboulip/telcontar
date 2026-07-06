@@ -42,7 +42,7 @@ If **any** such decisions are ambiguous, call `AskUserQuestion` with focused, co
    git checkout -b feat/<milestone-slug>
    ```
    Example: `feat/v0.1.0-skeleton` for milestone `v0.1.0 — Skeleton`.
-3. All implementation commits go on this branch. The branch squash-merges into `develop` when the sprint is complete.
+3. All implementation commits go on this branch. The branch merges into `develop` when the sprint is complete (fast-forward by default for a clean sprint-only branch; see Step 7).
 
 ---
 
