@@ -85,7 +85,26 @@ Browse the tree and click the folder you want to organize — the "Selected:" la
 
 ## 4. Watch the agent work
 
-The main screen shows a sidebar file tree on the left and a scrolling agent log on the right:
+The main screen shows a sidebar file tree on the left and a single chat transcript on the right. `telcontar` narrates its progress in plain language, one turn per macro-task; the raw tool calls behind each turn collect into a click-to-expand **internal steps** group:
+
+```
+telcontar  Scanning the directory…
+▸ internal steps
+
+telcontar  Reading documents…
+▸ internal steps
+
+telcontar  Computing checksums…
+▸ internal steps
+
+telcontar  Recording documents in memory…
+▸ internal steps
+
+telcontar  Checking for duplicates…
+▸ internal steps
+```
+
+Expand an **internal steps** group to see the raw calls and results behind it, e.g.:
 
 ```
 ▶ walk_tree(path='C:/Users/me/Documents/messy', max_depth=3)

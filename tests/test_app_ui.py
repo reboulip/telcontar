@@ -51,6 +51,16 @@ def _richlog_text(widget: RichLog) -> str:
     return "\n".join("".join(seg.text for seg in strip) for strip in widget.lines)
 
 
+def _transcript_text(screen) -> str:
+    """Join the speaker-turn text of the OrganizerScreen chat transcript."""
+    return "\n".join(str(w.content) for w in screen.query(".turn"))
+
+
+def _steps_text(screen) -> str:
+    """Join the raw tool lines tucked into the collapsible 'internal steps' groups."""
+    return "\n".join(str(w.content) for w in screen.query(".steps-log"))
+
+
 async def test_setup_wizard_welcome_step_wraps_instead_of_truncating(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -175,9 +185,11 @@ async def test_config_screen_prefills_and_requires_model(monkeypatch: pytest.Mon
         assert not saved  # blocked before save_user_config was ever called
 
 
-async def test_organizer_screen_routes_tool_events_to_timeline(
+async def test_organizer_screen_groups_tool_events_into_steps(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """L2: raw tool calls go into the collapsible internal-steps group; the
+    plain-language 'done' turn lands in the speaker transcript."""
     from config.settings import Settings
 
     monkeypatch.setattr(
@@ -202,13 +214,15 @@ async def test_organizer_screen_routes_tool_events_to_timeline(
         await pilot.pause()
         await pilot.pause(0.2)
         screen = app.screen
-        conversation = _richlog_text(screen.query_one("#conversation-log", RichLog))
-        timeline = _richlog_text(screen.query_one("#tool-timeline", RichLog))
+        transcript = _transcript_text(screen)
+        steps = _steps_text(screen)
 
-        assert "list_dir" in timeline
-        assert "All done" in conversation
-        assert "list_dir" not in conversation
-        assert "All done" not in timeline
+        # Raw tool activity is tucked into the collapsible internal-steps group…
+        assert "list_dir" in steps
+        # …while the plain-language speaker turns carry the narrative.
+        assert "All done" in transcript
+        assert "list_dir" not in transcript
+        assert "All done" not in steps
 
 
 # ── F5: quit bindings actually terminate the app ──────────────────────────────
@@ -414,7 +428,7 @@ async def test_organizer_status_bar_shows_token_usage(
 # ── F10: macro-task narration in the conversation pane ───────────────────────
 
 
-async def test_organizer_narrates_macro_tasks_in_conversation(
+async def test_organizer_narrates_macro_tasks_in_transcript(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     from config.settings import Settings
@@ -429,7 +443,7 @@ async def test_organizer_narrates_macro_tasks_in_conversation(
         *, target, settings, llm, on_event, on_approval_needed, on_questions_needed=None
     ):
         on_event(AgentEvent("tool_call", "read_file(path='a')", data={"tool": "read_file"}))
-        # Same macro-task → must collapse to one narration line.
+        # Same macro-task → must collapse to one narration turn.
         on_event(AgentEvent("tool_call", "extract_text(path='b')", data={"tool": "extract_text"}))
         on_event(
             AgentEvent("tool_call", "compute_checksum(path='a')", data={"tool": "compute_checksum"})
@@ -444,17 +458,17 @@ async def test_organizer_narrates_macro_tasks_in_conversation(
         app.push_screen(OrganizerScreen(tmp_path))
         await pilot.pause()
         await pilot.pause(0.2)
-        conversation = _richlog_text(app.screen.query_one("#conversation-log", RichLog))
-        timeline = _richlog_text(app.screen.query_one("#tool-timeline", RichLog))
+        transcript = _transcript_text(app.screen)
+        steps = _steps_text(app.screen)
 
-        # Plain-language narration lands in the conversation pane…
-        assert "Reading documents" in conversation
-        assert "Computing checksums" in conversation
-        # …and consecutive same-task calls collapse to a single line.
-        assert conversation.count("Reading documents") == 1
-        # Raw tool names stay in the timeline, not the conversation.
-        assert "read_file" in timeline
-        assert "read_file" not in conversation
+        # Plain-language narration lands as telcontar turns in the transcript…
+        assert "Reading documents" in transcript
+        assert "Computing checksums" in transcript
+        # …and consecutive same-task calls collapse to a single turn.
+        assert transcript.count("Reading documents") == 1
+        # Raw tool names stay in the internal-steps group, not the speaker turns.
+        assert "read_file" in steps
+        assert "read_file" not in transcript
 
 
 # ── F11: folder-browsing directory picker on the startup screen ──────────────

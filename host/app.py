@@ -5,7 +5,7 @@ Screens
 SetupScreen     — first-run configuration wizard (API key, profile)
 StartupScreen   — target directory input + entry to ConfigScreen
 ConfigScreen    — edit settings at any time
-OrganizerScreen — file tree + conversation log + tool-execution timeline + status
+OrganizerScreen — file tree + chat-transcript conversation pane + status
 QueryScreen     — interactive NL Q&A over an analyzed corpus
 
 Modals
@@ -28,6 +28,7 @@ from textual.screen import ModalScreen, Screen
 from textual.widgets import (
     Button,
     Checkbox,
+    Collapsible,
     DirectoryTree,
     Footer,
     Header,
@@ -838,7 +839,13 @@ class JournalScreen(ModalScreen[None]):
 
 
 class OrganizerScreen(Screen):
-    """Main screen: file-tree sidebar + conversation log + tool-execution timeline."""
+    """Main screen: file-tree sidebar + a single chat-transcript conversation pane.
+
+    The transcript reads as a conversation: speaker-differentiated turns
+    (``telcontar`` / ``you``) carry the plain-language narrative, while the
+    machinery (raw tool calls + results) is grouped into click-to-expand
+    ``internal steps`` Collapsibles interleaved at the point they happened.
+    """
 
     DEFAULT_CSS = """
     OrganizerScreen {
@@ -851,15 +858,29 @@ class OrganizerScreen(Screen):
         width: 22%;
         border-right: solid $accent-darken-2;
     }
-    #conversation-log {
-        width: 48%;
+    #conversation-pane {
+        width: 1fr;
         padding: 0 1;
-        border-right: solid $accent-darken-2;
     }
-    #tool-timeline {
-        width: 30%;
+    .turn {
+        margin-top: 1;
         padding: 0 1;
+    }
+    .turn-telcontar {
+        color: $text;
+        border-left: thick $accent;
+    }
+    .turn-user {
+        color: $accent;
+        border-left: thick $success;
+    }
+    .internal-steps {
+        margin: 0 0 0 2;
         color: $text-muted;
+    }
+    .steps-log {
+        color: $text-muted;
+        padding: 0 1;
     }
     #status-bar {
         height: 1;
@@ -875,6 +896,8 @@ class OrganizerScreen(Screen):
         ("j", "view_journal", "Journal"),
     ]
 
+    _SPEAKERS = {"telcontar": "telcontar", "user": "you"}
+
     def __init__(self, target: Path) -> None:
         super().__init__()
         self._target = target
@@ -882,25 +905,76 @@ class OrganizerScreen(Screen):
         self._tokens = ""
         self._last_narration = ""
         self._done = False
+        # The currently-open "internal steps" group: a Static we append raw tool
+        # lines to, plus its running text. None between groups (a speaker turn
+        # closes the group so the next tool call opens a fresh Collapsible).
+        self._steps_widget: Static | None = None
+        self._steps_lines: list[str] = []
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         with Horizontal(id="main-split"):
             yield DirectoryTree(str(self._target), id="file-tree")
-            yield RichLog(id="conversation-log", highlight=True, markup=True, wrap=True)
-            yield RichLog(id="tool-timeline", highlight=True, markup=True, wrap=True)
+            yield VerticalScroll(id="conversation-pane")
         yield Static(self._status, id="status-bar")
         yield Footer()
 
     def on_mount(self) -> None:
-        self._log(f"[bold]Target:[/bold] {self._target}")
+        self._add_turn("telcontar", f"Target: {self._target}")
         self.run_worker(self._agent_worker(), exclusive=True)
 
-    def _log(self, text: str) -> None:
-        self.query_one("#conversation-log", RichLog).write(text)
+    # ── Transcript helpers ────────────────────────────────────────────────────
 
-    def _log_tool(self, text: str) -> None:
-        self.query_one("#tool-timeline", RichLog).write(text)
+    def _pane(self) -> VerticalScroll:
+        return self.query_one("#conversation-pane", VerticalScroll)
+
+    def _scroll_end(self) -> None:
+        try:
+            self._pane().scroll_end(animate=False)
+        except NoMatches:
+            pass
+
+    def _add_turn(self, speaker: str, text: str) -> None:
+        """Append a speaker-tagged turn, closing any open internal-steps group.
+
+        ``speaker`` is ``telcontar`` or ``user``; the label is rendered inline so
+        the transcript reads as a conversation. Adding a turn ends the current
+        steps group, so a following tool call opens a fresh Collapsible.
+        """
+        self._steps_widget = None
+        label = self._SPEAKERS.get(speaker, speaker)
+        turn = Static(
+            f"[b]{label}[/b]  {text}",
+            markup=True,
+            classes=f"turn turn-{speaker}",
+        )
+        try:
+            self._pane().mount(turn)
+        except NoMatches:
+            return
+        self._scroll_end()
+
+    def _append_step(self, line: str) -> None:
+        """Append a raw tool line to the current internal-steps Collapsible.
+
+        Consecutive tool activity accumulates in one collapsed group until a
+        speaker turn (e.g. a narration line) closes it — so the transcript reads
+        as narrative with the machinery tucked into expandable steps.
+        """
+        if self._steps_widget is None:
+            self._steps_lines = []
+            static = Static("", markup=True, classes="steps-log")
+            collapsible = Collapsible(static, title="internal steps", collapsed=True)
+            collapsible.add_class("internal-steps")
+            self._steps_widget = static
+            try:
+                self._pane().mount(collapsible)
+            except NoMatches:
+                self._steps_widget = None
+                return
+        self._steps_lines.append(line)
+        self._steps_widget.update("\n".join(self._steps_lines))
+        self._scroll_end()
 
     def _set_status(self, text: str) -> None:
         self._status = text
@@ -917,15 +991,17 @@ class OrganizerScreen(Screen):
         self.query_one("#status-bar", Static).update(line)
 
     def _narrate(self, tool: str) -> None:
-        """Log a plain-language macro-task line to the conversation pane (F10).
+        """Add a plain-language macro-task turn to the transcript (F10).
 
-        Consecutive calls in the same macro-task collapse to one line, so the pane
-        reads as progress narration rather than a raw tool-call log.
+        Consecutive calls in the same macro-task collapse to one turn, so the pane
+        reads as telcontar-voice progress rather than a raw tool-call log. Emitting
+        the turn also closes the open internal-steps group, so the detailed calls
+        for this macro-task collect under it.
         """
         phrase = _TOOL_NARRATION.get(tool)
         if phrase and phrase != self._last_narration:
             self._last_narration = phrase
-            self._log(f"[dim italic]{phrase}[/dim italic]")
+            self._add_turn("telcontar", f"[dim italic]{phrase}[/dim italic]")
 
     def action_view_journal(self) -> None:
         project_root = Path(__file__).resolve().parent.parent
@@ -939,7 +1015,7 @@ class OrganizerScreen(Screen):
         try:
             settings = load_settings()
         except Exception as exc:
-            self._log(f"[bold red]Config error:[/bold red] {_fmt_exc(exc)}")
+            self._add_turn("telcontar", f"[bold red]Config error:[/bold red] {_fmt_exc(exc)}")
             self._set_status("Error — check settings")
             return
 
@@ -950,10 +1026,12 @@ class OrganizerScreen(Screen):
                 case "thinking":
                     self._set_status(event.text)
                 case "tool_call":
-                    self._log_tool(f"[yellow]▶ {event.text}[/yellow]")
+                    # Narrate first so the telcontar turn precedes (and opens a
+                    # fresh group for) the detailed call it announces.
                     self._narrate((event.data or {}).get("tool", ""))
+                    self._append_step(f"[yellow]▶ {event.text}[/yellow]")
                 case "tool_result":
-                    self._log_tool(f"[dim]  {event.text}[/dim]")
+                    self._append_step(f"[dim]  {event.text}[/dim]")
                 case "plan_ready":
                     self._set_status("Waiting for plan approval…")
                 case "question":
@@ -961,44 +1039,49 @@ class OrganizerScreen(Screen):
                 case "tokens":
                     self._set_tokens(event.text)
                 case "done":
-                    self._log(f"\n[bold green]✓ Done[/bold green]\n{event.text}")
+                    self._add_turn("telcontar", f"[bold green]✓ Done[/bold green]\n{event.text}")
                     self._set_status("Done")
                 case "error":
-                    self._log(
+                    self._add_turn(
+                        "telcontar",
                         f"[bold red]✗ {event.text}[/bold red]\n"
-                        "[dim]Press j to view the operation journal for details.[/dim]"
+                        "[dim]Press j to view the operation journal for details.[/dim]",
                     )
                     self._set_status("Error")
 
         async def on_approval_needed(plan_id: str, plan_data: dict) -> ApprovalResult:
-            self._log(
+            self._add_turn(
+                "telcontar",
                 f"[bold cyan]Plan ready for review[/bold cyan]  "
-                f"({len(plan_data.get('ops', []))} op(s)) — awaiting approval…"
+                f"({len(plan_data.get('ops', []))} op(s)) — awaiting approval…",
             )
             result: ApprovalResult = await self.app.push_screen_wait(
                 ApprovalModal(plan_id, plan_data)
             )
             if result.approved:
                 removed = len(result.removed_op_ids)
-                self._log(
-                    "[green]Approved[/green]" + (f"  ({removed} op(s) removed)" if removed else "")
+                self._add_turn(
+                    "user",
+                    "[green]Approved[/green]"
+                    + (f"  ({removed} op(s) removed)" if removed else ""),
                 )
             else:
-                self._log("[red]Rejected[/red] — sending feedback to agent")
+                self._add_turn("user", "[red]Rejected[/red] — sending feedback to agent")
             return result
 
         async def on_questions_needed(questions: list[str]) -> ClarificationResult:
-            self._log(
+            self._add_turn(
+                "telcontar",
                 f"[bold cyan]The agent has {len(questions)} clarifying question(s)[/bold cyan] "
-                "— awaiting your input…"
+                "— awaiting your input…",
             )
             answer: ClarificationResult = await self.app.push_screen_wait(
                 ClarificationModal(questions)
             )
             if answer.provided:
-                self._log(f"[green]Answered {len(answer.answers)} question(s)[/green]")
+                self._add_turn("user", f"[green]Answered {len(answer.answers)} question(s)[/green]")
             else:
-                self._log("[dim]Skipped — the agent will use its best judgement[/dim]")
+                self._add_turn("user", "[dim]Skipped — the agent will use its best judgement[/dim]")
             return answer
 
         try:
@@ -1011,17 +1094,19 @@ class OrganizerScreen(Screen):
                 on_questions_needed=on_questions_needed,
             )
         except Exception as exc:
-            self._log(
+            self._add_turn(
+                "telcontar",
                 f"[bold red]Agent error:[/bold red] {_fmt_exc(exc)}\n"
-                "[dim]Press j to view the operation journal for details.[/dim]"
+                "[dim]Press j to view the operation journal for details.[/dim]",
             )
             self._set_status("Error")
             return
 
         self._done = True
-        self._log(
-            "\n[bold]Press [cyan]g[/cyan] to ask questions about this corpus, "
-            "or [cyan]q[/cyan] to quit.[/bold]"
+        self._add_turn(
+            "telcontar",
+            "[bold]Press [cyan]g[/cyan] to ask questions about this corpus, "
+            "or [cyan]q[/cyan] to quit.[/bold]",
         )
         _send_notification(self._target)
 

@@ -231,7 +231,7 @@ The MCP host package. Drives the GPT-5 agent loop and presents the Textual TUI.
 | `SetupScreen` | First-run wizard: welcome → AI service choice → URL + API key → document profile → done. Saves via `save_user_config()` / OS keyring. Transitions to `StartupScreen` when complete |
 | `ConfigScreen` | Settings panel accessible at any time from `StartupScreen`. Fields: URL, API key (password input), document profile (Select), approval mode (Select with friendly labels). Saves back to `~/.telcontar/config.env` via `save_user_config()` |
 | `StartupScreen` | Lets the user browse and pick the target folder via a `DirectoryTree` (`#target-tree`, rooted at `Path.home()`); the selected path (defaults to home) is shown in a "Selected: …" label and used by "Organize" and "Query". Offers "Organize", "Query", and "⚙ Settings" buttons. Keybinding `s` opens `ConfigScreen`. "Query" validates that `settings.registry_path` exists before proceeding |
-| `OrganizerScreen` | Main view: file-tree sidebar + scrollable agent log; runs the organize agent in a Textual worker; on each `tool_call` event, `_narrate(tool)` looks up the tool in the module-level `_TOOL_NARRATION` map and writes a plain-language macro-task line (e.g. "Reading documents…", "Planning changes…", "Applying the plan…") to the conversation pane, deduping so consecutive calls in the same macro-task collapse to one line — raw tool calls still stream to the tool-execution timeline pane; status bar shows the current phase plus a running token-usage total (`N in / M out`) once the LLM reports it; keybinding `g` pushes `QueryScreen` once organizing completes |
+| `OrganizerScreen` | Main view: file-tree sidebar + a single chat-transcript `#conversation-pane` (`VerticalScroll`); runs the organize agent in a Textual worker. `_add_turn(speaker, text)` appends speaker-differentiated turns (`telcontar` / `you`) as styled `Static` widgets; on each `tool_call` event, `_narrate(tool)` looks up the tool in the module-level `_TOOL_NARRATION` map and, if the macro-task phrase changed, emits a `telcontar` turn (e.g. "Reading documents…", "Planning changes…", "Applying the plan…") — deduping so consecutive calls in the same macro-task collapse to one turn. The raw tool calls/results themselves are appended via `_append_step(line)` into a click-to-expand `Collapsible` ("internal steps") interleaved in the transcript; a new speaker turn closes the currently-open group so the next tool call opens a fresh one. Status bar shows the current phase plus a running token-usage total (`N in / M out`) once the LLM reports it; keybinding `g` pushes `QueryScreen` once organizing completes |
 | `QueryScreen` | Chat-style read-only Q&A screen: `RichLog` output + `Input` bar; keeps one MCP session open for the whole chat and threads conversation history across questions; status bar also shows a running token-usage total (`N in / M out`); `Esc` pops back to the previous screen |
 | `ApprovalModal` | Plan review: renders the plan's `rationale` (if set via `set_plan_rationale`) as `#plan-rationale` above the op checklist, then per-op checkboxes, Approve/Reject buttons; returns an `ApprovalResult` |
 | `ClarificationModal` | Post-analysis clarifying questions: one free-text `Input` per question, "Submit answers" / "Skip — best judgement" buttons; returns a `ClarificationResult`. Shown at most once per run, wired via `OrganizerScreen`'s `on_questions_needed` callback |
@@ -240,8 +240,10 @@ The MCP host package. Drives the GPT-5 agent loop and presents the Textual TUI.
 
 ```
 ┌─ Header ───────────────────────────────────────────────┐
-│ DirectoryTree (28%)  │  RichLog (72%)                  │
-│                      │  (agent event stream)           │
+│ DirectoryTree (22%)  │  #conversation-pane (1fr)       │
+│                      │  telcontar/you turns, with      │
+│                      │  collapsed "internal steps"     │
+│                      │  groups interleaved             │
 ├─ Status bar ───────────────────────────────────────────┤
 │ Footer  [q] Quit  [g] Query corpus                     │
 └────────────────────────────────────────────────────────┘
