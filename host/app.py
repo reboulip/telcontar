@@ -49,6 +49,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # task collapse to a single line so the pane reads as progress, not a call log.
 _TOOL_NARRATION: dict[str, str] = {
     "list_dir": "Scanning the directory…",
+    "walk_tree": "Exploring nested folders…",
     "read_file": "Reading documents…",
     "extract_text": "Reading documents…",
     "compute_checksum": "Computing checksums…",

@@ -122,7 +122,7 @@ Production-readiness and operator ergonomics.
 
 ## Phase 11 — Interactive UX & deeper exploration
 
-- [ ] L1 · Recursive tree exploration — walk nested subfolders during ANALYZE (recursive walk affordance in `server/tools.py` + prompt the agent to descend) and allow redesigning the existing layout, not just the top level [#17]
+- [x] L1 · Recursive tree exploration — walk nested subfolders during ANALYZE (recursive walk affordance in `server/tools.py` + prompt the agent to descend) and allow redesigning the existing layout, not just the top level [#17]
 - [ ] L2 · Conversation main pane — restyle the `host/app.py` main pane as a chat transcript with speaker-differentiated turns (telcontar / user / internal steps) and click-to-expand thinking steps [#16]
 - [ ] L3 · Prior-instructions conversation starter — before ANALYZE, summarize the directory from names/structure and invite steering instructions instead of auto-organizing; feed them into the agent's first turn (requires: L2) [#15]
 - [ ] L4 · Operations journal at the bottom — move the ops journal to a bottom panel with one-line entries and horizontal scrolling; `host/app.py` [#12]

@@ -51,6 +51,73 @@ def list_dir(path: str) -> dict:
     return {"path": str(p), "entries": entries}
 
 
+def walk_tree(path: str, max_depth: int = 3) -> dict:
+    """Recursively enumerate a directory tree up to ``max_depth`` levels deep.
+
+    Complements ``list_dir`` (a single level) for the ANALYZE pass: the agent can
+    see nested subfolders in one call and redesign the whole layout, not just the
+    top level. Depth is counted from the root — the root's immediate entries are
+    depth 1. Each directory entry carries a nested ``children`` list until
+    ``max_depth`` is reached; deeper directories are returned with
+    ``children: null`` and ``truncated: true`` so the agent knows more lies below
+    (and can call ``walk_tree`` again on that subpath). Files carry ``size`` and
+    ``mtime`` like ``list_dir``; unreadable entries are marked ``type: "unknown"``.
+    """
+    p = Path(path)
+    if not p.is_dir():
+        raise ValueError(f"Not a directory: {path}")
+    if max_depth < 1:
+        raise ValueError(f"max_depth must be >= 1, got {max_depth}")
+
+    def _walk(directory: Path, depth: int) -> list[dict]:
+        try:
+            children = sorted(directory.iterdir(), key=lambda e: (e.is_file(), e.name))
+        except OSError:
+            return []
+        entries: list[dict] = []
+        for entry in children:
+            try:
+                st = entry.stat()
+                if entry.is_dir():
+                    node = {
+                        "name": entry.name,
+                        "path": str(entry),
+                        "type": "dir",
+                        "size": None,
+                        "mtime": st.st_mtime,
+                    }
+                    if depth < max_depth:
+                        node["children"] = _walk(entry, depth + 1)
+                        node["truncated"] = False
+                    else:
+                        node["children"] = None
+                        node["truncated"] = True
+                    entries.append(node)
+                else:
+                    entries.append(
+                        {
+                            "name": entry.name,
+                            "path": str(entry),
+                            "type": "file",
+                            "size": st.st_size,
+                            "mtime": st.st_mtime,
+                        }
+                    )
+            except OSError:
+                entries.append(
+                    {
+                        "name": entry.name,
+                        "path": str(entry),
+                        "type": "unknown",
+                        "size": None,
+                        "mtime": None,
+                    }
+                )
+        return entries
+
+    return {"path": str(p), "max_depth": max_depth, "entries": _walk(p, 1)}
+
+
 def read_file(path: str, max_chars: int) -> str:
     """Return file text up to max_chars characters."""
     p = Path(path)

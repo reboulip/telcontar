@@ -6,7 +6,14 @@ import hashlib
 import pytest
 from pathlib import Path
 
-from server.tools import compare_documents, compute_checksum, list_dir, read_file, extract_text
+from server.tools import (
+    compare_documents,
+    compute_checksum,
+    list_dir,
+    read_file,
+    extract_text,
+    walk_tree,
+)
 
 
 class TestListDir:
@@ -46,6 +53,81 @@ class TestListDir:
     def test_raises_for_nonexistent(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="Not a directory"):
             list_dir(str(tmp_path / "missing"))
+
+
+class TestWalkTree:
+    def _make_nested(self, root: Path) -> None:
+        # root/top.txt
+        # root/sub/mid.txt
+        # root/sub/deep/leaf.txt
+        (root / "top.txt").write_text("t")
+        (root / "sub").mkdir()
+        (root / "sub" / "mid.txt").write_text("m")
+        (root / "sub" / "deep").mkdir()
+        (root / "sub" / "deep" / "leaf.txt").write_text("l")
+
+    def test_descends_into_subfolders(self, tmp_path: Path) -> None:
+        self._make_nested(tmp_path)
+        result = walk_tree(str(tmp_path), max_depth=3)
+        sub = next(e for e in result["entries"] if e["name"] == "sub")
+        assert sub["type"] == "dir"
+        child_names = {c["name"] for c in sub["children"]}
+        assert "mid.txt" in child_names
+        assert "deep" in child_names
+        deep = next(c for c in sub["children"] if c["name"] == "deep")
+        assert {c["name"] for c in deep["children"]} == {"leaf.txt"}
+
+    def test_max_depth_one_is_flat(self, tmp_path: Path) -> None:
+        self._make_nested(tmp_path)
+        result = walk_tree(str(tmp_path), max_depth=1)
+        sub = next(e for e in result["entries"] if e["name"] == "sub")
+        # A directory at the depth limit is not descended into.
+        assert sub["children"] is None
+        assert sub["truncated"] is True
+
+    def test_deeper_dirs_marked_truncated(self, tmp_path: Path) -> None:
+        self._make_nested(tmp_path)
+        result = walk_tree(str(tmp_path), max_depth=2)
+        sub = next(e for e in result["entries"] if e["name"] == "sub")
+        assert sub["truncated"] is False
+        deep = next(c for c in sub["children"] if c["name"] == "deep")
+        # deep sits at the depth-2 limit: listed, but not descended.
+        assert deep["children"] is None
+        assert deep["truncated"] is True
+
+    def test_file_entry_has_size_and_mtime(self, tmp_path: Path) -> None:
+        (tmp_path / "f.txt").write_text("hello")
+        result = walk_tree(str(tmp_path))
+        entry = next(e for e in result["entries"] if e["name"] == "f.txt")
+        assert entry["type"] == "file"
+        assert isinstance(entry["size"], int)
+        assert isinstance(entry["mtime"], float)
+
+    def test_dirs_sorted_before_files(self, tmp_path: Path) -> None:
+        (tmp_path / "z_file.txt").write_text("x")
+        (tmp_path / "a_dir").mkdir()
+        result = walk_tree(str(tmp_path))
+        types = [e["type"] for e in result["entries"]]
+        assert types.index("dir") < types.index("file")
+
+    def test_empty_directory(self, tmp_path: Path) -> None:
+        result = walk_tree(str(tmp_path))
+        assert result["entries"] == []
+        assert result["max_depth"] == 3
+
+    def test_raises_for_file(self, tmp_path: Path) -> None:
+        f = tmp_path / "f.txt"
+        f.write_text("x")
+        with pytest.raises(ValueError, match="Not a directory"):
+            walk_tree(str(f))
+
+    def test_raises_for_nonexistent(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="Not a directory"):
+            walk_tree(str(tmp_path / "missing"))
+
+    def test_raises_for_bad_depth(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="max_depth"):
+            walk_tree(str(tmp_path), max_depth=0)
 
 
 class TestReadFile:

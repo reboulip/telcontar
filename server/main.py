@@ -43,6 +43,18 @@ def list_dir(path: str) -> dict:
 
 
 @mcp.tool()
+def walk_tree(path: str, max_depth: int = 3) -> dict:
+    """Recursively enumerate a directory tree up to max_depth levels deep.
+
+    Complements list_dir (a single level): use it during ANALYZE to discover
+    documents nested in subfolders in one call and to redesign the whole layout,
+    not just the top level. Directory entries carry a nested `children` list until
+    max_depth is reached, where deeper dirs are marked `truncated` (call walk_tree
+    again on that subpath to go deeper)."""
+    return tools.walk_tree(path, max_depth)
+
+
+@mcp.tool()
 def read_file(path: str, max_chars: int = 4000) -> str:
     """Return file content up to max_chars characters."""
     cfg = _get_settings()

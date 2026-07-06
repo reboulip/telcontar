@@ -49,7 +49,7 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 
 | Group | Functions |
 |---|---|
-| Read-only | `list_dir`, `read_file`, `extract_text`, `compute_checksum` |
+| Read-only | `list_dir`, `walk_tree`, `read_file`, `extract_text`, `compute_checksum` |
 | Direct file ops | `move_file`, `rename_file`, `create_file`, `update_file` |
 | Plan management | `create_plan`, `get_plan`, `list_plans`, `review_plan`, `approve_plan`, `set_plan_rationale` |
 | Plan-building | `propose_rename`, `propose_move`, `propose_quarantine` |

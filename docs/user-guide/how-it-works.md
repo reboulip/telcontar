@@ -32,7 +32,9 @@ When you point telcontar at a directory, the **host** launches the **server** as
 
 ### Phase A — Analyse
 
-For each document the agent:
+The agent first surveys the **whole directory tree** with `walk_tree` (recursive, up to `max_depth=3` levels; it calls `walk_tree` again on any subpath that comes back marked `truncated` to go deeper) so it discovers documents nested in subfolders, not just those sitting at the top level.
+
+Then, for each document found anywhere in the tree, the agent:
 
 1. Calls `read_file` or `extract_text` (for PDF/Office) to get the content
 2. Calls `compute_checksum` to obtain the file's sha256 content ID
@@ -45,7 +47,7 @@ Between Phase A and Phase B, the agent may pause **once** to ask the user a shor
 
 ### Phase B — Organize
 
-1. The agent designs a **relevant target taxonomy** — a small, shallow, readable folder tree derived from the document types and themes actually found in the corpus (e.g. grouped by document type, workstream, or phase). It creates each folder with `create_dir` (idempotent and collision-safe). Folders are only created for categories the corpus actually contains.
+1. The agent designs a **relevant target taxonomy** — a small, shallow, readable folder tree derived from the document types and themes actually found in the corpus (e.g. grouped by document type, workstream, or phase). It may redesign the **existing nested layout entirely** — documents already sitting in subfolders are reorganized too, not just those at the top level. It creates each folder with `create_dir` (idempotent and collision-safe). Folders are only created for categories the corpus actually contains.
 2. The agent calls `create_plan` to open a new plan
 3. It stages operations with `propose_rename`, `propose_move` (filing each document into the taxonomy), and `propose_quarantine` for duplicates or clutter
 4. It calls `review_plan` for a deduplication pre-flight check

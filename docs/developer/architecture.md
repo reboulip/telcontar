@@ -93,6 +93,12 @@ The MCP server has no delete tool. The `propose_quarantine` / `quarantine` path 
 
 `compress_quarantine` is the only other operation that removes bytes from disk (the original loose files in `QUARANTINE_DIR`, after a verified archive is produced). It is still fully reversible: `undo_last` restores each original from the archive and deletes the zip. No bytes leave the machine — compression only reclaims space within the local quarantine folder.
 
+### Recursive tree exploration
+
+`walk_tree(path, max_depth=3)` complements `list_dir` (a single level): it returns a bounded recursive directory listing, where each directory entry carries a nested `children` list until `max_depth` is reached — deeper directories come back with `children: null` and `truncated: true`, signalling the agent to call `walk_tree` again on that subpath to descend further. Files carry `size`/`mtime` like `list_dir`; unreadable entries are marked `type: "unknown"`.
+
+The ANALYZE phase's system prompt instructs the agent to survey the whole tree with `walk_tree` first, rather than stopping at the top level, so documents nested in subfolders are discovered in one pass. The ORGANIZE phase's prompt correspondingly permits the agent to redesign the *existing* nested layout entirely, not just reorganize what already sits at the root.
+
 ### Knowledge graph
 
 `server/graph.py` projects the registry and event journal into a node/edge graph persisted at `GRAPH_PATH` (`.organizer/graph.json`). The graph is a pure, reproducible derivation — no independent state. Node kinds: `document` (one per registry record), `entity` (deduplicated person/org by normalized name), `event` (one per recorded event). Edge types: doc→entity (role-typed), entity↔entity `co_occurrence` (weighted by shared documents), event→entity `mentions` (entity name found in event sentence). Exposed via `build_graph` (rebuild + persist + return), `get_graph` (return last persisted), and `get_actors` (entity nodes ranked by centrality, capped at `salient_cap`).

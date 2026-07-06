@@ -88,8 +88,8 @@ Browse the tree and click the folder you want to organize — the "Selected:" la
 The main screen shows a sidebar file tree on the left and a scrolling agent log on the right:
 
 ```
-▶ list_dir(path='C:/Users/me/Documents/messy')
-  {"path": "...", "entries": [...]}
+▶ walk_tree(path='C:/Users/me/Documents/messy', max_depth=3)
+  {"path": "...", "max_depth": 3, "entries": [...]}
 ▶ extract_text(path='.../rapport final v3.docx', max_chars=4000)
   "Rapport trimestriel Q1 2024..."
 ▶ compute_checksum(path='.../rapport final v3.docx')

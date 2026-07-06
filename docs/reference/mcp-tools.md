@@ -35,6 +35,30 @@ Enumerate directory entries with metadata.
 
 ---
 
+### `walk_tree`
+
+```python
+walk_tree(path: str, max_depth: int = 3) -> dict
+```
+
+Recursively enumerate a directory tree up to `max_depth` levels deep. Complements `list_dir` (a single level): during ANALYZE, the agent surveys nested subfolders in one call and may redesign the whole existing layout, not just the top level. Depth is counted from the root — the root's immediate entries are depth 1. Raises `ValueError` if `max_depth < 1`.
+
+**Parameters:**
+
+| Name | Type | Description |
+|---|---|---|
+| `path` | str | Absolute path to the root directory |
+| `max_depth` | int | Maximum depth to descend (default 3) |
+
+**Returns:** `{path, max_depth, entries}` where each entry is `{name, path, type, size, mtime}`, and directory entries additionally carry:
+
+- `children`: nested list of entries in this same shape, until `max_depth` is reached
+- `truncated`: `false` while `children` is populated; `true` once `max_depth` is reached, in which case `children` is `null` — call `walk_tree` again on that subpath to descend further
+
+Files carry `size`/`mtime` like `list_dir`; unreadable entries are marked `type: "unknown"` with `size`/`mtime` set to `null`.
+
+---
+
 ### `read_file`
 
 ```python
