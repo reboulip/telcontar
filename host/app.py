@@ -947,6 +947,14 @@ class OrganizerScreen(Screen):
         color: $text-muted;
         padding: 0 1;
     }
+    #ops-journal {
+        height: 5;
+        background: $panel;
+        color: $text-muted;
+        border-top: solid $accent-darken-2;
+        padding: 0 1;
+        scrollbar-size-horizontal: 1;
+    }
     #status-bar {
         height: 1;
         background: $panel;
@@ -962,6 +970,11 @@ class OrganizerScreen(Screen):
     ]
 
     _SPEAKERS = {"telcontar": "telcontar", "user": "you"}
+    # Tools whose completion mutates the undo journal — a result from one of these
+    # refreshes the bottom operations panel.
+    _JOURNAL_WRITING_TOOLS = frozenset(
+        {"execute_plan", "undo_last", "compress_quarantine", "archive_document"}
+    )
 
     def __init__(self, target: Path) -> None:
         super().__init__()
@@ -971,6 +984,9 @@ class OrganizerScreen(Screen):
         self._last_narration = ""
         self._done = False
         self._started = False
+        # Name of the tool whose result we're awaiting — lets a tool_result event
+        # (which carries no tool name) know whether to refresh the ops journal.
+        self._current_tool = ""
         # The currently-open "internal steps" group: a Static we append raw tool
         # lines to, plus its running text. None between groups (a speaker turn
         # closes the group so the next tool call opens a fresh Collapsible).
@@ -998,6 +1014,9 @@ class OrganizerScreen(Screen):
         with Horizontal(id="main-split"):
             yield DirectoryTree(str(self._target), id="file-tree")
             yield VerticalScroll(id="conversation-pane")
+        # Operations journal (L4): a compact bottom strip of the file operations
+        # recorded in the undo journal, one line per entry, horizontally scrollable.
+        yield RichLog(id="ops-journal", markup=True, highlight=False, wrap=False)
         yield Static(self._status, id="status-bar")
         yield Footer()
 
@@ -1005,6 +1024,7 @@ class OrganizerScreen(Screen):
         # Show the starter pane first; the transcript/agent starts on "proceed".
         self.query_one("#main-split").display = False
         self._set_status("Review the overview, add any instructions, then Start organizing.")
+        self._refresh_ops_journal()
         self.query_one("#instructions-input", Input).focus()
 
     @on(Button.Pressed, "#proceed-btn")
@@ -1097,6 +1117,34 @@ class OrganizerScreen(Screen):
             line = f"{self._status}   ·   ⬍ {self._tokens}"
         self.query_one("#status-bar", Static).update(line)
 
+    def _refresh_ops_journal(self) -> None:
+        """Re-render the bottom operations journal from the undo journal (L4).
+
+        One line per entry, newest last, drawn straight from
+        ``.organizer/journal.jsonl`` via the same formatter the modal
+        JournalScreen uses. Multi-line entries (a hard stop lists its failed ops)
+        are collapsed to their summary line so the strip stays one-line-per-op;
+        press ``j`` for the full detail. Horizontally scrollable (wrap=False).
+        """
+        from server.journal import all_entries
+
+        try:
+            log = self.query_one("#ops-journal", RichLog)
+        except NoMatches:
+            return
+        log.clear()
+        try:
+            journal_path = _resolve_journal_path(_PROJECT_ROOT)
+            entries = all_entries(journal_path) if journal_path.is_file() else []
+        except Exception:
+            # A config/read error must never break the screen — just show nothing.
+            entries = []
+        if not entries:
+            log.write("[dim]No operations yet.[/dim]")
+            return
+        for entry in entries:
+            log.write(_fmt_journal_entry(entry).split("\n", 1)[0])
+
     def _narrate(self, tool: str) -> None:
         """Add a plain-language macro-task turn to the transcript (F10).
 
@@ -1135,10 +1183,15 @@ class OrganizerScreen(Screen):
                 case "tool_call":
                     # Narrate first so the telcontar turn precedes (and opens a
                     # fresh group for) the detailed call it announces.
-                    self._narrate((event.data or {}).get("tool", ""))
+                    self._current_tool = (event.data or {}).get("tool", "")
+                    self._narrate(self._current_tool)
                     self._append_step(f"[yellow]▶ {event.text}[/yellow]")
                 case "tool_result":
                     self._append_step(f"[dim]  {event.text}[/dim]")
+                    # A file-mutating tool just finished → refresh the ops journal.
+                    if self._current_tool in self._JOURNAL_WRITING_TOOLS:
+                        self._refresh_ops_journal()
+                    self._current_tool = ""
                 case "plan_ready":
                     self._set_status("Waiting for plan approval…")
                 case "question":
@@ -1147,6 +1200,7 @@ class OrganizerScreen(Screen):
                     self._set_tokens(event.text)
                 case "done":
                     self._add_turn("telcontar", f"[bold green]✓ Done[/bold green]\n{event.text}")
+                    self._refresh_ops_journal()
                     self._set_status("Done")
                 case "error":
                     self._add_turn(

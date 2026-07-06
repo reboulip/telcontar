@@ -654,3 +654,91 @@ async def test_organizer_passes_steering_instructions_to_agent(
         assert captured["instructions"] == "group by workstream"
         # The typed instructions also surface as a user turn in the transcript.
         assert "group by workstream" in _transcript_text(app.screen)
+
+
+# ── L4: operations journal at the bottom ──────────────────────────────────────
+
+
+async def test_ops_journal_shows_existing_entries_on_mount(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    journal_path = tmp_path / "journal.jsonl"
+    journal_path.write_text(
+        json.dumps(
+            {
+                "op_type": "rename",
+                "src": "old_name_v2.docx",
+                "dst": "2024-01-15_report.docx",
+                "timestamp": "2026-07-01T10:00:00Z",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("host.app._resolve_journal_path", lambda root: journal_path)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(120, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        journal_log = _richlog_text(app.screen.query_one("#ops-journal", RichLog))
+        assert "old_name_v2.docx" in journal_log
+        assert "2024-01-15_report.docx" in journal_log
+
+
+async def test_ops_journal_empty_then_updates_as_operations_execute(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    journal_path = tmp_path / "journal.jsonl"  # does not exist yet
+    monkeypatch.setattr("host.app._resolve_journal_path", lambda root: journal_path)
+
+    async def fake_run_agent(*, on_event, instructions=None, **kwargs: object) -> str:
+        # A move operation lands in the undo journal mid-run…
+        journal_path.write_text(
+            json.dumps(
+                {
+                    "op_type": "move",
+                    "src": "report.pdf",
+                    "dst": "/sorted",
+                    "timestamp": "2026-07-06T10:00:00Z",
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        on_event(
+            AgentEvent("tool_call", "execute_plan(plan_id='p1')", data={"tool": "execute_plan"})
+        )
+        on_event(AgentEvent("tool_result", "{'ops_completed': 1}"))
+        on_event(AgentEvent("done", "done"))
+        return "done"
+
+    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(120, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        # Nothing recorded yet at mount.
+        assert "No operations yet." in _richlog_text(app.screen.query_one("#ops-journal", RichLog))
+        await pilot.click("#proceed-btn")
+        await pilot.pause()
+        await pilot.pause(0.2)
+        # After the execute_plan result the bottom journal reflects the new op.
+        journal_log = _richlog_text(app.screen.query_one("#ops-journal", RichLog))
+        assert "report.pdf" in journal_log
+        assert "move" in journal_log

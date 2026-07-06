@@ -111,7 +111,7 @@ Type any steering instructions you want the agent to follow, or leave the field 
 
 ## 5. Watch the agent work
 
-The main screen shows a sidebar file tree on the left and a single chat transcript on the right. `telcontar` narrates its progress in plain language, one turn per macro-task; the raw tool calls behind each turn collect into a click-to-expand **internal steps** group:
+The main screen shows a sidebar file tree on the left and a single chat transcript on the right, with a compact **operations journal** strip docked along the bottom (above the status bar) — a horizontally-scrollable, one-line-per-entry view of the file operations recorded so far. `telcontar` narrates its progress in plain language, one turn per macro-task; the raw tool calls behind each turn collect into a click-to-expand **internal steps** group:
 
 ```
 telcontar  Scanning the directory…
