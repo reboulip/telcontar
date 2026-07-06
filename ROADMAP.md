@@ -1,6 +1,6 @@
 # Roadmap
 
-## v0.1.0 — Skeleton ✅
+## Phase 1 — Skeleton ✅
 
 - [x] A1 · Project layout — create `host/`, `server/`, `config/` package stubs with `__init__.py`
 - [x] A2 · Config layer — implement `config/settings.py` with pydantic-settings and `.env` loading; validate all required env vars at startup
@@ -9,7 +9,7 @@
 
 ---
 
-## v0.2.0 — Server: read-only tools
+## Phase 2 — Server: read-only tools
 
 Core inspection capabilities the agent uses to understand a directory before proposing any changes.
 
@@ -23,7 +23,7 @@ Core inspection capabilities the agent uses to understand a directory before pro
 
 ---
 
-## v0.3.0 — Server: plan, execution & journal
+## Phase 3 — Server: plan, execution & journal
 
 Stateful plan lifecycle and reversible execution. Supports multiple concurrent
 plans persisted to disk so sessions survive crashes and restarts.
@@ -37,7 +37,7 @@ plans persisted to disk so sessions survive crashes and restarts.
 
 ---
 
-## v0.4.0 — Host: agent loop ✅
+## Phase 4 — Host: agent loop ✅
 
 End-to-end GPT-5 driving the MCP server over stdio.
 
@@ -48,7 +48,7 @@ End-to-end GPT-5 driving the MCP server over stdio.
 
 ---
 
-## v0.5.0 — Outputs
+## Phase 5 — Outputs
 
 Artifacts produced after a successful organize run.
 
@@ -58,7 +58,7 @@ Artifacts produced after a successful organize run.
 
 ---
 
-## v0.6.0 — Engine core + IS-IT profile #1
+## Phase 6 — Engine core + IS-IT profile #1
 
 Turn the file-organizer into a profile-driven document-intelligence engine: persistent content-addressed memory + a per-document analysis pass, with all domain-specific vocabulary externalized into a declarative profile. The supplied IS/IT-project requirements ship as the first profile.
 
@@ -71,9 +71,9 @@ Turn the file-organizer into a profile-driven document-intelligence engine: pers
 
 ---
 
-## v0.7.0 — Entity graph + project narrative
+## Phase 7 — Entity graph + project narrative
 
-- [x] H0 · chore: repo-wide `ruff format` — run `ruff format .` so CI's `ruff format --check .` gate passes (currently ~27/32 files are non-compliant, so the next develop→main PR would fail). Do this FIRST, as its own standalone commit, before any v0.7.0 feature work.
+- [x] H0 · chore: repo-wide `ruff format` — run `ruff format .` so CI's `ruff format --check .` gate passes (currently ~27/32 files are non-compliant, so the next develop→main PR would fail). Do this FIRST, as its own standalone commit, before any Phase 7 feature work.
 - [x] H1 · Event journal — `events.jsonl` + `create_event(sentence, date)` (verb-led, dated); distinct from the undo journal
 - [x] H2 · Entity / knowledge graph — `server/graph.py`: project registry + events into nodes/edges at `.organizer/graph.json` (derived, reproducible from the registry)
 - [x] H3 · Actors — top entities ranked from the graph, capped at the profile's `salient_cap`
@@ -82,7 +82,7 @@ Turn the file-organizer into a profile-driven document-intelligence engine: pers
 
 ---
 
-## v0.8.0 — Organization, tree & output sinks
+## Phase 8 — Organization, tree & output sinks
 
 - [x] I1 · `create_dir` — collision-safe directory creation
 - [x] I2 · Folder README writer — per-folder README of the arborescence
@@ -92,7 +92,7 @@ Turn the file-organizer into a profile-driven document-intelligence engine: pers
 
 ---
 
-## v0.9.0 — Interactive query + generality
+## Phase 9 — Interactive query + generality
 
 - [x] J1 · Interactive query mode — NL questions over the registry/graph in the Textual TUI ("charger un doc pour l'interroger", generalized to the whole corpus)
 - [x] J2 · Second profile — author a second domain profile (e.g. research-papers or personal-files) purely as data, proving the engine is profile-driven, not IS-IT-shaped
@@ -101,7 +101,7 @@ Turn the file-organizer into a profile-driven document-intelligence engine: pers
 
 ---
 
-## v1.0.0 — Hardening
+## Phase 10 — Hardening
 
 Production-readiness and operator ergonomics.
 
@@ -117,3 +117,15 @@ Production-readiness and operator ergonomics.
 - [x] F9 · Token-consumption estimate — track and display input/output token counts per macro-step in readable format (12K, 3.5M) [#7]
 - [x] F10 · Status messages via conversation pane — surface macro-task narration ("Reading files...", "Computing checksums...") while ops run in the side panel [#5]
 - [x] F11 · Directory picker — replace the raw address field with a folder-browsing UI for selecting the target directory [#4]
+
+---
+
+## Phase 11 — Interactive UX & deeper exploration
+
+- [ ] L1 · Recursive tree exploration — walk nested subfolders during ANALYZE (recursive walk affordance in `server/tools.py` + prompt the agent to descend) and allow redesigning the existing layout, not just the top level [#17]
+- [ ] L2 · Conversation main pane — restyle the `host/app.py` main pane as a chat transcript with speaker-differentiated turns (telcontar / user / internal steps) and click-to-expand thinking steps [#16]
+- [ ] L3 · Prior-instructions conversation starter — before ANALYZE, summarize the directory from names/structure and invite steering instructions instead of auto-organizing; feed them into the agent's first turn (requires: L2) [#15]
+- [ ] L4 · Operations journal at the bottom — move the ops journal to a bottom panel with one-line entries and horizontal scrolling; `host/app.py` [#12]
+- [ ] L5 · Plan target-layout preview — render the proposed folder tree with per-folder purpose notes in the plan/approval view [#14]
+- [ ] L6 · Natural-language plan editing — accept free-text plan refinements ("merge X with Y", "don't quarantine Z") and regenerate a revised plan; show the plan summary in the UI with the detailed ops as an inspectable JSON file (requires: L2) [#13]
+- [ ] L7 · Multiple-option proposals — let the agent self-review from a second angle and surface competing classification/handling options as user-facing questions; builds on the K1 clarification checkpoint [#18]
