@@ -41,7 +41,7 @@ If **any** such decisions are ambiguous, call `AskUserQuestion` with focused, co
    ```bash
    git checkout -b feat/<milestone-slug>
    ```
-   Example: `feat/v0.1.0-skeleton` for milestone `v0.1.0 — Skeleton`.
+   Example: `feat/phase-1-skeleton` for milestone `Phase 1 — Skeleton`.
 3. All implementation commits go on this branch. The branch merges into `develop` when the sprint is complete (fast-forward by default for a clean sprint-only branch; see Step 7).
 
 ---
@@ -52,9 +52,9 @@ If **any** such decisions are ambiguous, call `AskUserQuestion` with focused, co
 truth. Do NOT rely on any earlier read of the roadmap (e.g. one taken during Step 0):
 a separate process may commit roadmap changes to `develop` between an initial read and
 the branch being cut, so a stale read can silently drop whole milestone items.** The
-active milestone is the **first** `## vX.X.X` section containing at least one unchecked
+active milestone is the **first** `## Phase N` section containing at least one unchecked
 item (`- [ ]`). Extract:
-- The milestone label (e.g. `v0.1.0`).
+- The milestone label (e.g. `Phase 1`).
 - The ordered list of unchecked items: label (A1, A2, …), title, full item text.
 
 **Deferred items are out of scope by default.** Any unchecked item whose text is

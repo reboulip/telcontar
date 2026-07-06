@@ -119,9 +119,9 @@ gh issue comment <number> --body "Deferring for now — this may be revisited in
 ## Step 4 — Read ROADMAP.md
 
 Read `ROADMAP.md` in full. Identify:
-- The **active milestone section** — the first `## vX.X.X — <theme>` with at least one unchecked item (same rule `/dev-pipeline` uses to pick the active sprint).
+- The **active milestone section** — the first `## Phase N — <theme>` with at least one unchecked item (same rule `/dev-pipeline` uses to pick the active sprint).
 - Any other open milestone sections (further down, with unchecked items) that could reasonably absorb new items.
-- The **next available label** for each candidate section. Labels are a single letter per milestone (`A`, `B`, `C`, …) with items numbered within it (`A1`, `A2`, …). **Letter assignment does not follow file order** — e.g. in the current `ROADMAP.md`, `F` (v1.0.0 — Hardening) sits after the `G`–`K` sections in file position. So:
+- The **next available label** for each candidate section. Labels are a single letter per milestone (`A`, `B`, `C`, …) with items numbered within it (`A1`, `A2`, …). **Letter assignment does not follow file order** — e.g. in the current `ROADMAP.md`, `F` (Phase 10 — Hardening) sits after the `G`–`K` sections in file position. So:
   - Appending to an **existing** section: take `max(number)` under that section's own letter, `+1`.
   - Opening a **brand-new** section: scan the *entire* file for the highest letter used anywhere, and take the next unused one — don't just look at the tail.
 
@@ -148,10 +148,10 @@ Before writing anything to `ROADMAP.md`, present the complete proposed mapping a
 
 ```
 Issue #N — <title>
-→ <vX.X.X> <Label>: <proposed item text>
+→ <Phase N> <Label>: <proposed item text>
 
 Issue #M — <title>
-→ <vX.X.X> <Label>: <proposed item text>
+→ <Phase N> <Label>: <proposed item text>
 ```
 
 Then use `AskUserQuestion`:
@@ -180,7 +180,7 @@ Agent({
   if it is not, stop and report back rather than switching branches.
 
   Insert the following item(s) into ROADMAP.md:
-  [for each item: target section header (or the exact new '## vX.X.X — <theme>'
+  [for each item: target section header (or the exact new '## Phase N — <theme>'
   header to insert, and where — immediately after the active milestone's
   closing '---', matching existing style), and the exact line to add:
   '- [ ] <Label> · <item text> [#N]' (or '[#N] [#M]' if it covers multiple
@@ -212,7 +212,7 @@ gh issue edit <number> --add-label roadmap
 ```powershell
 gh issue comment <number> --body "This issue has been planned for development.
 
-**Roadmap:** <vX.X.X> → <Label> — <item text>"
+**Roadmap:** <Phase N> → <Label> — <item text>"
 ```
 
 ---
