@@ -144,7 +144,9 @@ Any sink name not in the built-in registry is treated as an external sink. If `e
    an on_questions_needed callback, the host also appends its own host-side
    ask_clarification tool spec (never forwarded to the server)
 3. Host sends system prompt (built from config + active profile: document types,
-   naming conventions, and synthesis template) + user message
+   naming conventions, and synthesis template) + user message (the OrganizerScreen
+   starter pane's optional steering instructions, if the user typed any, are
+   appended to this seed user message before the loop starts)
 4. GPT-5 responds with tool calls
 5. Host dispatches to server via MCP
 6. Server executes tool, returns result

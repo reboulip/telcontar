@@ -470,6 +470,58 @@ async def test_deselected_ops_removed_from_plan_before_execution(tmp_path: Path)
     assert op_drop.op_id not in remaining
 
 
+# ── L3: pre-analysis steering instructions ────────────────────────────────────
+
+
+async def test_instructions_appended_to_seed_user_message(tmp_path: Path) -> None:
+    captured: list[list[dict]] = []
+    llm = AsyncMock()
+
+    async def _create(**kwargs: Any) -> Any:
+        captured.append(list(kwargs.get("messages", [])))
+        return _text_response("ok")
+
+    llm.chat.completions.create.side_effect = _create
+
+    await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=llm,
+        session=_session([], {}),
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+        instructions="group by workstream",
+    )
+
+    user_msg = next(m for m in captured[0] if m.get("role") == "user")
+    assert "Please organize the directory" in user_msg["content"]
+    assert "group by workstream" in user_msg["content"]
+
+
+async def test_blank_instructions_leave_seed_message_plain(tmp_path: Path) -> None:
+    captured: list[list[dict]] = []
+    llm = AsyncMock()
+
+    async def _create(**kwargs: Any) -> Any:
+        captured.append(list(kwargs.get("messages", [])))
+        return _text_response("ok")
+
+    llm.chat.completions.create.side_effect = _create
+
+    await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=llm,
+        session=_session([], {}),
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+        instructions="   ",  # whitespace only → treated as no instructions
+    )
+
+    user_msg = next(m for m in captured[0] if m.get("role") == "user")
+    assert "steering instructions" not in user_msg["content"].lower()
+
+
 # ── _extract_content ──────────────────────────────────────────────────────────
 
 

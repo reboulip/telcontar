@@ -26,9 +26,21 @@ When you run `telcontar`, the app checks whether a minimum configuration (AI ser
 
 ---
 
+## The starter pane
+
+Pressing **Organize** does not launch the agent immediately. The `OrganizerScreen` opens on a **starter pane** first:
+
+- A code-generated, deterministic **directory overview** (`_directory_overview`) — file count, subfolder count, and the most common file extensions, computed by scanning names and directory structure only. No file content is read and no LLM call is made.
+- An optional **steering instructions** field for free text, e.g. "group by workstream", "keep the 2024 invoices together", or "don't quarantine drafts".
+- A **Start organizing** button (pressing Enter in the instructions field works too).
+
+Only once you proceed does the chat transcript appear and the agent loop start. Any instructions you typed are shown as a `you` turn in the transcript and passed to `run_agent(..., instructions=...)`, which appends them to the agent's first user message so the run follows your intent instead of organizing blind.
+
+---
+
 ## The agent loop
 
-When you point telcontar at a directory, the **host** launches the **server** as a subprocess and begins a GPT-5 tool-calling loop. The agent follows a fixed three-phase workflow:
+Once you proceed past the starter pane, the **host** launches the **server** as a subprocess and begins a GPT-5 tool-calling loop. The agent follows a fixed three-phase workflow:
 
 ### Phase A — Analyse
 

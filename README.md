@@ -28,7 +28,7 @@ telcontar
 
 The Textual TUI opens. On first run the **setup wizard** appears; returning users land on the **startup screen**, which offers three actions:
 
-- **Organize** — analyze and reorganize the target directory (full agent loop), recursively surveying nested subfolders (not just the top level) and free to redesign the existing layout entirely; the agent may pause once, after analysis, to ask a few clarifying questions if something is genuinely ambiguous — answer them or skip to let it use its best judgement.
+- **Organize** — opens on a starter pane showing a code-generated directory overview (file/subfolder counts, common file types — no LLM call yet) plus an optional field for steering instructions (e.g. "group by workstream", "don't quarantine drafts"); press **Start organizing** to launch the full agent loop, which recursively surveys nested subfolders (not just the top level) and is free to redesign the existing layout entirely; the agent may pause once, after analysis, to ask a few clarifying questions if something is genuinely ambiguous — answer them or skip to let it use its best judgement.
 - **Query** — open an interactive read-only chat over the already-analyzed corpus (requires an existing registry at `REGISTRY_PATH`).
 - **⚙ Settings** — edit URL, API key, profile, and approval mode at any time (also accessible by pressing `s`).
 

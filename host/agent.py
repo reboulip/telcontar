@@ -401,8 +401,14 @@ async def run_agent(
     on_event: EventCallback,
     on_approval_needed: ApprovalCallback,
     on_questions_needed: QuestionsCallback | None = None,
+    instructions: str | None = None,
 ) -> str:
-    """Launch the MCP server and run the agent loop. Returns final summary text."""
+    """Launch the MCP server and run the agent loop. Returns final summary text.
+
+    ``instructions`` carries the user's optional pre-analysis steering text (L3);
+    it is appended to the agent's first user turn so the run follows the user's
+    intent instead of auto-organizing blind.
+    """
     project_root = Path(__file__).resolve().parent.parent
     async with mcp_session(project_root) as session:
         return await run_agent_loop(
@@ -414,6 +420,7 @@ async def run_agent(
             on_approval_needed=on_approval_needed,
             on_questions_needed=on_questions_needed,
             project_root=project_root,
+            instructions=instructions,
         )
 
 
@@ -426,10 +433,13 @@ async def run_agent_loop(
     on_approval_needed: ApprovalCallback,
     on_questions_needed: QuestionsCallback | None = None,
     project_root: Path | None = None,
+    instructions: str | None = None,
 ) -> str:
     """Run the GPT-5 tool-calling loop against an already-connected MCP session.
 
     Separated from run_agent so tests can inject a mock session directly.
+    ``instructions`` is the user's optional pre-analysis steering text (L3),
+    appended to the seed user message when present.
     """
     if project_root is None:
         project_root = Path(__file__).resolve().parent.parent
@@ -442,9 +452,15 @@ async def run_agent_loop(
 
     clarification_used = False
 
+    user_content = f"Please organize the directory: {target}"
+    if instructions and instructions.strip():
+        user_content += (
+            "\n\nThe user gave these steering instructions before analysis — "
+            f"follow them:\n{instructions.strip()}"
+        )
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": _build_system_prompt(project_root, settings)},
-        {"role": "user", "content": f"Please organize the directory: {target}"},
+        {"role": "user", "content": user_content},
     ]
 
     on_event(AgentEvent("thinking", f"Starting agent for {target}"))

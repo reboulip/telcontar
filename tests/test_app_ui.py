@@ -199,7 +199,14 @@ async def test_organizer_screen_groups_tool_events_into_steps(
     monkeypatch.setattr("host.app._send_notification", lambda target: None)
 
     async def fake_run_agent(
-        *, target, settings, llm, on_event, on_approval_needed, on_questions_needed=None
+        *,
+        target,
+        settings,
+        llm,
+        on_event,
+        on_approval_needed,
+        on_questions_needed=None,
+        instructions=None,
     ):
         on_event(AgentEvent("tool_call", "list_dir(path='.')"))
         on_event(AgentEvent("tool_result", "{'entries': []}"))
@@ -211,6 +218,8 @@ async def test_organizer_screen_groups_tool_events_into_steps(
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
         app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        await pilot.click("#proceed-btn")  # leave the L3 starter pane
         await pilot.pause()
         await pilot.pause(0.2)
         screen = app.screen
@@ -248,6 +257,8 @@ async def test_organizer_screen_q_shortcut_quits(
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
         app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        await pilot.click("#proceed-btn")  # leave the starter pane so 'q' isn't typed
         await pilot.pause()
         await pilot.press("q")
         await pilot.pause()
@@ -408,7 +419,14 @@ async def test_organizer_status_bar_shows_token_usage(
     monkeypatch.setattr("host.app._send_notification", lambda target: None)
 
     async def fake_run_agent(
-        *, target, settings, llm, on_event, on_approval_needed, on_questions_needed=None
+        *,
+        target,
+        settings,
+        llm,
+        on_event,
+        on_approval_needed,
+        on_questions_needed=None,
+        instructions=None,
     ):
         on_event(AgentEvent("tokens", "12.3K in / 1.0K out", data={"in": 12300, "out": 1000}))
         on_event(AgentEvent("done", "done"))
@@ -419,6 +437,8 @@ async def test_organizer_status_bar_shows_token_usage(
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
         app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        await pilot.click("#proceed-btn")  # leave the L3 starter pane
         await pilot.pause()
         await pilot.pause(0.2)
         status = str(app.screen.query_one("#status-bar", Static).content)
@@ -440,7 +460,14 @@ async def test_organizer_narrates_macro_tasks_in_transcript(
     monkeypatch.setattr("host.app._send_notification", lambda target: None)
 
     async def fake_run_agent(
-        *, target, settings, llm, on_event, on_approval_needed, on_questions_needed=None
+        *,
+        target,
+        settings,
+        llm,
+        on_event,
+        on_approval_needed,
+        on_questions_needed=None,
+        instructions=None,
     ):
         on_event(AgentEvent("tool_call", "read_file(path='a')", data={"tool": "read_file"}))
         # Same macro-task → must collapse to one narration turn.
@@ -456,6 +483,8 @@ async def test_organizer_narrates_macro_tasks_in_transcript(
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
         app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        await pilot.click("#proceed-btn")  # leave the L3 starter pane
         await pilot.pause()
         await pilot.pause(0.2)
         transcript = _transcript_text(app.screen)
@@ -526,3 +555,102 @@ async def test_startup_picker_selection_drives_organize(
         await pilot.pause()
         assert isinstance(app.screen, OrganizerScreen)
         assert app.screen._target == tmp_path
+
+
+# ── L3: prior-instructions conversation starter ───────────────────────────────
+
+
+async def test_organizer_starter_shows_directory_overview(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from textual.widgets import Static
+
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+
+    (tmp_path / "a.pdf").write_bytes(b"x")
+    (tmp_path / "b.pdf").write_bytes(b"y")
+    (tmp_path / "notes.txt").write_text("hi")
+    (tmp_path / "sub").mkdir()
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        overview = str(app.screen.query_one("#dir-overview", Static).content)
+        # Code-generated, deterministic: counts + file-type breakdown, no LLM.
+        assert "3 file(s)" in overview
+        assert "1 subfolder(s)" in overview
+        assert ".pdf" in overview
+        # The transcript stays hidden until the user chooses to proceed.
+        assert app.screen.query_one("#main-split").display is False
+
+
+async def test_organizer_proceed_reveals_transcript_and_starts_agent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    started = {"count": 0}
+
+    async def fake_run_agent(**kwargs: object) -> str:
+        started["count"] += 1
+        return "done"
+
+    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        assert app.screen.query_one("#starter-pane").display is True
+        assert app.screen.query_one("#main-split").display is False
+        await pilot.click("#proceed-btn")
+        await pilot.pause()
+        await pilot.pause(0.2)
+        # Starter pane hidden, transcript shown, agent worker started exactly once.
+        assert app.screen.query_one("#starter-pane").display is False
+        assert app.screen.query_one("#main-split").display is True
+        assert started["count"] == 1
+
+
+async def test_organizer_passes_steering_instructions_to_agent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    captured: dict = {}
+
+    async def fake_run_agent(*, instructions=None, **kwargs: object) -> str:
+        captured["instructions"] = instructions
+        return "done"
+
+    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        app.screen.query_one("#instructions-input", Input).value = "group by workstream"
+        await pilot.click("#proceed-btn")
+        await pilot.pause()
+        await pilot.pause(0.2)
+        assert captured["instructions"] == "group by workstream"
+        # The typed instructions also surface as a user turn in the transcript.
+        assert "group by workstream" in _transcript_text(app.screen)

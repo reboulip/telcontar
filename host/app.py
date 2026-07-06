@@ -17,6 +17,7 @@ ClarificationModal — post-analysis clarifying questions with free-text answers
 from __future__ import annotations
 
 import asyncio
+import os
 import tomllib
 from pathlib import Path
 
@@ -838,6 +839,45 @@ class JournalScreen(ModalScreen[None]):
 # ── Organizer screen ──────────────────────────────────────────────────────────
 
 
+def _directory_overview(target: Path, max_entries: int = 5000) -> str:
+    """Code-generated, deterministic one-glance summary of a directory (L3).
+
+    Reads only names and structure — no file contents, no LLM, no latency —
+    counting files, subfolders and the most common file types. Bounded by
+    ``max_entries`` so a huge tree cannot stall the UI (the count then reads
+    ``N+``). Shown as the opening telcontar turn before ANALYZE so the user can
+    steer the run instead of it auto-organizing.
+    """
+    file_count = 0
+    dir_count = 0
+    ext_counts: dict[str, int] = {}
+    truncated = False
+    for _root, dirs, files in os.walk(target):
+        dir_count += len(dirs)
+        for name in files:
+            if file_count >= max_entries:
+                truncated = True
+                break
+            file_count += 1
+            ext = Path(name).suffix.lower() or "(no extension)"
+            ext_counts[ext] = ext_counts.get(ext, 0) + 1
+        if truncated:
+            break
+
+    count_label = f"{file_count}{'+' if truncated else ''}"
+    lines = [
+        f"Target directory: {target}",
+        f"{count_label} file(s) across {dir_count} subfolder(s).",
+    ]
+    if ext_counts:
+        top = sorted(ext_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:6]
+        breakdown = ", ".join(f"{n}× {ext}" for ext, n in top)
+        lines.append(f"Most common types: {breakdown}.")
+    else:
+        lines.append("No files found at or below this folder.")
+    return "\n".join(lines)
+
+
 class OrganizerScreen(Screen):
     """Main screen: file-tree sidebar + a single chat-transcript conversation pane.
 
@@ -861,6 +901,31 @@ class OrganizerScreen(Screen):
     #conversation-pane {
         width: 1fr;
         padding: 0 1;
+    }
+    #starter-pane {
+        height: 1fr;
+        padding: 1 2;
+    }
+    #starter-title {
+        text-style: bold;
+        color: $accent;
+        padding-bottom: 1;
+    }
+    #dir-overview {
+        padding: 1 1;
+        background: $panel;
+        color: $text;
+    }
+    #instructions-label {
+        padding-top: 1;
+        color: $text-muted;
+    }
+    #instructions-input {
+        margin: 1 0;
+    }
+    #starter-buttons {
+        height: 3;
+        align: left middle;
     }
     .turn {
         margin-top: 1;
@@ -905,6 +970,7 @@ class OrganizerScreen(Screen):
         self._tokens = ""
         self._last_narration = ""
         self._done = False
+        self._started = False
         # The currently-open "internal steps" group: a Static we append raw tool
         # lines to, plus its running text. None between groups (a speaker turn
         # closes the group so the next tool call opens a fresh Collapsible).
@@ -913,6 +979,22 @@ class OrganizerScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
+        # Starter pane (L3): a code-generated overview + optional steering
+        # instructions, shown before ANALYZE instead of auto-organizing.
+        with VerticalScroll(id="starter-pane"):
+            yield Label("Here's what I found", id="starter-title")
+            yield Static(_directory_overview(self._target), id="dir-overview", markup=False)
+            yield Label(
+                'Tell me how you\'d like it organized (optional) — e.g. "group by '
+                'workstream", "keep the 2024 invoices together", "don\'t quarantine drafts":',
+                id="instructions-label",
+            )
+            yield Input(
+                placeholder="Steering instructions — leave blank to use my best judgement",
+                id="instructions-input",
+            )
+            with Horizontal(id="starter-buttons"):
+                yield Button("Start organizing", variant="primary", id="proceed-btn")
         with Horizontal(id="main-split"):
             yield DirectoryTree(str(self._target), id="file-tree")
             yield VerticalScroll(id="conversation-pane")
@@ -920,8 +1002,33 @@ class OrganizerScreen(Screen):
         yield Footer()
 
     def on_mount(self) -> None:
+        # Show the starter pane first; the transcript/agent starts on "proceed".
+        self.query_one("#main-split").display = False
+        self._set_status("Review the overview, add any instructions, then Start organizing.")
+        self.query_one("#instructions-input", Input).focus()
+
+    @on(Button.Pressed, "#proceed-btn")
+    def _proceed_button(self) -> None:
+        self._start_organizing()
+
+    @on(Input.Submitted, "#instructions-input")
+    def _proceed_on_enter(self) -> None:
+        self._start_organizing()
+
+    def _start_organizing(self) -> None:
+        """Leave the starter pane and launch the agent with any steering text (L3)."""
+        if self._started:
+            return
+        self._started = True
+        instructions = self.query_one("#instructions-input", Input).value.strip()
+        self.query_one("#starter-pane").display = False
+        self.query_one("#main-split").display = True
+        # Move focus off the (now-hidden) input so screen key bindings work again.
+        self.query_one("#file-tree", DirectoryTree).focus()
         self._add_turn("telcontar", f"Target: {self._target}")
-        self.run_worker(self._agent_worker(), exclusive=True)
+        if instructions:
+            self._add_turn("user", instructions)
+        self.run_worker(self._agent_worker(instructions), exclusive=True)
 
     # ── Transcript helpers ────────────────────────────────────────────────────
 
@@ -1007,7 +1114,7 @@ class OrganizerScreen(Screen):
         project_root = Path(__file__).resolve().parent.parent
         self.app.push_screen(JournalScreen(project_root))
 
-    async def _agent_worker(self) -> None:
+    async def _agent_worker(self, instructions: str | None = None) -> None:
         from config.settings import load as load_settings
         from host.agent import run_agent
         from host.llm import make_client
@@ -1092,6 +1199,7 @@ class OrganizerScreen(Screen):
                 on_event=on_event,
                 on_approval_needed=on_approval_needed,
                 on_questions_needed=on_questions_needed,
+                instructions=instructions,
             )
         except Exception as exc:
             self._add_turn(
