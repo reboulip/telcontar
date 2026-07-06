@@ -455,3 +455,60 @@ async def test_organizer_narrates_macro_tasks_in_conversation(
         # Raw tool names stay in the timeline, not the conversation.
         assert "read_file" in timeline
         assert "read_file" not in conversation
+
+
+# ── F11: folder-browsing directory picker on the startup screen ──────────────
+
+
+async def test_startup_screen_has_directory_picker(monkeypatch: pytest.MonkeyPatch) -> None:
+    from textual.css.query import NoMatches
+    from textual.widgets import DirectoryTree
+
+    monkeypatch.setattr("config.settings.is_configured", lambda: True)
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(StartupScreen())
+        await pilot.pause()
+        screen = app.screen
+        # The raw path input is gone; a folder-browsing tree replaces it.
+        assert screen.query_one("#target-tree", DirectoryTree)
+        with pytest.raises(NoMatches):
+            screen.query_one("#target-input")
+        assert "Selected:" in str(screen.query_one("#selected-label", Label).content)
+
+
+async def test_startup_picker_selection_drives_organize(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from types import SimpleNamespace
+
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("config.settings.is_configured", lambda: True)
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    async def fake_run_agent(
+        *, target, settings, llm, on_event, on_approval_needed, on_questions_needed=None
+    ):
+        return "done"
+
+    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(StartupScreen())
+        await pilot.pause()
+        screen = app.screen
+        # Selecting a folder in the tree updates the target and the label.
+        screen._on_dir_selected(SimpleNamespace(path=tmp_path))
+        assert screen._selected == tmp_path
+        assert str(tmp_path) in str(screen.query_one("#selected-label", Label).content)
+        # Organize launches the agent on the picked folder.
+        await pilot.click("#organize-btn")
+        await pilot.pause()
+        assert isinstance(app.screen, OrganizerScreen)
+        assert app.screen._target == tmp_path

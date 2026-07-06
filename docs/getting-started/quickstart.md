@@ -58,21 +58,25 @@ The wizard saves your settings and moves straight to the main screen. You will n
 
 ## 3. Choose a directory to organize
 
-The **startup screen** asks for a target directory:
+The **startup screen** shows a browsable folder tree, rooted at your home directory:
 
 ```
 ┌─────────────────────────────────────────┐
 │          Directory Organizer            │
 │                                         │
-│  Target directory:                      │
+│  Choose the folder to organize:         │
 │  ┌─────────────────────────────────────┐│
-│  │ C:\Users\me\Documents\messy        ││
+│  │ ▾ Documents                        ││
+│  │   ▾ messy                          ││
+│  │       invoice.pdf                  ││
+│  │       report.docx                  ││
 │  └─────────────────────────────────────┘│
+│  Selected: C:\Users\me\Documents\messy  │
 │  [ Organize ]  [ Query ]  [ ⚙ Settings ]│
 └─────────────────────────────────────────┘
 ```
 
-Enter the path to your messy directory and press **Organize** (or hit Enter) to start the full analyze-and-reorganize workflow.
+Browse the tree and click the folder you want to organize — the "Selected:" label updates to show your choice (it points at your home directory by default). Then press **Organize** to start the full analyze-and-reorganize workflow.
 
 !!! tip
     **Query** opens a read-only chat over an already-analyzed corpus (registry must exist). Use it after a previous Organize run to ask natural-language questions without touching the files.

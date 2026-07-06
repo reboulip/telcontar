@@ -1210,8 +1210,14 @@ class StartupScreen(Screen):
         padding-bottom: 1;
         color: $accent;
     }
-    #target-input {
+    #target-tree {
+        height: 12;
+        border: round $panel;
         margin-bottom: 1;
+    }
+    #selected-label {
+        color: $text-muted;
+        padding-bottom: 1;
     }
     #startup-buttons {
         height: 3;
@@ -1229,16 +1235,18 @@ class StartupScreen(Screen):
 
     BINDINGS = [("escape", "app.quit", "Quit"), ("s", "settings", "Settings")]
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._selected: Path = Path.home()
+
     def compose(self) -> ComposeResult:
         yield Header()
         with VerticalScroll():
             with Container(id="startup-panel"):
                 yield Label("Directory Organizer", id="startup-title")
-                yield Label("Target directory:")
-                yield Input(
-                    placeholder="C:\\Users\\me\\Documents\\messy",
-                    id="target-input",
-                )
+                yield Label("Choose the folder to organize:")
+                yield DirectoryTree(str(Path.home()), id="target-tree")
+                yield Label(f"Selected: {self._selected}", id="selected-label")
                 with Horizontal(id="startup-buttons"):
                     yield Button("Organize", variant="primary", id="organize-btn")
                     yield Button("Query", variant="success", id="query-btn")
@@ -1250,24 +1258,25 @@ class StartupScreen(Screen):
         self.app.push_screen(ConfigScreen())
 
     def _get_target(self) -> Path | None:
-        raw = self.query_one("#target-input", Input).value.strip()
-        if not raw:
-            return None
-        return Path(raw)
+        return self._selected
 
     def _show_error(self, msg: str) -> None:
         self.query_one("#error-label", Label).update(msg)
+
+    @on(DirectoryTree.DirectorySelected, "#target-tree")
+    def _on_dir_selected(self, event: DirectoryTree.DirectorySelected) -> None:
+        self._selected = Path(event.path)
+        self.query_one("#selected-label", Label).update(f"Selected: {self._selected}")
 
     @on(Button.Pressed, "#settings-btn")
     def _open_settings(self) -> None:
         self.app.push_screen(ConfigScreen())
 
     @on(Button.Pressed, "#organize-btn")
-    @on(Input.Submitted, "#target-input")
     def _start(self) -> None:
         target = self._get_target()
         if target is None:
-            self._show_error("Please enter a directory path.")
+            self._show_error("Please choose a folder to organize.")
             return
         if not target.is_dir():
             self._show_error(f"Not a directory: {target}")
