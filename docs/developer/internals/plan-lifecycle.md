@@ -1,4 +1,4 @@
-# Plan Lifecycle (v0.3.0)
+# Plan Lifecycle (Phase 3)
 
 Design document for the plan + journal system that enables stateful, reversible operations across multiple concurrent sessions.
 

@@ -664,9 +664,9 @@ Create a directory and any missing parents. Idempotent and collision-safe: if th
 
 ---
 
-## Tool availability by version
+## Tool availability by phase
 
-| Tool | v0.2 | v0.3 | v0.4 | v0.5 | v0.6 | v0.7 | v0.8 | v0.9 |
+| Tool | Phase 2 | Phase 3 | Phase 4 | Phase 5 | Phase 6 | Phase 7 | Phase 8 | Phase 9 |
 |---|---|---|---|---|---|---|---|---|
 | `list_dir`, `read_file`, `extract_text` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `compare_documents` | — | — | — | — | — | — | ✓ | ✓ |
