@@ -224,7 +224,9 @@ class ApprovalModal(ModalScreen[ApprovalResult]):
                 '"merge the drafts into one folder", "don\'t quarantine the specs"):',
                 id="refine-label",
             )
-            yield Input(placeholder="Describe changes to make, then press Refine…", id="refine-input")
+            yield Input(
+                placeholder="Describe changes to make, then press Refine…", id="refine-input"
+            )
             with Horizontal(id="approval-buttons"):
                 yield Button("Approve", variant="success", id="approve-btn")
                 yield Button("Refine", variant="primary", id="refine-btn")
@@ -1146,7 +1148,7 @@ class OrganizerScreen(Screen):
             yield Label("Here's what I found", id="starter-title")
             yield Static(_directory_overview(self._target), id="dir-overview", markup=False)
             yield Label(
-                'Tell me how you\'d like it organized (optional) — e.g. "group by '
+                "Tell me how you'd like it organized (optional) — e.g. \"group by "
                 'workstream", "keep the 2024 invoices together", "don\'t quarantine drafts":',
                 id="instructions-label",
             )
@@ -1370,8 +1372,7 @@ class OrganizerScreen(Screen):
                 removed = len(result.removed_op_ids)
                 self._add_turn(
                     "user",
-                    "[green]Approved[/green]"
-                    + (f"  ({removed} op(s) removed)" if removed else ""),
+                    "[green]Approved[/green]" + (f"  ({removed} op(s) removed)" if removed else ""),
                 )
             elif result.refinement:
                 self._add_turn("user", f"[yellow]Refine:[/yellow] {result.refinement}")
