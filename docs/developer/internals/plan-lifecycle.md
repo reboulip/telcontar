@@ -86,6 +86,7 @@ Fields:
 - created_at: ISO 8601 timestamp when the plan was first created.
 - state: Current state of the plan (pending, approved, executing, done, stopped, failed).
 - rationale: Plain-language explanation of the plan's philosophy, set via `set_plan_rationale(plan_id, rationale)`. Empty string (`""`) by default and when not yet set. Displayed above the op list in the host's approval modal (not shown in the example below, which predates this field).
+- folder_notes: Agent-supplied per-folder purpose notes, set via `set_plan_folder_notes(plan_id, notes)`. Maps a target folder path to a short one-line purpose note (e.g. `{"01_decisions": "Formal decision records"}`); blank keys/notes are dropped and non-string values coerced to str. Empty dict (`{}`) by default and when not yet set. Rendered beside each folder in the host's target-layout tree preview, shown between the rationale and the op list when the plan has any `move`/`quarantine` destinations (not shown in the example below, which predates this field).
 - operations: List of proposed operations.
   - op_id: Sequential index within the plan (0, 1, 2, ...).
   - op_type: rename, move, or quarantine.

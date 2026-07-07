@@ -66,6 +66,7 @@ _TOOL_NARRATION: dict[str, str] = {
     "propose_quarantine": "Planning changes…",
     "review_plan": "Reviewing the plan…",
     "set_plan_rationale": "Summarizing the plan…",
+    "set_plan_folder_notes": "Describing the target folders…",
     "execute_plan": "Applying the plan…",
     "compress_quarantine": "Archiving quarantined files…",
     "create_event": "Recording project events…",
@@ -142,6 +143,17 @@ class ApprovalModal(ModalScreen[ApprovalResult]):
         padding: 0 0 1 0;
         color: $text-muted;
     }
+    #layout-title {
+        text-style: bold;
+        color: $accent;
+    }
+    #layout-scroll {
+        max-height: 10;
+        margin-bottom: 1;
+    }
+    #target-layout {
+        color: $text-muted;
+    }
     #ops-scroll {
         max-height: 20;
     }
@@ -172,6 +184,12 @@ class ApprovalModal(ModalScreen[ApprovalResult]):
             )
             if rationale:
                 yield Static(rationale, id="plan-rationale")
+            layout_lines = _render_target_layout(ops, self._plan_data.get("folder_notes") or {})
+            if layout_lines:
+                yield Rule()
+                yield Label("Target layout", id="layout-title")
+                with ScrollableContainer(id="layout-scroll"):
+                    yield Static("\n".join(layout_lines), id="target-layout", markup=False)
             yield Rule()
             with ScrollableContainer(id="ops-scroll"):
                 if ops:
@@ -1592,6 +1610,92 @@ def _fmt_op(op: dict) -> str:
             return f"QUARANTINE  {src}"
         case _:
             return f"{op_type.upper()}  {src}"
+
+
+# ── Plan target-layout preview (L5) ──────────────────────────────────────────
+
+
+def _target_folders(ops: list[dict]) -> list[str]:
+    """Distinct target folders a plan will populate (move dests + quarantine dir)."""
+    folders: set[str] = set()
+    for op in ops:
+        dst = op.get("dst") or ""
+        if not dst:
+            continue
+        if op.get("op_type") == "move":
+            folders.add(dst)
+        elif op.get("op_type") == "quarantine":
+            folders.add(str(Path(dst).parent))
+    return sorted(folders)
+
+
+def _note_for(folder: str, notes: dict) -> str:
+    """Best-effort match of a (possibly absolute) folder path to a folder note.
+
+    The agent may key notes by a short relative folder name (``"01_decisions"``)
+    while the plan ops carry absolute destinations, so match on the full path, its
+    forward-slashed form, its basename, or a path suffix.
+    """
+    if not notes:
+        return ""
+    norm = folder.replace("\\", "/").rstrip("/")
+    name = Path(folder).name
+    for key in (folder, norm, name):
+        if key in notes:
+            return str(notes[key])
+    for key, val in notes.items():
+        k = str(key).replace("\\", "/").strip("/")
+        if k and (norm == k or norm.endswith("/" + k) or name == Path(k).name):
+            return str(val)
+    return ""
+
+
+def _render_target_layout(ops: list[dict], folder_notes: dict) -> list[str]:
+    """Render the plan's target folder tree with per-folder purpose notes (L5).
+
+    Returns tree lines (box-drawing connectors) or an empty list when the plan
+    has no folder destinations. Folders with no note render as bare nodes.
+    """
+    folders = _target_folders(ops)
+    if not folders:
+        return []
+    norm = [f.replace("\\", "/").rstrip("/") for f in folders]
+    try:
+        base = (
+            str(Path(norm[0]).parent).replace("\\", "/")
+            if len(norm) == 1
+            else os.path.commonpath(norm).replace("\\", "/")
+        )
+    except ValueError:  # e.g. paths on different drives — no common base
+        base = ""
+
+    tree: dict = {}
+    note_at: dict[tuple[str, ...], str] = {}
+    for folder in norm:
+        rel = folder[len(base) :].strip("/") if base and folder.startswith(base) else folder
+        parts = [p for p in rel.split("/") if p]
+        node = tree
+        for part in parts:
+            node = node.setdefault(part, {})
+        note = _note_for(folder, folder_notes)
+        if note and parts:
+            note_at[tuple(parts)] = note
+
+    lines: list[str] = [f"{Path(base).name or base or 'target'}/"]
+
+    def _walk(node: dict, prefix: str, acc: tuple[str, ...]) -> None:
+        items = sorted(node.items())
+        for i, (name, children) in enumerate(items):
+            last = i == len(items) - 1
+            connector = "└── " if last else "├── "
+            new_acc = acc + (name,)
+            note = note_at.get(new_acc, "")
+            suffix = f"  — {note}" if note else ""
+            lines.append(f"{prefix}{connector}{name}/{suffix}")
+            _walk(children, prefix + ("    " if last else "│   "), new_acc)
+
+    _walk(tree, "", ())
+    return lines
 
 
 def _send_notification(target: Path) -> None:

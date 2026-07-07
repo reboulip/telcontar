@@ -402,6 +402,80 @@ async def test_approval_modal_without_rationale_has_no_rationale_widget(tmp_path
             app.screen.query_one("#plan-rationale")
 
 
+# ── L5: plan target-layout preview ────────────────────────────────────────────
+
+
+def test_render_target_layout_builds_tree_with_notes() -> None:
+    from host.app import _render_target_layout
+
+    ops = [
+        {"op_type": "move", "src": "/in/a.pdf", "dst": "/t/01_decisions", "op_id": "o1"},
+        {"op_type": "move", "src": "/in/b.pdf", "dst": "/t/02_copil", "op_id": "o2"},
+        {"op_type": "quarantine", "src": "/in/c.pdf", "dst": "/t/_quarantine/c.pdf", "op_id": "o3"},
+    ]
+    notes = {"01_decisions": "Formal decision records", "_quarantine": "Duplicates"}
+    text = "\n".join(_render_target_layout(ops, notes))
+    assert "01_decisions/" in text
+    assert "Formal decision records" in text
+    assert "_quarantine/" in text
+    assert "Duplicates" in text
+    # A target folder without a note still appears in the tree (bare node).
+    assert "02_copil/" in text
+
+
+def test_render_target_layout_empty_without_folder_ops() -> None:
+    from host.app import _render_target_layout
+
+    # Rename-only plans move nothing into a folder, so there's no target tree.
+    ops = [{"op_type": "rename", "src": "/in/a.pdf", "dst": "a_clean.pdf", "op_id": "o1"}]
+    assert _render_target_layout(ops, {}) == []
+
+
+async def test_approval_modal_shows_target_layout(tmp_path: Path) -> None:
+    from textual.widgets import Static
+
+    from host.app import ApprovalModal
+
+    plan_data = {
+        "ops": [
+            {"op_type": "move", "src": "/in/a.pdf", "dst": "/t/01_decisions", "op_id": "o1"},
+            {
+                "op_type": "quarantine",
+                "src": "/in/c.pdf",
+                "dst": "/t/_quarantine/c.pdf",
+                "op_id": "o2",
+            },
+        ],
+        "rationale": "",
+        "folder_notes": {"01_decisions": "Formal decision records", "_quarantine": "Duplicates"},
+    }
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(ApprovalModal("abc12345", plan_data))
+        await pilot.pause()
+        layout = str(app.screen.query_one("#target-layout", Static).content)
+        assert "01_decisions" in layout
+        assert "Formal decision records" in layout
+        assert "_quarantine" in layout
+
+
+async def test_approval_modal_without_folder_ops_has_no_target_layout(tmp_path: Path) -> None:
+    from textual.css.query import NoMatches
+
+    from host.app import ApprovalModal
+
+    plan_data = {
+        "ops": [{"op_type": "rename", "src": "/in/a.pdf", "dst": "a_clean.pdf", "op_id": "o1"}],
+        "rationale": "",
+    }
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(ApprovalModal("abc12345", plan_data))
+        await pilot.pause()
+        with pytest.raises(NoMatches):
+            app.screen.query_one("#target-layout")
+
+
 # ── F9: the status bar surfaces running token usage ──────────────────────────
 
 

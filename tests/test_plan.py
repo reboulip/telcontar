@@ -280,3 +280,28 @@ class TestPlanRationale:
         p.rationale = "why"
         save(p, plans_dir)
         assert load(p.plan_id, plans_dir).rationale == "why"
+
+
+class TestPlanFolderNotes:
+    def test_default_is_empty_dict(self) -> None:
+        assert Plan.new().folder_notes == {}
+
+    def test_round_trips_through_dict(self) -> None:
+        p = Plan.new()
+        p.folder_notes = {"01_decisions": "Decisions", "_quarantine": "Duplicates"}
+        restored = Plan.from_dict(p.to_dict())
+        assert restored.folder_notes == {"01_decisions": "Decisions", "_quarantine": "Duplicates"}
+
+    def test_from_dict_defaults_when_absent(self) -> None:
+        # Backward-compat: plan files written before L5 have no 'folder_notes' key.
+        d = Plan.new().to_dict()
+        del d["folder_notes"]
+        assert Plan.from_dict(d).folder_notes == {}
+
+    def test_survives_disk_round_trip(self, tmp_path: Path) -> None:
+        plans_dir = tmp_path / "plans"
+        plans_dir.mkdir()
+        p = Plan.new()
+        p.folder_notes = {"reports": "Final reports"}
+        save(p, plans_dir)
+        assert load(p.plan_id, plans_dir).folder_notes == {"reports": "Final reports"}

@@ -142,7 +142,12 @@ B. ORGANIZE the tree:
    7. Call review_plan for a deduplication pass, then call set_plan_rationale(plan_id,
       rationale) with a short plain-language paragraph explaining the plan's philosophy —
       how you grouped, renamed and quarantined the documents and why. It is shown to the
-      user above the op list when they review the plan.
+      user above the op list when they review the plan. Also call
+      set_plan_folder_notes(plan_id, notes) with a dict mapping each target folder to a
+      short one-line purpose note (e.g. {{"01_decisions": "Formal decision records",
+      "_quarantine": "Duplicates and superseded drafts"}}); these are shown beside each
+      folder in the plan's target-layout preview so the user sees what the organized tree
+      will look like at a glance.
    8. Call execute_plan to apply the plan (the user reviews and approves first).
       Registry paths are reconciled automatically as files move. After execution,
       you MAY call compress_quarantine to losslessly archive the quarantined files

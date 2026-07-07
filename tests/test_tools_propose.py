@@ -229,3 +229,30 @@ class TestSetPlanRationale:
 
         out = set_plan_rationale(pending_plan.plan_id, "", plans_dir)
         assert out["rationale"] == ""
+
+
+class TestSetPlanFolderNotes:
+    def test_persists_notes(self, plans_dir: Path, pending_plan: Plan) -> None:
+        from server.tools import set_plan_folder_notes
+
+        notes = {"01_decisions": "Formal decision records", "_quarantine": "Duplicates"}
+        out = set_plan_folder_notes(pending_plan.plan_id, notes, plans_dir)
+        assert out["folder_notes"] == notes
+        assert load(pending_plan.plan_id, plans_dir).folder_notes == notes
+
+    def test_strips_and_drops_blank_entries(self, plans_dir: Path, pending_plan: Plan) -> None:
+        from server.tools import set_plan_folder_notes
+
+        out = set_plan_folder_notes(
+            pending_plan.plan_id,
+            {"  reports ": "  Final reports  ", "empty": "   ", "  ": "orphan"},
+            plans_dir,
+        )
+        # keys/values stripped; blank notes and blank keys dropped
+        assert out["folder_notes"] == {"reports": "Final reports"}
+
+    def test_empty_notes_is_empty_dict(self, plans_dir: Path, pending_plan: Plan) -> None:
+        from server.tools import set_plan_folder_notes
+
+        out = set_plan_folder_notes(pending_plan.plan_id, {}, plans_dir)
+        assert out["folder_notes"] == {}

@@ -51,7 +51,7 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 |---|---|
 | Read-only | `list_dir`, `walk_tree`, `read_file`, `extract_text`, `compute_checksum` |
 | Direct file ops | `move_file`, `rename_file`, `create_file`, `update_file` |
-| Plan management | `create_plan`, `get_plan`, `list_plans`, `review_plan`, `approve_plan`, `set_plan_rationale` |
+| Plan management | `create_plan`, `get_plan`, `list_plans`, `review_plan`, `approve_plan`, `set_plan_rationale`, `set_plan_folder_notes` |
 | Plan-building | `propose_rename`, `propose_move`, `propose_quarantine` |
 | Gated execution | `execute_plan`, `write_index`, `write_summary` |
 | Recovery | `undo_last` |
@@ -64,7 +64,7 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 
 ---
 
-### `server/plan.py` (~138 lines)
+### `server/plan.py` (~146 lines)
 
 **Role:** Plan data model and disk persistence. Defines the state machine, serialization, and plan/op CRUD.
 
@@ -72,7 +72,7 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 - `PlanState` — `Literal["pending", "approved", "executing", "done", "failed", "stopped"]`
 - `OpType` — `Literal["rename", "move", "quarantine"]`
 - `PlanOp` — dataclass with `op_id` (UUID), `op_type`, `src`, `dst`, `status`, `error`, `retries`
-- `Plan` — dataclass with `plan_id`, `state`, `ops: list[PlanOp]`, timestamps, `rationale: str = ""` (agent's plain-language explanation, set via `set_plan_rationale`; round-trips through `to_dict`/`from_dict`, backward-compatible with older plan files via `d.get`)
+- `Plan` — dataclass with `plan_id`, `state`, `ops: list[PlanOp]`, timestamps, `rationale: str = ""` (agent's plain-language explanation, set via `set_plan_rationale`), `folder_notes: dict[str, str] = {}` (agent-supplied per-folder purpose notes for the approval-view target-layout preview, set via `set_plan_folder_notes`) — both round-trip through `to_dict`/`from_dict`, backward-compatible with older plan files via `d.get`
 
 **State machine:** `_VALID_TRANSITIONS` dict enforces which state transitions are legal. `Plan.transition()` validates and applies.
 
@@ -233,7 +233,7 @@ The MCP host package. Drives the GPT-5 agent loop and presents the Textual TUI.
 | `StartupScreen` | Lets the user browse and pick the target folder via a `DirectoryTree` (`#target-tree`, rooted at `Path.home()`); the selected path (defaults to home) is shown in a "Selected: …" label and used by "Organize" and "Query". Offers "Organize", "Query", and "⚙ Settings" buttons. Keybinding `s` opens `ConfigScreen`. "Query" validates that `settings.registry_path` exists before proceeding |
 | `OrganizerScreen` | Main view. Opens on a **starter pane** (`#starter-pane`, L3) instead of auto-starting the agent: a `Static` rendering `_directory_overview(target)` — a code-generated, deterministic scan of names/structure only (file count, subfolder count, most common extensions; no content read, no LLM) — plus an `#instructions-input` `Input` for optional free-text steering instructions and a `#proceed-btn` "Start organizing" button (or `Input.Submitted`). `_start_organizing()` hides the starter pane, shows `#main-split` (file-tree sidebar + a single chat-transcript `#conversation-pane`, `VerticalScroll`), and launches `_agent_worker(instructions)` as a Textual worker, passing the typed instructions (if any) through to `run_agent(..., instructions=...)`. `_add_turn(speaker, text)` appends speaker-differentiated turns (`telcontar` / `you`) as styled `Static` widgets — the target line and any typed instructions are shown as the first turns; on each `tool_call` event, `_narrate(tool)` looks up the tool in the module-level `_TOOL_NARRATION` map and, if the macro-task phrase changed, emits a `telcontar` turn (e.g. "Reading documents…", "Planning changes…", "Applying the plan…") — deduping so consecutive calls in the same macro-task collapse to one turn. The raw tool calls/results themselves are appended via `_append_step(line)` into a click-to-expand `Collapsible` ("internal steps") interleaved in the transcript; a new speaker turn closes the currently-open group so the next tool call opens a fresh one. Below `#main-split`, a docked `#ops-journal` `RichLog` (L4, `wrap=False`, horizontally scrollable) renders the file operations recorded in the undo journal — one line per entry, newest last, via `_fmt_journal_entry` (the same formatter `JournalScreen` uses); multi-line hard-stop entries collapse to their summary line. `_refresh_ops_journal()` re-reads `.organizer/journal.jsonl` via `_resolve_journal_path` + `server.journal.all_entries` (swallowing read/config errors so the strip just shows nothing rather than breaking the screen); it runs on mount, after any tool in `_JOURNAL_WRITING_TOOLS` (`execute_plan`, `undo_last`, `compress_quarantine`, `archive_document`) completes, and again on `done`. Status bar shows the current phase plus a running token-usage total (`N in / M out`) once the LLM reports it; keybinding `g` pushes `QueryScreen` once organizing completes, `j` pushes `JournalScreen` (the full modal journal view) |
 | `QueryScreen` | Chat-style read-only Q&A screen: `RichLog` output + `Input` bar; keeps one MCP session open for the whole chat and threads conversation history across questions; status bar also shows a running token-usage total (`N in / M out`); `Esc` pops back to the previous screen |
-| `ApprovalModal` | Plan review: renders the plan's `rationale` (if set via `set_plan_rationale`) as `#plan-rationale` above the op checklist, then per-op checkboxes, Approve/Reject buttons; returns an `ApprovalResult` |
+| `ApprovalModal` | Plan review: renders the plan's `rationale` (if set via `set_plan_rationale`) as `#plan-rationale`, then — if the plan has any `move`/`quarantine` destinations — a "Target layout" tree (`_render_target_layout`, L5) built from the plan's op destinations with each folder's `folder_notes` purpose note beside it (bare nodes for folders with no note; rename-only plans show no tree), then per-op checkboxes, Approve/Reject buttons; returns an `ApprovalResult` |
 | `ClarificationModal` | Post-analysis clarifying questions: one free-text `Input` per question, "Submit answers" / "Skip — best judgement" buttons; returns a `ClarificationResult`. Shown at most once per run, wired via `OrganizerScreen`'s `on_questions_needed` callback |
 
 **TUI layout (OrganizerScreen):**

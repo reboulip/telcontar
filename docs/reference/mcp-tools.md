@@ -213,6 +213,22 @@ Passing an empty or whitespace-only `rationale` clears it (stored as `""`). Not 
 
 ---
 
+### `set_plan_folder_notes`
+
+```python
+set_plan_folder_notes(plan_id: str, notes: dict) -> dict
+```
+
+Attach agent-supplied per-folder purpose notes to a plan. `notes` maps a target folder path to a short one-line purpose note (e.g. `{"01_decisions": "Formal decision records", "_quarantine": "Duplicates and superseded drafts"}`). The host's `ApprovalModal` renders these beside each folder in the plan's target-layout tree preview, between the rationale and the op checklist. The agent is expected to call this after `set_plan_rationale`, as part of the same organize-phase step.
+
+Non-string keys/values are coerced to `str`; folder keys or notes that are blank after stripping are dropped. A target folder with no matching note simply renders as a bare tree node — the tree itself is derived from the plan's `move`/`quarantine` op destinations, not from `folder_notes`.
+
+**Returns:** the full updated plan dict (same shape as `get_plan`), including `folder_notes`.
+
+**Safety category:** Plan-building / plan-mutation — writes to the plan file on disk but performs no filesystem operation outside `.organizer/plans/`.
+
+---
+
 ## Plan-building tools
 
 Append proposed file operations to an existing `pending` plan. Each call performs an eager collision check at proposal time — no operation will overwrite an existing file.

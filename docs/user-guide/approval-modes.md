@@ -58,6 +58,7 @@ Start at `always`. Relax via config — no code changes required, no restart oth
 In `always` and `destructive_only` modes, when a plan is ready for execution the host presents an **ApprovalModal**:
 
 - **A plan rationale**, if the agent attached one via `set_plan_rationale`, is shown as a short plain-language paragraph above the op checklist — explaining how the plan groups, renames, and quarantines documents and why
+- **A target-layout preview**, when the plan has any move/quarantine destinations: a folder tree built from the plan's ops, with each folder's purpose note (set by the agent via `set_plan_folder_notes`) shown beside it — folders without a note appear as bare tree nodes. Rename-only plans show no tree
 - **Each proposed operation** is listed as a checked checkbox
 - You can **uncheck** individual ops to skip them (the rest still execute)
 - **Approve** confirms the checked ops and triggers `execute_plan`

@@ -137,6 +137,16 @@ def set_plan_rationale(plan_id: str, rationale: str) -> dict:
     return tools.set_plan_rationale(plan_id, rationale, cfg.plans_dir)
 
 
+@mcp.tool()
+def set_plan_folder_notes(plan_id: str, notes: dict) -> dict:
+    """Attach per-folder purpose notes to a plan for the approval-view target-layout
+    preview. `notes` maps each target folder path to a short one-line purpose note
+    (e.g. {"01_decisions": "Formal decision records", "_quarantine": "Duplicates and
+    drafts"}); shown beside each folder when the user reviews the plan."""
+    cfg = _get_settings()
+    return tools.set_plan_folder_notes(plan_id, notes, cfg.plans_dir)
+
+
 # ── Plan-building tools (write to plan, do not execute) ──────────────────────
 
 

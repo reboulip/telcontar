@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
@@ -58,6 +58,9 @@ class Plan:
     created_at: str
     updated_at: str
     rationale: str = ""  # agent's plain-language explanation of the plan (F8)
+    # Agent-supplied per-folder purpose notes for the approval-view target-layout
+    # preview (L5): maps a target folder path to a short one-line purpose note.
+    folder_notes: dict[str, str] = field(default_factory=dict)
 
     @classmethod
     def new(cls) -> "Plan":
@@ -93,6 +96,7 @@ class Plan:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "rationale": self.rationale,
+            "folder_notes": self.folder_notes,
         }
 
     @classmethod
@@ -104,6 +108,7 @@ class Plan:
             created_at=d["created_at"],
             updated_at=d["updated_at"],
             rationale=d.get("rationale", ""),
+            folder_notes=d.get("folder_notes", {}),
         )
 
 

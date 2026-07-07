@@ -317,6 +317,27 @@ def set_plan_rationale(plan_id: str, rationale: str, plans_dir: Path) -> dict:
     return p.to_dict()
 
 
+def set_plan_folder_notes(plan_id: str, notes: dict, plans_dir: Path) -> dict:
+    """Attach agent-supplied per-folder purpose notes to a plan (L5).
+
+    ``notes`` maps a target folder path to a short one-line purpose note. They are
+    shown beside each folder in the approval view's target-layout preview so the
+    user sees, at a glance, what the organized tree will look like and why each
+    folder exists. Non-string keys/values are coerced to str and blank notes are
+    dropped; a folder with no note simply renders as a bare tree node.
+    """
+    p = _plan.load(plan_id, plans_dir)
+    cleaned: dict[str, str] = {}
+    for folder, note in (notes or {}).items():
+        key = str(folder).strip()
+        text = str(note).strip()
+        if key and text:
+            cleaned[key] = text
+    p.folder_notes = cleaned
+    _plan.save(p, plans_dir)
+    return p.to_dict()
+
+
 def approve_plan(plan_id: str, plans_dir: Path) -> dict:
     """Transition a plan from pending → approved."""
     p = _plan.load(plan_id, plans_dir)
