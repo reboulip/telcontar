@@ -206,6 +206,7 @@ async def test_organizer_screen_groups_tool_events_into_steps(
         on_event,
         on_approval_needed,
         on_questions_needed=None,
+        on_options_needed=None,
         instructions=None,
     ):
         on_event(AgentEvent("tool_call", "list_dir(path='.')"))
@@ -531,6 +532,52 @@ async def test_approval_modal_shows_ops_json_path(tmp_path: Path) -> None:
         assert "plan_ops.json" in label
 
 
+# ── L7: multiple-option proposals ─────────────────────────────────────────────
+
+
+async def test_options_modal_submit_returns_selection(tmp_path: Path) -> None:
+    from textual.widgets import RadioButton, RadioSet
+
+    from host.app import OptionsModal
+
+    questions = [
+        {
+            "question": "How should COPIL decks be grouped?",
+            "options": ["by date", "by workstream", "flat"],
+        }
+    ]
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        captured: dict = {}
+        app.push_screen(OptionsModal(questions), lambda res: captured.update(res=res))
+        await pilot.pause()
+        radio_set = app.screen.query_one("#options-set-0", RadioSet)
+        buttons = list(radio_set.query(RadioButton))
+        buttons[1].value = True  # choose "by workstream"
+        await pilot.pause()
+        await pilot.click("#options-submit")
+        await pilot.pause()
+        res = captured["res"]
+        assert res.provided is True
+        assert res.selections == {"How should COPIL decks be grouped?": "by workstream"}
+
+
+async def test_options_modal_skip_returns_empty(tmp_path: Path) -> None:
+    from host.app import OptionsModal
+
+    questions = [{"question": "Q?", "options": ["a", "b"]}]
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        captured: dict = {}
+        app.push_screen(OptionsModal(questions), lambda res: captured.update(res=res))
+        await pilot.pause()
+        await pilot.click("#options-skip")
+        await pilot.pause()
+        res = captured["res"]
+        assert res.provided is False
+        assert res.selections == {}
+
+
 # ── F9: the status bar surfaces running token usage ──────────────────────────
 
 
@@ -555,6 +602,7 @@ async def test_organizer_status_bar_shows_token_usage(
         on_event,
         on_approval_needed,
         on_questions_needed=None,
+        on_options_needed=None,
         instructions=None,
     ):
         on_event(AgentEvent("tokens", "12.3K in / 1.0K out", data={"in": 12300, "out": 1000}))
@@ -596,6 +644,7 @@ async def test_organizer_narrates_macro_tasks_in_transcript(
         on_event,
         on_approval_needed,
         on_questions_needed=None,
+        on_options_needed=None,
         instructions=None,
     ):
         on_event(AgentEvent("tool_call", "read_file(path='a')", data={"tool": "read_file"}))

@@ -126,6 +126,15 @@ Between the ANALYZE and ORGANIZE phases, the agent may surface a batch of clarif
 - `host/app.py` wires `on_questions_needed` to show `ClarificationModal` (mirrors `ApprovalModal`): one free-text `Input` per question, with **Submit answers** and **Skip — best judgement** buttons, returning a `ClarificationResult`.
 - If the user skips, submits no answers, or the checkpoint was already used this run, the tool result is a note telling the agent to proceed with its own best judgement — the agent is instructed never to stall waiting for answers.
 
+### Multiple-option checkpoint
+
+Also between the ANALYZE and ORGANIZE phases, after re-examining its intended approach from a second angle, the agent may surface a few questions carrying competing, mutually-exclusive options for the user to pick from — implemented the same way, entirely on the **host** side:
+
+- `host/agent.py` defines a synthetic tool spec, `propose_options`, that is appended to the OpenAI tool list only when the caller wires in an `on_options_needed` callback (`OptionsCallback = Callable[[list[dict]], Awaitable[OptionsResult]]`) — it is never registered with, or forwarded to, the MCP server.
+- When the model calls `propose_options`, `_handle_options` enforces the at-most-once-per-run rule, drops any question that lacks a non-empty prompt or has fewer than two options, emits an `"options"` `AgentEvent` (with the questions in `data`), and awaits the callback.
+- `host/app.py` wires `on_options_needed` to show `OptionsModal` (mirrors `ClarificationModal`): one `RadioSet` per question (2-5 `RadioButton` options, first pre-selected), with **Submit choices** and **Skip — best judgement** buttons, returning an `OptionsResult`.
+- If the user skips, makes no selection, or the checkpoint was already used this run, the tool result is a note telling the agent to proceed with its own best judgement — the agent is instructed not to stall or offload every decision onto this checkpoint.
+
 ### Output-sink abstraction
 
 `server/sinks.py` defines a `Sink` protocol (`name`, `external`, `write_summary`, `write_folder_readme`) and a `resolve_sinks(names, allow_external)` factory. The MCP handlers for `write_summary` and `write_folder_readme` call `resolve_sinks` at request time, passing the profile's `[sinks] default` list and the `egress_allow_external_sinks` setting, then fan the call out to each resolved sink.
@@ -142,7 +151,9 @@ Any sink name not in the built-in registry is treated as an external sink. If `e
 1. Host launches server subprocess (stdio)
 2. Host calls session.list_tools() → discovers all MCP tools; if the caller wired in
    an on_questions_needed callback, the host also appends its own host-side
-   ask_clarification tool spec (never forwarded to the server)
+   ask_clarification tool spec, and if an on_options_needed callback is wired in, the
+   host also appends its own host-side propose_options tool spec (neither forwarded
+   to the server)
 3. Host sends system prompt (built from config + active profile: document types,
    naming conventions, and synthesis template) + user message (the OrganizerScreen
    starter pane's optional steering instructions, if the user typed any, are
@@ -156,10 +167,15 @@ Any sink name not in the built-in registry is treated as an external sink. If `e
    short batch of questions; the host emits a "question" AgentEvent, shows
    ClarificationModal, and feeds the user's answers (or a "proceed with best judgement"
    note if skipped or already used) back as the tool result
-10. Agent designs a target taxonomy from the types/themes found, calls create_dir for
+10. After re-examining its approach from a second angle, the agent MAY also call
+    propose_options once with a few questions, each carrying 2-5 mutually-exclusive
+    options; the host emits an "options" AgentEvent, shows OptionsModal, and feeds the
+    user's selections (or a "proceed with best judgement" note if skipped or already
+    used) back as the tool result
+11. Agent designs a target taxonomy from the types/themes found, calls create_dir for
     each folder (idempotent; no folder created for absent categories), then opens a
     plan (create_plan) and stages propose_rename / propose_move / propose_quarantine ops
-11. On execute_plan call:
+12. On execute_plan call:
     a. Host fetches plan details (get_plan) and writes the full ops list to
        .organizer/plan_ops.json (path shown in the modal)
     b. Host shows ApprovalModal to user
@@ -168,14 +184,14 @@ Any sink name not in the built-in registry is treated as an external sink. If `e
        journals each, reconciles registry
     e. On refine: the plan is NOT executed — the free-text request is returned to the
        agent as a tool result, which revises the plan (ops/rationale/folder notes) and
-       calls execute_plan again to re-present it (back to step 11)
-12. Agent calls build_graph → get_actors → list_events, then composes SUMMARY.md
+       calls execute_plan again to re-present it (back to step 12)
+13. Agent calls build_graph → get_actors → list_events, then composes SUMMARY.md
     from registry + events + graph + actors per the profile's [synthesis] template;
     calls write_index + write_summary to persist INDEX.md, manifest.json, SUMMARY.md
-13. Agent calls write_folder_readme(path=<folder>, content=<markdown>) once per
+14. Agent calls write_folder_readme(path=<folder>, content=<markdown>) once per
     meaningful folder of the organized tree; empty/trivial folders are skipped
-14. Agent sends final text (no tool calls) → loop ends
-15. Desktop notification fires
+15. Agent sends final text (no tool calls) → loop ends
+16. Desktop notification fires
 ```
 
 ---

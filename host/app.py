@@ -35,13 +35,15 @@ from textual.widgets import (
     Header,
     Input,
     Label,
+    RadioButton,
+    RadioSet,
     RichLog,
     Rule,
     Select,
     Static,
 )
 
-from host.agent import AgentEvent, ApprovalResult, ClarificationResult
+from host.agent import AgentEvent, ApprovalResult, ClarificationResult, OptionsResult
 
 # Package root: host/app.py → host/ → project root (or site-packages/).
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -79,6 +81,7 @@ _TOOL_NARRATION: dict[str, str] = {
     "write_folder_readme": "Describing folders…",
     "archive_document": "Archiving documents…",
     "ask_clarification": "Asking you for clarification…",
+    "propose_options": "Reviewing options with you…",
 }
 
 
@@ -337,6 +340,94 @@ class ClarificationModal(ModalScreen[ClarificationResult]):
     @on(Button.Pressed, "#clarify-skip")
     def action_skip(self) -> None:
         self.dismiss(ClarificationResult(answers={}, provided=False))
+
+
+# ── Options modal (L7) ────────────────────────────────────────────────────────
+
+
+class OptionsModal(ModalScreen[OptionsResult]):
+    """Present the agent's competing options as single-choice selections (L7).
+
+    Shown at most once per run. Each question renders as a RadioSet of its options;
+    Submit returns the chosen option per question, Skip returns an empty result so
+    the agent proceeds with its own best judgement.
+    """
+
+    DEFAULT_CSS = """
+    OptionsModal {
+        align: center middle;
+    }
+    #options-dialog {
+        width: 70%;
+        max-height: 80%;
+        border: round $accent;
+        background: $surface;
+        padding: 1 2;
+    }
+    #options-title {
+        text-style: bold;
+        padding-bottom: 1;
+        color: $accent;
+    }
+    #options-scroll {
+        max-height: 20;
+    }
+    .options-q {
+        text-style: bold;
+        padding-top: 1;
+    }
+    .options-set {
+        margin-bottom: 1;
+    }
+    #options-buttons {
+        align: center middle;
+        padding-top: 1;
+        height: 3;
+    }
+    #options-buttons Button {
+        margin: 0 2;
+    }
+    """
+
+    BINDINGS = [("escape", "skip", "Skip")]
+
+    def __init__(self, questions: list[dict]) -> None:
+        super().__init__()
+        # Each item: {"question": str, "options": [str, ...]}.
+        self._questions = questions
+
+    def compose(self) -> ComposeResult:
+        with Container(id="options-dialog"):
+            yield Label(
+                f"The agent proposes options for {len(self._questions)} question(s)",
+                id="options-title",
+            )
+            yield Rule()
+            with ScrollableContainer(id="options-scroll"):
+                for i, item in enumerate(self._questions):
+                    yield Label(item.get("question", ""), classes="options-q")
+                    with RadioSet(id=f"options-set-{i}", classes="options-set"):
+                        for j, option in enumerate(item.get("options", [])):
+                            # First option pre-selected so a plain Submit is valid.
+                            yield RadioButton(option, value=(j == 0))
+            yield Rule()
+            with Horizontal(id="options-buttons"):
+                yield Button("Submit choices", variant="success", id="options-submit")
+                yield Button("Skip — best judgement", id="options-skip")
+
+    @on(Button.Pressed, "#options-submit")
+    def _submit(self) -> None:
+        selections: dict[str, str] = {}
+        for i, item in enumerate(self._questions):
+            radio_set = self.query_one(f"#options-set-{i}", RadioSet)
+            pressed = radio_set.pressed_button
+            if pressed is not None:
+                selections[item.get("question", "")] = str(pressed.label)
+        self.dismiss(OptionsResult(selections=selections, provided=bool(selections)))
+
+    @on(Button.Pressed, "#options-skip")
+    def action_skip(self) -> None:
+        self.dismiss(OptionsResult(selections={}, provided=False))
 
 
 # ── Setup screen (first-run wizard) ──────────────────────────────────────────
@@ -1250,6 +1341,8 @@ class OrganizerScreen(Screen):
                     self._set_status("Waiting for plan approval…")
                 case "question":
                     self._set_status("Awaiting your answers…")
+                case "options":
+                    self._set_status("Awaiting your choice…")
                 case "tokens":
                     self._set_tokens(event.text)
                 case "done":
@@ -1301,6 +1394,19 @@ class OrganizerScreen(Screen):
                 self._add_turn("user", "[dim]Skipped — the agent will use its best judgement[/dim]")
             return answer
 
+        async def on_options_needed(questions: list[dict]) -> OptionsResult:
+            self._add_turn(
+                "telcontar",
+                f"[bold cyan]The agent proposes options for {len(questions)} "
+                "question(s)[/bold cyan] — awaiting your choice…",
+            )
+            choice: OptionsResult = await self.app.push_screen_wait(OptionsModal(questions))
+            if choice.provided:
+                self._add_turn("user", f"[green]Chose {len(choice.selections)} option(s)[/green]")
+            else:
+                self._add_turn("user", "[dim]Skipped — the agent will use its best judgement[/dim]")
+            return choice
+
         try:
             await run_agent(
                 target=self._target,
@@ -1309,6 +1415,7 @@ class OrganizerScreen(Screen):
                 on_event=on_event,
                 on_approval_needed=on_approval_needed,
                 on_questions_needed=on_questions_needed,
+                on_options_needed=on_options_needed,
                 instructions=instructions,
             )
         except Exception as exc:

@@ -55,7 +55,7 @@ Then, for each document found anywhere in the tree, the agent:
 
 The registry is **content-addressed**: if you rename a file, telcontar still recognises it by checksum on the next run. Analysis results accumulate across sessions.
 
-Between Phase A and Phase B, the agent may pause **once** to ask the user a short batch of clarifying questions if it hit genuine ambiguity — see [The clarification checkpoint](#the-clarification-checkpoint) below.
+Between Phase A and Phase B, the agent has two optional, at-most-once checkpoints: it may pause to ask the user a short batch of clarifying questions if it hit genuine ambiguity — see [The clarification checkpoint](#the-clarification-checkpoint) below — and, after re-examining its intended approach from a second angle, it may also surface a few competing options for the user to choose between — see [The multiple-option checkpoint](#the-multiple-option-checkpoint) below.
 
 ### Phase B — Organize
 
@@ -104,6 +104,37 @@ Host shows ClarificationModal — one free-text input per question
 ```
 
 A second call to `ask_clarification` in the same run is refused — the host tells the agent it already asked and to proceed with its own best judgement. The agent is instructed not to stall waiting for answers.
+
+---
+
+## The multiple-option checkpoint
+
+Also between Phase A and Phase B, the agent **may** pause once more — after re-examining its intended approach from a second angle — to let the user choose between competing courses of action, when there are genuinely several valid ways to classify or handle the corpus (e.g. group COPIL decks by date vs. by workstream vs. one flat folder). If one approach is clearly best, the agent skips this and moves straight into Phase B.
+
+Like the clarification checkpoint, this is a **host-side** capability, not an MCP server tool: `propose_options` is a synthetic tool the host injects into the model's tool list, and it is never forwarded to the MCP server.
+
+```
+Agent finishes Phase A, re-examines its approach from a second angle
+       │
+       ▼
+Agent calls propose_options(questions)   (at most once per run)
+       │
+       ▼
+Host shows OptionsModal — one RadioSet (2-5 options) per question
+       │
+   User reviews
+   ├── Submit choices (one option per question; first option pre-selected)
+   │       │
+   │       ▼
+   │   Selections fed back to the agent, which follows them before create_plan
+   │
+   └── Skip — best judgement
+           │
+           ▼
+       Agent proceeds using its own judgement
+```
+
+A second call to `propose_options` in the same run is refused — the host tells the agent it already proposed options and to proceed with its own best judgement. Like `ask_clarification`, the agent is instructed to use this only for real, close judgement calls, not to offload every decision, and never to stall.
 
 ---
 

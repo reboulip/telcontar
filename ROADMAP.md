@@ -128,4 +128,4 @@ Production-readiness and operator ergonomics.
 - [x] L4 · Operations journal at the bottom — move the ops journal to a bottom panel with one-line entries and horizontal scrolling; `host/app.py` [#12]
 - [x] L5 · Plan target-layout preview — render the proposed folder tree with per-folder purpose notes in the plan/approval view [#14]
 - [x] L6 · Natural-language plan editing — accept free-text plan refinements ("merge X with Y", "don't quarantine Z") and regenerate a revised plan; show the plan summary in the UI with the detailed ops as an inspectable JSON file (requires: L2) [#13]
-- [ ] L7 · Multiple-option proposals — let the agent self-review from a second angle and surface competing classification/handling options as user-facing questions; builds on the K1 clarification checkpoint [#18]
+- [x] L7 · Multiple-option proposals — let the agent self-review from a second angle and surface competing classification/handling options as user-facing questions; builds on the K1 clarification checkpoint [#18]

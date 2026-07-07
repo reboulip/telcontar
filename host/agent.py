@@ -26,7 +26,15 @@ from server.profile import Profile, load_profile
 # ── Event types ───────────────────────────────────────────────────────────────
 
 EventKind = Literal[
-    "thinking", "tool_call", "tool_result", "plan_ready", "question", "tokens", "done", "error"
+    "thinking",
+    "tool_call",
+    "tool_result",
+    "plan_ready",
+    "question",
+    "options",
+    "tokens",
+    "done",
+    "error",
 ]
 
 
@@ -102,6 +110,71 @@ _CLARIFY_TOOL_SPEC: dict[str, Any] = {
     },
 }
 
+
+# ── Multiple-option proposals (L7) ────────────────────────────────────────────
+
+
+@dataclass
+class OptionsResult:
+    """The user's picks from the multiple-option checkpoint (L7).
+
+    ``selections`` maps each question to the option the user chose. ``provided`` is
+    False when the user skipped, in which case the agent proceeds with its own best
+    judgement.
+    """
+
+    selections: dict[str, str] = field(default_factory=dict)
+    provided: bool = False
+
+
+# A callback given a list of {"question": str, "options": [str, ...]} → OptionsResult.
+OptionsCallback = Callable[[list[dict]], Awaitable[OptionsResult]]
+
+# Host-side synthetic tool (like ask_clarification): never forwarded to the MCP
+# server. The agent may call it once — after a second-angle self-review — to surface
+# competing classification/handling choices the user picks from. Only advertised to
+# the model when an OptionsCallback is wired in.
+_OPTIONS_TOOL_NAME = "propose_options"
+_OPTIONS_TOOL_SPEC: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": _OPTIONS_TOOL_NAME,
+        "description": (
+            "Propose competing options for the user to choose from ONCE, after you have "
+            "analyzed the documents and re-examined your plan from a second angle, when "
+            "there are genuinely several valid ways to classify or handle the corpus "
+            "(e.g. group COPIL decks by date vs. by workstream vs. one flat folder). "
+            "Provide 1-5 questions, each with 2-5 concrete, mutually-exclusive options that "
+            "cover the realistic alternatives; the user picks one per question and you follow "
+            "their choice. Do NOT stall or use this to offload every decision — only surface "
+            "options for real, close judgement calls, otherwise proceed with your best "
+            "judgement. Callable at most once per run."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "questions": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "question": {"type": "string"},
+                            "options": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "2-5 concrete, mutually-exclusive options.",
+                            },
+                        },
+                        "required": ["question", "options"],
+                    },
+                    "description": "1-5 questions, each with its competing options.",
+                }
+            },
+            "required": ["questions"],
+        },
+    },
+}
+
 # ── System prompt ─────────────────────────────────────────────────────────────
 
 _SYSTEM_PROMPT_TEMPLATE = """\
@@ -128,6 +201,14 @@ A. ANALYZE each meaningful document and record it in the memory registry.
    groupings, ambiguous naming), you MAY call ask_clarification ONCE with a short
    batch of questions and use the answers to refine your decisions. Do not stall —
    if there is no real ambiguity, skip it and proceed with your best judgement.
+
+   Optional multiple-option checkpoint: after ANALYZE, re-examine your intended
+   approach from a second angle. If there are genuinely several valid ways to
+   classify or handle the corpus (e.g. group by date vs. by workstream vs. flat),
+   you MAY call propose_options ONCE with a few questions, each carrying the
+   competing options, and follow the user's choice. Use this only for real, close
+   judgement calls — not to offload every decision — and never stall: if one
+   approach is clearly best, just take it.
 
 B. ORGANIZE the tree:
    5. Design a relevant target taxonomy — a small, readable folder tree for THIS
@@ -409,13 +490,15 @@ async def run_agent(
     on_event: EventCallback,
     on_approval_needed: ApprovalCallback,
     on_questions_needed: QuestionsCallback | None = None,
+    on_options_needed: OptionsCallback | None = None,
     instructions: str | None = None,
 ) -> str:
     """Launch the MCP server and run the agent loop. Returns final summary text.
 
     ``instructions`` carries the user's optional pre-analysis steering text (L3);
     it is appended to the agent's first user turn so the run follows the user's
-    intent instead of auto-organizing blind.
+    intent instead of auto-organizing blind. ``on_options_needed`` wires the L7
+    multiple-option checkpoint.
     """
     project_root = Path(__file__).resolve().parent.parent
     async with mcp_session(project_root) as session:
@@ -427,6 +510,7 @@ async def run_agent(
             on_event=on_event,
             on_approval_needed=on_approval_needed,
             on_questions_needed=on_questions_needed,
+            on_options_needed=on_options_needed,
             project_root=project_root,
             instructions=instructions,
         )
@@ -440,6 +524,7 @@ async def run_agent_loop(
     on_event: EventCallback,
     on_approval_needed: ApprovalCallback,
     on_questions_needed: QuestionsCallback | None = None,
+    on_options_needed: OptionsCallback | None = None,
     project_root: Path | None = None,
     instructions: str | None = None,
 ) -> str:
@@ -447,18 +532,22 @@ async def run_agent_loop(
 
     Separated from run_agent so tests can inject a mock session directly.
     ``instructions`` is the user's optional pre-analysis steering text (L3),
-    appended to the seed user message when present.
+    appended to the seed user message when present. ``on_options_needed`` wires the
+    L7 multiple-option checkpoint.
     """
     if project_root is None:
         project_root = Path(__file__).resolve().parent.parent
 
     # Discover tools from the MCP server
     openai_tools = await _discover_openai_tools(session)
-    # Advertise the host-side clarification tool only when a callback is wired in.
+    # Advertise the host-side synthetic tools only when their callback is wired in.
     if on_questions_needed is not None:
         openai_tools = [*openai_tools, _CLARIFY_TOOL_SPEC]
+    if on_options_needed is not None:
+        openai_tools = [*openai_tools, _OPTIONS_TOOL_SPEC]
 
     clarification_used = False
+    options_used = False
 
     user_content = f"Please organize the directory: {target}"
     if instructions and instructions.strip():
@@ -506,6 +595,13 @@ async def run_agent_loop(
                     on_event=on_event,
                     on_questions_needed=on_questions_needed,
                     already_used=clarification_used,
+                )
+            elif name == _OPTIONS_TOOL_NAME:
+                result, options_used = await _handle_options(
+                    args=args,
+                    on_event=on_event,
+                    on_options_needed=on_options_needed,
+                    already_used=options_used,
                 )
             else:
                 result = await _dispatch(
@@ -704,6 +800,62 @@ async def _handle_clarification(
             True,
         )
     return {"answers": result.answers}, True
+
+
+async def _handle_options(
+    *,
+    args: dict[str, Any],
+    on_event: EventCallback,
+    on_options_needed: OptionsCallback | None,
+    already_used: bool,
+) -> tuple[Any, bool]:
+    """Surface the agent's competing options once; return (tool_result, used).
+
+    Mirrors ``_handle_clarification``: enforces at-most-once, tolerates degenerate
+    input, and never raises. Each question needs a non-empty prompt and at least
+    two options to be a real choice; otherwise it is dropped.
+    """
+    questions: list[dict] = []
+    for q in args.get("questions") or []:
+        if not isinstance(q, dict):
+            continue
+        text = str(q.get("question", "")).strip()
+        options = [str(o).strip() for o in (q.get("options") or []) if str(o).strip()]
+        if text and len(options) >= 2:
+            questions.append({"question": text, "options": options})
+
+    if on_options_needed is None:
+        return {
+            "note": "Option selection is unavailable here; proceed with your best judgement."
+        }, already_used
+    if already_used:
+        return (
+            {"note": "You already proposed options; proceed with your best judgement."},
+            True,
+        )
+    if not questions:
+        return (
+            {"note": "No well-formed options provided; proceed with your best judgement."},
+            already_used,
+        )
+
+    on_event(
+        AgentEvent(
+            "options",
+            f"Proposing options for {len(questions)} question(s)",
+            data={"questions": questions},
+        )
+    )
+    result = await on_options_needed(questions)
+    if not result.provided or not result.selections:
+        return (
+            {
+                "selections": {},
+                "note": "The user did not choose; proceed with your best judgement.",
+            },
+            True,
+        )
+    return {"selections": result.selections}, True
 
 
 async def _handle_execute_plan(

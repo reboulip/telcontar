@@ -12,6 +12,7 @@ from host.agent import (
     AgentEvent,
     ApprovalResult,
     ClarificationResult,
+    OptionsResult,
     _extract_content,
     run_agent_loop,
     run_query_loop,
@@ -493,6 +494,145 @@ async def test_clarification_tool_advertised_only_when_callback_present(tmp_path
     )
     names_without = {t["function"]["name"] for t in tools_without[0]}
     assert "ask_clarification" not in names_without
+
+
+# ── L7: multiple-option proposals ─────────────────────────────────────────────
+
+
+async def _run_with_options(
+    tmp_path: Path,
+    *,
+    responses: list[MagicMock],
+    on_options_needed: AsyncMock | None,
+) -> tuple[list[list[dict]], list[Any]]:
+    """Drive the loop with a scripted LLM; capture per-turn messages and tools."""
+    captured_messages: list[list[dict]] = []
+    captured_tools: list[Any] = []
+    queue = list(responses)
+
+    llm = AsyncMock()
+
+    async def _create(**kwargs: Any) -> Any:
+        captured_messages.append(list(kwargs.get("messages", [])))
+        captured_tools.append(kwargs.get("tools"))
+        return queue.pop(0)
+
+    llm.chat.completions.create.side_effect = _create
+
+    await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=llm,
+        session=_session([], {}),
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+        on_options_needed=on_options_needed,
+    )
+    return captured_messages, captured_tools
+
+
+async def test_propose_options_feeds_selections_back_to_agent(tmp_path: Path) -> None:
+    on_options = AsyncMock(
+        return_value=OptionsResult(selections={"Group by?": "by workstream"}, provided=True)
+    )
+    messages, _ = await _run_with_options(
+        tmp_path,
+        responses=[
+            _tool_response(
+                "propose_options",
+                {"questions": [{"question": "Group by?", "options": ["by date", "by workstream"]}]},
+            ),
+            _text_response("Thanks — proceeding."),
+        ],
+        on_options_needed=on_options,
+    )
+
+    on_options.assert_called_once()
+    tool_msgs = [m for batch in messages for m in batch if m.get("role") == "tool"]
+    assert any("by workstream" in m.get("content", "") for m in tool_msgs)
+
+
+async def test_propose_options_at_most_once_per_run(tmp_path: Path) -> None:
+    on_options = AsyncMock(return_value=OptionsResult(selections={"q": "a"}, provided=True))
+    messages, _ = await _run_with_options(
+        tmp_path,
+        responses=[
+            _tool_response(
+                "propose_options",
+                {"questions": [{"question": "q1", "options": ["a", "b"]}]},
+                call_id="c1",
+            ),
+            _tool_response(
+                "propose_options",
+                {"questions": [{"question": "q2", "options": ["a", "b"]}]},
+                call_id="c2",
+            ),
+            _text_response("done"),
+        ],
+        on_options_needed=on_options,
+    )
+
+    on_options.assert_called_once()  # second call refused by the once-guard
+    tool_msgs = [m for batch in messages for m in batch if m.get("role") == "tool"]
+    assert any("already proposed options" in m.get("content", "") for m in tool_msgs)
+
+
+async def test_propose_options_skip_tells_agent_to_proceed(tmp_path: Path) -> None:
+    on_options = AsyncMock(return_value=OptionsResult(selections={}, provided=False))
+    messages, _ = await _run_with_options(
+        tmp_path,
+        responses=[
+            _tool_response(
+                "propose_options",
+                {"questions": [{"question": "q1", "options": ["a", "b"]}]},
+            ),
+            _text_response("ok"),
+        ],
+        on_options_needed=on_options,
+    )
+
+    on_options.assert_called_once()
+    tool_msgs = [m for batch in messages for m in batch if m.get("role") == "tool"]
+    assert any("best judgement" in m.get("content", "") for m in tool_msgs)
+
+
+async def test_malformed_options_skipped_without_prompting(tmp_path: Path) -> None:
+    # A question with fewer than two options isn't a real choice → dropped, and the
+    # callback is never invoked.
+    on_options = AsyncMock(return_value=OptionsResult(selections={"q": "a"}, provided=True))
+    messages, _ = await _run_with_options(
+        tmp_path,
+        responses=[
+            _tool_response(
+                "propose_options",
+                {"questions": [{"question": "only one", "options": ["a"]}]},
+            ),
+            _text_response("ok"),
+        ],
+        on_options_needed=on_options,
+    )
+
+    on_options.assert_not_called()
+    tool_msgs = [m for batch in messages for m in batch if m.get("role") == "tool"]
+    assert any("No well-formed options" in m.get("content", "") for m in tool_msgs)
+
+
+async def test_options_tool_advertised_only_when_callback_present(tmp_path: Path) -> None:
+    _, tools_with = await _run_with_options(
+        tmp_path,
+        responses=[_text_response("done")],
+        on_options_needed=AsyncMock(return_value=OptionsResult()),
+    )
+    names_with = {t["function"]["name"] for t in tools_with[0]}
+    assert "propose_options" in names_with
+
+    _, tools_without = await _run_with_options(
+        tmp_path,
+        responses=[_text_response("done")],
+        on_options_needed=None,
+    )
+    names_without = {t["function"]["name"] for t in tools_without[0]}
+    assert "propose_options" not in names_without
 
 
 # ── Op removal ────────────────────────────────────────────────────────────────
