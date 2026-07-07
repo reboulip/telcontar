@@ -89,9 +89,15 @@ The host can only call `execute_plan` on a plan in `approved` state. The `approv
 
 ### No delete, ever
 
-The MCP server has no delete tool. The `propose_quarantine` / `quarantine` path is the only way to remove files from the working tree. Quarantined files are moved to `QUARANTINE_DIR` and journaled — they can be recovered manually or via `undo_last`.
+The MCP server has no delete tool. The `propose_quarantine` / `quarantine` path is the only way to remove files from the working tree. Quarantined files are moved to `QUARANTINE_DIR` and journaled — they can be recovered manually or via `undo_last` (see below).
 
-`compress_quarantine` is the only other operation that removes bytes from disk (the original loose files in `QUARANTINE_DIR`, after a verified archive is produced). It is still fully reversible: `undo_last` restores each original from the archive and deletes the zip. No bytes leave the machine — compression only reclaims space within the local quarantine folder.
+`compress_quarantine` is the only other operation that removes bytes from disk (the original loose files in `QUARANTINE_DIR`, after a verified archive is produced) — staged via `propose_compress_quarantine` and applied only through `execute_plan`, like every other mutation. It is still fully reversible: `undo_last` restores each original from the archive and deletes the zip. No bytes leave the machine — compression only reclaims space within the local quarantine folder.
+
+### Every mutation goes through the plan flow (M1)
+
+As of the security-hardening pass that closed finding S1, there is no MCP tool that touches the filesystem directly. `move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`, `archive_document`, and `compress_quarantine` were removed as standalone tools; their functionality is reachable only by staging a `propose_create_file` / `propose_update_file` / `propose_create_dir` / `propose_archive_document` / `propose_compress_quarantine` op onto a plan and applying it via `execute_plan` — exactly the same path `propose_rename` / `propose_move` / `propose_quarantine` already used. `execute_plan`'s internal `_apply_op` dispatcher now handles all these op types directly, except `archive_document` and `compress_quarantine`, which are delegated to the pre-existing standalone functions of the same name (avoiding duplicated logic) and self-journal under their own `op_type` rather than the generic per-op entry.
+
+`undo_last` was removed from the MCP tool surface entirely — it is no longer callable by the agent under any circumstance. It survives only as a plain function in `server/tools.py`, invoked directly (bypassing MCP) by the TUI's `JournalScreen` when the user presses **u** — undo is now a deliberate, user-only action, never something the agent itself can trigger.
 
 ### Recursive tree exploration
 
@@ -172,9 +178,11 @@ Any sink name not in the built-in registry is treated as an external sink. If `e
     options; the host emits an "options" AgentEvent, shows OptionsModal, and feeds the
     user's selections (or a "proceed with best judgement" note if skipped or already
     used) back as the tool result
-11. Agent designs a target taxonomy from the types/themes found, calls create_dir for
-    each folder (idempotent; no folder created for absent categories), then opens a
-    plan (create_plan) and stages propose_rename / propose_move / propose_quarantine ops
+11. Agent designs a target taxonomy from the types/themes found, opens a plan
+    (create_plan), and stages propose_create_dir for each folder (idempotent; no
+    folder created for absent categories) alongside propose_rename / propose_move /
+    propose_quarantine / propose_create_file / propose_update_file /
+    propose_archive_document ops — every mutation is staged, never applied directly
 12. On execute_plan call:
     a. Host fetches plan details (get_plan) and writes the full ops list to
        .organizer/plan_ops.json (path shown in the modal)

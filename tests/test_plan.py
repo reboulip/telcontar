@@ -51,6 +51,26 @@ class TestPlanOp:
         assert op.status == "pending"
         assert op.retries == 0
         assert op.error is None
+        assert op.params is None
+
+    def test_params_default_is_none(self) -> None:
+        op = PlanOp.new("create_dir", "/a/b", "")
+        assert op.params is None
+
+    def test_params_round_trip(self) -> None:
+        op = PlanOp.new("create_file", "/a/new.txt", "", params={"content": "hello"})
+        restored = PlanOp.from_dict(asdict(op))
+        assert restored.params == {"content": "hello"}
+
+    def test_new_op_type_accepts_params(self) -> None:
+        op = PlanOp.new(
+            "archive_document",
+            "/a/doc.pdf",
+            "/q/doc.pdf",
+            params={"checksum": "c1", "reason": "old"},
+        )
+        assert op.op_type == "archive_document"
+        assert op.params == {"checksum": "c1", "reason": "old"}
 
 
 class TestPlan:

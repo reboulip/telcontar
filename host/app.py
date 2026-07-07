@@ -61,16 +61,19 @@ _TOOL_NARRATION: dict[str, str] = {
     "find_duplicates": "Checking for duplicates…",
     "find_modified_documents": "Checking for newer versions…",
     "compare_documents": "Comparing documents…",
-    "create_dir": "Building the folder tree…",
     "create_plan": "Planning changes…",
     "propose_rename": "Planning changes…",
     "propose_move": "Planning changes…",
     "propose_quarantine": "Planning changes…",
+    "propose_create_file": "Planning changes…",
+    "propose_update_file": "Planning changes…",
+    "propose_create_dir": "Planning changes…",
+    "propose_archive_document": "Planning changes…",
+    "propose_compress_quarantine": "Planning changes…",
     "review_plan": "Reviewing the plan…",
     "set_plan_rationale": "Summarizing the plan…",
     "set_plan_folder_notes": "Describing the target folders…",
     "execute_plan": "Applying the plan…",
-    "compress_quarantine": "Archiving quarantined files…",
     "create_event": "Recording project events…",
     "build_graph": "Building the knowledge graph…",
     "get_graph": "Building the knowledge graph…",
@@ -79,7 +82,6 @@ _TOOL_NARRATION: dict[str, str] = {
     "write_index": "Writing the index…",
     "write_summary": "Writing the summary…",
     "write_folder_readme": "Describing folders…",
-    "archive_document": "Archiving documents…",
     "ask_clarification": "Asking you for clarification…",
     "propose_options": "Reviewing options with you…",
 }
@@ -906,6 +908,15 @@ def _resolve_journal_path(project_root: Path) -> Path:
     return journal_path
 
 
+def _resolve_plans_dir(project_root: Path) -> Path:
+    from config.settings import Settings
+
+    plans_dir = Settings().plans_dir
+    if not plans_dir.is_absolute():
+        plans_dir = project_root / plans_dir
+    return plans_dir
+
+
 def _fmt_journal_entry(entry: dict) -> str:
     ts = entry.get("timestamp", "?")
     op_type = entry.get("op_type", "?")
@@ -926,11 +937,13 @@ def _fmt_journal_entry(entry: dict) -> str:
 
 
 class JournalScreen(ModalScreen[None]):
-    """Read-only view of the full undo journal, newest entries last.
+    """Read-only view of the full undo journal, newest entries last — and the
+    one place ``undo_last`` can be triggered from (S1).
 
-    Reads `.organizer/journal.jsonl` directly from disk (local file, same
-    machine) rather than through an MCP tool — this is a debugging aid, not an
-    agent capability.
+    Reads `.organizer/journal.jsonl` directly from disk and calls
+    ``server.tools.undo_last`` directly (local file/function, same machine)
+    rather than through an MCP tool — undo is deliberately an explicit user
+    action here, never something the agent can call itself.
     """
 
     DEFAULT_CSS = """
@@ -953,13 +966,21 @@ class JournalScreen(ModalScreen[None]):
     #journal-scroll {
         max-height: 25;
     }
+    #journal-status {
+        padding-top: 1;
+    }
     """
 
-    BINDINGS = [("escape", "close", "Close"), ("j", "close", "Close")]
+    BINDINGS = [
+        ("escape", "close", "Close"),
+        ("j", "close", "Close"),
+        ("u", "undo", "Undo last"),
+    ]
 
     def __init__(self, project_root: Path) -> None:
         super().__init__()
         self._project_root = project_root
+        self._status = ""
 
     def compose(self) -> ComposeResult:
         from server.journal import all_entries
@@ -977,10 +998,26 @@ class JournalScreen(ModalScreen[None]):
                 else:
                     yield Label("[dim]No operations recorded yet.[/dim]", markup=True)
             yield Rule()
-            yield Label("[dim]Press Esc or j to close.[/dim]", markup=True)
+            if self._status:
+                yield Label(self._status, id="journal-status", markup=True)
+            yield Label(
+                "[dim]Press Esc or j to close, u to undo the last operation.[/dim]", markup=True
+            )
 
     def action_close(self) -> None:
         self.dismiss(None)
+
+    async def action_undo(self) -> None:
+        from server.tools import undo_last
+
+        journal_path = _resolve_journal_path(self._project_root)
+        plans_dir = _resolve_plans_dir(self._project_root)
+        result = undo_last(journal_path, plans_dir)
+        if result.get("undone") is not None:
+            self._status = "[green]Undone the last operation.[/green]"
+        else:
+            self._status = f"[red]Undo failed: {result.get('error', 'unknown error')}[/red]"
+        await self.recompose()
 
 
 # ── Organizer screen ──────────────────────────────────────────────────────────
@@ -1118,10 +1155,10 @@ class OrganizerScreen(Screen):
 
     _SPEAKERS = {"telcontar": "telcontar", "user": "you"}
     # Tools whose completion mutates the undo journal — a result from one of these
-    # refreshes the bottom operations panel.
-    _JOURNAL_WRITING_TOOLS = frozenset(
-        {"execute_plan", "undo_last", "compress_quarantine", "archive_document"}
-    )
+    # refreshes the bottom operations panel. archive_document/compress_quarantine
+    # are no longer directly agent-callable (S1) — they only run inside
+    # execute_plan now, via propose_archive_document/propose_compress_quarantine.
+    _JOURNAL_WRITING_TOOLS = frozenset({"execute_plan"})
 
     def __init__(self, target: Path) -> None:
         super().__init__()

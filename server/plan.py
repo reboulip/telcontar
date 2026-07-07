@@ -7,10 +7,19 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 PlanState = Literal["pending", "approved", "executing", "done", "failed", "stopped"]
-OpType = Literal["rename", "move", "quarantine"]
+OpType = Literal[
+    "rename",
+    "move",
+    "quarantine",
+    "create_file",
+    "update_file",
+    "create_dir",
+    "archive_document",
+    "compress_quarantine",
+]
 OpStatus = Literal["pending", "completed", "failed"]
 
 _VALID_TRANSITIONS: dict[str, set[str]] = {
@@ -32,10 +41,16 @@ class PlanOp:
     status: OpStatus = "pending"
     error: str | None = None
     retries: int = 0
+    # Op-specific data that doesn't fit src/dst (e.g. {"content": ...} for
+    # create_file/update_file, {"checksum": ..., "reason": ...} for
+    # archive_document, {"delete_originals": ...} for compress_quarantine).
+    params: dict[str, Any] | None = None
 
     @classmethod
-    def new(cls, op_type: OpType, src: str, dst: str) -> "PlanOp":
-        return cls(op_id=str(uuid.uuid4()), op_type=op_type, src=src, dst=dst)
+    def new(
+        cls, op_type: OpType, src: str, dst: str, params: dict[str, Any] | None = None
+    ) -> "PlanOp":
+        return cls(op_id=str(uuid.uuid4()), op_type=op_type, src=src, dst=dst, params=params)
 
     @classmethod
     def from_dict(cls, d: dict) -> "PlanOp":
@@ -47,6 +62,7 @@ class PlanOp:
             status=d.get("status", "pending"),
             error=d.get("error"),
             retries=d.get("retries", 0),
+            params=d.get("params"),
         )
 
 

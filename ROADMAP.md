@@ -142,7 +142,7 @@ current behaviour, not just the original audit. Item #9 from that document (prof
 `NAMING.md` as trusted config, S6) is intentionally excluded from this sprint by
 explicit decision — already marked skipped in the security doc, not tracked here.
 
-- [ ] M1 · Gate every mutating tool by routing it through the plan flow (S1) — remove
+- [x] M1 · Gate every mutating tool by routing it through the plan flow (S1) — remove
       `move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`,
       `archive_document`, `compress_quarantine` from the toolset advertised to the agent
       in organize mode. Add matching plan-op types and `propose_*` tools

@@ -23,8 +23,6 @@ from server.guards import format_io_error
 from server.plan import Plan, PlanOp, load, save
 from server.tools import (
     compute_checksum,
-    create_dir,
-    create_file,
     execute_plan,
     read_file,
     write_summary,
@@ -64,6 +62,26 @@ class TestFormatIoError:
 # ── bad paths raise clear, typed errors ───────────────────────────────────────
 
 
+@pytest.fixture()
+def plans_dir(tmp_path: Path) -> Path:
+    d = tmp_path / "plans"
+    d.mkdir()
+    return d
+
+
+@pytest.fixture()
+def journal_path(tmp_path: Path) -> Path:
+    return tmp_path / ".organizer" / "journal.jsonl"
+
+
+def _approved_plan_with_op(op_type: str, src: str, dst: str, plans_dir: Path, **params) -> Plan:
+    p = Plan.new()
+    p.transition("approved")
+    p.ops.append(PlanOp.new(op_type, src, dst, params=params or None))  # type: ignore[arg-type]
+    save(p, plans_dir)
+    return p
+
+
 class TestBadPaths:
     def test_read_file_nonexistent(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="Not a file"):
@@ -73,11 +91,16 @@ class TestBadPaths:
         with pytest.raises(ValueError, match="Not a file"):
             compute_checksum(str(tmp_path))
 
-    def test_create_dir_over_existing_file(self, tmp_path: Path) -> None:
+    def test_create_dir_over_existing_file(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
         f = tmp_path / "f.txt"
         f.write_text("x")
-        with pytest.raises(ValueError, match="not a directory"):
-            create_dir(str(f))
+        p = _approved_plan_with_op("create_dir", str(f), "", plans_dir)
+        result = execute_plan(p.plan_id, plans_dir, journal_path)
+        assert result["ops_failed"] == 1
+        reloaded = load(p.plan_id, plans_dir)
+        assert "not a directory" in (reloaded.ops[0].error or "").lower()
 
 
 # ── permission errors on read/write tools (mocked) ────────────────────────────
@@ -99,36 +122,47 @@ class TestPermissionErrors:
             with pytest.raises(OSError, match="Could not read"):
                 compute_checksum(str(f))
 
-    def test_create_file_wraps_permission_error(self, tmp_path: Path) -> None:
+    def test_create_file_wraps_permission_error(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
         target = tmp_path / "sub" / "new.txt"
-        with patch.object(Path, "write_text", side_effect=PermissionError("denied")):
-            with pytest.raises(OSError, match="permission denied"):
-                create_file(str(target), "content")
+        p = _approved_plan_with_op("create_file", str(target), "", plans_dir, content="content")
+        original_write_text = Path.write_text
+
+        def flaky_write_text(self, *args, **kwargs):
+            if self == target:
+                raise PermissionError("denied")
+            return original_write_text(self, *args, **kwargs)
+
+        with patch.object(Path, "write_text", flaky_write_text):
+            execute_plan(p.plan_id, plans_dir, journal_path)
+        reloaded = load(p.plan_id, plans_dir)
+        assert "permission denied" in (reloaded.ops[0].error or "").lower()
 
     def test_write_summary_wraps_permission_error(self, tmp_path: Path) -> None:
         with patch.object(Path, "write_text", side_effect=PermissionError("denied")):
             with pytest.raises(OSError, match="Could not write"):
                 write_summary(str(tmp_path), "hi")
 
-    def test_create_dir_wraps_permission_error(self, tmp_path: Path) -> None:
-        with patch.object(Path, "mkdir", side_effect=PermissionError("denied")):
-            with pytest.raises(OSError, match="Could not create directory"):
-                create_dir(str(tmp_path / "sub"))
+    def test_create_dir_wraps_permission_error(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        target = tmp_path / "sub"
+        p = _approved_plan_with_op("create_dir", str(target), "", plans_dir)
+        original_mkdir = Path.mkdir
+
+        def flaky_mkdir(self, *args, **kwargs):
+            if self == target:
+                raise PermissionError("denied")
+            return original_mkdir(self, *args, **kwargs)
+
+        with patch.object(Path, "mkdir", flaky_mkdir):
+            execute_plan(p.plan_id, plans_dir, journal_path)
+        reloaded = load(p.plan_id, plans_dir)
+        assert "could not create directory" in (reloaded.ops[0].error or "").lower()
 
 
 # ── partial plan failures: permission errors during execution ─────────────────
-
-
-@pytest.fixture()
-def plans_dir(tmp_path: Path) -> Path:
-    d = tmp_path / "plans"
-    d.mkdir()
-    return d
-
-
-@pytest.fixture()
-def journal_path(tmp_path: Path) -> Path:
-    return tmp_path / ".organizer" / "journal.jsonl"
 
 
 class TestExecutePlanPermissionErrors:

@@ -106,6 +106,34 @@ async def test_journal_screen_empty_state(tmp_path: Path) -> None:
         assert "No operations recorded yet." in text
 
 
+async def test_journal_screen_undo_action_reverses_last_op(tmp_path: Path) -> None:
+    """S1: undo is only reachable as an explicit user action from this screen."""
+    original = tmp_path / "old.txt"
+    (tmp_path / "new.txt").write_text("x")
+    journal_dir = tmp_path / ".organizer"
+    journal_dir.mkdir()
+    entry = {
+        "op_type": "rename",
+        "plan_id": "p1",
+        "op_id": "o1",
+        "src": str(original),
+        "dst": "new.txt",
+        "timestamp": "2026-07-01T10:00:00Z",
+    }
+    (journal_dir / "journal.jsonl").write_text(json.dumps(entry) + "\n", encoding="utf-8")
+
+    app = OrganizerApp()
+    async with app.run_test(size=(90, 30)) as pilot:
+        await pilot.pause()
+        app.push_screen(JournalScreen(tmp_path))
+        await pilot.pause()
+        await pilot.press("u")
+        await pilot.pause()
+
+    assert original.exists()
+    assert not (tmp_path / "new.txt").exists()
+
+
 async def test_setup_wizard_mammouth_sets_model_hint_and_placeholder() -> None:
     app = OrganizerApp()
     async with app.run_test(size=(90, 50)) as pilot:

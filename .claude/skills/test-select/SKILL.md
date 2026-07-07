@@ -41,7 +41,7 @@ Apply these rules in order (first match wins):
 | Changed file(s) | Run |
 |-----------------|-----|
 | `config/settings.py` only | Full suite — settings affect everything |
-| `server/tools.py` only | `tests/test_tools_readonly.py tests/test_tools_write.py tests/test_tools_propose.py tests/test_execute_plan.py tests/test_undo_last.py tests/test_review_plan.py tests/test_tools_outputs.py tests/test_tools_registry.py tests/test_events.py tests/test_graph.py tests/test_archive.py tests/test_compress_quarantine.py tests/test_e2e_toolchain.py tests/test_tools_errors.py` |
+| `server/tools.py` only | `tests/test_tools_readonly.py tests/test_tools_propose.py tests/test_execute_plan.py tests/test_undo_last.py tests/test_review_plan.py tests/test_tools_outputs.py tests/test_tools_registry.py tests/test_events.py tests/test_graph.py tests/test_archive.py tests/test_compress_quarantine.py tests/test_e2e_toolchain.py tests/test_tools_errors.py` |
 | `server/guards.py` only | `tests/test_guards.py tests/test_tools_errors.py` |
 | `server/extract.py` only | `tests/test_tools_readonly.py` (extract_text delegates here) |
 | `server/plan.py` only | `tests/test_plan.py tests/test_e2e_toolchain.py` |

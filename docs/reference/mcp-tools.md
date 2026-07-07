@@ -5,7 +5,7 @@ Complete reference for all tools exposed by the telcontar MCP server. Tools are 
 The server registers tools via FastMCP (`server/main.py`); the implementations live in `server/tools.py`.
 
 !!! note "Error messages"
-    Tools that touch disk (`read_file`, `compute_checksum`, `create_file`, `update_file`, `create_dir`, `execute_plan`, `write_index`, `write_summary`, `write_folder_readme`) re-raise I/O failures as a clear `Could not <action> <path>: <detail>` message instead of a raw traceback, with a plain-language hint for the two operator-actionable cases: a locked file (`... the file is open in another program — close it and retry`) and a plain permission denial (`... permission denied`). The original exception *type* is preserved, so `execute_plan`'s retry/fail-fast classification (below) is unaffected.
+    Tools that touch disk (`read_file`, `compute_checksum`, `execute_plan`, `write_index`, `write_summary`, `write_folder_readme`) re-raise I/O failures as a clear `Could not <action> <path>: <detail>` message instead of a raw traceback, with a plain-language hint for the two operator-actionable cases: a locked file (`... the file is open in another program — close it and retry`) and a plain permission denial (`... permission denied`). The original exception *type* is preserved, so `execute_plan`'s retry/fail-fast classification (below) is unaffected. File writes (`create_file`, `update_file`, `create_dir`) are staged via `propose_*` calls and only touch disk inside `execute_plan` — there is no standalone tool for them.
 
 ---
 
@@ -265,9 +265,79 @@ Stage moving `path` to `QUARANTINE_DIR`. Unlike `propose_rename` and `propose_mo
 
 ---
 
+### `propose_create_file`
+
+```python
+propose_create_file(path: str, content: str, plan_id: str) -> dict
+```
+
+Stage writing a brand-new file at `path` with `content`. Raises `FileExistsError` if `path` already exists — eagerly at proposal time, and again at execution time in case a file appears in between.
+
+**Returns:** `{plan_id, op_id, op_type, src, dst, status, ops_count}` — `dst` is always `""` (the op has no destination distinct from `src`); the file content travels in the op's internal `params`, not in the returned dict.
+
+---
+
+### `propose_update_file`
+
+```python
+propose_update_file(path: str, content: str, plan_id: str, overwrite: bool = False) -> dict
+```
+
+Stage writing `content` to `path`, whether or not it already exists. Refuses to replace an existing file unless `overwrite=True` is passed explicitly — pass it only for a deliberate overwrite; the flag is visible to the user at approval. The same check is re-applied at execution time, so a file that appears between proposal and execution is still caught.
+
+**Returns:** same shape as `propose_create_file`.
+
+---
+
+### `propose_create_dir`
+
+```python
+propose_create_dir(path: str, plan_id: str) -> dict
+```
+
+Stage creating a directory (and any missing parents) at `path`. Idempotent and collision-safe at execution time — creating a directory that already exists is a no-op, not an error. Raises `ValueError` at proposal time if `path` already exists as a file.
+
+**Returns:** same shape as `propose_create_file`.
+
+---
+
+### `propose_archive_document`
+
+```python
+propose_archive_document(checksum: str, plan_id: str, reason: str = "") -> dict
+```
+
+Stage withdrawing a document from active memory ("retirer de la mémoire"). Eagerly validates that `checksum` is recorded in the registry — raises `ValueError` if not. At `execute_plan` time the op reuses the standalone `archive_document()` logic (see [Archived-documents journal tools](#archived-documents-journal-tools)): the document's file, if it still exists, is moved to `QUARANTINE_DIR` (collision-safe) and the move is recorded in the **undo journal**; the registry record's `status` is flipped to `archived`; an entry is appended to the archive log (readable via `list_archived`). The document is never deleted.
+
+**Returns:** `{plan_id, op_id, op_type, src, dst, status, ops_count}` — `src` is the document's currently recorded path; `dst` is its precomputed quarantine destination, or `""` if the file is already gone from disk.
+
+---
+
+### `propose_compress_quarantine`
+
+```python
+propose_compress_quarantine(plan_id: str, delete_originals: bool = True) -> dict
+```
+
+Stage losslessly bundling all loose top-level files in `QUARANTINE_DIR` into a single timestamped, verified ZIP archive, optionally deleting the originals afterward to reclaim space. A single global op — not tied to one file.
+
+At `execute_plan` time the op reuses the standalone `compress_quarantine()` function:
+
+1. Collects every regular file at the top level of `QUARANTINE_DIR` (skipping any archive this tool already produced — files matching `quarantine_*.zip`).
+2. Computes a sha256 checksum for each source file and writes them all into a new `quarantine_<UTC timestamp>.zip` (ZIP_DEFLATED) alongside a `_telcontar_manifest.json` recording each file's name and checksum.
+3. Verifies the archive byte-for-byte (`testzip` CRC check + per-file re-hash) before touching any original — verification failure raises `OSError` and no originals are deleted.
+4. Only if `delete_originals` is `True` (the default) are the source files then deleted.
+5. Appends a `compress` entry to the undo journal — self-journaling, distinct from the generic per-op journal entry `execute_plan` writes for other op types.
+
+Idempotent: a run with no loose files is a no-op. Never overwrites an existing archive (collision-safe naming appends `_1`, `_2`, …).
+
+**Returns:** `{plan_id, op_id, op_type, src, dst, status, ops_count}` — `src` is `QUARANTINE_DIR`, `dst` is `""`. The created archive's path is not part of `execute_plan`'s return value; inspect `QUARANTINE_DIR` (e.g. via `list_dir`) or the undo journal to find it.
+
+---
+
 ## Gated execution tools
 
-Execute operations or write output. `execute_plan` is the sole tool subject to `APPROVAL_MODE` — it performs the plan's moves, renames, and quarantines, and is gated in `always` and `destructive_only`, auto-approved in `never`. `write_index`, `write_summary`, and `write_folder_readme` write output directly and are never gated, in any mode.
+Execute operations or write output. `execute_plan` is the sole tool subject to `APPROVAL_MODE` — it applies every kind of staged op (`rename`, `move`, `quarantine`, `create_file`, `update_file`, `create_dir`, `archive_document`, `compress_quarantine`), and is gated in `always` and `destructive_only`, auto-approved in `never`. As of the plan-flow security hardening (M1), **every filesystem-mutating tool is staged via a `propose_*` call and applied only through `execute_plan`** — there is no tool left that mutates the filesystem directly. `write_index`, `write_summary`, and `write_folder_readme` write output directly and are never gated, in any mode.
 
 ### `execute_plan`
 
@@ -281,6 +351,7 @@ Apply all operations in an `approved` plan.
 - Non-retryable errors (`ValueError`, `FileNotFoundError`, `FileExistsError`) fail immediately
 - More than **3 cumulative failures** trigger a **hard stop** — execution halts, a `hard_stop` entry is appended to the journal, and the plan transitions to `stopped`
 - On success, each op is appended to the undo journal and the registry is path-reconciled
+- `archive_document` and `compress_quarantine` ops reuse the standalone functions of the same name, which self-journal under their own `op_type` (`quarantine` and `compress` respectively) instead of the generic per-op entry `execute_plan` writes for other op types
 - Ops chained within the same run resolve correctly: if an earlier op already relocated a file (e.g. a `rename` followed by a `move` on the same original path), the later op is applied to the file's current location, not its original path
 
 **Returns:**
@@ -358,21 +429,19 @@ The built-in `local_markdown` sink writes to `README.md` inside the folder at `p
 
 ---
 
-## Recovery tools
+## Recovery
 
-### `undo_last`
+`undo_last` is **not** an MCP tool — it is not registered with the server, so the agent has no way to call it. As of the plan-flow security hardening (M1), undo is a direct, user-triggered action in the TUI only: the operations-journal viewer (`JournalScreen`, opened with the **j** key in the Organizer screen) has a **u** ("Undo last") keybinding that calls `server.tools.undo_last` directly, bypassing the MCP layer entirely.
 
-```python
-undo_last() -> dict
-```
-
-Revert the most recent journaled operation by inverting it and removing the journal entry.
+`undo_last(journal_path, plans_dir) -> dict` reverts the most recent journaled operation by inverting it and removing the journal entry:
 
 | `op_type` | Reversal action |
 |---|---|
 | `rename` | Rename back to original name |
 | `move` | Move back to original directory |
 | `quarantine` | Move back from quarantine to original path |
+| `create_file` / `update_file` | Delete the file this op wrote (does not restore prior content an `overwrite=True` update replaced) |
+| `create_dir` | No-op — idempotent by design, the directory is left in place |
 | `hard_stop` | Entry removed (no file operation needed; failed ops were never executed) |
 | `compress` | Each original file is restored from the archive into its recorded `src` path, then the zip is deleted. All targets are pre-checked for collisions before any file is written — a mid-way collision cannot leave files in a half-restored state. |
 
@@ -380,48 +449,7 @@ Raises if the target path already exists (no-overwrite guarantee applies to undo
 
 **Returns:** `{undone: <original entry>}` on success, or `{undone: null, error: "..."}` on failure.
 
----
-
-### `compress_quarantine`
-
-```python
-compress_quarantine(delete_originals: bool = True) -> dict
-```
-
-Losslessly bundle all loose top-level files in `QUARANTINE_DIR` into a single timestamped ZIP_DEFLATED archive and (optionally) reclaim space by deleting the originals.
-
-**What it does:**
-
-1. Collects every regular file at the top level of `QUARANTINE_DIR`, skipping any archive this tool already produced (files matching `quarantine_*.zip`).
-2. Computes a sha256 checksum for each source file.
-3. Writes all files into a new `quarantine_<UTC timestamp>.zip` (ZIP_DEFLATED) together with a `_telcontar_manifest.json` inside the archive recording each file's name and sha256.
-4. Verifies the archive byte-for-byte: runs `testzip` (CRC check) and re-hashes each member against the recorded sha256. Verification failure raises `OSError` — no originals are touched.
-5. Only after verification passes, if `delete_originals` is `True`, the source files are deleted.
-6. Appends a `compress` entry to the undo journal so `undo_last` can fully reverse the operation.
-
-**Idempotent:** if there are no loose files, the call is a no-op (`files: 0`). Never overwrites an existing archive (collision-safe naming appends `_1`, `_2`, … to the stem).
-
-This is the only tool that removes files from the working set besides quarantine itself — and it stays fully reversible via `undo_last`.
-
-**Parameters:**
-
-| Name | Type | Default | Description |
-|---|---|---|---|
-| `delete_originals` | bool | `True` | Delete the source files from quarantine after the archive is verified. Set to `False` to produce the archive without removing originals. |
-
-**Returns:**
-
-| Field | Type | Description |
-|---|---|---|
-| `archive` | str \| null | Absolute path of the created zip file, or `null` when no-op |
-| `files` | int | Number of files bundled |
-| `original_bytes` | int | Total uncompressed size in bytes |
-| `compressed_bytes` | int | Size of the resulting archive in bytes |
-| `deleted_originals` | bool | Whether the source files were deleted after verification |
-| `verified` | bool | Always `true` when an archive is created (the op would have raised otherwise) |
-| `note` | str | Present only when the call is a no-op; explains why (e.g. `"No loose files to compress"`) |
-
-**Safety category:** Recovery / space reclaim — journaled and reversible via `undo_last`. Destructive only after verified archive is written.
+See [Security Model](../developer/security-model.md) (finding S1) for why undo was moved out of the agent's reach, and [Plan Lifecycle](internals/plan-lifecycle.md) for the full reversal mechanics.
 
 ---
 
@@ -507,40 +535,7 @@ Return groups of documents sharing a normalized title but with **different check
 
 ## Archived-documents journal tools
 
-Withdraw documents from active memory and inspect the archive log. The archive journal is distinct from the undo journal (reversible file ops) and the event journal (project narrative) — it is the durable record of *why a document left active memory*.
-
-### `archive_document`
-
-```python
-archive_document(checksum: str, reason: str = "") -> dict
-```
-
-Withdraw a document from active memory ("retirer de la mémoire"). Takes three actions atomically:
-
-1. Looks up the registry record for `checksum`; raises `ValueError` if not found.
-2. If the file exists at its recorded path, moves it to `QUARANTINE_DIR` (collision-safe via `safe_quarantine_path`) and appends a `quarantine` entry to the **undo journal** — so the move stays reversible via `undo_last`.
-3. Flips the registry record's `status` to `archived`.
-4. Appends an entry to the archive log at `ARCHIVE_PATH`.
-
-The document is never deleted. If the file is already gone when `archive_document` is called, steps 2's file move is skipped; the status flip and log entry still happen (`moved` is `null` in the response).
-
-**Parameters:**
-
-| Name | Type | Description |
-|---|---|---|
-| `checksum` | str | sha256 of the document to archive (the document's registry identity) |
-| `reason` | str | Human-readable reason for archiving; stored in the archive log (default `""`) |
-
-**Returns:**
-
-| Field | Type | Description |
-|---|---|---|
-| `checksum` | str | sha256 of the archived document |
-| `status` | str | Always `"archived"` |
-| `moved` | str \| null | Absolute path of the file in quarantine, or `null` if the file was already gone |
-| `archived` | dict | Full `ArchiveEntry` record: `{checksum, title, reason, src, dst, archived_at}` |
-
----
+Inspect the archive log — the durable record of *why a document left active memory*, distinct from the undo journal (reversible file ops) and the event journal (project narrative). Withdrawing a document is staged via [`propose_archive_document`](#propose_archive_document) (see Plan-building tools above) and only takes effect through `execute_plan` — `archive_document` itself is not directly callable by the agent.
 
 ### `list_archived`
 
@@ -670,52 +665,16 @@ The list is capped at `salient_cap` from the active profile (`[entities]` sectio
 
 ---
 
-## Direct file utilities
-
-Lower-level tools used for writing index/summary files. Not normally called directly by the agent.
-
-### `move_file` / `rename_file`
-
-```python
-move_file(path: str, dest_dir: str) -> dict
-rename_file(path: str, new_name: str) -> dict
-```
-
-Direct filesystem operations without plan staging. Both enforce `check_no_overwrite`.
-
-### `create_file` / `update_file`
-
-```python
-create_file(path: str, content: str) -> dict   # raises if file exists
-update_file(path: str, content: str) -> dict   # overwrites or creates
-```
-
-Write text content to disk. `create_file` enforces `check_no_overwrite`; `update_file` does not.
-
-### `create_dir`
-
-```python
-create_dir(path: str) -> dict
-```
-
-Create a directory and any missing parents. Idempotent and collision-safe: if the directory already exists it is returned without error. Raises `ValueError` if `path` already exists as a file.
-
-**Returns:** `{created, existed}` — `created` is the absolute path of the directory; `existed` is `true` if the directory was already present, `false` if it was newly created.
-
----
-
 ## Tool availability by phase
 
 | Tool | Phase 2 | Phase 3 | Phase 4 | Phase 5 | Phase 6 | Phase 7 | Phase 8 | Phase 9 |
 |---|---|---|---|---|---|---|---|---|
 | `list_dir`, `read_file`, `extract_text` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `compare_documents` | — | — | — | — | — | — | ✓ | ✓ |
-| `move_file`, `rename_file`, `create_file`, `update_file` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `create_dir` | — | — | — | — | — | — | ✓ | ✓ |
 | `compute_checksum` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `create_plan`, `get_plan`, `list_plans`, `approve_plan` | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `propose_rename`, `propose_move`, `propose_quarantine` | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `execute_plan`, `review_plan`, `undo_last` | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `execute_plan`, `review_plan` | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `record_document`, `get_document`, `list_documents` | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `get_registry`, `find_duplicates`, `find_modified_documents` | — | — | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `write_index`, `write_summary` | — | — | — | ✓ | ✓ | ✓ | ✓ | ✓ |
@@ -723,5 +682,7 @@ Create a directory and any missing parents. Idempotent and collision-safe: if th
 | `create_event`, `list_events` | — | — | — | — | — | ✓ | ✓ | ✓ |
 | `build_graph`, `get_graph` | — | — | — | — | — | ✓ | ✓ | ✓ |
 | `get_actors` | — | — | — | — | — | ✓ | ✓ | ✓ |
-| `archive_document`, `list_archived` | — | — | — | — | — | ✓ | ✓ | ✓ |
-| `compress_quarantine` | — | — | — | — | — | — | — | ✓ |
+| `list_archived` | — | — | — | — | — | ✓ | ✓ | ✓ |
+
+!!! note "Since removed / restructured (M1 security hardening)"
+    This table predates the plan-flow gating change and does not carry phase columns for it. `move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`, `archive_document`, `compress_quarantine`, and `undo_last` were removed from the agent-callable surface entirely. Their functionality now goes through `propose_create_file`, `propose_update_file`, `propose_create_dir`, and `propose_archive_document`/`propose_compress_quarantine` (staged like every other op, applied only via `execute_plan`); `undo_last` is now a TUI-only user action (see [Recovery](#recovery) above).

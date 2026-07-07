@@ -171,37 +171,47 @@ def propose_quarantine(path: str, plan_id: str) -> dict:
     return tools.propose_quarantine(path, plan_id, cfg.plans_dir, cfg.quarantine_dir)
 
 
-# ── Direct file operations ───────────────────────────────────────────────────
+@mcp.tool()
+def propose_create_file(path: str, content: str, plan_id: str) -> dict:
+    """Stage creating a new file in the named plan; raises if the path already exists."""
+    cfg = _get_settings()
+    return tools.propose_create_file(path, content, plan_id, cfg.plans_dir)
 
 
 @mcp.tool()
-def move_file(path: str, dest_dir: str) -> dict:
-    """Move a file to dest_dir; raises if the destination already exists."""
-    return tools.move_file(path, dest_dir)
+def propose_update_file(path: str, content: str, plan_id: str, overwrite: bool = False) -> dict:
+    """Stage writing content to an existing (or new) file in the named plan. Refuses
+    to replace an existing file unless overwrite=True — pass it explicitly for the
+    rare legitimate overwrite; it is shown to the user at approval."""
+    cfg = _get_settings()
+    return tools.propose_update_file(path, content, plan_id, cfg.plans_dir, overwrite)
 
 
 @mcp.tool()
-def rename_file(path: str, new_name: str) -> dict:
-    """Rename a file in place; raises if the new name already exists."""
-    return tools.rename_file(path, new_name)
+def propose_create_dir(path: str, plan_id: str) -> dict:
+    """Stage creating a directory (and parents) in the named plan; idempotent."""
+    cfg = _get_settings()
+    return tools.propose_create_dir(path, plan_id, cfg.plans_dir)
 
 
 @mcp.tool()
-def create_file(path: str, content: str) -> dict:
-    """Write content to path; raises if the file already exists."""
-    return tools.create_file(path, content)
+def propose_archive_document(checksum: str, plan_id: str, reason: str = "") -> dict:
+    """Stage withdrawing a document from active memory in the named plan: flips its
+    registry status to archived and moves its file to quarantine on execution."""
+    cfg = _get_settings()
+    return tools.propose_archive_document(
+        checksum, reason, plan_id, cfg.plans_dir, cfg.registry_path, cfg.quarantine_dir
+    )
 
 
 @mcp.tool()
-def update_file(path: str, content: str) -> dict:
-    """Overwrite or create content at path."""
-    return tools.update_file(path, content)
-
-
-@mcp.tool()
-def create_dir(path: str) -> dict:
-    """Create a directory (and parents); idempotent if it already exists."""
-    return tools.create_dir(path)
+def propose_compress_quarantine(plan_id: str, delete_originals: bool = True) -> dict:
+    """Stage losslessly compressing loose quarantined files into a verified zip
+    archive in the named plan (reclaims space on execution)."""
+    cfg = _get_settings()
+    return tools.propose_compress_quarantine(
+        plan_id, cfg.plans_dir, cfg.quarantine_dir, delete_originals
+    )
 
 
 # ── Gated execution tools ────────────────────────────────────────────────────
@@ -212,7 +222,14 @@ def execute_plan(plan_id: str) -> dict:
     """Apply all operations in an approved plan; journals each one and reconciles
     registry paths so document records follow their files."""
     cfg = _get_settings()
-    return tools.execute_plan(plan_id, cfg.plans_dir, cfg.journal_path, cfg.registry_path)
+    return tools.execute_plan(
+        plan_id,
+        cfg.plans_dir,
+        cfg.journal_path,
+        cfg.registry_path,
+        cfg.quarantine_dir,
+        cfg.archive_path,
+    )
 
 
 @mcp.tool()
@@ -250,25 +267,6 @@ def write_folder_readme(path: str, content: str) -> dict:
     """Write the LLM-composed per-folder description to the profile's active output
     sink(s). The built-in local_markdown sink persists it as README.md."""
     return _sink_results([s.write_folder_readme(path, content) for s in _resolve_output_sinks()])
-
-
-# ── Recovery tools ───────────────────────────────────────────────────────────
-
-
-@mcp.tool()
-def undo_last() -> dict:
-    """Revert the most recent journaled operation."""
-    cfg = _get_settings()
-    return tools.undo_last(cfg.journal_path, cfg.plans_dir)
-
-
-@mcp.tool()
-def compress_quarantine(delete_originals: bool = True) -> dict:
-    """Losslessly compress loose quarantined files into a single verified zip archive
-    and reclaim space. The archive is checked byte-for-byte before any original is
-    removed, and the whole operation is reversible via undo_last."""
-    cfg = _get_settings()
-    return tools.compress_quarantine(cfg.quarantine_dir, cfg.journal_path, delete_originals)
 
 
 # ── Document registry (the engine's persistent memory) ───────────────────────
@@ -391,22 +389,8 @@ def get_actors() -> list:
 
 
 # ── Archived-documents journal ("retirer de la mémoire") ─────────────────────
-
-
-@mcp.tool()
-def archive_document(checksum: str, reason: str = "") -> dict:
-    """Withdraw a document from active memory: flip its registry status to archived,
-    move its file to quarantine (journaled, reversible via undo_last), and append to
-    the archive log. Never deletes. Identify the document by its checksum."""
-    cfg = _get_settings()
-    return tools.archive_document(
-        checksum,
-        reason,
-        cfg.registry_path,
-        cfg.quarantine_dir,
-        cfg.journal_path,
-        cfg.archive_path,
-    )
+# archive_document itself is no longer an agent-callable tool (S1) — it's only
+# reached via propose_archive_document → execute_plan, same as compress_quarantine.
 
 
 @mcp.tool()

@@ -8,7 +8,7 @@ The `APPROVAL_MODE` setting controls when telcontar pauses and asks for user con
 
 ### `always` (default)
 
-`execute_plan` — the tool that applies a plan's moves, renames, and quarantines — requires explicit user approval before it runs. Read-only tools (`list_dir`, `read_file`, `extract_text`, registry/graph queries, …) and the output-writing tools (`write_index`, `write_summary`, `write_folder_readme`) are never routed through the approval gate; they always run freely, in every mode.
+`execute_plan` — the tool that applies every staged plan op (moves, renames, quarantines, file writes, folder creation, archiving, and quarantine compression) — requires explicit user approval before it runs. There is no tool that mutates the filesystem outside this gate. Read-only tools (`list_dir`, `read_file`, `extract_text`, registry/graph queries, …) and the output-writing tools (`write_index`, `write_summary`, `write_folder_readme`) are never routed through the approval gate; they always run freely, in every mode.
 
 **Best for:** initial use, unfamiliar document corpora, any situation where you want full control.
 

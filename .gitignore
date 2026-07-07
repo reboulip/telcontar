@@ -219,3 +219,6 @@ __marimo__/
 
 # telcontar runtime artifacts (undo journal, plans, registry, graph, events, archive)
 .organizer/
+
+# dev-pipeline sprint-scratch state (forecast briefs)
+.claude/tmp/

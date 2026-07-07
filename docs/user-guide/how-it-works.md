@@ -59,9 +59,9 @@ Between Phase A and Phase B, the agent has two optional, at-most-once checkpoint
 
 ### Phase B — Organize
 
-1. The agent designs a **relevant target taxonomy** — a small, shallow, readable folder tree derived from the document types and themes actually found in the corpus (e.g. grouped by document type, workstream, or phase). It may redesign the **existing nested layout entirely** — documents already sitting in subfolders are reorganized too, not just those at the top level. It creates each folder with `create_dir` (idempotent and collision-safe). Folders are only created for categories the corpus actually contains.
+1. The agent designs a **relevant target taxonomy** — a small, shallow, readable folder tree derived from the document types and themes actually found in the corpus (e.g. grouped by document type, workstream, or phase). It may redesign the **existing nested layout entirely** — documents already sitting in subfolders are reorganized too, not just those at the top level. Folders are only created for categories the corpus actually contains.
 2. The agent calls `create_plan` to open a new plan
-3. It stages operations with `propose_rename`, `propose_move` (filing each document into the taxonomy), and `propose_quarantine` for duplicates or clutter
+3. It stages operations with `propose_create_dir` for each new folder (idempotent and collision-safe), `propose_rename`, `propose_move` (filing each document into the taxonomy), `propose_quarantine` for duplicates or clutter, `propose_create_file`/`propose_update_file` for any new or updated files, and `propose_archive_document` to withdraw a document from active memory when appropriate — **every filesystem mutation is staged this way; there is no tool that writes to disk directly**
 4. It calls `review_plan` for a deduplication pre-flight check
 5. It calls `set_plan_rationale` with a short plain-language paragraph explaining the plan's philosophy — how it grouped, renamed, and quarantined documents and why — and `set_plan_folder_notes` with a one-line purpose note for each target folder. The host shows the rationale above the op list in the approval modal, followed by a target-layout tree with the folder notes beside each folder
 6. It calls `execute_plan` — at this point the **approval gate** fires
@@ -191,6 +191,10 @@ All state lives under `.organizer/` in the **project root** (not the target dire
 
 Because the registry is keyed by checksum, moving or renaming a file does **not** lose its analysis. The `execute_plan` function reconciles paths automatically as files move.
 
+### Undoing an operation
+
+Undo is a **manual, user-only action** — the agent has no tool to trigger it. In the Organizer screen, press **j** to open the operations-journal viewer, then **u** to revert the most recent journaled operation. This calls `server.tools.undo_last` directly from the TUI, bypassing the agent entirely.
+
 ---
 
 ## Interactive query mode
@@ -229,9 +233,10 @@ Press **Esc** to return to the previous screen.
 
 ## The server's safety invariants
 
-The MCP server enforces four non-negotiable rules in code:
+The MCP server enforces five non-negotiable rules in code:
 
 1. **No delete tool exists.** The only removal path is `propose_quarantine`, which moves files to `QUARANTINE_DIR`.
 2. **No overwrite.** `check_no_overwrite` raises `FileExistsError` before any move or rename touches an existing destination.
 3. **Every destructive op is journaled.** `execute_plan` appends to the undo journal before returning success.
 4. **Hard-stop on repeated failures.** More than 3 failures in one `execute_plan` run triggers a hard stop and surfaces the failed ops to the user.
+5. **Every mutation goes through the plan flow.** There is no tool that writes, moves, renames, quarantines, or archives a file directly — the agent must always stage a `propose_*` op and apply it via `execute_plan`. Undo, correspondingly, is not something the agent can trigger at all: it's a manual action in the TUI (see [Persistence](#persistence) below).

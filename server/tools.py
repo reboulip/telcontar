@@ -190,72 +190,6 @@ def compute_checksum(path: str) -> dict:
     return {"path": str(p), "checksum": h.hexdigest()}
 
 
-def move_file(path: str, dest_dir: str) -> dict:
-    """Move a file to dest_dir, raising if the destination already exists."""
-    src = Path(path)
-    if not src.is_file():
-        raise ValueError(f"Not a file: {path}")
-    dst_dir = Path(dest_dir)
-    if not dst_dir.is_dir():
-        raise ValueError(f"Not a directory: {dest_dir}")
-    dest = dst_dir / src.name
-    check_no_overwrite(dest)
-    shutil.move(str(src), str(dest))
-    return {"moved": str(dest)}
-
-
-def rename_file(path: str, new_name: str) -> dict:
-    """Rename a file in place, raising if the new name already exists."""
-    src = Path(path)
-    if not src.exists():
-        raise FileNotFoundError(f"Not found: {path}")
-    dest = src.parent / new_name
-    check_no_overwrite(dest)
-    src.rename(dest)
-    return {"renamed": str(dest)}
-
-
-def create_file(path: str, content: str) -> dict:
-    """Write content to path; raises if the file already exists."""
-    p = Path(path)
-    check_no_overwrite(p)
-    try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content, encoding="utf-8")
-    except OSError as exc:
-        raise OSError(format_io_error("write", p, exc)) from exc
-    return {"created": str(p)}
-
-
-def update_file(path: str, content: str) -> dict:
-    """Overwrite or create content at path."""
-    p = Path(path)
-    try:
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content, encoding="utf-8")
-    except OSError as exc:
-        raise OSError(format_io_error("write", p, exc)) from exc
-    return {"updated": str(p)}
-
-
-def create_dir(path: str) -> dict:
-    """Create a directory (and any parents); idempotent if it already exists.
-
-    Collision-safe by construction: an existing directory is returned as-is
-    rather than raising, so the op can be re-run. Raises if ``path`` already
-    exists as a file (not a directory).
-    """
-    p = Path(path)
-    if p.is_file():
-        raise ValueError(f"Path exists and is a file, not a directory: {path}")
-    existed = p.is_dir()
-    try:
-        p.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        raise OSError(format_io_error("create directory", p, exc)) from exc
-    return {"created": str(p), "existed": existed}
-
-
 # ── Plan management ──────────────────────────────────────────────────────────
 
 
@@ -424,18 +358,167 @@ def propose_quarantine(path: str, plan_id: str, plans_dir: Path, quarantine_dir:
     }
 
 
+def _load_pending_plan(plan_id: str, plans_dir: Path) -> "_plan.Plan":
+    p = _plan.load(plan_id, plans_dir)
+    if p.state != "pending":
+        raise ValueError(f"Plan must be in 'pending' state to add ops; current state: {p.state!r}")
+    return p
+
+
+def propose_create_file(path: str, content: str, plan_id: str, plans_dir: Path) -> dict:
+    """Append a create_file op to an existing pending plan; eager collision check."""
+    dest = Path(path)
+    check_no_overwrite(dest)
+    p = _load_pending_plan(plan_id, plans_dir)
+    op = _plan.PlanOp.new("create_file", str(dest), "", params={"content": content})
+    p.add_op(op)
+    _plan.save(p, plans_dir)
+    return {
+        "plan_id": plan_id,
+        "op_id": op.op_id,
+        "op_type": "create_file",
+        "src": str(dest),
+        "dst": "",
+        "status": op.status,
+        "ops_count": len(p.ops),
+    }
+
+
+def propose_update_file(
+    path: str, content: str, plan_id: str, plans_dir: Path, overwrite: bool = False
+) -> dict:
+    """Append an update_file op to an existing pending plan.
+
+    Eagerly rejects a collision at proposal time unless ``overwrite=True`` — the
+    same rule ``_apply_op`` re-checks at execution time, so a file that appears
+    between proposal and execution is still caught (M3).
+    """
+    dest = Path(path)
+    if dest.exists() and not overwrite:
+        raise FileExistsError(
+            f"Destination already exists (pass overwrite=True to replace it): {dest}"
+        )
+    p = _load_pending_plan(plan_id, plans_dir)
+    op = _plan.PlanOp.new(
+        "update_file", str(dest), "", params={"content": content, "overwrite": overwrite}
+    )
+    p.add_op(op)
+    _plan.save(p, plans_dir)
+    return {
+        "plan_id": plan_id,
+        "op_id": op.op_id,
+        "op_type": "update_file",
+        "src": str(dest),
+        "dst": "",
+        "status": op.status,
+        "ops_count": len(p.ops),
+    }
+
+
+def propose_create_dir(path: str, plan_id: str, plans_dir: Path) -> dict:
+    """Append a create_dir op to an existing pending plan; idempotent, collision-safe."""
+    dest = Path(path)
+    if dest.is_file():
+        raise ValueError(f"Path exists and is a file, not a directory: {path}")
+    p = _load_pending_plan(plan_id, plans_dir)
+    op = _plan.PlanOp.new("create_dir", str(dest), "")
+    p.add_op(op)
+    _plan.save(p, plans_dir)
+    return {
+        "plan_id": plan_id,
+        "op_id": op.op_id,
+        "op_type": "create_dir",
+        "src": str(dest),
+        "dst": "",
+        "status": op.status,
+        "ops_count": len(p.ops),
+    }
+
+
+def propose_archive_document(
+    checksum: str,
+    reason: str,
+    plan_id: str,
+    plans_dir: Path,
+    registry_path: Path,
+    quarantine_dir: Path,
+) -> dict:
+    """Append an archive_document op; eagerly validates the checksum is recorded."""
+    reg = _registry.load(registry_path)
+    rec = reg.get(checksum)
+    if rec is None:
+        raise ValueError(f"No document recorded for checksum {checksum!r}")
+    src = Path(rec.path)
+    dest_str = ""
+    if src.is_file():
+        quarantine_dir.mkdir(parents=True, exist_ok=True)
+        dest_str = str(safe_quarantine_path(src, quarantine_dir))
+    p = _load_pending_plan(plan_id, plans_dir)
+    op = _plan.PlanOp.new(
+        "archive_document",
+        rec.path,
+        dest_str,
+        params={"checksum": checksum, "reason": reason or ""},
+    )
+    p.add_op(op)
+    _plan.save(p, plans_dir)
+    return {
+        "plan_id": plan_id,
+        "op_id": op.op_id,
+        "op_type": "archive_document",
+        "src": rec.path,
+        "dst": dest_str,
+        "status": op.status,
+        "ops_count": len(p.ops),
+    }
+
+
+def propose_compress_quarantine(
+    plan_id: str, plans_dir: Path, quarantine_dir: Path, delete_originals: bool = True
+) -> dict:
+    """Append a compress_quarantine op; a single global op, not tied to one file."""
+    p = _load_pending_plan(plan_id, plans_dir)
+    op = _plan.PlanOp.new(
+        "compress_quarantine",
+        str(quarantine_dir),
+        "",
+        params={"delete_originals": delete_originals},
+    )
+    p.add_op(op)
+    _plan.save(p, plans_dir)
+    return {
+        "plan_id": plan_id,
+        "op_id": op.op_id,
+        "op_type": "compress_quarantine",
+        "src": str(quarantine_dir),
+        "dst": "",
+        "status": op.status,
+        "ops_count": len(p.ops),
+    }
+
+
+_SELF_JOURNALING_OP_TYPES = frozenset({"archive_document", "compress_quarantine"})
+
+
 def execute_plan(
     plan_id: str,
     plans_dir: Path,
     journal_path: Path,
     registry_path: Path | None = None,
+    quarantine_dir: Path | None = None,
+    archive_path: Path | None = None,
 ) -> dict:
     """Apply approved ops with per-op retry; hard-stop if >3 fail in one run.
 
     When ``registry_path`` points at a non-empty registry, each executed op also
     reconciles the matching document record's path (and status, for quarantine)
     so the checksum stays the identity while paths track moves. Registry-optional:
-    a missing/empty registry is a silent no-op.
+    a missing/empty registry is a silent no-op. ``quarantine_dir``/``archive_path``
+    are only required if the plan contains an ``archive_document`` or
+    ``compress_quarantine`` op (M1) — those op types reuse the standalone
+    ``archive_document``/``compress_quarantine`` functions, which self-journal with
+    the same ``op_type`` strings ``undo_last`` already understands ("quarantine" /
+    "compress"), so this loop skips its generic journal append for them.
     """
     from datetime import datetime, timezone
     from server import journal as _journal
@@ -474,7 +557,34 @@ def execute_plan(
 
         for attempt in range(3):
             try:
-                new_location = _apply_op(op, src_path)
+                if op.op_type == "archive_document":
+                    if registry_path is None or quarantine_dir is None or archive_path is None:
+                        raise ValueError(
+                            "registry_path, quarantine_dir and archive_path are required "
+                            "to execute an archive_document op"
+                        )
+                    params = op.params or {}
+                    result = archive_document(
+                        params["checksum"],
+                        params.get("reason", ""),
+                        registry_path,
+                        quarantine_dir,
+                        journal_path,
+                        archive_path,
+                    )
+                    new_location = result.get("moved") or src_path
+                    # archive_document loads/mutates/saves its own registry copy —
+                    # reload ours so subsequent ops/final save see the fresh state.
+                    if reg is not None:
+                        reg = _registry.load(registry_path)
+                elif op.op_type == "compress_quarantine":
+                    params = op.params or {}
+                    result = compress_quarantine(
+                        Path(op.src), journal_path, bool(params.get("delete_originals", True))
+                    )
+                    new_location = result.get("archive") or op.src
+                else:
+                    new_location = _apply_op(op, src_path)
                 success = True
                 break
             except _NON_RETRYABLE_ERRORS as exc:
@@ -488,17 +598,18 @@ def execute_plan(
             op.status = "completed"
             completed_count += 1
             moved[op.src] = new_location  # type: ignore[assignment]
-            _journal.append(
-                journal_path,
-                {
-                    "op_type": op.op_type,
-                    "plan_id": plan_id,
-                    "op_id": op.op_id,
-                    "src": src_path,
-                    "dst": op.dst,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                },
-            )
+            if op.op_type not in _SELF_JOURNALING_OP_TYPES:
+                _journal.append(
+                    journal_path,
+                    {
+                        "op_type": op.op_type,
+                        "plan_id": plan_id,
+                        "op_id": op.op_id,
+                        "src": src_path,
+                        "dst": op.dst,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
             if reg is not None and registry_path is not None and _reconcile_op(reg, op, src_path):
                 _registry.save(reg, registry_path)
         else:
@@ -601,6 +712,37 @@ def _apply_op(op: "_plan.PlanOp", src_path: str) -> str:
         except OSError as exc:
             raise type(exc)(format_io_error("quarantine", src, exc)) from exc
         return str(dest)
+    elif op.op_type == "create_file":
+        content = (op.params or {}).get("content", "")
+        check_no_overwrite(src)
+        try:
+            src.parent.mkdir(parents=True, exist_ok=True)
+            src.write_text(content, encoding="utf-8")
+        except OSError as exc:
+            raise type(exc)(format_io_error("create", src, exc)) from exc
+        return str(src)
+    elif op.op_type == "update_file":
+        params = op.params or {}
+        content = params.get("content", "")
+        overwrite = bool(params.get("overwrite", False))
+        if src.exists() and not overwrite:
+            raise FileExistsError(
+                f"Refusing to overwrite existing file without overwrite=True: {src}"
+            )
+        try:
+            src.parent.mkdir(parents=True, exist_ok=True)
+            src.write_text(content, encoding="utf-8")
+        except OSError as exc:
+            raise type(exc)(format_io_error("update", src, exc)) from exc
+        return str(src)
+    elif op.op_type == "create_dir":
+        if src.is_file():
+            raise ValueError(f"Path exists and is a file, not a directory: {src}")
+        try:
+            src.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise type(exc)(format_io_error("create directory", src, exc)) from exc
+        return str(src)
     else:
         raise ValueError(f"Unknown op_type: {op.op_type!r}")
 
@@ -748,6 +890,24 @@ def undo_last(journal_path: Path, plans_dir: Path) -> dict:
 
     if op_type == "compress":
         return _undo_compress(entry, journal_path)
+
+    if op_type in ("create_file", "update_file"):
+        # overwrite=True on update_file loses the prior content forever — undo
+        # can only remove what this op wrote, not restore what it replaced.
+        target = Path(entry["src"])
+        try:
+            if target.is_file():
+                target.unlink()
+        except OSError as exc:
+            return {"undone": None, "error": str(exc)}
+        _journal.pop_last(journal_path)
+        return {"undone": entry}
+
+    if op_type == "create_dir":
+        # Idempotent by design; leave the directory in place rather than risk
+        # deleting something created into it since.
+        _journal.pop_last(journal_path)
+        return {"undone": entry, "note": "create_dir is idempotent; directory left in place"}
 
     src = entry["src"]
     dst = entry["dst"]

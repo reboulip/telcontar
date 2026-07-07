@@ -46,5 +46,6 @@ uv run mypy .          # type check
 
 - `APPROVAL_MODE=always` (default): every plan requires explicit user approval before execution.
 - Nothing is ever deleted — clutter goes to `QUARANTINE_DIR` (`_quarantine/` by default).
-- Every destructive operation is journaled; `undo_last` reverts the most recent one.
-- `compress_quarantine` bundles loose quarantine files into a verified ZIP archive and reclaims space; it is the only tool that removes bytes from disk, and it remains fully reversible via `undo_last`.
+- Every filesystem mutation — renames, moves, quarantines, file writes, folder creation, archiving, and quarantine compression — is staged as a plan op and only takes effect through `execute_plan`; there is no tool that touches the filesystem directly.
+- Every destructive operation is journaled. Undo is a manual, user-only action: press **j** in the Organizer screen to open the operations journal, then **u** to revert the most recent operation — the agent itself has no undo tool.
+- Compressing loose quarantine files into a verified ZIP archive (reclaiming space) is staged the same way and remains fully reversible via undo.

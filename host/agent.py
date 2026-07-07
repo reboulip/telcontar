@@ -217,12 +217,15 @@ B. ORGANIZE the tree:
       with clearly named folders over deep nesting, and do not create folders for
       categories the corpus does not contain. You may redesign the EXISTING layout
       entirely — reorganize documents that already sit in nested subfolders, not
-      just those at the top level. Create each folder with create_dir(path)
-      (idempotent and collision-safe).
+      just those at the top level. Stage each folder with propose_create_dir(path,
+      plan_id) — it goes into the plan like every other operation, idempotent and
+      collision-safe.
    6. Create a plan with create_plan, then stage ops: propose_rename to apply the
       naming convention, propose_move to file each document into its folder in the
-      taxonomy, and propose_quarantine for useless or duplicate documents (never
-      delete them).
+      taxonomy, propose_quarantine for useless or duplicate documents (never delete
+      them), propose_create_file/propose_update_file for any new or updated files
+      you need to write, and propose_archive_document to withdraw a document from
+      active memory when appropriate.
    7. Call review_plan for a deduplication pass, then call set_plan_rationale(plan_id,
       rationale) with a short plain-language paragraph explaining the plan's philosophy —
       how you grouped, renamed and quarantined the documents and why. It is shown to the
@@ -233,9 +236,10 @@ B. ORGANIZE the tree:
       folder in the plan's target-layout preview so the user sees what the organized tree
       will look like at a glance.
    8. Call execute_plan to apply the plan (the user reviews and approves first).
-      Registry paths are reconciled automatically as files move. After execution,
-      you MAY call compress_quarantine to losslessly archive the quarantined files
-      and reclaim space (reversible via undo_last); skip it if nothing was quarantined.
+      Registry paths are reconciled automatically as files move. Before executing,
+      you MAY also stage propose_compress_quarantine to losslessly archive the
+      quarantined files and reclaim space once applied; skip it if nothing was
+      quarantined.
 
 C. SYNTHESIZE:
    9. Record key project events as you go with create_event(sentence, date): one
@@ -259,6 +263,9 @@ C. SYNTHESIZE:
 Safety rules — never break these:
 - Never delete files. Quarantine only.
 - Never overwrite existing files.
+- All filesystem mutations go through the plan flow — always stage a propose_*
+  op and apply it via execute_plan. There is no direct file-write tool; if you
+  need to write, move, rename, quarantine, or archive something, propose it.
 - Always call review_plan before execute_plan.
 - If a hard stop occurs, explain what failed and offer to undo.
 

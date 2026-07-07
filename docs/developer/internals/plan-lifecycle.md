@@ -89,12 +89,15 @@ Fields:
 - folder_notes: Agent-supplied per-folder purpose notes, set via `set_plan_folder_notes(plan_id, notes)`. Maps a target folder path to a short one-line purpose note (e.g. `{"01_decisions": "Formal decision records"}`); blank keys/notes are dropped and non-string values coerced to str. Empty dict (`{}`) by default and when not yet set. Rendered beside each folder in the host's target-layout tree preview, shown between the rationale and the op list when the plan has any `move`/`quarantine` destinations (not shown in the example below, which predates this field).
 - operations: List of proposed operations.
   - op_id: Sequential index within the plan (0, 1, 2, ...).
-  - op_type: rename, move, or quarantine.
+  - op_type: rename, move, quarantine, create_file, update_file, create_dir, archive_document, or compress_quarantine.
   - src: Absolute path to the source file or directory.
   - new_name (rename only): New name for the file (not a path).
   - dest_dir (move only): Absolute path to the destination directory.
+  - params: Op-specific data that doesn't fit src/dst — e.g. `{"content": ...}` for create_file/update_file, `{"content": ..., "overwrite": ...}` for update_file, `{"checksum": ..., "reason": ...}` for archive_document, `{"delete_originals": ...}` for compress_quarantine. `null` for op types that carry no extra data (rename, move, quarantine, create_dir).
   - proposed_at: ISO 8601 timestamp when the operation was proposed.
   - status: Current status of the operation within the plan. May be pending, completed, or failed.
+
+**All mutating tools are staged this way.** As of the M1 security-hardening pass, there is no tool that touches the filesystem directly — `propose_create_file`, `propose_update_file`, `propose_create_dir`, `propose_archive_document`, and `propose_compress_quarantine` stage ops onto a plan exactly like `propose_rename`/`propose_move`/`propose_quarantine`, and only `execute_plan` applies them. `archive_document` and `compress_quarantine` ops reuse the pre-existing standalone functions of the same name at execution time rather than duplicating their logic; both self-journal under their own `op_type` (`quarantine` and `compress` respectively) instead of the generic entry `execute_plan` writes for other op types.
 
 ### Journal (JSONL)
 
@@ -193,6 +196,10 @@ Propose moving a file to the quarantine directory.
 3. Append the operation to the plan.
 4. Write the plan file.
 
+### propose_create_file(path, content, plan_id) -> dict / propose_update_file(path, content, plan_id, overwrite=False) -> dict / propose_create_dir(path, plan_id) -> dict / propose_archive_document(checksum, plan_id, reason="") -> dict / propose_compress_quarantine(plan_id, delete_originals=True) -> dict
+
+Added by the M1 security-hardening pass, these stage the create_file, update_file, create_dir, archive_document, and compress_quarantine op types the same way: an eager check at proposal time (collision check for create_file/create_dir; existence check for update_file unless `overwrite=True`; registry lookup for archive_document), then append the op — with any op-specific data in `params` (see the op schema above) — to the plan and write it back to disk. None of the five touches the filesystem at proposal time; all five only take effect when the plan is approved and executed.
+
 ## Reviewing a Plan
 
 ### review_plan(plan_id: str) -> dict
@@ -207,9 +214,9 @@ Scan a plan for issues without modifying it.
 
 ## Executing a Plan
 
-### execute_plan(plan_id: str) -> dict
+### execute_plan(plan_id, plans_dir, journal_path, registry_path=None, quarantine_dir=None, archive_path=None) -> dict
 
-Apply all operations in an approved plan. Must be in approved state.
+Apply all operations in an approved plan. Must be in approved state. `quarantine_dir` and `archive_path` are only required if the plan contains an `archive_document` or `compress_quarantine` op; the MCP-exposed tool signature is just `execute_plan(plan_id: str) -> dict` — the server fills in the rest from config.
 
 **Processing:**
 1. Load the plan file.
@@ -217,8 +224,8 @@ Apply all operations in an approved plan. Must be in approved state.
 3. Transition plan state to executing and write to disk.
 4. For each operation in the plan (in order):
    a. Resolve the op's source: if an earlier op in this same run already relocated the file (see below), use its current path; otherwise use the op's original `src`.
-   b. Attempt to execute it (rename, move, or quarantine) against the resolved source.
-   c. On success: update operation status to completed, append a journal entry (recording the resolved source, not necessarily the original `src`), record the file's new location for later ops, update plan file.
+   b. Attempt to execute it against the resolved source: `rename`/`move`/`quarantine`/`create_file`/`update_file`/`create_dir` are applied directly; `archive_document`/`compress_quarantine` are delegated to the pre-existing standalone functions of the same name (they self-journal and are skipped by step c's generic journal append).
+   c. On success: update operation status to completed, append a journal entry for non-self-journaling op types (recording the resolved source, not necessarily the original `src`), record the file's new location for later ops, update plan file.
    d. On failure: retry — 3 attempts total. After the 3rd failed attempt, mark operation status as failed and continue.
 5. After all operations:
    a. If failed count > 3, transition plan state to stopped, append a hard_stop journal entry.
@@ -231,9 +238,11 @@ Ops are staged against the file's original path (`src` at propose time). Within 
 
 ## Undoing Operations
 
-### undo_last() -> dict
+### undo_last(journal_path, plans_dir) -> dict
 
 Revert the most recent journaled operation.
+
+**Not an MCP tool.** As of the M1 security-hardening pass, `undo_last` is no longer registered with the server, so the agent has no way to call it. It exists purely as a plain function in `server/tools.py`, invoked directly (bypassing MCP) from the TUI's `JournalScreen` — press **j** in the Organizer screen to open it, then **u** to trigger undo. This makes undo a deliberate, user-only action.
 
 **Processing:**
 1. Load the journal.
@@ -243,6 +252,8 @@ Revert the most recent journaled operation.
    - **rename**: rename back to original name
    - **move**: move back to original directory
    - **quarantine**: move back from quarantine path to original path
+   - **create_file** / **update_file**: delete the file this op wrote (an `overwrite=True` update cannot restore the content it replaced — undo only removes what this op itself wrote)
+   - **create_dir**: no-op — idempotent by design, the directory is left in place rather than risk deleting something created into it since
    - **compress**: restore each original file from the archive into its recorded `src` path, then delete the zip. All targets are pre-checked for collisions before any file is written. If `deleted_originals` was `False` (originals were kept), only the zip is deleted.
 5. On success, call pop_last() to remove the entry from the journal.
 6. Return the inverted operation.

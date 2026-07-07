@@ -170,7 +170,7 @@ Once analysis is complete, the agent proposes a plan. A modal appears:
 - **Approve** executes the checked operations immediately.
 
 !!! tip
-    Each operation is journaled. If something goes wrong after approval, `undo_last` (available via the MCP server) reverts the most recent step.
+    Each operation is journaled. If something goes wrong after approval, open the operations journal (press **j** in the Organizer screen) and press **u** to undo the most recent step — undo is a manual TUI action, not something the agent can trigger itself.
 
 ---
 
@@ -191,7 +191,7 @@ messy/
     └── copy_of_rapport_final_v3.docx
 ```
 
-A desktop notification fires when the agent is done. Press **g** to open query mode and ask questions about the corpus, or **q** to quit the TUI.
+A desktop notification fires when the agent is done. Press **g** to open query mode and ask questions about the corpus, **j** to view the operations journal (and **u** there to undo the most recent operation), or **q** to quit the TUI.
 
 ---
 

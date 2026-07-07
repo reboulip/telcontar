@@ -9,13 +9,17 @@ description: Orchestrate a full development sprint from ROADMAP.md. Reads unchec
 
 Reads `ROADMAP.md`, finds all unchecked items in the active milestone, and drives each one to completion in order. Every item goes through:
 
-1. **Forecast** (`feature-forecast` subagent, Haiku) — reads the codebase and produces a Forecast Brief for the item.
-2. **Implementation** — main session implements the item using the brief.
+1. **Forecast** (`feature-forecast` subagent, Haiku) — reads the codebase and produces a Forecast Brief for the item, persisted to a temp file.
+2. **Implementation** — main session implements the item using the brief read from that file.
 3. **Documentation** (`doc-keeper` subagent, Sonnet) — syncs README/docs to the change before it is committed.
 4. **Tests** (`/test-select` skill) — gates the commit; red run blocks advance.
 5. **Commit** (`repo-manager` subagent, Haiku) — stages and commits the code **and** doc changes on the feature branch.
 
-Forecast for item N+1 runs **in the background** while item N is being implemented, so the brief is ready with zero wait time.
+Forecasts run **up to 2 items ahead** of whichever item is currently being implemented, so
+the brief for the next item (and the one after it) is ready with zero wait time. Each
+brief is written to `.claude/tmp/dev-pipeline/<milestone-slug>/<label>.md` as soon as its
+forecast completes — implementation reads from that file rather than from conversation
+context, so briefs survive context compaction and sprint interruption/resume.
 
 ---
 
@@ -67,38 +71,69 @@ If no unchecked items remain in any section, report sprint complete and skip to 
 
 ---
 
-## Step 2 — Prepare item[0] (foreground)
+## Step 1.5 — Forecast persistence setup
 
-Spawn `feature-forecast` and wait for the result:
+Forecast briefs are written to disk instead of being kept only in conversation context,
+so they survive compaction and sprint interruption/resume:
 
 ```
-Agent({
-  subagent_type: "feature-forecast",
-  description: "Forecast brief for [milestone] [label]",
-  prompt: "Milestone: [milestone label]\nItem: [label] — [title]\n\n[full item text verbatim from ROADMAP.md]"
-})
+.claude/tmp/dev-pipeline/<milestone-slug>/<label>.md
 ```
+
+1. Ensure this directory exists (create it if missing).
+2. If any `<label>.md` files already exist there (a resumed sprint), treat those items as
+   already forecast — don't re-fire `feature-forecast` for them in Step 2/6 unless the
+   staleness check in Step 6 says otherwise.
+3. **Standing rule for the rest of the sprint:** whenever a `feature-forecast` agent
+   (foreground or background) completes, immediately write its full Forecast Brief output
+   verbatim to the matching `<label>.md`, before doing anything else, then resume whatever
+   step you were on. This applies at any point in the pipeline, not just right after the
+   call that triggered it — background completions can land while you're mid-way through
+   an unrelated step.
+
+`.claude/tmp/` is gitignored — these files are sprint-scratch state, never committed.
 
 ---
 
-## Step 3 — Pre-fetch item[1] in the background
+## Step 2 — Prepare item[0] and prefetch the lookahead window
 
-Immediately after receiving item[0]'s brief, if item[1] exists, start its forecast without waiting:
+1. If item[0]'s brief file doesn't already exist, spawn `feature-forecast` and wait for
+   the result:
 
-```
-Agent({
-  subagent_type: "feature-forecast",
-  run_in_background: true,
-  description: "Forecast brief for [milestone] [next label]",
-  prompt: "Milestone: [milestone label]\nItem: [next label] — [next title]\n\n[full next item text verbatim from ROADMAP.md]"
-})
-```
+   ```
+   Agent({
+     subagent_type: "feature-forecast",
+     description: "Forecast brief for [milestone] [label]",
+     prompt: "Milestone: [milestone label]\nItem: [label] — [title]\n\n[full item text verbatim from ROADMAP.md]"
+   })
+   ```
+
+   Persist it per the Step 1.5 standing rule. If the file already existed, just read it.
+
+2. Top up the lookahead window to 2 items ahead: for each of item[1] and item[2]
+   (whichever exist) that doesn't already have a brief file on disk, fire
+   `feature-forecast` in the background without waiting:
+
+   ```
+   Agent({
+     subagent_type: "feature-forecast",
+     run_in_background: true,
+     description: "Forecast brief for [milestone] [label]",
+     prompt: "Milestone: [milestone label]\nItem: [label] — [title]\n\n[full item text verbatim from ROADMAP.md]"
+   })
+   ```
+
+At this point item[0]'s brief is in hand, and item[1] and item[2] (whichever exist) are
+already being forecast in the background.
 
 ---
 
-## Step 4 — Implement item[0]
+## Step 4 — Implement the current item
 
-The Forecast Brief for item[0] is in context. Implement the item now:
+Read the Forecast Brief for the current item from
+`.claude/tmp/dev-pipeline/<milestone-slug>/<label>.md`. If it isn't there yet (forecast
+still in flight), wait for the completion notification — the Step 1.5 standing rule
+writes it to that path as soon as it arrives. Implement the item now:
 - Follow the "Suggested implementation order" from the brief.
 - Edit only files under `host/`, `server/`, `config/`, `tests/`. Use direct Edit/Write tools.
 - Check off the item in `ROADMAP.md` (`- [ ]` → `- [x]`).
@@ -145,11 +180,24 @@ Agent({
 
 ## Step 6 — Advance to the next item
 
-After item[0] is committed:
-1. Wait for the background notification confirming item[1]'s brief is ready (if not already received).
-2. If item[2] exists and hasn't been pre-fetched yet, start it in the background now (same pattern as Step 3).
-3. Brief for item[1] is in context. Return to Step 4 for item[1].
-4. Repeat until all items are committed.
+After item[K] is committed:
+
+1. **Staleness check (judgment call, not automatic).** Consider what item[K]'s
+   implementation just changed. If it invalidates something the already-fetched brief for
+   item[K+1] or item[K+2] relied on — e.g. it created a helper the brief listed as a
+   "missing prerequisite," renamed/moved a file the brief references, or changed a
+   function signature the brief quotes — re-fire `feature-forecast` for that specific item
+   now (foreground if it's item[K+1] and it's needed right away, background otherwise) to
+   overwrite its `<label>.md`. Skip this if nothing item[K] did touches later briefs — this
+   is the common case and costs nothing.
+2. Top up the lookahead window: if item[K+3] exists and doesn't have a brief file yet,
+   fire its forecast in the background now (same pattern as Step 2.2), keeping the window
+   at 2 items ahead of whatever comes next.
+3. Read item[K+1]'s brief from `.claude/tmp/dev-pipeline/<milestone-slug>/<label>.md`. In
+   the common case it's already there — that prefetch started two commits ago. If it
+   isn't there yet, wait for the completion notification.
+4. Return to Step 4 for item[K+1].
+5. Repeat until all items are committed.
 
 ---
 
@@ -221,6 +269,9 @@ Skill("auto-improve")
 
 ## Step 9 — Sprint complete
 
+Delete the sprint's forecast directory, `.claude/tmp/dev-pipeline/<milestone-slug>/` — its
+briefs are scratch state, no longer needed once every item is committed and merged.
+
 Report:
 - Milestone completed.
 - All items done (label + title for each).
@@ -230,9 +281,16 @@ Report:
 
 ## Rules
 
-- **Never start item N+1 until item N is committed and green.**
+- **Never start item N+1 until item N is committed and green.** Forecasting runs ahead of
+  schedule; implementation never does.
 - **Never commit on a red test run** — fix first.
 - If implementation fails after 3 fix attempts, **pause the sprint**, surface the error to the user, and wait for guidance.
 - The `ROADMAP.md` checkbox update is part of each implementation step (not a separate commit).
-- If the user interrupts the sprint, resume by re-reading `ROADMAP.md` from Step 1 to discover remaining unchecked items.
+- If the user interrupts the sprint, resume by re-reading `ROADMAP.md` from Step 1 to
+  discover remaining unchecked items. Step 1.5 automatically picks up any brief files
+  already on disk from before the interruption, so resuming doesn't re-forecast items that
+  are already covered.
+- The lookahead window is fixed at 2 items ahead — don't prefetch further out than that
+  even if the phase has many remaining items; it keeps concurrent forecast agents bounded
+  and keeps briefs reasonably close to current codebase state.
 - All git work (staging, committing, branching, merging) is delegated to `repo-manager`. Never run git commands directly in the main session.
