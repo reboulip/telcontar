@@ -157,6 +157,17 @@ class ApprovalModal(ModalScreen[ApprovalResult]):
     #ops-scroll {
         max-height: 20;
     }
+    #ops-json-path {
+        color: $text-muted;
+        padding-top: 1;
+    }
+    #refine-label {
+        color: $text-muted;
+        padding-top: 1;
+    }
+    #refine-input {
+        margin-bottom: 1;
+    }
     #approval-buttons {
         align: center middle;
         padding-top: 1;
@@ -201,15 +212,40 @@ class ApprovalModal(ModalScreen[ApprovalResult]):
                         )
                 else:
                     yield Label("[dim]No operations in this plan.[/dim]", markup=True)
+            ops_json = (self._plan_data.get("ops_json_path") or "").strip()
+            if ops_json:
+                yield Label(f"Full ops JSON: {ops_json}", id="ops-json-path")
             yield Rule()
+            yield Label(
+                "Not quite right? Describe the changes and Refine (e.g. "
+                '"merge the drafts into one folder", "don\'t quarantine the specs"):',
+                id="refine-label",
+            )
+            yield Input(placeholder="Describe changes to make, then press Refine…", id="refine-input")
             with Horizontal(id="approval-buttons"):
                 yield Button("Approve", variant="success", id="approve-btn")
+                yield Button("Refine", variant="primary", id="refine-btn")
                 yield Button("Reject", variant="error", id="reject-btn")
 
     @on(Button.Pressed, "#approve-btn")
     def _approve(self) -> None:
         removed = [cb.name for cb in self.query(Checkbox) if not cb.value and cb.name]
         self.dismiss(ApprovalResult(approved=True, removed_op_ids=removed))
+
+    @on(Button.Pressed, "#refine-btn")
+    def _refine(self) -> None:
+        self._submit_refinement()
+
+    @on(Input.Submitted, "#refine-input")
+    def _refine_on_enter(self) -> None:
+        self._submit_refinement()
+
+    def _submit_refinement(self) -> None:
+        """Send free-text plan feedback to the agent (L6); no-op if the field is blank."""
+        text = self.query_one("#refine-input", Input).value.strip()
+        if not text:
+            return  # nothing to refine — keep the modal open
+        self.dismiss(ApprovalResult(approved=False, refinement=text))
 
     @on(Button.Pressed, "#reject-btn")
     def action_reject(self) -> None:
@@ -1244,6 +1280,8 @@ class OrganizerScreen(Screen):
                     "[green]Approved[/green]"
                     + (f"  ({removed} op(s) removed)" if removed else ""),
                 )
+            elif result.refinement:
+                self._add_turn("user", f"[yellow]Refine:[/yellow] {result.refinement}")
             else:
                 self._add_turn("user", "[red]Rejected[/red] — sending feedback to agent")
             return result

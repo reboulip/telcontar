@@ -61,7 +61,10 @@ In `always` and `destructive_only` modes, when a plan is ready for execution the
 - **A target-layout preview**, when the plan has any move/quarantine destinations: a folder tree built from the plan's ops, with each folder's purpose note (set by the agent via `set_plan_folder_notes`) shown beside it — folders without a note appear as bare tree nodes. Rename-only plans show no tree
 - **Each proposed operation** is listed as a checked checkbox
 - You can **uncheck** individual ops to skip them (the rest still execute)
+- **A full ops JSON path** is shown below the checklist: every time a plan is presented, its complete op list (plan id, rationale, folder notes, and every op) is written to `.organizer/plan_ops.json` (latest plan wins), so you can open the file to inspect the full detail while the modal itself only shows the summary
+- **A free-text refine field**, for when the plan is close but not quite right — describe the change in plain language (e.g. "merge the drafts into one folder", "don't quarantine the specs")
 - **Approve** confirms the checked ops and triggers `execute_plan`
+- **Refine** (or pressing Enter in the field) sends your typed text back to the agent instead of executing anything — the agent revises the plan (adjusting ops, rationale, and folder notes) and calls `execute_plan` again to re-present it for another round of review. Leaving the field blank and pressing Refine is a no-op — the modal stays open
 - **Reject** sends a rejection back to the agent, which will revise the plan and try again
 - **Escape** is equivalent to Reject
 

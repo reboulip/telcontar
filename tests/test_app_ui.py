@@ -476,6 +476,61 @@ async def test_approval_modal_without_folder_ops_has_no_target_layout(tmp_path: 
             app.screen.query_one("#target-layout")
 
 
+# ── L6: natural-language plan editing ─────────────────────────────────────────
+
+
+async def test_approval_modal_refine_returns_refinement(tmp_path: Path) -> None:
+    from host.app import ApprovalModal
+
+    plan_data = {
+        "ops": [{"op_type": "move", "src": "/a/b.pdf", "dst": "/sorted", "op_id": "o1"}],
+        "rationale": "",
+    }
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        captured: dict = {}
+        app.push_screen(ApprovalModal("abc12345", plan_data), lambda res: captured.update(res=res))
+        await pilot.pause()
+        app.screen.query_one("#refine-input", Input).value = "merge the drafts into one folder"
+        await pilot.click("#refine-btn")
+        await pilot.pause()
+        res = captured["res"]
+        assert res.approved is False
+        assert res.refinement == "merge the drafts into one folder"
+
+
+async def test_approval_modal_blank_refine_is_noop(tmp_path: Path) -> None:
+    from host.app import ApprovalModal
+
+    plan_data = {"ops": [], "rationale": ""}
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(ApprovalModal("abc12345", plan_data))
+        await pilot.pause()
+        # Refine with an empty field must not dismiss the modal.
+        await pilot.click("#refine-btn")
+        await pilot.pause()
+        assert isinstance(app.screen, ApprovalModal)
+
+
+async def test_approval_modal_shows_ops_json_path(tmp_path: Path) -> None:
+    from textual.widgets import Label
+
+    from host.app import ApprovalModal
+
+    plan_data = {
+        "ops": [],
+        "rationale": "",
+        "ops_json_path": "/x/.organizer/plan_ops.json",
+    }
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(ApprovalModal("abc12345", plan_data))
+        await pilot.pause()
+        label = str(app.screen.query_one("#ops-json-path", Label).content)
+        assert "plan_ops.json" in label
+
+
 # ── F9: the status bar surfaces running token usage ──────────────────────────
 
 

@@ -47,6 +47,9 @@ EventCallback = Callable[[AgentEvent], None]
 class ApprovalResult:
     approved: bool
     removed_op_ids: list[str] = field(default_factory=list)
+    # Free-text plan refinement (L6): when set (and not approved), the plan is not
+    # executed — the text is fed back so the agent revises and re-presents the plan.
+    refinement: str | None = None
 
 
 ApprovalCallback = Callable[[str, dict], Awaitable[ApprovalResult]]
@@ -717,6 +720,13 @@ async def _handle_execute_plan(
     plan_raw = await session.call_tool("get_plan", {"plan_id": plan_id})
     plan_data = _extract_content(plan_raw)
 
+    # Persist the full ops list as an inspectable JSON file and surface its path so
+    # the user can open the detailed ops while the modal shows only the summary (L6).
+    if isinstance(plan_data, dict):
+        ops_json = _write_ops_json(plan_data, settings.plans_dir)
+        if ops_json is not None:
+            plan_data["ops_json_path"] = str(ops_json)
+
     on_event(AgentEvent("plan_ready", f"Plan {plan_id[:8]} ready for review", data=plan_data))
 
     # APPROVAL_MODE gate. execute_plan is the sole gated op (read-only tools are
@@ -729,6 +739,20 @@ async def _handle_execute_plan(
         approval = await on_approval_needed(
             plan_id, plan_data if isinstance(plan_data, dict) else {}
         )
+
+    # Free-text refinement (L6) takes priority over a bare rejection: don't execute,
+    # feed the requested changes back so the agent revises and re-presents the plan.
+    refinement = (approval.refinement or "").strip()
+    if refinement:
+        return {
+            "refinement": refinement,
+            "note": (
+                "The user did NOT approve this plan and requested changes: "
+                f"{refinement}. Revise the plan accordingly (add/remove/adjust ops as "
+                "needed), update the rationale and folder notes, then call execute_plan "
+                "again to re-present it for approval."
+            ),
+        }
 
     if not approval.approved:
         return {"error": "Plan rejected by user. Revise and resubmit."}
@@ -748,6 +772,29 @@ def _patch_plan(plan_id: str, removed_op_ids: list[str], plans_dir: Path) -> Non
     plan = _load_plan(plan_id, plans_dir)
     plan.ops = [op for op in plan.ops if op.op_id not in removed_op_ids]
     _save_plan(plan, plans_dir)
+
+
+def _write_ops_json(plan_data: dict, plans_dir: Path) -> Path | None:
+    """Write the plan's detailed ops to a discoverable JSON file (L6).
+
+    Persisted to ``<plans_dir>/../plan_ops.json`` (i.e. ``.organizer/plan_ops.json``),
+    latest-plan-wins, so the user can open the full ops list while the approval modal
+    shows only the summary. Returns the path, or None if it could not be written.
+    """
+    try:
+        out_dir = Path(plans_dir).parent
+        out_dir.mkdir(parents=True, exist_ok=True)
+        path = out_dir / "plan_ops.json"
+        payload = {
+            "plan_id": plan_data.get("plan_id"),
+            "rationale": plan_data.get("rationale", ""),
+            "folder_notes": plan_data.get("folder_notes", {}),
+            "ops": plan_data.get("ops", []),
+        }
+        path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        return path
+    except OSError:
+        return None
 
 
 # ── Content extraction ────────────────────────────────────────────────────────

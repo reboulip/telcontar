@@ -262,6 +262,79 @@ async def test_approved_plan_calls_approve_before_execute(tmp_path: Path) -> Non
     assert call_order.index("approve_plan") < call_order.index("execute_plan")
 
 
+# ── L6: natural-language plan refinement ──────────────────────────────────────
+
+
+async def test_refinement_feeds_changes_back_and_skips_execution(tmp_path: Path) -> None:
+    plans_dir = tmp_path / "plans"
+    plans_dir.mkdir()
+    plan_data = {"plan_id": "ref1", "ops": [], "state": "pending"}
+    on_approval = AsyncMock(
+        return_value=ApprovalResult(approved=False, refinement="merge X with Y")
+    )
+
+    s = AsyncMock()
+    s.list_tools.return_value = _list_tools(["execute_plan", "get_plan"])
+
+    async def _call(name: str, args: dict | None = None) -> MagicMock:
+        return _mcp_result(plan_data if name == "get_plan" else {"ok": True})
+
+    s.call_tool.side_effect = _call
+
+    captured_messages: list[list[dict]] = []
+    llm = AsyncMock()
+    responses = [
+        _tool_response("execute_plan", {"plan_id": "ref1"}),
+        _text_response("Revised plan."),
+    ]
+
+    async def _create(**kwargs: Any) -> Any:
+        captured_messages.append(list(kwargs.get("messages", [])))
+        return responses.pop(0)
+
+    llm.chat.completions.create.side_effect = _create
+
+    await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(plans_dir),
+        llm=llm,
+        session=s,
+        on_event=lambda _: None,
+        on_approval_needed=on_approval,
+    )
+
+    # A refinement must NOT approve or execute the plan.
+    called = [c[0][0] for c in s.call_tool.call_args_list]
+    assert "approve_plan" not in called
+    assert "execute_plan" not in called
+
+    # The user's requested changes are fed back to the LLM as a tool result.
+    all_msgs = [m for batch in captured_messages for m in batch]
+    tool_msgs = [m for m in all_msgs if m.get("role") == "tool"]
+    assert any("merge X with Y" in m.get("content", "") for m in tool_msgs)
+
+    # The inspectable ops JSON is written next to the plans dir for the user to open.
+    assert (plans_dir.parent / "plan_ops.json").is_file()
+
+
+def test_write_ops_json_writes_payload(tmp_path: Path) -> None:
+    from host.agent import _write_ops_json
+
+    plans_dir = tmp_path / "plans"
+    plan_data = {
+        "plan_id": "p1",
+        "ops": [{"op_type": "move", "src": "a", "dst": "b"}],
+        "rationale": "why",
+        "folder_notes": {"b": "note"},
+    }
+    path = _write_ops_json(plan_data, plans_dir)
+    assert path is not None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assert data["plan_id"] == "p1"
+    assert data["ops"][0]["op_type"] == "move"
+    assert data["folder_notes"] == {"b": "note"}
+
+
 # ── APPROVAL_MODE gate (F3) ───────────────────────────────────────────────────
 
 

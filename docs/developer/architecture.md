@@ -160,11 +160,15 @@ Any sink name not in the built-in registry is treated as an external sink. If `e
     each folder (idempotent; no folder created for absent categories), then opens a
     plan (create_plan) and stages propose_rename / propose_move / propose_quarantine ops
 11. On execute_plan call:
-    a. Host fetches plan details (get_plan)
+    a. Host fetches plan details (get_plan) and writes the full ops list to
+       .organizer/plan_ops.json (path shown in the modal)
     b. Host shows ApprovalModal to user
-    c. User approves (optionally deselecting ops)
-    d. Host calls approve_plan → execute_plan
-    e. Server applies ops, journals each, reconciles registry
+    c. User approves (optionally deselecting ops), refines with free text, or rejects
+    d. On approve: host calls approve_plan → execute_plan; server applies ops,
+       journals each, reconciles registry
+    e. On refine: the plan is NOT executed — the free-text request is returned to the
+       agent as a tool result, which revises the plan (ops/rationale/folder notes) and
+       calls execute_plan again to re-present it (back to step 11)
 12. Agent calls build_graph → get_actors → list_events, then composes SUMMARY.md
     from registry + events + graph + actors per the profile's [synthesis] template;
     calls write_index + write_summary to persist INDEX.md, manifest.json, SUMMARY.md

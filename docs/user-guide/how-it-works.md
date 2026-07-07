@@ -115,7 +115,8 @@ Before any file is moved or renamed, telcontar shows the full plan to the user a
 Agent proposes plan
        │
        ▼
-Host fetches plan details  →  shows ApprovalModal
+Host writes the full ops list to .organizer/plan_ops.json,
+fetches plan details  →  shows ApprovalModal
        │
    User reviews
    ├── Approve (with optional per-op deselection)
@@ -125,6 +126,13 @@ Host fetches plan details  →  shows ApprovalModal
    │       │
    │       ▼
    │   Each op executed + journaled + registry reconciled
+   │
+   ├── Refine (free-text change request, e.g. "merge the drafts into one folder")
+   │       │
+   │       ▼
+   │   Plan is NOT executed — the request is fed back to the agent, which
+   │   revises the plan (ops, rationale, folder notes) and calls execute_plan
+   │   again to re-present it
    │
    └── Reject
            │
@@ -144,6 +152,7 @@ All state lives under `.organizer/` in the **project root** (not the target dire
 |---|---|
 | `.organizer/registry.json` | Document records keyed by sha256 — the engine's memory |
 | `.organizer/plans/<uuid>.json` | One JSON file per plan, with ops and state machine |
+| `.organizer/plan_ops.json` | Inspectable snapshot of the most recently presented plan's full op list (plan id, rationale, folder notes, ops) — overwritten each time a plan is shown for approval |
 | `.organizer/journal.jsonl` | Append-only undo log — every executed file op recorded |
 | `.organizer/events.jsonl` | Append-only project event journal — verb-led narrative entries |
 | `.organizer/graph.json` | Knowledge graph — derived from registry + events; rebuilt on demand |
