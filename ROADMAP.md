@@ -175,7 +175,7 @@ explicit decision — already marked skipped in the security doc, not tracked he
       approval modal like any other op), make sure `_TOOL_NARRATION` (or equivalent) also
       covers the new `propose_*` tool calls in the live transcript, so building these ops
       into a plan is visible narration, not a silent internal step (requires: M1)
-- [ ] M7 · Path confinement on by default (S3) — ship with the run's target directory
+- [x] M7 · Path confinement on by default (S3) — ship with the run's target directory
       as the implicit allowlist root instead of "no restriction" when `ALLOWLIST_DIRS`
       is unset (requires: M2)
 - [ ] M8 · Bound document extraction (S5) — cap input file size before

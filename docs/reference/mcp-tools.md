@@ -8,7 +8,7 @@ The server registers tools via FastMCP (`server/main.py`); the implementations l
     Tools that touch disk (`read_file`, `compute_checksum`, `execute_plan`, `write_index`, `write_summary`, `write_folder_readme`) re-raise I/O failures as a clear `Could not <action> <path>: <detail>` message instead of a raw traceback, with a plain-language hint for the two operator-actionable cases: a locked file (`... the file is open in another program — close it and retry`) and a plain permission denial (`... permission denied`). The original exception *type* is preserved, so `execute_plan`'s retry/fail-fast classification (below) is unaffected. File writes (`create_file`, `update_file`, `create_dir`) are staged via `propose_*` calls and only touch disk inside `execute_plan` — there is no standalone tool for them.
 
 !!! note "Path confinement"
-    Every tool that takes a `path` (or `path_a`/`path_b`/`dest_dir`) argument is checked with `check_within_root` before it runs, and raises `PermissionError` if the resolved path falls outside both the run's `TARGET_DIR` and the server's own working directory (where `.organizer/` and the quarantine dir live). This applies whether the escape attempt is an absolute path or a `..` traversal. For `read_file` / `extract_text` / `compare_documents`, `ALLOWLIST_DIRS` (if set) is still checked first as a stricter, opt-in bound — `check_within_root` then applies as the always-on floor underneath it. See [Security Model](../developer/security-model.md).
+    Every tool that takes a `path` (or `path_a`/`path_b`/`dest_dir`) argument is checked with `check_within_root` before it runs, and raises `PermissionError` if the resolved path falls outside both the run's `TARGET_DIR` and the server's own working directory (where `.organizer/` and the quarantine dir live). This applies whether the escape attempt is an absolute path or a `..` traversal. For `read_file` / `extract_text` / `compare_documents`, `ALLOWLIST_DIRS` is also checked first via `Settings.effective_allowlist_dirs()` — an explicit, non-empty `ALLOWLIST_DIRS` is used as-is; otherwise it defaults to `[TARGET_DIR]` rather than no restriction — and `check_within_root` then applies as the always-on floor underneath it. See [Security Model](../developer/security-model.md).
 
 ---
 
@@ -96,7 +96,7 @@ Extract text from two files and return a unified diff between them. Uses the sam
 Typical use case: comparing successive versions of a document (e.g. two COPIL slide decks).
 
 !!! note
-    The effective cap per side is `min(max_chars, MAX_SNIPPET_CHARS)`. Both paths are checked against `ALLOWLIST_DIRS` (if set) and then against the `TARGET_DIR`/server-cwd confinement before extraction.
+    The effective cap per side is `min(max_chars, MAX_SNIPPET_CHARS)`. Both paths are checked against `ALLOWLIST_DIRS` (via `effective_allowlist_dirs()` — defaults to `[TARGET_DIR]` when unset) and then against the `TARGET_DIR`/server-cwd confinement before extraction.
 
 **Parameters:**
 

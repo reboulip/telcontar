@@ -81,7 +81,7 @@ def read_file(path: str, max_chars: int = 4000) -> str:
     cfg = _get_settings()
     from server.guards import check_allowlist
 
-    check_allowlist(Path(path), cfg.allowlist_dirs)
+    check_allowlist(Path(path), cfg.effective_allowlist_dirs())
     _check_within_root(path, cfg)
     return tools.read_file(path, min(max_chars, cfg.max_snippet_chars))
 
@@ -92,7 +92,7 @@ def extract_text(path: str, max_chars: int = 4000) -> str:
     cfg = _get_settings()
     from server.guards import check_allowlist
 
-    check_allowlist(Path(path), cfg.allowlist_dirs)
+    check_allowlist(Path(path), cfg.effective_allowlist_dirs())
     _check_within_root(path, cfg)
     return tools.extract_text(path, min(max_chars, cfg.max_snippet_chars))
 
@@ -112,8 +112,9 @@ def compare_documents(path_a: str, path_b: str, max_chars: int = 4000) -> dict:
     cfg = _get_settings()
     from server.guards import check_allowlist
 
-    check_allowlist(Path(path_a), cfg.allowlist_dirs)
-    check_allowlist(Path(path_b), cfg.allowlist_dirs)
+    allowed = cfg.effective_allowlist_dirs()
+    check_allowlist(Path(path_a), allowed)
+    check_allowlist(Path(path_b), allowed)
     _check_within_root(path_a, cfg)
     _check_within_root(path_b, cfg)
     return tools.compare_documents(path_a, path_b, min(max_chars, cfg.max_snippet_chars))

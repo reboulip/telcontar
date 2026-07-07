@@ -1,4 +1,5 @@
-"""M2 — path-confinement guard wired into server/main.py's tool handlers."""
+"""M2/M7 — path-confinement guard and allowlist-default-on wired into
+server/main.py's tool handlers."""
 
 from __future__ import annotations
 
@@ -45,8 +46,67 @@ class TestCheckWithinRootIntegration:
             server_main._check_within_root(str(outside), cfg)
 
 
+class TestEffectiveAllowlistDirs:
+    """M7: ALLOWLIST_DIRS defaults to the target directory instead of no
+    restriction when the operator leaves it unset."""
+
+    def test_defaults_to_target_dir_when_unset(self, tmp_path: Path) -> None:
+        cfg = Settings(target_dir=tmp_path)
+        assert cfg.effective_allowlist_dirs() == [tmp_path]
+
+    def test_empty_when_neither_set(self) -> None:
+        cfg = Settings(target_dir=None)
+        assert cfg.effective_allowlist_dirs() == []
+
+    def test_explicit_allowlist_always_wins_over_target_dir(self, tmp_path: Path) -> None:
+        explicit = tmp_path / "explicit"
+        cfg = Settings(target_dir=tmp_path, allowlist_dirs=[explicit])
+        # No merging — the explicit list is returned as-is, target_dir is not added.
+        assert cfg.effective_allowlist_dirs() == [explicit]
+
+
 class TestGuardedHandlers:
     """Spot-check a read-only and a plan-building tool wrapper end-to-end."""
+
+    def test_read_file_defaults_to_target_dir_when_allowlist_unset(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        target = tmp_path / "target"
+        target.mkdir()
+        outside = tmp_path / "elsewhere" / "secret.txt"
+        outside.parent.mkdir()
+        outside.write_text("x")
+        monkeypatch.setattr(server_main, "_get_settings", lambda: Settings(target_dir=target))
+
+        with pytest.raises(PermissionError):
+            server_main.read_file(str(outside))
+
+    def test_read_file_respects_narrower_explicit_allowlist(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        target = tmp_path / "target"
+        allowed_subdir = target / "public"
+        other_subdir = target / "private"
+        allowed_subdir.mkdir(parents=True)
+        other_subdir.mkdir()
+        doc = allowed_subdir / "doc.txt"
+        doc.write_text("hello")
+        monkeypatch.setattr(
+            server_main,
+            "_get_settings",
+            lambda: Settings(target_dir=target, allowlist_dirs=[allowed_subdir]),
+        )
+
+        # Inside target_dir (passes check_within_root) AND inside the explicit,
+        # narrower allowlist — both gates pass, so this succeeds.
+        server_main.read_file(str(doc))
+
+        # A file elsewhere under target_dir, but outside the explicit allowlist,
+        # is rejected — proving the explicit list isn't just ignored/widened
+        # back out to the whole target_dir.
+        (other_subdir / "secret.txt").write_text("x")
+        with pytest.raises(PermissionError):
+            server_main.read_file(str(other_subdir / "secret.txt"))
 
     def test_list_dir_raises_outside_target(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

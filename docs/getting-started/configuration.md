@@ -47,7 +47,7 @@ The reference below is for **advanced or developer use**: env vars and a project
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `MAX_SNIPPET_CHARS` | no | `4000` | Maximum characters returned by `read_file` and `extract_text`. Defense-in-depth cap even when full content is allowed. |
-| `ALLOWLIST_DIRS` | no | `""` | JSON array of absolute directory paths, e.g. `["C:/Users/me/docs"]`. When set, telcontar can only read content from these paths — a stricter, opt-in bound applied on top of the always-on `TARGET_DIR` confinement above. Leave blank to fall back to that confinement alone (the whole target directory is readable, not "any path"). |
+| `ALLOWLIST_DIRS` | no | `""` | JSON array of absolute directory paths, e.g. `["C:/Users/me/docs"]`. When set, telcontar can only read content from these paths for `read_file`/`extract_text`/`compare_documents` — a stricter, explicit bound that replaces (not merges with) the default. Leave blank and it now defaults to `[TARGET_DIR]` rather than "no restriction" — narrower than the always-on `TARGET_DIR` + server-cwd confinement described above, which still applies independently to every other path-taking tool. |
 | `EGRESS_ALLOW_EXTERNAL_SINKS` | no | `false` | Allow non-local output sinks (e.g. a MediaWiki MCP integration). The built-in `local_markdown` sink is always allowed regardless of this flag. Set to `true` only when you have connected a separate MCP sink integration and want its name listed in the profile's `[sinks] default`. |
 
 ---

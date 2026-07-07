@@ -59,11 +59,23 @@ class Settings(BaseSettings):
 
     # Egress / extraction
     max_snippet_chars: int = 4000
-    # JSON array of absolute paths, e.g. '["C:/Users/me/docs"]'. Empty = no restriction.
+    # JSON array of absolute paths, e.g. '["C:/Users/me/docs"]'. Empty defaults to
+    # the run's target directory (see effective_allowlist_dirs) — an explicit,
+    # non-empty list here always overrides that default and is used as-is.
     allowlist_dirs: list[Path] = Field(default_factory=list)
     # Gate for non-local output sinks (e.g. a MediaWiki MCP integration). Built-in
     # local_markdown is always allowed; external sinks require this flag = True.
     egress_allow_external_sinks: bool = False
+
+    def effective_allowlist_dirs(self) -> list[Path]:
+        """The allowlist actually enforced (M7/S3): an explicit `allowlist_dirs`
+        always wins; otherwise default to `[target_dir]` (confinement on by
+        default) rather than "no restriction". Stays empty if neither is set."""
+        if self.allowlist_dirs:
+            return self.allowlist_dirs
+        if self.target_dir is not None:
+            return [self.target_dir]
+        return []
 
 
 # ── Public helpers ─────────────────────────────────────────────────────────────

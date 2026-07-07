@@ -43,8 +43,11 @@ Three boundaries matter:
    reach" gap (S3), but it does not, by itself, address the other gaps the
    documented safety model implies (see §5) — notably that reads/writes *within*
    that boundary are still unconstrained by content (S2/S4), and `ALLOWLIST_DIRS`
-   remains off by default for narrowing *which subtree* of the target is
-   readable.
+   — while still requiring explicit configuration to narrow to a smaller subtree —
+   no longer defaults to "no restriction": as of M7, `Settings.effective_allowlist_dirs()`
+   defaults an empty `ALLOWLIST_DIRS` to `[target_dir]`, matching (not narrowing
+   beyond) this same `check_within_root` floor, for the three tools that consult it
+   (`read_file`/`extract_text`/`compare_documents`).
 
 ---
 
@@ -52,7 +55,7 @@ Three boundaries matter:
 
 | Data | How it leaves | Control |
 |---|---|---|
-| Document text (up to `MAX_SNIPPET_CHARS`, default 4000, per read) | `read_file` / `extract_text` / `compare_documents` return content into the LLM context | `check_within_root` (target_dir + server cwd, always on) as the floor; `ALLOWLIST_DIRS` — **empty by default**, a stricter opt-in bound on top |
+| Document text (up to `MAX_SNIPPET_CHARS`, default 4000, per read) | `read_file` / `extract_text` / `compare_documents` return content into the LLM context | `check_within_root` (target_dir + server cwd, always on) as the floor; `ALLOWLIST_DIRS` via `effective_allowlist_dirs()` — **defaults to `[target_dir]` when unset (M7)**, narrower only if explicitly configured |
 | Any other file the OS user can read | Same tools, if the agent is steered to a path outside the target dir | **[Partially remediated — 2026-07-07, M2]** Blocked by `check_within_root` whenever a `target_dir` is set (true for every real organize/query session launched by the TUI). `ALLOWLIST_DIRS` remains the only control for narrowing *which subtree* of the target is readable. |
 | Derived metadata (title, summary, provenance, people/orgs) | Re-sent to the LLM during synthesis and in query mode | None — this is the product's purpose |
 | Synthesized prose (SUMMARY.md, folder READMEs) | Written locally by the built-in sink; external sinks gated | `EGRESS_ALLOW_EXTERNAL_SINKS` (default `false`) |
@@ -66,12 +69,18 @@ set — which is every real organize or query session the TUI launches (`mcp_ses
 always passes one through). There is no ordinary code path where `target_dir` is
 `None` and the guard silently opens up; the fallback (roots = server cwd only) is
 *more* restrictive, not less, so this is not a residual "no restriction" case in
-practice. What remains unremediated: `ALLOWLIST_DIRS` is still empty by default, so
-nothing narrows *which subtree* of the target directory is readable — if the target
-tree itself contains a `.env`, a credentials spreadsheet, an SSH key, or a browser
-profile, nothing in the default configuration stops that content from being sent to
-the model endpoint. Turning `ALLOWLIST_DIRS` on by default is tracked separately
-(P2 #7, not yet done).
+practice. **As of M7, this is also true of `ALLOWLIST_DIRS` itself:**
+`Settings.effective_allowlist_dirs()` now defaults an empty `ALLOWLIST_DIRS` to
+`[target_dir]` rather than `[]` (no restriction), so the three tools that consult
+it (`read_file`/`extract_text`/`compare_documents`) are never fully unrestricted
+even with no configuration at all — this closes the last open piece of P2 #7 (now
+done). It does not, by itself, narrow *which subtree* of the target directory is
+readable: by default, both layers now converge on the same boundary (the whole
+target directory). If the target tree itself contains a `.env`, a credentials
+spreadsheet, an SSH key, or a browser profile, nothing in the default
+configuration stops that content from being sent to the model endpoint — an
+operator must still set `ALLOWLIST_DIRS` explicitly to a narrower path list to
+exclude it.
 
 ---
 
@@ -148,12 +157,15 @@ Yes. See §2. Concretely:
 - ~~With the default empty `ALLOWLIST_DIRS`, `read_file`/`extract_text` are not
   confined to the target directory. The agent — whether legitimately exploring or
   steered by an injected document — can read and thereby upload any file the process
-  can access.~~ **[Partially remediated — 2026-07-07, S3]** `check_within_root` now
+  can access.~~ **[Remediated — 2026-07-07, S3]** `check_within_root` now
   confines `read_file`/`extract_text` (and every other path-taking tool) to
   `target_dir` + the server's own working directory regardless of `ALLOWLIST_DIRS`,
-  for every real organize/query session. The agent can still read anything *inside*
-  the target directory — `ALLOWLIST_DIRS` remains the only way to narrow that
-  further, and it is still empty by default.
+  for every real organize/query session. As of M7, `ALLOWLIST_DIRS` itself also
+  defaults to `[target_dir]` rather than no restriction
+  (`Settings.effective_allowlist_dirs()`), so both layers now default to the same
+  boundary for these three tools. The agent can still read anything *inside* the
+  target directory by default — narrowing to a smaller subtree still requires an
+  operator to set `ALLOWLIST_DIRS` explicitly.
 - Even without any adversary, organizing a folder that *contains* secrets ships those
   secrets to the endpoint, because reading them is the normal first step of analysis.
 - Extracted PII (names, roles) is persisted to `registry.json` / `INDEX.md` /
@@ -215,7 +227,7 @@ single-user deployment.
 |---|---|---|
 | **S1** | **Critical** | **[Remediated — 2026-07-07, see P0 #1]** ~~Direct-mutation tools (`move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`) and `archive_document` / `compress_quarantine` / `undo_last` are advertised to the agent and dispatched with **no approval gate in any `APPROVAL_MODE`**. The plan→approve→execute model — the product's headline safety property — is bypassable. `update_file` additionally overwrites without a collision check.~~ All eight tools were removed from the agent-callable surface. Their functionality is reachable only via `propose_create_file` / `propose_update_file` / `propose_create_dir` / `propose_archive_document` / `propose_compress_quarantine`, staged and applied solely through the already-gated `execute_plan`; `propose_update_file` defaults to `overwrite=False`, and the approval modal now flags any op with `overwrite=True` (see P0 #3). `undo_last` was removed from the MCP surface entirely and is now a TUI-only user action (§3). |
 | **S2** | **Critical** | **Indirect prompt injection** via document content. Untrusted document text shares the LLM context with telcontar's instructions and can drive S1's ungated tools (arbitrary write / overwrite of recovery artifacts), exfiltration, and deletion. Recorded summaries/provenance echo back into context, giving injection a second hop. |
-| **S3** | **High** | **[Partially remediated — 2026-07-07, see P0 #2]** ~~No path confinement; egress open by default. `ALLOWLIST_DIRS` is empty by default and enforced only on read/extract/compare — never on writes/moves/renames/quarantine. Reads can pull (and upload) any file the OS user can access; mutations can target any absolute or `..` path. The target directory is not a security boundary.~~ `check_within_root` now confines **every** path-taking tool — reads, writes, and moves/renames/quarantine alike — to `target_dir` plus the server's own working directory, rejecting both absolute-path and `..` escapes identically. This closes the "any file the OS user can access" gap for every real organize/query session (the host always sets `target_dir`). What's left open: `ALLOWLIST_DIRS` is still empty by default, so nothing narrows *which subtree* of the target directory itself is readable — that remains tracked separately as P2 #7 ("turn on confinement by default"), a distinct, narrower mechanism, still not done. |
+| **S3** | **High** | **[Remediated — 2026-07-07, see P0 #2, P2 #7]** ~~No path confinement; egress open by default. `ALLOWLIST_DIRS` is empty by default and enforced only on read/extract/compare — never on writes/moves/renames/quarantine. Reads can pull (and upload) any file the OS user can access; mutations can target any absolute or `..` path. The target directory is not a security boundary.~~ `check_within_root` confines **every** path-taking tool — reads, writes, and moves/renames/quarantine alike — to `target_dir` plus the server's own working directory, rejecting both absolute-path and `..` escapes identically (P0 #2). As of M7 (P2 #7), `ALLOWLIST_DIRS` itself also defaults to `[target_dir]` — via `Settings.effective_allowlist_dirs()` — instead of `[]` (no restriction), for the three content-reading tools (`read_file`/`extract_text`/`compare_documents`) that consult it; an explicit non-empty `ALLOWLIST_DIRS` always overrides that default and is used as-is, never merged with `target_dir`. Together these mean no path-taking tool, and no content-egress path, is unrestricted by default any longer. Narrowing to a smaller subtree of the target directory remains available only via explicit `ALLOWLIST_DIRS` configuration — that was always opt-in and remains so; it is an operator-configurable refinement, not a residual open gap. |
 | **S4** | **High** | **[Partially remediated — 2026-07-07, see P1 #4, #5, #6]** **The approval UI can mislead the approver:** op rows show only basenames (absolute source path hidden, though an op resolving outside the target directory now gets a discreet `(outside target)` marker), the rationale/folder-notes are still LLM-authored (though now explicitly disclaimed as "not verified fact" in the modal, M5). **[Closed — 2026-07-07, P1 #6]** ~~direct (S1) mutations never appear in the approval flow or narration at all~~ — direct mutation tools no longer exist (S1), and their `propose_*` replacements already narrate as "Planning changes…" and already reach the approval modal via `execute_plan`, confirmed by M6's test coverage. The one bullet still fully open: **the full op list is offloaded** to `.organizer/plan_ops.json` and surfaced only as a path the user is invited to open manually — most will not. |
 | **S5** | **Medium** | **Untrusted-document parsing** (`markitdown`/`pypdf`) runs unsandboxed with no input-size cap or timeout — a crash / DoS / parser-exploit surface on attacker-supplied files. |
 | **S6** | **Medium** | **System-prompt injection via unsigned config**: profile free-text fields and `.organizer/NAMING.md` are injected verbatim into the system prompt; `PROFILE` is used in a path with no traversal guard. |
@@ -228,10 +240,10 @@ To be fair to the design, these mitigations exist and should be preserved:
 
 - **Query mode is strictly read-only** with a defence-in-depth second check that
   refuses any non-allowlisted tool even if the model hallucinates one.
-- **Every path-taking tool is confined to the target directory (S3, partially
-  remediated)**: `check_within_root` rejects any path outside `target_dir` + the
-  server's working directory, for both reads and mutations, closing off absolute
-  and `..` escapes alike.
+- **Every path-taking tool is confined to the target directory (S3, remediated)**:
+  `check_within_root` rejects any path outside `target_dir` + the server's working
+  directory, for both reads and mutations, closing off absolute and `..` escapes
+  alike.
 - **Never-overwrite is enforced** on plan ops, moves, renames, quarantine, and
   `propose_create_file`/`create_file` (`check_no_overwrite`, re-checked again at
   `execute_plan` time); `propose_update_file` defaults to `overwrite=False`;
@@ -243,8 +255,9 @@ To be fair to the design, these mitigations exist and should be preserved:
   writes to the filesystem outside `execute_plan`, and `undo_last` is no longer
   agent-callable at all — it is a TUI-only user action.
 - **API key in the OS keyring** by default; **external output sinks gated** behind
-  `EGRESS_ALLOW_EXTERNAL_SINKS`; an **allowlist mechanism exists** (it just needs to
-  be applied more widely and on by default).
+  `EGRESS_ALLOW_EXTERNAL_SINKS`; an **allowlist mechanism exists and is now on by
+  default (M7)** — an unset `ALLOWLIST_DIRS` defaults to `[target_dir]` via
+  `Settings.effective_allowlist_dirs()`, not `[]`.
 
 ---
 
@@ -320,13 +333,17 @@ first with the least behavioural disruption.
 
 ### P2 — harden inputs and defaults
 
-7. **Turn on confinement by default and document the allowlist prominently (S3).**
-   Ship with the target directory as the implicit `ALLOWLIST_DIRS` root rather than
-   an empty allowlist. **Not done.** This is distinct from, and narrower than, the
-   `check_within_root` remediation above (P0 #2, done) — that guard already confines
-   every tool to `target_dir` + the server's working directory unconditionally; this
-   item is specifically about defaulting `ALLOWLIST_DIRS` itself so operators get the
-   stricter, narrower-subtree opt-in bound without setting it by hand. Still open.
+7. **[Done — 2026-07-07, M7]** ~~Turn on confinement by default and document the
+   allowlist prominently (S3). Ship with the target directory as the implicit
+   `ALLOWLIST_DIRS` root rather than an empty allowlist.~~ This is distinct from,
+   and narrower than, the `check_within_root` remediation above (P0 #2, done) —
+   that guard already confines every tool to `target_dir` + the server's working
+   directory unconditionally; this item was specifically about defaulting
+   `ALLOWLIST_DIRS` itself. `Settings.effective_allowlist_dirs()` now defaults an
+   empty `ALLOWLIST_DIRS` to `[target_dir]` instead of no restriction; an explicit
+   non-empty `ALLOWLIST_DIRS` is always respected as-is (no merging with
+   `target_dir`). Wired into `read_file`, `extract_text`, and `compare_documents`
+   in `server/main.py` in place of the raw `cfg.allowlist_dirs` field.
 8. **Bound document extraction (S5):** cap input file size before parsing, add a
    wall-clock timeout, and consider running extraction in a resource-limited
    subprocess. Reject archives/entries above a sane ratio (zip-bomb guard).
@@ -355,10 +372,11 @@ first with the least behavioural disruption.
 
 Until the remaining P1/P2 items land, an operator can materially reduce exposure:
 
-- [ ] Set `ALLOWLIST_DIRS` to exactly the directory you are organizing (or a
-      subtree of it) — `check_within_root` (P0 #2, done) already confines every
-      tool to `target_dir`, but `ALLOWLIST_DIRS` remains the way to narrow reads
-      further within it, and it is still off by default.
+- [ ] To narrow reads to a subtree smaller than the whole target directory, set
+      `ALLOWLIST_DIRS` explicitly to that subtree — `check_within_root` (P0 #2,
+      done) already confines every tool to `target_dir`, and `ALLOWLIST_DIRS`
+      itself now also defaults to `[target_dir]` (P2 #7, done); this step is only
+      needed if you want something narrower than the whole target directory.
 - [ ] Keep `APPROVAL_MODE=always` and **read every op in the plan**, not just the
       rationale. Treat the rationale as a hint, not a guarantee.
 - [ ] Never point telcontar at a directory that also contains secrets (`.env`, keys,
