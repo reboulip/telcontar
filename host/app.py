@@ -144,6 +144,9 @@ class ApprovalModal(ModalScreen[ApprovalResult]):
         padding-bottom: 1;
         color: $accent;
     }
+    #rationale-disclaimer {
+        color: $text-muted;
+    }
     #plan-rationale {
         padding: 0 0 1 0;
         color: $text-muted;
@@ -151,6 +154,10 @@ class ApprovalModal(ModalScreen[ApprovalResult]):
     #layout-title {
         text-style: bold;
         color: $accent;
+    }
+    #layout-notes-disclaimer {
+        color: $text-muted;
+        padding-bottom: 1;
     }
     #layout-scroll {
         max-height: 10;
@@ -200,11 +207,23 @@ class ApprovalModal(ModalScreen[ApprovalResult]):
                 id="plan-title",
             )
             if rationale:
+                yield Label(
+                    "[dim]Model-generated rationale — not verified fact:[/dim]",
+                    id="rationale-disclaimer",
+                    markup=True,
+                )
                 yield Static(rationale, id="plan-rationale")
-            layout_lines = _render_target_layout(ops, self._plan_data.get("folder_notes") or {})
+            folder_notes = self._plan_data.get("folder_notes") or {}
+            layout_lines = _render_target_layout(ops, folder_notes)
             if layout_lines:
                 yield Rule()
                 yield Label("Target layout", id="layout-title")
+                if folder_notes:
+                    yield Label(
+                        "[dim]Folder notes are model-generated — not verified fact.[/dim]",
+                        id="layout-notes-disclaimer",
+                        markup=True,
+                    )
                 with ScrollableContainer(id="layout-scroll"):
                     yield Static("\n".join(layout_lines), id="target-layout", markup=False)
             yield Rule()

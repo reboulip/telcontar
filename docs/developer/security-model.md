@@ -114,11 +114,17 @@ Yes, in several ways that compound:
   is deliberately a quiet cue, not a red flag; a determined attacker who also controls
   the rationale text could still draw the approver's attention elsewhere, so this is
   a mitigation, not a closure, of the bullet.
-- **The explanation is authored by the same model that could be compromised.** The
-  plan *rationale* and *folder notes* shown above the op list are free text the LLM
-  composed (`set_plan_rationale`, `set_plan_folder_notes`). A prompt-injected agent
-  can write a reassuring rationale ("Tidying your invoices into dated folders") over
-  a plan that does something else.
+- **The explanation is authored by the same model that could be compromised.**
+  **[Partially remediated — 2026-07-07, M5]** The plan *rationale* and *folder
+  notes* shown above the op list are still free text the LLM composed
+  (`set_plan_rationale`, `set_plan_folder_notes`) — a prompt-injected agent can
+  still write a reassuring rationale ("Tidying your invoices into dated folders")
+  over a plan that does something else; nothing about *authorship* has changed.
+  What has changed is that the approver is now told this in the UI itself: both
+  the rationale and the folder-notes sections of the approval modal now carry an
+  explicit "model-generated — not verified fact" disclaimer, making the provenance
+  explicit and pointing the approver at the op list as the thing to actually
+  verify.
 - **The full op list is offloaded.** The modal shows a scrollable checklist, but the
   complete detail is written to `.organizer/plan_ops.json` and surfaced only as a
   path the user is invited to open manually — most will not.
@@ -130,7 +136,9 @@ Yes, in several ways that compound:
   (including former direct writes) is staged via `propose_*` and applied only
   through `execute_plan`, so it is always narrated and always reaches the approval
   modal. The other bullets in this section — the LLM-authored rationale and the
-  offloaded op list — are unaffected and remain open; the hidden-absolute-paths
+  offloaded op list — were unaffected and remained open at the time; the
+  rationale/folder-notes bullet was later partially addressed by M5 (see above),
+  the offloaded-op-list bullet remains fully open, and the hidden-absolute-paths
   bullet was later partially addressed by M4 (see above and S4).
 
 ### 4.2 Can sensitive information reach the LLM?
@@ -208,7 +216,7 @@ single-user deployment.
 | **S1** | **Critical** | **[Remediated — 2026-07-07, see P0 #1]** ~~Direct-mutation tools (`move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`) and `archive_document` / `compress_quarantine` / `undo_last` are advertised to the agent and dispatched with **no approval gate in any `APPROVAL_MODE`**. The plan→approve→execute model — the product's headline safety property — is bypassable. `update_file` additionally overwrites without a collision check.~~ All eight tools were removed from the agent-callable surface. Their functionality is reachable only via `propose_create_file` / `propose_update_file` / `propose_create_dir` / `propose_archive_document` / `propose_compress_quarantine`, staged and applied solely through the already-gated `execute_plan`; `propose_update_file` defaults to `overwrite=False`, and the approval modal now flags any op with `overwrite=True` (see P0 #3). `undo_last` was removed from the MCP surface entirely and is now a TUI-only user action (§3). |
 | **S2** | **Critical** | **Indirect prompt injection** via document content. Untrusted document text shares the LLM context with telcontar's instructions and can drive S1's ungated tools (arbitrary write / overwrite of recovery artifacts), exfiltration, and deletion. Recorded summaries/provenance echo back into context, giving injection a second hop. |
 | **S3** | **High** | **[Partially remediated — 2026-07-07, see P0 #2]** ~~No path confinement; egress open by default. `ALLOWLIST_DIRS` is empty by default and enforced only on read/extract/compare — never on writes/moves/renames/quarantine. Reads can pull (and upload) any file the OS user can access; mutations can target any absolute or `..` path. The target directory is not a security boundary.~~ `check_within_root` now confines **every** path-taking tool — reads, writes, and moves/renames/quarantine alike — to `target_dir` plus the server's own working directory, rejecting both absolute-path and `..` escapes identically. This closes the "any file the OS user can access" gap for every real organize/query session (the host always sets `target_dir`). What's left open: `ALLOWLIST_DIRS` is still empty by default, so nothing narrows *which subtree* of the target directory itself is readable — that remains tracked separately as P2 #7 ("turn on confinement by default"), a distinct, narrower mechanism, still not done. |
-| **S4** | **High** | **[Partially remediated — 2026-07-07, see P1 #4]** **The approval UI can mislead the approver:** op rows show only basenames (absolute source path hidden, though an op resolving outside the target directory now gets a discreet `(outside target)` marker), the rationale/folder-notes are LLM-authored, the full op list is offloaded to a file, and direct (S1) mutations never appear in the approval flow or narration at all. |
+| **S4** | **High** | **[Partially remediated — 2026-07-07, see P1 #4, #5]** **The approval UI can mislead the approver:** op rows show only basenames (absolute source path hidden, though an op resolving outside the target directory now gets a discreet `(outside target)` marker), the rationale/folder-notes are still LLM-authored (though now explicitly disclaimed as "not verified fact" in the modal, M5), and direct (S1) mutations never appear in the approval flow or narration at all. The one bullet still fully open: **the full op list is offloaded** to `.organizer/plan_ops.json` and surfaced only as a path the user is invited to open manually — most will not. |
 | **S5** | **Medium** | **Untrusted-document parsing** (`markitdown`/`pypdf`) runs unsandboxed with no input-size cap or timeout — a crash / DoS / parser-exploit surface on attacker-supplied files. |
 | **S6** | **Medium** | **System-prompt injection via unsigned config**: profile free-text fields and `.organizer/NAMING.md` are injected verbatim into the system prompt; `PROFILE` is used in a path with no traversal guard. |
 | **S7** | **Medium** | **`compress_quarantine` performs the only real delete, ungated**, and its reversibility depends on artifacts S1 can corrupt. |
@@ -287,9 +295,16 @@ first with the least behavioural disruption.
    `(outside target)` marker (not the absolute path itself, and not a loud red flag)
    when an op's source resolves outside the target directory — this was an explicit,
    deliberate design choice (subtle over alarming), not a partial implementation.
-5. **Mark LLM-authored rationale/notes as untrusted narration in the UI (S4)** — a
-   subtle label so the approver knows the explanation is model-generated, and always
-   render the op list as the source of truth.
+5. **[Done — 2026-07-07]** ~~Mark LLM-authored rationale/notes as untrusted
+   narration in the UI (S4) — a subtle label so the approver knows the explanation
+   is model-generated, and always render the op list as the source of truth.~~
+   `ApprovalModal.compose()` (`host/app.py`) now yields a `[dim]`-styled disclaimer
+   Label immediately before the rationale ("Model-generated rationale — not
+   verified fact:", shown only when a rationale is present) and another right after
+   the "Target layout" title ("Folder notes are model-generated — not verified
+   fact.", shown only when `folder_notes` is non-empty) — the same subtle,
+   non-alarming styling convention M4 established for the `(overwrite)` /
+   `(outside target)` markers in this same modal.
 6. **Surface direct/compress/archive operations in the transcript and (once gated)
    the approval flow (S4/S7)** so no mutation is invisible.
 

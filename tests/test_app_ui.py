@@ -431,6 +431,78 @@ async def test_approval_modal_without_rationale_has_no_rationale_widget(tmp_path
             app.screen.query_one("#plan-rationale")
 
 
+# ── M5: rationale/folder-notes labeled as untrusted, model-generated text ────
+
+
+async def test_approval_modal_rationale_has_disclaimer(tmp_path: Path) -> None:
+    from textual.widgets import Label
+
+    from host.app import ApprovalModal
+
+    plan_data = {
+        "ops": [{"op_type": "move", "src": "/a/b.pdf", "dst": "/sorted", "op_id": "o1"}],
+        "rationale": "Grouped COPIL decks as a dated series; drafts quarantined.",
+    }
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(ApprovalModal("abc12345", plan_data))
+        await pilot.pause()
+        disclaimer = app.screen.query_one("#rationale-disclaimer", Label)
+        assert "model-generated" in str(disclaimer.content).lower()
+        assert "not verified fact" in str(disclaimer.content).lower()
+
+
+async def test_approval_modal_without_rationale_has_no_disclaimer(tmp_path: Path) -> None:
+    from textual.css.query import NoMatches
+
+    from host.app import ApprovalModal
+
+    plan_data = {"ops": [], "rationale": ""}
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(ApprovalModal("abc12345", plan_data))
+        await pilot.pause()
+        with pytest.raises(NoMatches):
+            app.screen.query_one("#rationale-disclaimer")
+
+
+async def test_approval_modal_folder_notes_have_disclaimer(tmp_path: Path) -> None:
+    from textual.widgets import Label
+
+    from host.app import ApprovalModal
+
+    plan_data = {
+        "ops": [{"op_type": "move", "src": "/in/a.pdf", "dst": "/t/01_decisions", "op_id": "o1"}],
+        "rationale": "",
+        "folder_notes": {"01_decisions": "Formal decision records"},
+    }
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(ApprovalModal("abc12345", plan_data))
+        await pilot.pause()
+        disclaimer = app.screen.query_one("#layout-notes-disclaimer", Label)
+        assert "model-generated" in str(disclaimer.content).lower()
+
+
+async def test_approval_modal_without_folder_notes_has_no_disclaimer(tmp_path: Path) -> None:
+    from textual.css.query import NoMatches
+
+    from host.app import ApprovalModal
+
+    # A target layout with no folder notes at all — bare tree, no LLM commentary.
+    plan_data = {
+        "ops": [{"op_type": "move", "src": "/in/a.pdf", "dst": "/t/01_decisions", "op_id": "o1"}],
+        "rationale": "",
+        "folder_notes": {},
+    }
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(ApprovalModal("abc12345", plan_data))
+        await pilot.pause()
+        with pytest.raises(NoMatches):
+            app.screen.query_one("#layout-notes-disclaimer")
+
+
 # ── M3: update_file collision-safety surfaced in the approval modal ──────────
 
 

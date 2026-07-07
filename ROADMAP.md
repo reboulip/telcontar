@@ -166,7 +166,7 @@ explicit decision — already marked skipped in the security doc, not tracked he
       visual cue (e.g. a muted tag or tooltip) when an op's source resolves outside the
       target directory. Keep this subtle — no red banner — basenames stay the primary
       display.
-- [ ] M5 · Mark LLM-authored rationale/notes as untrusted narration (S4) — label the
+- [x] M5 · Mark LLM-authored rationale/notes as untrusted narration (S4) — label the
       plan rationale and folder notes (`set_plan_rationale`, `set_plan_folder_notes`) in
       the UI as model-generated commentary, not verified fact; the op list stays the
       source of truth the approver should read.
