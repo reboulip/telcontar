@@ -431,6 +431,55 @@ async def test_approval_modal_without_rationale_has_no_rationale_widget(tmp_path
             app.screen.query_one("#plan-rationale")
 
 
+# ── M3: update_file collision-safety surfaced in the approval modal ──────────
+
+
+def test_fmt_op_update_file_without_overwrite_has_no_flag() -> None:
+    from host.app import _fmt_op
+
+    op = {"op_type": "update_file", "src": "/a/notes.md", "dst": "", "params": {"content": "x"}}
+    assert _fmt_op(op) == "UPDATE   notes.md"
+
+
+def test_fmt_op_update_file_with_overwrite_shows_subtle_flag() -> None:
+    from host.app import _fmt_op
+
+    op = {
+        "op_type": "update_file",
+        "src": "/a/notes.md",
+        "dst": "",
+        "params": {"content": "x", "overwrite": True},
+    }
+    formatted = _fmt_op(op)
+    assert "notes.md" in formatted
+    assert "overwrite" in formatted
+
+
+async def test_approval_modal_shows_update_file_overwrite_flag(tmp_path: Path) -> None:
+    from textual.widgets import Checkbox
+
+    from host.app import ApprovalModal
+
+    plan_data = {
+        "ops": [
+            {
+                "op_type": "update_file",
+                "src": "/a/notes.md",
+                "dst": "",
+                "op_id": "o1",
+                "params": {"content": "x", "overwrite": True},
+            }
+        ],
+        "rationale": "",
+    }
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(ApprovalModal("abc12345", plan_data))
+        await pilot.pause()
+        checkbox = app.screen.query_one(Checkbox)
+        assert "overwrite" in str(checkbox.label)
+
+
 # ── L5: plan target-layout preview ────────────────────────────────────────────
 
 

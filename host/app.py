@@ -1791,6 +1791,15 @@ def _fmt_op(op: dict) -> str:
             return f"MOVE     {src}  →  {dst}"
         case "quarantine":
             return f"QUARANTINE  {src}"
+        case "update_file":
+            # Subtle, not alarming (M4's discreet-styling convention): the
+            # overwrite flag matters to the approver but isn't a red-banner risk.
+            # Parens, not square brackets — Textual's markup parser treats
+            # `[...]` as a style tag and silently drops unrecognized names.
+            overwrite_flag = (
+                "  [dim](overwrite)[/dim]" if (op.get("params") or {}).get("overwrite") else ""
+            )
+            return f"UPDATE   {src}{overwrite_flag}"
         case _:
             return f"{op_type.upper()}  {src}"
 

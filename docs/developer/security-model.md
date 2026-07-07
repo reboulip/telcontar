@@ -198,7 +198,7 @@ single-user deployment.
 
 | ID | Severity | Finding |
 |---|---|---|
-| **S1** | **Critical** | **[Remediated — 2026-07-07, see P0 #1]** ~~Direct-mutation tools (`move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`) and `archive_document` / `compress_quarantine` / `undo_last` are advertised to the agent and dispatched with **no approval gate in any `APPROVAL_MODE`**. The plan→approve→execute model — the product's headline safety property — is bypassable. `update_file` additionally overwrites without a collision check.~~ All eight tools were removed from the agent-callable surface. Their functionality is reachable only via `propose_create_file` / `propose_update_file` / `propose_create_dir` / `propose_archive_document` / `propose_compress_quarantine`, staged and applied solely through the already-gated `execute_plan`; `propose_update_file` defaults to `overwrite=False`. `undo_last` was removed from the MCP surface entirely and is now a TUI-only user action (§3). |
+| **S1** | **Critical** | **[Remediated — 2026-07-07, see P0 #1]** ~~Direct-mutation tools (`move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`) and `archive_document` / `compress_quarantine` / `undo_last` are advertised to the agent and dispatched with **no approval gate in any `APPROVAL_MODE`**. The plan→approve→execute model — the product's headline safety property — is bypassable. `update_file` additionally overwrites without a collision check.~~ All eight tools were removed from the agent-callable surface. Their functionality is reachable only via `propose_create_file` / `propose_update_file` / `propose_create_dir` / `propose_archive_document` / `propose_compress_quarantine`, staged and applied solely through the already-gated `execute_plan`; `propose_update_file` defaults to `overwrite=False`, and the approval modal now flags any op with `overwrite=True` (see P0 #3). `undo_last` was removed from the MCP surface entirely and is now a TUI-only user action (§3). |
 | **S2** | **Critical** | **Indirect prompt injection** via document content. Untrusted document text shares the LLM context with telcontar's instructions and can drive S1's ungated tools (arbitrary write / overwrite of recovery artifacts), exfiltration, and deletion. Recorded summaries/provenance echo back into context, giving injection a second hop. |
 | **S3** | **High** | **[Partially remediated — 2026-07-07, see P0 #2]** ~~No path confinement; egress open by default. `ALLOWLIST_DIRS` is empty by default and enforced only on read/extract/compare — never on writes/moves/renames/quarantine. Reads can pull (and upload) any file the OS user can access; mutations can target any absolute or `..` path. The target directory is not a security boundary.~~ `check_within_root` now confines **every** path-taking tool — reads, writes, and moves/renames/quarantine alike — to `target_dir` plus the server's own working directory, rejecting both absolute-path and `..` escapes identically. This closes the "any file the OS user can access" gap for every real organize/query session (the host always sets `target_dir`). What's left open: `ALLOWLIST_DIRS` is still empty by default, so nothing narrows *which subtree* of the target directory itself is readable — that remains tracked separately as P2 #7 ("turn on confinement by default"), a distinct, narrower mechanism, still not done. |
 | **S4** | **High** | **The approval UI can mislead the approver:** op rows show only basenames (absolute source path hidden), the rationale/folder-notes are LLM-authored, the full op list is offloaded to a file, and direct (S1) mutations never appear in the approval flow or narration at all. |
@@ -264,10 +264,13 @@ first with the least behavioural disruption.
    organize/query session. `.resolve()` normalizes both absolute-path escapes and
    `..` traversal before the containment check.
 3. **[Done — 2026-07-07]** ~~Make `update_file` collision-safe (S1).~~
-   `propose_update_file` defaults to `overwrite=False` and requires the agent to pass
-   `overwrite=True` explicitly to replace an existing file — visible to the user at
-   approval — with the same check re-applied at `execute_plan` time in case a file
-   appears in between.
+   `propose_update_file` defaults to `overwrite=False` and refuses to overwrite an
+   existing file unless the agent explicitly passes `overwrite=True` — with the same
+   check re-applied at `execute_plan` time in case a file appears in between — and
+   the approval modal now surfaces that flag: `_fmt_op` (`host/app.py`) renders such
+   ops as `UPDATE   {basename}  (overwrite)`, a subtle `[dim]`-styled marker, so the
+   approver sees a collision-causing write before approving it rather than being
+   blindsided.
 
 ### P1 — make the human-in-the-loop trustworthy
 

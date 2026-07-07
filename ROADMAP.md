@@ -156,7 +156,7 @@ explicit decision — already marked skipped in the security doc, not tracked he
       from every server handler that reads or writes a path, defaulting `roots` to the
       run's target directory plus the `.organizer` working dir; reject absolute paths
       and `..` escapes.
-- [ ] M3 · Make the `update_file` plan op collision-safe (S1) — now that M1 makes
+- [x] M3 · Make the `update_file` plan op collision-safe (S1) — now that M1 makes
       `update_file` a plan op, its executor must never silently overwrite: no-overwrite
       by default (suffix or reject on collision, mirroring `check_no_overwrite`), with an
       explicit `overwrite=True` op parameter required — and shown in the approval modal
