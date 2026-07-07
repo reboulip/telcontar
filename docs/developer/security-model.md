@@ -21,8 +21,8 @@
       ▲                               │ stdio (all tool calls)
       │ mutations                     ▼
       │                        ┌──────────────┐
-      └────────────────────────│  MCP Server  │  local filesystem, no path confinement
-                               │  (file tools)│  quarantine + undo journal
+      └────────────────────────│  MCP Server  │  local filesystem, confined to
+                               │  (file tools)│  target_dir + server cwd (M2)
                                └──────────────┘
 ```
 
@@ -36,8 +36,15 @@ Three boundaries matter:
    party) in dev**, or any OpenAI-compatible URL the user pastes into the setup
    wizard. Data crossing this boundary has left the machine.
 3. **The MCP server is the only thing standing between the agent and the
-   filesystem** — and it applies *fewer* guardrails than the documented safety
-   model implies (see §5).
+   filesystem.** As of the M2 remediation, every path-taking tool handler is
+   checked with `check_within_root` and confined to the run's `target_dir` plus
+   the server's own working directory — the target directory is now a real
+   boundary, not just a convention. This closes the "any path the OS user can
+   reach" gap (S3), but it does not, by itself, address the other gaps the
+   documented safety model implies (see §5) — notably that reads/writes *within*
+   that boundary are still unconstrained by content (S2/S4), and `ALLOWLIST_DIRS`
+   remains off by default for narrowing *which subtree* of the target is
+   readable.
 
 ---
 
@@ -45,17 +52,26 @@ Three boundaries matter:
 
 | Data | How it leaves | Control |
 |---|---|---|
-| Document text (up to `MAX_SNIPPET_CHARS`, default 4000, per read) | `read_file` / `extract_text` / `compare_documents` return content into the LLM context | `ALLOWLIST_DIRS` — **empty by default = no restriction** |
-| Any other file the OS user can read | Same tools, if the agent is steered to a path outside the target dir | `ALLOWLIST_DIRS` only; not confined to the target directory |
+| Document text (up to `MAX_SNIPPET_CHARS`, default 4000, per read) | `read_file` / `extract_text` / `compare_documents` return content into the LLM context | `check_within_root` (target_dir + server cwd, always on) as the floor; `ALLOWLIST_DIRS` — **empty by default**, a stricter opt-in bound on top |
+| Any other file the OS user can read | Same tools, if the agent is steered to a path outside the target dir | **[Partially remediated — 2026-07-07, M2]** Blocked by `check_within_root` whenever a `target_dir` is set (true for every real organize/query session launched by the TUI). `ALLOWLIST_DIRS` remains the only control for narrowing *which subtree* of the target is readable. |
 | Derived metadata (title, summary, provenance, people/orgs) | Re-sent to the LLM during synthesis and in query mode | None — this is the product's purpose |
 | Synthesized prose (SUMMARY.md, folder READMEs) | Written locally by the built-in sink; external sinks gated | `EGRESS_ALLOW_EXTERNAL_SINKS` (default `false`) |
 
-**Key point for reviewers:** the target directory is *not* an egress boundary. The
-allowlist is the only mechanism that confines what content can be read and thus
-uploaded, and it is **off by default**. If the target tree (or anywhere the process
-can reach) contains a `.env`, a credentials spreadsheet, an SSH key, or a browser
+**Key point for reviewers:** **[Partially remediated — 2026-07-07, see P0 #2]** the
+target directory is now a real egress boundary in the normal case: `check_within_root`
+confines `read_file`/`extract_text`/`compare_documents` (and every other path-taking
+tool) to `target_dir` plus the server's own `.organizer`/quarantine working directory,
+even when `ALLOWLIST_DIRS` is unset. This holds whenever a `target_dir` is actually
+set — which is every real organize or query session the TUI launches (`mcp_session`
+always passes one through). There is no ordinary code path where `target_dir` is
+`None` and the guard silently opens up; the fallback (roots = server cwd only) is
+*more* restrictive, not less, so this is not a residual "no restriction" case in
+practice. What remains unremediated: `ALLOWLIST_DIRS` is still empty by default, so
+nothing narrows *which subtree* of the target directory is readable — if the target
+tree itself contains a `.env`, a credentials spreadsheet, an SSH key, or a browser
 profile, nothing in the default configuration stops that content from being sent to
-the model endpoint.
+the model endpoint. Turning `ALLOWLIST_DIRS` on by default is tracked separately
+(P2 #7, not yet done).
 
 ---
 
@@ -75,6 +91,8 @@ second check — this path is well isolated.
 | **Undo** (not an MCP tool) | `undo_last` | **Yes, exclusively** — the agent cannot call it at all; it is triggered only by the user pressing **u** in the TUI's `JournalScreen` (opened with **j**) |
 
 **Remediated (S1, 2026-07-07):** `move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`, `archive_document`, and `compress_quarantine` no longer exist as standalone tools. Every filesystem-mutating operation they used to perform — file writes, folder creation, archiving a document, and compressing quarantine — is now staged via a `propose_*` call and applied only through `execute_plan`, exactly like moves/renames/quarantines already were. `undo_last` was removed from the MCP tool surface entirely rather than gated; it survives only as a plain function invoked directly by the TUI (bypassing the agent and MCP both). See §6, P0 #1.
+
+**Remediated (S3, 2026-07-07):** every tool in the table above that takes a `path` argument — not just the read-only row, but the plan-building `propose_*` tools and the write tools too — is now checked with `check_within_root` before it runs, confining it to the run's `target_dir` plus the server's own working directory. Advertising the full toolset with no filter in organize mode is therefore no longer equivalent to giving the agent free rein over the filesystem; it is still free rein *within the target directory*. See §6, P0 #2.
 
 ---
 
@@ -112,10 +130,15 @@ Yes, in several ways that compound:
 
 Yes. See §2. Concretely:
 
-- With the default empty `ALLOWLIST_DIRS`, `read_file`/`extract_text` are not
+- ~~With the default empty `ALLOWLIST_DIRS`, `read_file`/`extract_text` are not
   confined to the target directory. The agent — whether legitimately exploring or
   steered by an injected document — can read and thereby upload any file the process
-  can access.
+  can access.~~ **[Partially remediated — 2026-07-07, S3]** `check_within_root` now
+  confines `read_file`/`extract_text` (and every other path-taking tool) to
+  `target_dir` + the server's own working directory regardless of `ALLOWLIST_DIRS`,
+  for every real organize/query session. The agent can still read anything *inside*
+  the target directory — `ALLOWLIST_DIRS` remains the only way to narrow that
+  further, and it is still empty by default.
 - Even without any adversary, organizing a folder that *contains* secrets ships those
   secrets to the endpoint, because reading them is the normal first step of analysis.
 - Extracted PII (names, roles) is persisted to `registry.json` / `INDEX.md` /
@@ -134,11 +157,14 @@ the agent:
   other mutation and requires the same approval gate. The missing collision check is
   also closed: `propose_update_file` defaults to `overwrite=False` and refuses to
   clobber an existing file unless the agent explicitly passes `overwrite=True`, which
-  is visible to the user at approval time. The targets of concern are unchanged (the
-  Windows Startup folder, `.organizer/journal.jsonl`, `registry.json`, the plan
-  files) — only the path to writing them now passes through the approval modal. The
-  residual risk is that a compromised agent can still get such a plan *approved* by
-  pairing it with a misleading rationale — see the next bullet and S4.
+  is visible to the user at approval time. **[Further narrowed — 2026-07-07, S3]**
+  `propose_create_file`/`propose_update_file`/`propose_create_dir` are also
+  `check_within_root`-checked, so "anywhere" is no longer literal — a target like the
+  Windows Startup folder is now rejected outright unless it happens to fall inside
+  `target_dir` or the server's own working directory (where `.organizer/journal.jsonl`,
+  `registry.json`, and the plan files legitimately live, and so remain in-bounds). The
+  residual risk is that a compromised agent can still get an in-bounds plan *approved*
+  by pairing it with a misleading rationale — see the next bullet and S4.
 - **Exfiltrate other files** — read a secret, then smuggle it into a new filename, a
   folder README, or the SUMMARY (all of which were sent to the endpoint en route).
   *Unaffected by S1 — these paths were already plan-gated.*
@@ -174,7 +200,7 @@ single-user deployment.
 |---|---|---|
 | **S1** | **Critical** | **[Remediated — 2026-07-07, see P0 #1]** ~~Direct-mutation tools (`move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`) and `archive_document` / `compress_quarantine` / `undo_last` are advertised to the agent and dispatched with **no approval gate in any `APPROVAL_MODE`**. The plan→approve→execute model — the product's headline safety property — is bypassable. `update_file` additionally overwrites without a collision check.~~ All eight tools were removed from the agent-callable surface. Their functionality is reachable only via `propose_create_file` / `propose_update_file` / `propose_create_dir` / `propose_archive_document` / `propose_compress_quarantine`, staged and applied solely through the already-gated `execute_plan`; `propose_update_file` defaults to `overwrite=False`. `undo_last` was removed from the MCP surface entirely and is now a TUI-only user action (§3). |
 | **S2** | **Critical** | **Indirect prompt injection** via document content. Untrusted document text shares the LLM context with telcontar's instructions and can drive S1's ungated tools (arbitrary write / overwrite of recovery artifacts), exfiltration, and deletion. Recorded summaries/provenance echo back into context, giving injection a second hop. |
-| **S3** | **High** | **No path confinement; egress open by default.** `ALLOWLIST_DIRS` is empty by default and enforced only on read/extract/compare — never on writes/moves/renames/quarantine. Reads can pull (and upload) any file the OS user can access; mutations can target any absolute or `..` path. The target directory is not a security boundary. |
+| **S3** | **High** | **[Partially remediated — 2026-07-07, see P0 #2]** ~~No path confinement; egress open by default. `ALLOWLIST_DIRS` is empty by default and enforced only on read/extract/compare — never on writes/moves/renames/quarantine. Reads can pull (and upload) any file the OS user can access; mutations can target any absolute or `..` path. The target directory is not a security boundary.~~ `check_within_root` now confines **every** path-taking tool — reads, writes, and moves/renames/quarantine alike — to `target_dir` plus the server's own working directory, rejecting both absolute-path and `..` escapes identically. This closes the "any file the OS user can access" gap for every real organize/query session (the host always sets `target_dir`). What's left open: `ALLOWLIST_DIRS` is still empty by default, so nothing narrows *which subtree* of the target directory itself is readable — that remains tracked separately as P2 #7 ("turn on confinement by default"), a distinct, narrower mechanism, still not done. |
 | **S4** | **High** | **The approval UI can mislead the approver:** op rows show only basenames (absolute source path hidden), the rationale/folder-notes are LLM-authored, the full op list is offloaded to a file, and direct (S1) mutations never appear in the approval flow or narration at all. |
 | **S5** | **Medium** | **Untrusted-document parsing** (`markitdown`/`pypdf`) runs unsandboxed with no input-size cap or timeout — a crash / DoS / parser-exploit surface on attacker-supplied files. |
 | **S6** | **Medium** | **System-prompt injection via unsigned config**: profile free-text fields and `.organizer/NAMING.md` are injected verbatim into the system prompt; `PROFILE` is used in a path with no traversal guard. |
@@ -187,6 +213,10 @@ To be fair to the design, these mitigations exist and should be preserved:
 
 - **Query mode is strictly read-only** with a defence-in-depth second check that
   refuses any non-allowlisted tool even if the model hallucinates one.
+- **Every path-taking tool is confined to the target directory (S3, partially
+  remediated)**: `check_within_root` rejects any path outside `target_dir` + the
+  server's working directory, for both reads and mutations, closing off absolute
+  and `..` escapes alike.
 - **Never-overwrite is enforced** on plan ops, moves, renames, quarantine, and
   `propose_create_file`/`create_file` (`check_no_overwrite`, re-checked again at
   `execute_plan` time); `propose_update_file` defaults to `overwrite=False`;
@@ -220,11 +250,19 @@ first with the least behavioural disruption.
    `propose_quarantine` already worked. `undo_last` was removed from the MCP tool
    surface entirely rather than gated; it is now a direct, user-triggered TUI action
    only (`JournalScreen`, **u** key) — never something the agent can call.
-2. **Enforce a path-confinement guard on every path-taking tool (S3).** Add a single
-   `check_within_root(path, roots)` guard (reuse the `check_allowlist` shape) and call
-   it in the server handlers for **all** reads *and* writes, defaulting `roots` to the
-   run's target directory plus the `.organizer` working dir. Reject absolute/`..`
-   escapes. This makes the target directory a real boundary.
+2. **[Done — 2026-07-07]** ~~Enforce a path-confinement guard on every path-taking
+   tool (S3). Add a single `check_within_root(path, roots)` guard (reuse the
+   `check_allowlist` shape) and call it in the server handlers for **all** reads
+   *and* writes, defaulting `roots` to the run's target directory plus the
+   `.organizer` working dir. Reject absolute/`..` escapes. This makes the target
+   directory a real boundary.~~ Added `check_within_root(path, roots)` in
+   `server/guards.py` (fail-closed: unlike `check_allowlist`, an empty `roots`
+   raises rather than allowing everything) and wired it into every path-taking
+   tool handler in `server/main.py` via `_check_within_root`/`_confinement_roots`
+   — `roots = [target_dir, Path.cwd()]`, with `target_dir` populated from a
+   `TARGET_DIR` env var the host sets on the server subprocess for every real
+   organize/query session. `.resolve()` normalizes both absolute-path escapes and
+   `..` traversal before the containment check.
 3. **[Done — 2026-07-07]** ~~Make `update_file` collision-safe (S1).~~
    `propose_update_file` defaults to `overwrite=False` and requires the agent to pass
    `overwrite=True` explicitly to replace an existing file — visible to the user at
@@ -245,8 +283,12 @@ first with the least behavioural disruption.
 ### P2 — harden inputs and defaults
 
 7. **Turn on confinement by default and document the allowlist prominently (S3).**
-   Ship with the target directory as the implicit allowlist root rather than "no
-   restriction."
+   Ship with the target directory as the implicit `ALLOWLIST_DIRS` root rather than
+   an empty allowlist. **Not done.** This is distinct from, and narrower than, the
+   `check_within_root` remediation above (P0 #2, done) — that guard already confines
+   every tool to `target_dir` + the server's working directory unconditionally; this
+   item is specifically about defaulting `ALLOWLIST_DIRS` itself so operators get the
+   stricter, narrower-subtree opt-in bound without setting it by hand. Still open.
 8. **Bound document extraction (S5):** cap input file size before parsing, add a
    wall-clock timeout, and consider running extraction in a resource-limited
    subprocess. Reject archives/entries above a sane ratio (zip-bomb guard).
@@ -273,10 +315,12 @@ first with the least behavioural disruption.
 
 ## 7. Operator hardening checklist (how to run it safely today)
 
-Until the P0/P1 items land, an operator can materially reduce exposure:
+Until the remaining P1/P2 items land, an operator can materially reduce exposure:
 
-- [ ] Set `ALLOWLIST_DIRS` to exactly the directory you are organizing — this is the
-      single most effective control and blocks reads/uploads elsewhere.
+- [ ] Set `ALLOWLIST_DIRS` to exactly the directory you are organizing (or a
+      subtree of it) — `check_within_root` (P0 #2, done) already confines every
+      tool to `target_dir`, but `ALLOWLIST_DIRS` remains the way to narrow reads
+      further within it, and it is still off by default.
 - [ ] Keep `APPROVAL_MODE=always` and **read every op in the plan**, not just the
       rationale. Treat the rationale as a hint, not a guarantee.
 - [ ] Never point telcontar at a directory that also contains secrets (`.env`, keys,

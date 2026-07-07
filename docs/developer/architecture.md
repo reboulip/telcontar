@@ -33,7 +33,8 @@ User
 │  │  server/plan.py      plan state machine         ││
 │  │  server/registry.py  content-addressed memory   ││
 │  │  server/profile.py   domain profile loader      ││
-│  │  server/guards.py    no-overwrite / allowlist   ││
+│  │  server/guards.py    no-overwrite / allowlist /  ││
+│  │                      target-dir confinement    ││
 │  │  server/journal.py   append-only undo log       ││
 │  │  server/events.py    project event journal      ││
 │  │  server/graph.py     knowledge graph projection ││
@@ -98,6 +99,29 @@ The MCP server has no delete tool. The `propose_quarantine` / `quarantine` path 
 As of the security-hardening pass that closed finding S1, there is no MCP tool that touches the filesystem directly. `move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`, `archive_document`, and `compress_quarantine` were removed as standalone tools; their functionality is reachable only by staging a `propose_create_file` / `propose_update_file` / `propose_create_dir` / `propose_archive_document` / `propose_compress_quarantine` op onto a plan and applying it via `execute_plan` — exactly the same path `propose_rename` / `propose_move` / `propose_quarantine` already used. `execute_plan`'s internal `_apply_op` dispatcher now handles all these op types directly, except `archive_document` and `compress_quarantine`, which are delegated to the pre-existing standalone functions of the same name (avoiding duplicated logic) and self-journal under their own `op_type` rather than the generic per-op entry.
 
 `undo_last` was removed from the MCP tool surface entirely — it is no longer callable by the agent under any circumstance. It survives only as a plain function in `server/tools.py`, invoked directly (bypassing MCP) by the TUI's `JournalScreen` when the user presses **u** — undo is now a deliberate, user-only action, never something the agent itself can trigger.
+
+### Path confinement on every path-taking tool (M2)
+
+As of the security-hardening pass that closed finding S3, `server/guards.py` exposes
+`check_within_root(path, roots)`, a fail-closed sibling of `check_allowlist`: an
+*empty* `roots` list raises `PermissionError` (the opposite of `check_allowlist`,
+where empty means unrestricted). `server/main.py` calls it — via the
+`_check_within_root` helper — in every path-taking tool handler (`list_dir`,
+`walk_tree`, `read_file`, `extract_text`, `compute_checksum`, `compare_documents`,
+every `propose_*` tool, `write_index`, `write_summary`, `write_folder_readme`,
+`record_document`). `_confinement_roots(cfg)` builds the allowed roots as
+`[settings.target_dir, Path.cwd()]` (target_dir omitted when unset). `target_dir`
+is populated from a `TARGET_DIR` env var that `host/agent.py`'s `mcp_session` sets
+on the server subprocess whenever a `target` is passed in — i.e. on every real
+organize (`run_agent`) or query (`run_query`) session — and `Path.cwd()` is
+included because the server always runs with its cwd set to the project root,
+where `.organizer/*` and the quarantine dir live regardless of which directory is
+being organized. Both `.resolve()`-normalize the candidate path first, so an
+absolute escape and a `..` traversal are rejected identically. For the three
+tools that already ran `check_allowlist` (`read_file`, `extract_text`,
+`compare_documents`), `check_within_root` runs *after* it — the allowlist remains
+a stricter, opt-in bound; target-dir confinement is the always-on floor
+underneath it.
 
 ### Recursive tree exploration
 
@@ -240,10 +264,11 @@ config/settings.py  (Pydantic Settings)
   │
   └──► server/main.py  (plans_dir, journal_path, events_path, registry_path,
                          graph_path, archive_path, quarantine_dir, max_snippet_chars,
-                         allowlist_dirs, egress_allow_external_sinks, profile)
+                         allowlist_dirs, egress_allow_external_sinks, profile,
+                         target_dir)
 ```
 
-Both host and server load `Settings` independently at startup — there is no shared singleton across the process boundary. The server's `_get_settings()` is lazy-initialized and cached per process.
+Both host and server load `Settings` independently at startup — there is no shared singleton across the process boundary. The server's `_get_settings()` is lazy-initialized and cached per process. `target_dir` differs from the other server-side settings in one way: it isn't read from `.env` in practice, it's set per-run by `host/agent.py`'s `mcp_session`, which passes it to the server subprocess as a `TARGET_DIR` environment variable (see [Path confinement](#path-confinement-on-every-path-taking-tool-m2) above).
 
 ---
 

@@ -7,6 +7,7 @@ approval so this module can be exercised in plain pytest tests.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from collections.abc import Awaitable
 from contextlib import asynccontextmanager
@@ -441,16 +442,22 @@ _MAX_TURNS = 50
 
 
 @asynccontextmanager
-async def mcp_session(project_root: Path) -> AsyncIterator[ClientSession]:
+async def mcp_session(
+    project_root: Path, target: Path | None = None
+) -> AsyncIterator[ClientSession]:
     """Launch the MCP server subprocess and yield an initialised session.
 
     The server inherits the host's environment so that pydantic-settings picks
-    up the .env file located in the project root.
+    up the .env file located in the project root. When ``target`` is given, it is
+    also passed as the ``TARGET_DIR`` env var so the server can confine path-taking
+    tools to it (M2) — every path-taking call this session's tools make should stay
+    within this run's target directory.
     """
+    env = {**os.environ, "TARGET_DIR": str(target)} if target is not None else None
     params = StdioServerParameters(
         command=sys.executable,
         args=["-m", "server.main"],
-        env=None,  # inherit environment (picks up .env via pydantic-settings)
+        env=env,  # inherit environment (picks up .env via pydantic-settings)
         cwd=str(project_root),
     )
     async with stdio_client(params) as (read, write):
@@ -508,7 +515,7 @@ async def run_agent(
     multiple-option checkpoint.
     """
     project_root = Path(__file__).resolve().parent.parent
-    async with mcp_session(project_root) as session:
+    async with mcp_session(project_root, target=target) as session:
         return await run_agent_loop(
             target=target,
             settings=settings,
@@ -640,15 +647,18 @@ async def run_query(
     llm: AsyncOpenAI,
     on_event: EventCallback,
     history: list[dict[str, Any]] | None = None,
+    target: Path | None = None,
 ) -> tuple[str, list[dict[str, Any]]]:
     """Answer one NL question over the corpus, launching a fresh MCP session.
 
     Convenience wrapper around `run_query_loop` for callers that do not manage a
     session themselves. For a multi-turn chat, keep a single session open and call
     `run_query_loop` directly instead (one server subprocess for the whole chat).
+    ``target`` is the analyzed corpus's directory, passed through to confine the
+    read-only tools' path arguments (M2).
     """
     project_root = Path(__file__).resolve().parent.parent
-    async with mcp_session(project_root) as session:
+    async with mcp_session(project_root, target=target) as session:
         return await run_query_loop(
             question=question,
             settings=settings,

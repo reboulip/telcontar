@@ -1616,7 +1616,7 @@ class QueryScreen(Screen):
 
         history: list[dict] | None = None
         try:
-            async with mcp_session(_PROJECT_ROOT) as session:
+            async with mcp_session(_PROJECT_ROOT, target=self._target) as session:
                 self._set_status("Ready — ask a question.")
                 while True:
                     question = await self._questions.get()

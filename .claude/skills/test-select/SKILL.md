@@ -52,7 +52,7 @@ Apply these rules in order (first match wins):
 | `server/graph.py` only | `tests/test_graph.py` |
 | `server/archive.py` only | `tests/test_archive.py` |
 | `server/sinks.py` only | `tests/test_sinks.py` |
-| `server/main.py` only | `tests/test_entrypoints.py` |
+| `server/main.py` only | `tests/test_entrypoints.py tests/test_main_confinement.py` |
 | `server/tools.py` propose_* only | `tests/test_tools_propose.py tests/test_e2e_toolchain.py` |
 | `server/tools.py` execute_plan only | `tests/test_execute_plan.py tests/test_e2e_toolchain.py tests/test_tools_errors.py` |
 | `server/tools.py` undo_last only | `tests/test_undo_last.py tests/test_compress_quarantine.py tests/test_e2e_toolchain.py` |

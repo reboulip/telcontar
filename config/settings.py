@@ -36,6 +36,11 @@ class Settings(BaseSettings):
 
     # Safety
     approval_mode: Literal["always", "destructive_only", "never"] = "always"
+    # The directory being organized this run — set by the host as the TARGET_DIR
+    # env var when it launches the MCP server subprocess. None outside a run (e.g.
+    # some test harnesses), in which case path-confinement guards fall back to
+    # just the `.organizer` working dir.
+    target_dir: Path | None = None
     quarantine_dir: Path = Path("_quarantine")
     journal_path: Path = Path(".organizer/journal.jsonl")
     events_path: Path = Path(".organizer/events.jsonl")

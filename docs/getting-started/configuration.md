@@ -22,6 +22,7 @@ The reference below is for **advanced or developer use**: env vars and a project
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `APPROVAL_MODE` | no | `always` | When to require user approval. See [Approval Modes](../user-guide/approval-modes.md). |
+| `TARGET_DIR` | no | *(unset)* | The directory being organized this run. Not meant to be set by hand — the host sets it automatically (as a subprocess env var) whenever it launches an organize or query session, so the MCP server can confine every path-taking tool to it. Every path-taking tool call is checked against `TARGET_DIR` plus the server's own working directory (where `.organizer/` and the quarantine dir live) via `check_within_root`; a path outside both is rejected regardless of `ALLOWLIST_DIRS`. |
 | `QUARANTINE_DIR` | no | `_quarantine` | Relative path (from the target directory) where clutter files are moved. Never deleted. |
 | `JOURNAL_PATH` | no | `.organizer/journal.jsonl` | Append-only undo journal (file operations, drives `undo_last`). Relative to the project root. |
 | `EVENTS_PATH` | no | `.organizer/events.jsonl` | Append-only project event journal (narrative log, drives `create_event` / `list_events`). Relative to the project root. |
@@ -46,7 +47,7 @@ The reference below is for **advanced or developer use**: env vars and a project
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `MAX_SNIPPET_CHARS` | no | `4000` | Maximum characters returned by `read_file` and `extract_text`. Defense-in-depth cap even when full content is allowed. |
-| `ALLOWLIST_DIRS` | no | `""` | JSON array of absolute directory paths, e.g. `["C:/Users/me/docs"]`. When set, telcontar can only read content from these paths. Leave blank to allow any path. |
+| `ALLOWLIST_DIRS` | no | `""` | JSON array of absolute directory paths, e.g. `["C:/Users/me/docs"]`. When set, telcontar can only read content from these paths — a stricter, opt-in bound applied on top of the always-on `TARGET_DIR` confinement above. Leave blank to fall back to that confinement alone (the whole target directory is readable, not "any path"). |
 | `EGRESS_ALLOW_EXTERNAL_SINKS` | no | `false` | Allow non-local output sinks (e.g. a MediaWiki MCP integration). The built-in `local_markdown` sink is always allowed regardless of this flag. Set to `true` only when you have connected a separate MCP sink integration and want its name listed in the profile's `[sinks] default`. |
 
 ---

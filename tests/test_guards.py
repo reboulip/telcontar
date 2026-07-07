@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 from pathlib import Path
 
-from server.guards import check_no_overwrite, safe_quarantine_path, check_allowlist
+from server.guards import (
+    check_allowlist,
+    check_no_overwrite,
+    check_within_root,
+    safe_quarantine_path,
+)
 
 
 class TestCheckNoOverwrite:
@@ -82,3 +87,42 @@ class TestCheckAllowlist:
         a.mkdir()
         b.mkdir()
         check_allowlist(b / "file.txt", [a, b])  # no exception
+
+
+class TestCheckWithinRoot:
+    def test_passes_when_path_inside_root(self, tmp_path: Path) -> None:
+        root = tmp_path / "target"
+        root.mkdir()
+        check_within_root(root / "file.txt", [root])  # no exception
+
+    def test_raises_when_path_outside_all_roots(self, tmp_path: Path) -> None:
+        root = tmp_path / "target"
+        root.mkdir()
+        outside = tmp_path / "other" / "file.txt"
+        with pytest.raises(PermissionError, match="outside the confined"):
+            check_within_root(outside, [root])
+
+    def test_passes_when_one_of_multiple_roots_matches(self, tmp_path: Path) -> None:
+        target = tmp_path / "target"
+        organizer = tmp_path / "target" / ".organizer"
+        target.mkdir()
+        organizer.mkdir()
+        check_within_root(organizer / "registry.json", [target])  # nested, still inside
+
+    def test_raises_for_absolute_path_outside_root(self, tmp_path: Path) -> None:
+        root = tmp_path / "target"
+        root.mkdir()
+        with pytest.raises(PermissionError):
+            check_within_root(tmp_path / "elsewhere" / "secret.env", [root])
+
+    def test_raises_for_dot_dot_escape(self, tmp_path: Path) -> None:
+        root = tmp_path / "target"
+        root.mkdir()
+        escaping = root / ".." / "outside.txt"
+        with pytest.raises(PermissionError):
+            check_within_root(escaping, [root])
+
+    def test_empty_roots_raises(self, tmp_path: Path) -> None:
+        # No roots configured means nothing is in scope — fail closed, not open.
+        with pytest.raises(PermissionError):
+            check_within_root(tmp_path / "file.txt", [])

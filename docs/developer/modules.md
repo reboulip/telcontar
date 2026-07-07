@@ -6,11 +6,11 @@ Detailed breakdown of every Python module in the codebase. For auto-generated AP
 
 ## `config/`
 
-### `config/settings.py` (~44 lines)
+### `config/settings.py`
 
 **Role:** Single source of truth for all runtime configuration. Loads from `.env` (project-local, highest priority) then `~/.telcontar/config.env` (user-level fallback for installed-tool use) via Pydantic Settings; real environment variables override both.
 
-**Key class:** `Settings` — a `BaseSettings` subclass with fields for LLM endpoint, safety, domain profile, document memory, and egress settings. `llm_base_url` and `llm_api_key` default to `""` so `Settings()` can be instantiated before the wizard runs.
+**Key class:** `Settings` — a `BaseSettings` subclass with fields for LLM endpoint, safety, domain profile, document memory, and egress settings. `llm_base_url` and `llm_api_key` default to `""` so `Settings()` can be instantiated before the wizard runs. `target_dir: Path | None = None` holds the directory being organized this run — populated from a `TARGET_DIR` env var set by the host (`mcp_session`) when it launches the server subprocess; `None` outside a real run (e.g. some test harnesses), in which case path-confinement guards fall back to just the server's own working directory (M2).
 
 **Public functions:**
 
@@ -37,7 +37,7 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 
 **Entrypoint:** `main()` calls `mcp.run(transport="stdio")`.
 
-**Design note:** This module is deliberately thin — it delegates all logic to `server/tools.py`. Tool parameters injected from config (e.g. `plans_dir`, `journal_path`) are resolved here and passed into the tool functions.
+**Design note:** This module is deliberately thin — it delegates all logic to `server/tools.py`. Tool parameters injected from config (e.g. `plans_dir`, `journal_path`) are resolved here and passed into the tool functions. `_confinement_roots(cfg)` and `_check_within_root(path, cfg)` (M2) wrap `server/guards.py`'s `check_within_root` and are called at the top of every path-taking tool handler to confine it to `[cfg.target_dir, Path.cwd()]`.
 
 ---
 
@@ -108,15 +108,16 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 
 ---
 
-### `server/guards.py` (~43 lines)
+### `server/guards.py`
 
-**Role:** Three guardrail functions enforced before any file operation.
+**Role:** Guardrail functions enforced before any file operation.
 
 | Function | What it guards |
 |---|---|
 | `check_no_overwrite(dest)` | Raises `FileExistsError` if `dest` already exists |
 | `safe_quarantine_path(src, quarantine_dir)` | Returns a collision-safe path in quarantine (suffixes `_1`, `_2`, …) |
-| `check_allowlist(path, allowlist_dirs)` | Raises `PermissionError` if `path` is not under any allowlisted directory |
+| `check_allowlist(path, allowlist_dirs)` | Raises `PermissionError` if `path` is not under any allowlisted directory. Empty `allowlist_dirs` = no restriction (opt-in). |
+| `check_within_root(path, roots)` | Raises `PermissionError` if `path` does not resolve inside any of `roots` (M2). Fail-closed — an empty `roots` list raises rather than allowing everything, the opposite default from `check_allowlist`. Called by `server/main.py`'s `_check_within_root` on every path-taking tool handler, with `roots = [target_dir, Path.cwd()]`. |
 
 **Why separate:** These rules are invariants that must hold across multiple tools. Centralising them in one module makes them easy to audit and test independently.
 
@@ -208,9 +209,9 @@ The MCP host package. Drives the GPT-5 agent loop and presents the Textual TUI.
 - `_OPTIONS_TOOL_NAME` / `_OPTIONS_TOOL_SPEC` — the host-side synthetic tool `propose_options` (L7), mirroring `ask_clarification`. Never registered with or forwarded to the MCP server; appended to the OpenAI tool list only when an `OptionsCallback` is wired in. Each question requires 2-5 mutually-exclusive options
 
 **Key functions:**
-- `run_agent(target, settings, llm, on_event, on_approval_needed, on_questions_needed=None, on_options_needed=None, instructions=None)` — top-level organize entry; launches the MCP server subprocess via `mcp_session()`, then calls `run_agent_loop`
+- `run_agent(target, settings, llm, on_event, on_approval_needed, on_questions_needed=None, on_options_needed=None, instructions=None)` — top-level organize entry; launches the MCP server subprocess via `mcp_session()`, then calls `run_agent_loop`. `mcp_session(project_root, target=None)` sets `TARGET_DIR` on the server subprocess's env whenever `target` is given, so the server can confine path-taking tools to it (M2)
 - `run_agent_loop(target, settings, llm, session, on_event, on_approval_needed, on_questions_needed=None, on_options_needed=None, project_root=None, instructions=None)` — the actual GPT-5 tool-calling loop for organize mode (injectable session for testing). `instructions` carries the user's optional pre-analysis steering text from the `OrganizerScreen` starter pane (L3); when non-empty it is appended to the seed user message ("Please organize the directory: …") before the loop starts. `on_options_needed` wires the L7 multiple-option checkpoint
-- `run_query(question, settings, llm, on_event, history)` — convenience entry for one query, launching its own MCP session
+- `run_query(question, settings, llm, on_event, history, target=None)` — convenience entry for one query, launching its own MCP session; `target` (the analyzed corpus's directory) is passed through to `mcp_session` so the server confines its read-only tools' path arguments (M2)
 - `run_query_loop(question, settings, llm, session, on_event, history, project_root)` — read-only tool-calling loop; threads `history` across calls for multi-turn context; returns `(answer, updated_history)`
 - `_discover_openai_tools(session, allowed)` — lists MCP tools and converts to OpenAI function specs; when `allowed` is given, only tools in the set are exposed (used by query mode)
 - `_build_system_prompt(project_root, settings)` — assembles the organize-mode system prompt from the active profile, including an optional clarification-checkpoint note and an optional multiple-option-checkpoint note between the ANALYZE and ORGANIZE sections

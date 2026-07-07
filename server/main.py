@@ -33,12 +33,31 @@ def _get_profile():
     return _profile
 
 
+def _confinement_roots(cfg) -> list[Path]:
+    """Roots every path-taking tool is confined to (M2/S3): the run's target
+    directory (if the host set one via TARGET_DIR) plus the server's own working
+    directory, where `.organizer` and the quarantine dir live by default."""
+    roots: list[Path] = []
+    if cfg.target_dir is not None:
+        roots.append(cfg.target_dir)
+    roots.append(Path.cwd())
+    return roots
+
+
+def _check_within_root(path: str, cfg) -> None:
+    from server.guards import check_within_root
+
+    check_within_root(Path(path), _confinement_roots(cfg))
+
+
 # ── Read-only tools ──────────────────────────────────────────────────────────
 
 
 @mcp.tool()
 def list_dir(path: str) -> dict:
     """Enumerate directory entries with metadata (size, type, mtime)."""
+    cfg = _get_settings()
+    _check_within_root(path, cfg)
     return tools.list_dir(path)
 
 
@@ -51,6 +70,8 @@ def walk_tree(path: str, max_depth: int = 3) -> dict:
     not just the top level. Directory entries carry a nested `children` list until
     max_depth is reached, where deeper dirs are marked `truncated` (call walk_tree
     again on that subpath to go deeper)."""
+    cfg = _get_settings()
+    _check_within_root(path, cfg)
     return tools.walk_tree(path, max_depth)
 
 
@@ -61,6 +82,7 @@ def read_file(path: str, max_chars: int = 4000) -> str:
     from server.guards import check_allowlist
 
     check_allowlist(Path(path), cfg.allowlist_dirs)
+    _check_within_root(path, cfg)
     return tools.read_file(path, min(max_chars, cfg.max_snippet_chars))
 
 
@@ -71,12 +93,15 @@ def extract_text(path: str, max_chars: int = 4000) -> str:
     from server.guards import check_allowlist
 
     check_allowlist(Path(path), cfg.allowlist_dirs)
+    _check_within_root(path, cfg)
     return tools.extract_text(path, min(max_chars, cfg.max_snippet_chars))
 
 
 @mcp.tool()
 def compute_checksum(path: str) -> dict:
     """Compute a file's sha256 checksum, used as its unique document id."""
+    cfg = _get_settings()
+    _check_within_root(path, cfg)
     return tools.compute_checksum(path)
 
 
@@ -89,6 +114,8 @@ def compare_documents(path_a: str, path_b: str, max_chars: int = 4000) -> dict:
 
     check_allowlist(Path(path_a), cfg.allowlist_dirs)
     check_allowlist(Path(path_b), cfg.allowlist_dirs)
+    _check_within_root(path_a, cfg)
+    _check_within_root(path_b, cfg)
     return tools.compare_documents(path_a, path_b, min(max_chars, cfg.max_snippet_chars))
 
 
@@ -154,6 +181,7 @@ def set_plan_folder_notes(plan_id: str, notes: dict) -> dict:
 def propose_rename(path: str, new_name: str, plan_id: str) -> dict:
     """Stage a rename operation in the named plan."""
     cfg = _get_settings()
+    _check_within_root(path, cfg)
     return tools.propose_rename(path, new_name, plan_id, cfg.plans_dir)
 
 
@@ -161,6 +189,8 @@ def propose_rename(path: str, new_name: str, plan_id: str) -> dict:
 def propose_move(path: str, dest_dir: str, plan_id: str) -> dict:
     """Stage a move operation in the named plan."""
     cfg = _get_settings()
+    _check_within_root(path, cfg)
+    _check_within_root(dest_dir, cfg)
     return tools.propose_move(path, dest_dir, plan_id, cfg.plans_dir)
 
 
@@ -168,6 +198,7 @@ def propose_move(path: str, dest_dir: str, plan_id: str) -> dict:
 def propose_quarantine(path: str, plan_id: str) -> dict:
     """Stage a quarantine operation in the named plan."""
     cfg = _get_settings()
+    _check_within_root(path, cfg)
     return tools.propose_quarantine(path, plan_id, cfg.plans_dir, cfg.quarantine_dir)
 
 
@@ -175,6 +206,7 @@ def propose_quarantine(path: str, plan_id: str) -> dict:
 def propose_create_file(path: str, content: str, plan_id: str) -> dict:
     """Stage creating a new file in the named plan; raises if the path already exists."""
     cfg = _get_settings()
+    _check_within_root(path, cfg)
     return tools.propose_create_file(path, content, plan_id, cfg.plans_dir)
 
 
@@ -184,6 +216,7 @@ def propose_update_file(path: str, content: str, plan_id: str, overwrite: bool =
     to replace an existing file unless overwrite=True — pass it explicitly for the
     rare legitimate overwrite; it is shown to the user at approval."""
     cfg = _get_settings()
+    _check_within_root(path, cfg)
     return tools.propose_update_file(path, content, plan_id, cfg.plans_dir, overwrite)
 
 
@@ -191,6 +224,7 @@ def propose_update_file(path: str, content: str, plan_id: str, overwrite: bool =
 def propose_create_dir(path: str, plan_id: str) -> dict:
     """Stage creating a directory (and parents) in the named plan; idempotent."""
     cfg = _get_settings()
+    _check_within_root(path, cfg)
     return tools.propose_create_dir(path, plan_id, cfg.plans_dir)
 
 
@@ -236,6 +270,7 @@ def execute_plan(plan_id: str) -> dict:
 def write_index(path: str) -> dict:
     """Emit INDEX.md (tree + changelog) and manifest.json for the organized tree at path."""
     cfg = _get_settings()
+    _check_within_root(path, cfg)
     return tools.write_index(path, cfg.journal_path)
 
 
@@ -259,6 +294,7 @@ def _sink_results(results: list[dict]) -> dict:
 def write_summary(path: str, content: str) -> dict:
     """Write the LLM-composed project synthesis to the profile's active output
     sink(s). The built-in local_markdown sink persists it as SUMMARY.md."""
+    _check_within_root(path, _get_settings())
     return _sink_results([s.write_summary(path, content) for s in _resolve_output_sinks()])
 
 
@@ -266,6 +302,7 @@ def write_summary(path: str, content: str) -> dict:
 def write_folder_readme(path: str, content: str) -> dict:
     """Write the LLM-composed per-folder description to the profile's active output
     sink(s). The built-in local_markdown sink persists it as README.md."""
+    _check_within_root(path, _get_settings())
     return _sink_results([s.write_folder_readme(path, content) for s in _resolve_output_sinks()])
 
 
@@ -293,6 +330,7 @@ def record_document(
     `provenance` is the document's knowledge contribution (why it is here).
     """
     cfg = _get_settings()
+    _check_within_root(path, cfg)
     return tools.record_document(
         checksum=checksum,
         path=path,

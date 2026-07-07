@@ -151,7 +151,7 @@ explicit decision — already marked skipped in the security doc, not tracked he
       a proposed op that goes through `create_plan` → `review_plan` → `approve_plan` →
       `execute_plan`, the same lifecycle renames/moves/quarantine already use. Keep
       `undo_last` as an explicit user action only, never an agent-callable tool.
-- [ ] M2 · Path-confinement guard on every path-taking tool (S3) — add
+- [x] M2 · Path-confinement guard on every path-taking tool (S3) — add
       `check_within_root(path, roots)` (mirrors `check_allowlist`'s shape) and call it
       from every server handler that reads or writes a path, defaulting `roots` to the
       run's target directory plus the `.organizer` working dir; reject absolute paths

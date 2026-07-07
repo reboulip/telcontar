@@ -326,7 +326,7 @@ async def test_query_screen_routes_tool_events_to_timeline(
     )
 
     @asynccontextmanager
-    async def fake_mcp_session(project_root):
+    async def fake_mcp_session(project_root, target=None):
         yield None
 
     async def fake_run_query_loop(
@@ -375,7 +375,7 @@ async def test_query_screen_log_helpers_safe_after_pop(
     )
 
     @asynccontextmanager
-    async def fake_mcp_session(project_root):
+    async def fake_mcp_session(project_root, target=None):
         yield None
 
     async def fake_run_query_loop(**kwargs):
