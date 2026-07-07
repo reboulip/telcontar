@@ -900,6 +900,68 @@ async def test_organizer_narrates_macro_tasks_in_transcript(
         assert "read_file" not in transcript
 
 
+# ── M6: M1's new propose_* plan-flow tools are narrated, not silent ──────────
+
+
+async def test_organizer_narrates_new_propose_tools_as_planning_changes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """S4/S7: staging a create/update/archive/compress op into a plan must be
+    visible narration (M1 gated these behind propose_* tools instead of the
+    ungated direct tools they replaced) — not a silent internal step."""
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    new_propose_tools = [
+        "propose_create_file",
+        "propose_update_file",
+        "propose_create_dir",
+        "propose_archive_document",
+        "propose_compress_quarantine",
+    ]
+
+    async def fake_run_agent(
+        *,
+        target,
+        settings,
+        llm,
+        on_event,
+        on_approval_needed,
+        on_questions_needed=None,
+        on_options_needed=None,
+        instructions=None,
+    ):
+        for tool in new_propose_tools:
+            on_event(AgentEvent("tool_call", f"{tool}(...)", data={"tool": tool}))
+        on_event(AgentEvent("done", "done"))
+        return "done"
+
+    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        await pilot.click("#proceed-btn")  # leave the L3 starter pane
+        await pilot.pause()
+        await pilot.pause(0.2)
+        transcript = _transcript_text(app.screen)
+        steps = _steps_text(app.screen)
+
+        # All 5 new propose_* tools narrate as visible "Planning changes…" turns…
+        assert "Planning changes" in transcript
+        # …while the raw tool names stay tucked into internal steps, not the
+        # speaker turns themselves (same pattern as the pre-existing tools).
+        for tool in new_propose_tools:
+            assert tool in steps
+            assert tool not in transcript
+
+
 # ── F11: folder-browsing directory picker on the startup screen ──────────────
 
 

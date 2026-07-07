@@ -170,7 +170,7 @@ explicit decision — already marked skipped in the security doc, not tracked he
       plan rationale and folder notes (`set_plan_rationale`, `set_plan_folder_notes`) in
       the UI as model-generated commentary, not verified fact; the op list stays the
       source of truth the approver should read.
-- [ ] M6 · Surface plan-flow ops in the transcript narration (S4/S7) — now that M1 routes
+- [x] M6 · Surface plan-flow ops in the transcript narration (S4/S7) — now that M1 routes
       create/update/archive/compress through the plan flow (so they already appear in the
       approval modal like any other op), make sure `_TOOL_NARRATION` (or equivalent) also
       covers the new `propose_*` tool calls in the live transcript, so building these ops
