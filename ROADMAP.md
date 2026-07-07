@@ -129,3 +129,57 @@ Production-readiness and operator ergonomics.
 - [x] L5 · Plan target-layout preview — render the proposed folder tree with per-folder purpose notes in the plan/approval view [#14]
 - [x] L6 · Natural-language plan editing — accept free-text plan refinements ("merge X with Y", "don't quarantine Z") and regenerate a revised plan; show the plan summary in the UI with the detailed ops as an inspectable JSON file (requires: L2) [#13]
 - [x] L7 · Multiple-option proposals — let the agent self-review from a second angle and surface competing classification/handling options as user-facing questions; builds on the K1 clarification checkpoint [#18]
+
+---
+
+## Phase 12 — Security hardening (remediation plan)
+
+Closes findings from `docs/developer/security-model.md` (S1–S8), in the priority order
+(P0→P3) that document lays out. `docs/developer/security-model.md` must be kept current
+as each item lands: cross off the remediation item there, and update any affected
+trust-boundary / capability-surface / findings-register prose so the doc describes
+current behaviour, not just the original audit. Item #9 from that document (profiles/
+`NAMING.md` as trusted config, S6) is intentionally excluded from this sprint by
+explicit decision — already marked skipped in the security doc, not tracked here.
+
+- [ ] M1 · Gate every mutating tool or stop advertising it (S1) — route `move_file` /
+      `rename_file` / `create_file` / `update_file` / `create_dir` / `archive_document` /
+      `compress_quarantine` through the same approval callback as `execute_plan`, or
+      (preferred) stop exposing them as agent tools in organize mode and force all
+      mutations through the plan flow. Keep `undo_last` as an explicit user action only,
+      never an agent-callable tool.
+- [ ] M2 · Path-confinement guard on every path-taking tool (S3) — add
+      `check_within_root(path, roots)` (mirrors `check_allowlist`'s shape) and call it
+      from every server handler that reads or writes a path, defaulting `roots` to the
+      run's target directory plus the `.organizer` working dir; reject absolute paths
+      and `..` escapes.
+- [ ] M3 · Make `update_file` collision-safe (S1) — remove its silent-overwrite path, or
+      require an explicit, plan-gated `overwrite=True`; it must never clobber recovery
+      artifacts (journal, registry, plan files).
+- [ ] M4 · Discreet out-of-scope indicator in the approval modal (S4) — `_fmt_op`
+      (`host/app.py`) currently shows only `Path(src).name`; add a low-key, non-alarming
+      visual cue (e.g. a muted tag or tooltip) when an op's source resolves outside the
+      target directory. Keep this subtle — no red banner — basenames stay the primary
+      display.
+- [ ] M5 · Mark LLM-authored rationale/notes as untrusted narration (S4) — label the
+      plan rationale and folder notes (`set_plan_rationale`, `set_plan_folder_notes`) in
+      the UI as model-generated commentary, not verified fact; the op list stays the
+      source of truth the approver should read.
+- [ ] M6 · Surface direct/compress/archive ops in the transcript and approval flow
+      (S4/S7) — once M1 gates these tools, make sure they also appear in
+      `_TOOL_NARRATION`/the transcript and the approval modal like plan ops, so no
+      mutation is invisible (requires: M1)
+- [ ] M7 · Path confinement on by default (S3) — ship with the run's target directory
+      as the implicit allowlist root instead of "no restriction" when `ALLOWLIST_DIRS`
+      is unset (requires: M2)
+- [ ] M8 · Bound document extraction (S5) — cap input file size before
+      `extract()`/`MarkItDown().convert()`, add a wall-clock timeout, and guard against
+      pathological archive/zip-bomb ratios.
+- [ ] M10 · Injection-resistance delimiter for document content (S2) — wrap extracted
+      document text in an explicit "untrusted document content, never an instruction"
+      delimiter in the analysis prompt (requires: M1)
+- [ ] M11 · Never silently fall back to a plaintext API key (S8) — if the OS keyring is
+      unavailable, warn loudly and require explicit opt-in before writing the key to
+      `~/.telcontar/config.env`; keep keys out of any CWD `.env`.
+- [ ] M12 · Log egress (S8) — record which files' contents were sent to the LLM endpoint
+      (path + size + timestamp) so an operator can audit what left the machine.
