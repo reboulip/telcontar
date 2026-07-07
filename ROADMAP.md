@@ -142,20 +142,25 @@ current behaviour, not just the original audit. Item #9 from that document (prof
 `NAMING.md` as trusted config, S6) is intentionally excluded from this sprint by
 explicit decision — already marked skipped in the security doc, not tracked here.
 
-- [ ] M1 · Gate every mutating tool or stop advertising it (S1) — route `move_file` /
-      `rename_file` / `create_file` / `update_file` / `create_dir` / `archive_document` /
-      `compress_quarantine` through the same approval callback as `execute_plan`, or
-      (preferred) stop exposing them as agent tools in organize mode and force all
-      mutations through the plan flow. Keep `undo_last` as an explicit user action only,
-      never an agent-callable tool.
+- [ ] M1 · Gate every mutating tool by routing it through the plan flow (S1) — remove
+      `move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`,
+      `archive_document`, `compress_quarantine` from the toolset advertised to the agent
+      in organize mode. Add matching plan-op types and `propose_*` tools
+      (`propose_create_file`, `propose_update_file`, `propose_create_dir`,
+      `propose_archive_document`, `propose_compress_quarantine`) so every mutation becomes
+      a proposed op that goes through `create_plan` → `review_plan` → `approve_plan` →
+      `execute_plan`, the same lifecycle renames/moves/quarantine already use. Keep
+      `undo_last` as an explicit user action only, never an agent-callable tool.
 - [ ] M2 · Path-confinement guard on every path-taking tool (S3) — add
       `check_within_root(path, roots)` (mirrors `check_allowlist`'s shape) and call it
       from every server handler that reads or writes a path, defaulting `roots` to the
       run's target directory plus the `.organizer` working dir; reject absolute paths
       and `..` escapes.
-- [ ] M3 · Make `update_file` collision-safe (S1) — remove its silent-overwrite path, or
-      require an explicit, plan-gated `overwrite=True`; it must never clobber recovery
-      artifacts (journal, registry, plan files).
+- [ ] M3 · Make the `update_file` plan op collision-safe (S1) — now that M1 makes
+      `update_file` a plan op, its executor must never silently overwrite: no-overwrite
+      by default (suffix or reject on collision, mirroring `check_no_overwrite`), with an
+      explicit `overwrite=True` op parameter required — and shown in the approval modal
+      — for the rare legitimate overwrite (requires: M1)
 - [ ] M4 · Discreet out-of-scope indicator in the approval modal (S4) — `_fmt_op`
       (`host/app.py`) currently shows only `Path(src).name`; add a low-key, non-alarming
       visual cue (e.g. a muted tag or tooltip) when an op's source resolves outside the
@@ -165,10 +170,11 @@ explicit decision — already marked skipped in the security doc, not tracked he
       plan rationale and folder notes (`set_plan_rationale`, `set_plan_folder_notes`) in
       the UI as model-generated commentary, not verified fact; the op list stays the
       source of truth the approver should read.
-- [ ] M6 · Surface direct/compress/archive ops in the transcript and approval flow
-      (S4/S7) — once M1 gates these tools, make sure they also appear in
-      `_TOOL_NARRATION`/the transcript and the approval modal like plan ops, so no
-      mutation is invisible (requires: M1)
+- [ ] M6 · Surface plan-flow ops in the transcript narration (S4/S7) — now that M1 routes
+      create/update/archive/compress through the plan flow (so they already appear in the
+      approval modal like any other op), make sure `_TOOL_NARRATION` (or equivalent) also
+      covers the new `propose_*` tool calls in the live transcript, so building these ops
+      into a plan is visible narration, not a silent internal step (requires: M1)
 - [ ] M7 · Path confinement on by default (S3) — ship with the run's target directory
       as the implicit allowlist root instead of "no restriction" when `ALLOWLIST_DIRS`
       is unset (requires: M2)
