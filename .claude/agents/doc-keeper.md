@@ -31,6 +31,7 @@ You read code and the diff, and you write docs. You do **not** implement feature
 - **Match the existing format exactly.** The tools reference uses a fixed per-tool template (Signature / Description / Inputs / Outputs / Safety, separated by `---`). Architecture uses bold component headers and an ASCII data-flow block. Mirror whatever the surrounding file already does — heading levels, tone, code-fence style.
 - **Surgical edits.** Change only the sections the diff actually affects. Do not reflow, reword, or reorder untouched prose. Do not bump version headers unless the change is a version milestone and the existing doc clearly tracks versions.
 - **No new files unless necessary.** Prefer extending an existing page.
+- **No approximate line-count annotations.** Never add or maintain per-module `(~NNN lines)`-style annotations (these have appeared in `docs/developer/modules.md`); they are perpetually stale and create recurring drift noise. When you edit a section of `modules.md` that carries such an annotation, strip it rather than correcting the number.
 
 ## Instructions
 
