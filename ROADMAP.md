@@ -161,7 +161,7 @@ explicit decision — already marked skipped in the security doc, not tracked he
       by default (suffix or reject on collision, mirroring `check_no_overwrite`), with an
       explicit `overwrite=True` op parameter required — and shown in the approval modal
       — for the rare legitimate overwrite (requires: M1)
-- [ ] M4 · Discreet out-of-scope indicator in the approval modal (S4) — `_fmt_op`
+- [x] M4 · Discreet out-of-scope indicator in the approval modal (S4) — `_fmt_op`
       (`host/app.py`) currently shows only `Path(src).name`; add a low-key, non-alarming
       visual cue (e.g. a muted tag or tooltip) when an op's source resolves outside the
       target directory. Keep this subtle — no red banner — basenames stay the primary

@@ -480,6 +480,79 @@ async def test_approval_modal_shows_update_file_overwrite_flag(tmp_path: Path) -
         assert "overwrite" in str(checkbox.label)
 
 
+# ── M4: discreet out-of-scope indicator in the approval modal ────────────────
+
+
+def test_fmt_op_in_scope_has_no_indicator(tmp_path: Path) -> None:
+    from host.app import _fmt_op
+
+    op = {"op_type": "move", "src": str(tmp_path / "doc.pdf"), "dst": "/sorted", "op_id": "o1"}
+    assert _fmt_op(op, tmp_path) == "MOVE     doc.pdf  →  /sorted"
+
+
+def test_fmt_op_out_of_scope_shows_subtle_indicator(tmp_path: Path) -> None:
+    from host.app import _fmt_op
+
+    target = tmp_path / "target"
+    outside = tmp_path / "elsewhere" / "secret.env"
+    op = {"op_type": "rename", "src": str(outside), "dst": "renamed.env", "op_id": "o1"}
+    formatted = _fmt_op(op, target)
+    assert "secret.env" in formatted
+    assert "outside target" in formatted
+
+
+def test_fmt_op_no_target_has_no_indicator() -> None:
+    from host.app import _fmt_op
+
+    op = {"op_type": "rename", "src": "/anywhere/doc.pdf", "dst": "new.pdf", "op_id": "o1"}
+    assert "outside target" not in _fmt_op(op, None)
+
+
+async def test_approval_modal_flags_out_of_scope_op(tmp_path: Path) -> None:
+    from textual.widgets import Checkbox
+
+    from host.app import ApprovalModal
+
+    target = tmp_path / "target"
+    target.mkdir()
+    plan_data = {
+        "ops": [
+            {
+                "op_type": "rename",
+                "src": str(tmp_path / "elsewhere" / "secret.env"),
+                "dst": "renamed.env",
+                "op_id": "o1",
+            }
+        ],
+        "rationale": "",
+    }
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(ApprovalModal("abc12345", plan_data, target))
+        await pilot.pause()
+        checkbox = app.screen.query_one(Checkbox)
+        assert "outside target" in str(checkbox.label)
+
+
+async def test_approval_modal_does_not_flag_in_scope_op(tmp_path: Path) -> None:
+    from textual.widgets import Checkbox
+
+    from host.app import ApprovalModal
+
+    target = tmp_path / "target"
+    target.mkdir()
+    plan_data = {
+        "ops": [{"op_type": "rename", "src": str(target / "a.pdf"), "dst": "b.pdf", "op_id": "o1"}],
+        "rationale": "",
+    }
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(ApprovalModal("abc12345", plan_data, target))
+        await pilot.pause()
+        checkbox = app.screen.query_one(Checkbox)
+        assert "outside target" not in str(checkbox.label)
+
+
 # ── L5: plan target-layout preview ────────────────────────────────────────────
 
 

@@ -105,8 +105,15 @@ Yes, in several ways that compound:
 - **The approval checklist hides absolute paths.** `_fmt_op` (`host/app.py`) renders
   each op using only the file *basename* (`Path(src).name`). A user approving
   `RENAME report.pdf → 2024-01-15_report.pdf` cannot see whether `report.pdf` lives
-  in the target folder or in `C:\Users\me\.ssh\`. The one field that would reveal an
-  out-of-scope target is stripped from the view.
+  in the target folder or in `C:\Users\me\.ssh\`. **[Partially remediated — 2026-07-07,
+  M4]** The absolute path itself is still never shown — basenames remain the only path
+  display — but the underlying *fact* an approver actually needs is now visible:
+  `_fmt_op` appends a discreet `(outside target)` marker whenever an op's source
+  resolves outside the directory being organized (`_is_op_out_of_scope`, UI-only,
+  advisory — the real boundary is still the server's `check_within_root`, M2). This
+  is deliberately a quiet cue, not a red flag; a determined attacker who also controls
+  the rationale text could still draw the approver's attention elsewhere, so this is
+  a mitigation, not a closure, of the bullet.
 - **The explanation is authored by the same model that could be compromised.** The
   plan *rationale* and *folder notes* shown above the op list are free text the LLM
   composed (`set_plan_rationale`, `set_plan_folder_notes`). A prompt-injected agent
@@ -122,9 +129,9 @@ Yes, in several ways that compound:
   **[Remediated — 2026-07-07, S1]** These tools no longer exist; every mutation
   (including former direct writes) is staged via `propose_*` and applied only
   through `execute_plan`, so it is always narrated and always reaches the approval
-  modal. The other bullets in this section — hidden absolute paths, an
-  LLM-authored rationale, and the offloaded op list — are unaffected and remain
-  open (see S4).
+  modal. The other bullets in this section — the LLM-authored rationale and the
+  offloaded op list — are unaffected and remain open; the hidden-absolute-paths
+  bullet was later partially addressed by M4 (see above and S4).
 
 ### 4.2 Can sensitive information reach the LLM?
 
@@ -201,7 +208,7 @@ single-user deployment.
 | **S1** | **Critical** | **[Remediated — 2026-07-07, see P0 #1]** ~~Direct-mutation tools (`move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`) and `archive_document` / `compress_quarantine` / `undo_last` are advertised to the agent and dispatched with **no approval gate in any `APPROVAL_MODE`**. The plan→approve→execute model — the product's headline safety property — is bypassable. `update_file` additionally overwrites without a collision check.~~ All eight tools were removed from the agent-callable surface. Their functionality is reachable only via `propose_create_file` / `propose_update_file` / `propose_create_dir` / `propose_archive_document` / `propose_compress_quarantine`, staged and applied solely through the already-gated `execute_plan`; `propose_update_file` defaults to `overwrite=False`, and the approval modal now flags any op with `overwrite=True` (see P0 #3). `undo_last` was removed from the MCP surface entirely and is now a TUI-only user action (§3). |
 | **S2** | **Critical** | **Indirect prompt injection** via document content. Untrusted document text shares the LLM context with telcontar's instructions and can drive S1's ungated tools (arbitrary write / overwrite of recovery artifacts), exfiltration, and deletion. Recorded summaries/provenance echo back into context, giving injection a second hop. |
 | **S3** | **High** | **[Partially remediated — 2026-07-07, see P0 #2]** ~~No path confinement; egress open by default. `ALLOWLIST_DIRS` is empty by default and enforced only on read/extract/compare — never on writes/moves/renames/quarantine. Reads can pull (and upload) any file the OS user can access; mutations can target any absolute or `..` path. The target directory is not a security boundary.~~ `check_within_root` now confines **every** path-taking tool — reads, writes, and moves/renames/quarantine alike — to `target_dir` plus the server's own working directory, rejecting both absolute-path and `..` escapes identically. This closes the "any file the OS user can access" gap for every real organize/query session (the host always sets `target_dir`). What's left open: `ALLOWLIST_DIRS` is still empty by default, so nothing narrows *which subtree* of the target directory itself is readable — that remains tracked separately as P2 #7 ("turn on confinement by default"), a distinct, narrower mechanism, still not done. |
-| **S4** | **High** | **The approval UI can mislead the approver:** op rows show only basenames (absolute source path hidden), the rationale/folder-notes are LLM-authored, the full op list is offloaded to a file, and direct (S1) mutations never appear in the approval flow or narration at all. |
+| **S4** | **High** | **[Partially remediated — 2026-07-07, see P1 #4]** **The approval UI can mislead the approver:** op rows show only basenames (absolute source path hidden, though an op resolving outside the target directory now gets a discreet `(outside target)` marker), the rationale/folder-notes are LLM-authored, the full op list is offloaded to a file, and direct (S1) mutations never appear in the approval flow or narration at all. |
 | **S5** | **Medium** | **Untrusted-document parsing** (`markitdown`/`pypdf`) runs unsandboxed with no input-size cap or timeout — a crash / DoS / parser-exploit surface on attacker-supplied files. |
 | **S6** | **Medium** | **System-prompt injection via unsigned config**: profile free-text fields and `.organizer/NAMING.md` are injected verbatim into the system prompt; `PROFILE` is used in a path with no traversal guard. |
 | **S7** | **Medium** | **`compress_quarantine` performs the only real delete, ungated**, and its reversibility depends on artifacts S1 can corrupt. |
@@ -274,9 +281,12 @@ first with the least behavioural disruption.
 
 ### P1 — make the human-in-the-loop trustworthy
 
-4. **Show absolute source paths (or a clear in-/out-of-scope flag) in the approval
-   modal (S4).** At minimum, flag any op whose source is outside the target directory
-   in red.
+4. **[Done — 2026-07-07]** ~~Show absolute source paths (or a clear in-/out-of-scope
+   flag) in the approval modal (S4). At minimum, flag any op whose source is outside
+   the target directory in red.~~ `_fmt_op` (`host/app.py`) now appends a discreet
+   `(outside target)` marker (not the absolute path itself, and not a loud red flag)
+   when an op's source resolves outside the target directory — this was an explicit,
+   deliberate design choice (subtle over alarming), not a partial implementation.
 5. **Mark LLM-authored rationale/notes as untrusted narration in the UI (S4)** — a
    subtle label so the approver knows the explanation is model-generated, and always
    render the op list as the source of truth.

@@ -185,10 +185,11 @@ class ApprovalModal(ModalScreen[ApprovalResult]):
 
     BINDINGS = [("escape", "reject", "Reject")]
 
-    def __init__(self, plan_id: str, plan_data: dict) -> None:
+    def __init__(self, plan_id: str, plan_data: dict, target: Path | None = None) -> None:
         super().__init__()
         self._plan_id = plan_id
         self._plan_data = plan_data
+        self._target = target
 
     def compose(self) -> ComposeResult:
         ops = self._plan_data.get("ops", [])
@@ -211,7 +212,7 @@ class ApprovalModal(ModalScreen[ApprovalResult]):
                 if ops:
                     for op in ops:
                         yield Checkbox(
-                            _fmt_op(op),
+                            _fmt_op(op, self._target),
                             value=True,
                             name=op.get("op_id", ""),
                         )
@@ -1403,7 +1404,7 @@ class OrganizerScreen(Screen):
                 f"({len(plan_data.get('ops', []))} op(s)) — awaiting approval…",
             )
             result: ApprovalResult = await self.app.push_screen_wait(
-                ApprovalModal(plan_id, plan_data)
+                ApprovalModal(plan_id, plan_data, self._target)
             )
             if result.approved:
                 removed = len(result.removed_op_ids)
@@ -1780,17 +1781,37 @@ def _fmt_exc(exc: Exception) -> str:
     return f"{type(exc).__name__}: {exc}"
 
 
-def _fmt_op(op: dict) -> str:
+def _is_op_out_of_scope(op: dict, target: Path | None) -> bool:
+    """Best-effort UI check: does this op's source resolve outside ``target``?
+
+    Advisory only — the server's own `check_within_root` guard (M2) is the real
+    enforcement boundary. This just makes the existing risk visible to the
+    approver. Defensive: any resolution error (missing src, bad path) reads as
+    in-scope rather than raising, so a malformed op never crashes the modal.
+    """
+    if target is None:
+        return False
+    src = op.get("src") or ""
+    if not src:
+        return False
+    try:
+        Path(src).resolve().relative_to(target.resolve())
+        return False
+    except (ValueError, OSError):
+        return True
+
+
+def _fmt_op(op: dict, target: Path | None = None) -> str:
     op_type = op.get("op_type", "?")
     src = Path(op.get("src", "")).name
     dst = op.get("dst", "")
     match op_type:
         case "rename":
-            return f"RENAME   {src}  →  {dst}"
+            label = f"RENAME   {src}  →  {dst}"
         case "move":
-            return f"MOVE     {src}  →  {dst}"
+            label = f"MOVE     {src}  →  {dst}"
         case "quarantine":
-            return f"QUARANTINE  {src}"
+            label = f"QUARANTINE  {src}"
         case "update_file":
             # Subtle, not alarming (M4's discreet-styling convention): the
             # overwrite flag matters to the approver but isn't a red-banner risk.
@@ -1799,9 +1820,14 @@ def _fmt_op(op: dict) -> str:
             overwrite_flag = (
                 "  [dim](overwrite)[/dim]" if (op.get("params") or {}).get("overwrite") else ""
             )
-            return f"UPDATE   {src}{overwrite_flag}"
+            label = f"UPDATE   {src}{overwrite_flag}"
         case _:
-            return f"{op_type.upper()}  {src}"
+            label = f"{op_type.upper()}  {src}"
+    if _is_op_out_of_scope(op, target):
+        # Same discreet convention as the overwrite flag above — a quiet cue,
+        # not a red banner, per the explicit "keep this subtle" instruction (S4).
+        label += "  [dim](outside target)[/dim]"
+    return label
 
 
 # ── Plan target-layout preview (L5) ──────────────────────────────────────────
