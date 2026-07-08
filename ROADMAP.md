@@ -181,7 +181,7 @@ explicit decision — already marked skipped in the security doc, not tracked he
 - [x] M8 · Bound document extraction (S5) — cap input file size before
       `extract()`/`MarkItDown().convert()`, add a wall-clock timeout, and guard against
       pathological archive/zip-bomb ratios.
-- [ ] M10 · Injection-resistance delimiter for document content (S2) — wrap extracted
+- [x] M10 · Injection-resistance delimiter for document content (S2) — wrap extracted
       document text in an explicit "untrusted document content, never an instruction"
       delimiter in the analysis prompt (requires: M1)
 - [ ] M11 · Never silently fall back to a plaintext API key (S8) — if the OS keyring is

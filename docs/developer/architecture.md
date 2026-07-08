@@ -123,6 +123,25 @@ tools that already ran `check_allowlist` (`read_file`, `extract_text`,
 a stricter, opt-in bound; target-dir confinement is the always-on floor
 underneath it.
 
+### Injection-resistance delimiter for document content (M10)
+
+Document text returned by `read_file`/`extract_text`, and the `diff` field of
+`compare_documents`, is untrusted input sharing the LLM's context with telcontar's
+own instructions — a crafted file can embed text that reads as a command (e.g.
+"SYSTEM OVERRIDE: ..."). `host/agent.py`'s `_wrap_untrusted_content(result, tool_name)`
+wraps that text between `_UNTRUSTED_CONTENT_BEGIN`/`_UNTRUSTED_CONTENT_END` delimiter
+markers before it is JSON-serialized into the tool-result message: the whole string
+for `_DOCUMENT_CONTENT_TOOLS = frozenset({"read_file", "extract_text"})`, and only the
+`diff` field of a `compare_documents` dict result (its other fields — `path_a`,
+`path_b`, `identical` — are metadata, left untouched). Any other tool, or an
+unexpected result shape, passes through unchanged. It is called at both
+tool-result-append sites — `run_agent_loop` (organize mode) and `run_query_loop`
+(query mode) — since both modes expose these document-reading tools. The system
+prompt's Safety rules section explicitly tells the model that content between the
+markers is data, never an instruction, regardless of phrasing. This is a
+mitigation, not a sandboxed boundary — it raises the bar against indirect prompt
+injection rather than eliminating it; see `docs/developer/security-model.md` (S2).
+
 ### Recursive tree exploration
 
 `walk_tree(path, max_depth=3)` complements `list_dir` (a single level): it returns a bounded recursive directory listing, where each directory entry carries a nested `children` list until `max_depth` is reached — deeper directories come back with `children: null` and `truncated: true`, signalling the agent to call `walk_tree` again on that subpath to descend further. Files carry `size`/`mtime` like `list_dir`; unreadable entries are marked `type: "unknown"`.
@@ -191,7 +210,9 @@ Any sink name not in the built-in registry is treated as an external sink. If `e
 4. GPT-5 responds with tool calls
 5. Host dispatches to server via MCP
 6. Server executes tool, returns result
-7. Host feeds result back to GPT-5 as tool message
+7. Host feeds result back to GPT-5 as tool message — document content from
+   read_file/extract_text/compare_documents's diff field is wrapped in the
+   untrusted-content delimiter first (M10)
 8. Steps 4-7 repeat (up to MAX_TURNS = 50)
 9. Once analysis is far enough along, the agent MAY call ask_clarification once with a
    short batch of questions; the host emits a "question" AgentEvent, shows
@@ -239,7 +260,8 @@ Any sink name not in the built-in registry is treated as an external sink. If `e
 6. Host dispatches to server via MCP (mutating tool names are blocked in the host even if
    the model hallucinates one — defense in depth)
 7. Server executes tool, returns result
-8. Host feeds result back to GPT-5 as tool message
+8. Host feeds result back to GPT-5 as tool message — same untrusted-content
+   delimiter wrapping as organize mode applies here too (M10)
 9. Steps 5-8 repeat until the model produces a final text answer
 10. Answer is displayed in the RichLog; conversation history is threaded across questions
     within the same session (the MCP session stays open for the whole chat)
