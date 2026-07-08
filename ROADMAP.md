@@ -178,7 +178,7 @@ explicit decision — already marked skipped in the security doc, not tracked he
 - [x] M7 · Path confinement on by default (S3) — ship with the run's target directory
       as the implicit allowlist root instead of "no restriction" when `ALLOWLIST_DIRS`
       is unset (requires: M2)
-- [ ] M8 · Bound document extraction (S5) — cap input file size before
+- [x] M8 · Bound document extraction (S5) — cap input file size before
       `extract()`/`MarkItDown().convert()`, add a wall-clock timeout, and guard against
       pathological archive/zip-bomb ratios.
 - [ ] M10 · Injection-resistance delimiter for document content (S2) — wrap extracted

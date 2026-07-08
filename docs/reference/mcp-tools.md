@@ -83,6 +83,9 @@ extract_text(path: str, max_chars: int = 4000) -> str
 
 Extract plain text from a PDF or Office file (docx, xlsx, pptx…) via **markitdown**. Same truncation semantics as `read_file`.
 
+!!! note "Bounded extraction (S5)"
+    Before parsing, the file is rejected with `ValueError` if it exceeds `MAX_EXTRACT_FILE_BYTES` (default 200,000,000 bytes), and for zip-based formats (`.docx`/`.xlsx`/`.pptx`/`.zip`) any archive entry with a compressed:uncompressed ratio over 100x (and an uncompressed size ≥ 10MB) is rejected as a possible zip bomb. The actual `markitdown` parse then runs under a `MAX_EXTRACT_TIMEOUT_SECS` wall-clock timeout (default 30s, thread-based so it also works on Windows), raising `TimeoutError` on expiry. This bounds the known DoS/zip-bomb vectors — it is not a sandbox; see [Security Model](../developer/security-model.md).
+
 ---
 
 ### `compare_documents`
@@ -96,7 +99,7 @@ Extract text from two files and return a unified diff between them. Uses the sam
 Typical use case: comparing successive versions of a document (e.g. two COPIL slide decks).
 
 !!! note
-    The effective cap per side is `min(max_chars, MAX_SNIPPET_CHARS)`. Both paths are checked against `ALLOWLIST_DIRS` (via `effective_allowlist_dirs()` — defaults to `[TARGET_DIR]` when unset) and then against the `TARGET_DIR`/server-cwd confinement before extraction.
+    The effective cap per side is `min(max_chars, MAX_SNIPPET_CHARS)`. Both paths are checked against `ALLOWLIST_DIRS` (via `effective_allowlist_dirs()` — defaults to `[TARGET_DIR]` when unset) and then against the `TARGET_DIR`/server-cwd confinement before extraction. Each side's extraction is bounded the same way as `extract_text` — see the "Bounded extraction (S5)" note above.
 
 **Parameters:**
 

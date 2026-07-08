@@ -222,6 +222,79 @@ class TestExtractText:
         assert "Hello" in result
         assert "World" in result
 
+    def test_rejects_oversized_file(self, tmp_path: Path) -> None:
+        f = tmp_path / "huge.txt"
+        f.write_text("x" * 1000)
+        with pytest.raises(ValueError, match="exceeding"):
+            extract_text(str(f), 1000, max_file_bytes=100)
+
+    def test_times_out_on_slow_extraction(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import time
+
+        from server import extract as extract_module
+
+        def slow_convert(path):
+            time.sleep(1)
+            raise AssertionError("should have timed out before completing")
+
+        monkeypatch.setattr(extract_module._md, "convert", slow_convert)
+        f = tmp_path / "slow.txt"
+        f.write_text("x")
+        with pytest.raises(TimeoutError, match="timed out"):
+            extract_text(str(f), 1000, timeout_secs=0.05)
+
+    def test_rejects_zip_bomb_like_ratio(self, tmp_path: Path) -> None:
+        import zipfile
+
+        f = tmp_path / "bomb.docx"
+        with zipfile.ZipFile(f, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            # Highly repetitive data compresses to a tiny fraction of its size —
+            # a stand-in for a crafted zip-bomb entry inside an Office file.
+            zf.writestr("word/document.xml", b"A" * 20_000_000)
+        with pytest.raises(ValueError, match="possible zip bomb"):
+            extract_text(str(f), 1000)
+
+
+class TestCheckNotAZipBomb:
+    """Unit tests for the zip-bomb ratio guard itself (server/extract.py)."""
+
+    def test_ignores_non_zip_based_suffix(self, tmp_path: Path) -> None:
+        from server.extract import _check_not_a_zip_bomb
+
+        f = tmp_path / "doc.pdf"
+        f.write_bytes(b"not actually a zip")
+        _check_not_a_zip_bomb(f)  # no exception — suffix isn't zip-based
+
+    def test_ignores_invalid_zip_despite_extension(self, tmp_path: Path) -> None:
+        from server.extract import _check_not_a_zip_bomb
+
+        f = tmp_path / "corrupt.docx"
+        f.write_bytes(b"not a real zip file")
+        _check_not_a_zip_bomb(f)  # no exception — let markitdown report the real error
+
+    def test_passes_for_normal_compression_ratio(self, tmp_path: Path) -> None:
+        import zipfile
+
+        from server.extract import _check_not_a_zip_bomb
+
+        f = tmp_path / "normal.docx"
+        with zipfile.ZipFile(f, "w", compression=zipfile.ZIP_STORED) as zf:
+            zf.writestr("word/document.xml", b"Hello World " * 10)
+        _check_not_a_zip_bomb(f)  # no exception — ratio ~1x, and below the size floor
+
+    def test_raises_for_extreme_compression_ratio(self, tmp_path: Path) -> None:
+        import zipfile
+
+        from server.extract import _check_not_a_zip_bomb
+
+        f = tmp_path / "bomb.xlsx"
+        with zipfile.ZipFile(f, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("xl/worksheets/sheet1.xml", b"A" * 20_000_000)
+        with pytest.raises(ValueError, match="possible zip bomb"):
+            _check_not_a_zip_bomb(f)
+
 
 class TestComputeChecksum:
     def test_matches_hashlib_sha256(self, tmp_path: Path) -> None:

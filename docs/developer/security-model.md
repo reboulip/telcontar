@@ -206,10 +206,19 @@ the agent:
 
 Secondary vectors:
 
-- **Untrusted-document parsing.** `extract()` runs `MarkItDown().convert()` on
-  attacker-supplied PDF/Office files with no sandbox, no input-size cap, and no
-  timeout. Parser bugs, zip-bomb-style Office XML, or pathologically large PDFs are a
-  crash / resource-exhaustion surface.
+- **Untrusted-document parsing.** **[Mitigated — 2026-07-08, see P2 #8]** ~~`extract()`
+  runs `MarkItDown().convert()` on attacker-supplied PDF/Office files with no sandbox,
+  no input-size cap, and no timeout. Parser bugs, zip-bomb-style Office XML, or
+  pathologically large PDFs are a crash / resource-exhaustion surface.~~ `extract()`
+  (`server/extract.py`) now rejects oversized input files before parsing
+  (`MAX_EXTRACT_FILE_BYTES`), rejects zip-based Office formats whose archive entries
+  have a suspicious compression ratio (possible zip bomb), and runs the actual
+  `MarkItDown().convert()` call under a thread-based wall-clock timeout
+  (`MAX_EXTRACT_TIMEOUT_SECS`, works on Windows unlike a signal-based timeout). This is
+  a bound on the named DoS/zip-bomb vectors, not a sandbox — a parser bug deep inside
+  `pypdf`/`markitdown` that doesn't manifest as "too big / too slow / too-compressed"
+  is still unaddressed; the underlying risk class (untrusted parser code running
+  unsandboxed) is not closed.
 - **System-prompt injection via unsigned config.** Profile TOML free-text fields
   (`naming_instructions`, `synthesis_instructions`, `synthesis_sections`) and
   `.organizer/NAMING.md` are injected verbatim into the system prompt — a *higher*
@@ -229,7 +238,7 @@ single-user deployment.
 | **S2** | **Critical** | **Indirect prompt injection** via document content. Untrusted document text shares the LLM context with telcontar's instructions and can drive S1's ungated tools (arbitrary write / overwrite of recovery artifacts), exfiltration, and deletion. Recorded summaries/provenance echo back into context, giving injection a second hop. |
 | **S3** | **High** | **[Remediated — 2026-07-07, see P0 #2, P2 #7]** ~~No path confinement; egress open by default. `ALLOWLIST_DIRS` is empty by default and enforced only on read/extract/compare — never on writes/moves/renames/quarantine. Reads can pull (and upload) any file the OS user can access; mutations can target any absolute or `..` path. The target directory is not a security boundary.~~ `check_within_root` confines **every** path-taking tool — reads, writes, and moves/renames/quarantine alike — to `target_dir` plus the server's own working directory, rejecting both absolute-path and `..` escapes identically (P0 #2). As of M7 (P2 #7), `ALLOWLIST_DIRS` itself also defaults to `[target_dir]` — via `Settings.effective_allowlist_dirs()` — instead of `[]` (no restriction), for the three content-reading tools (`read_file`/`extract_text`/`compare_documents`) that consult it; an explicit non-empty `ALLOWLIST_DIRS` always overrides that default and is used as-is, never merged with `target_dir`. Together these mean no path-taking tool, and no content-egress path, is unrestricted by default any longer. Narrowing to a smaller subtree of the target directory remains available only via explicit `ALLOWLIST_DIRS` configuration — that was always opt-in and remains so; it is an operator-configurable refinement, not a residual open gap. |
 | **S4** | **High** | **[Partially remediated — 2026-07-07, see P1 #4, #5, #6]** **The approval UI can mislead the approver:** op rows show only basenames (absolute source path hidden, though an op resolving outside the target directory now gets a discreet `(outside target)` marker), the rationale/folder-notes are still LLM-authored (though now explicitly disclaimed as "not verified fact" in the modal, M5). **[Closed — 2026-07-07, P1 #6]** ~~direct (S1) mutations never appear in the approval flow or narration at all~~ — direct mutation tools no longer exist (S1), and their `propose_*` replacements already narrate as "Planning changes…" and already reach the approval modal via `execute_plan`, confirmed by M6's test coverage. The one bullet still fully open: **the full op list is offloaded** to `.organizer/plan_ops.json` and surfaced only as a path the user is invited to open manually — most will not. |
-| **S5** | **Medium** | **Untrusted-document parsing** (`markitdown`/`pypdf`) runs unsandboxed with no input-size cap or timeout — a crash / DoS / parser-exploit surface on attacker-supplied files. |
+| **S5** | **Medium** | **[Mitigated — 2026-07-08, see P2 #8]** ~~Untrusted-document parsing (`markitdown`/`pypdf`) runs unsandboxed with no input-size cap or timeout — a crash / DoS / parser-exploit surface on attacker-supplied files.~~ `extract()` now rejects oversized inputs (`MAX_EXTRACT_FILE_BYTES`), rejects Office/zip archives with a suspicious compression ratio (zip-bomb guard), and bounds the `markitdown` parse itself with a thread-based wall-clock timeout (`MAX_EXTRACT_TIMEOUT_SECS`). The named DoS/zip-bomb vectors are now bounded. This is a mitigation, not a sandbox: it does not catch a parser bug deep inside `pypdf`/`markitdown` that doesn't manifest as too-big/too-slow/too-compressed — the underlying risk class (untrusted parser code running unsandboxed) remains open. |
 | **S6** | **Medium** | **System-prompt injection via unsigned config**: profile free-text fields and `.organizer/NAMING.md` are injected verbatim into the system prompt; `PROFILE` is used in a path with no traversal guard. |
 | **S7** | **Medium** | **`compress_quarantine` performs the only real delete, ungated**, and its reversibility depends on artifacts S1 can corrupt. |
 | **S8** | **Low** | **Credential & endpoint trust**: the API key falls back to plaintext `~/.telcontar/config.env` when the OS keyring is unavailable, is also read from a CWD `.env`, and egress goes to any user-set `base_url` (a third party in dev). Worth stating explicitly as a trust boundary. |
@@ -344,9 +353,16 @@ first with the least behavioural disruption.
    non-empty `ALLOWLIST_DIRS` is always respected as-is (no merging with
    `target_dir`). Wired into `read_file`, `extract_text`, and `compare_documents`
    in `server/main.py` in place of the raw `cfg.allowlist_dirs` field.
-8. **Bound document extraction (S5):** cap input file size before parsing, add a
-   wall-clock timeout, and consider running extraction in a resource-limited
-   subprocess. Reject archives/entries above a sane ratio (zip-bomb guard).
+8. **[Done — 2026-07-08]** ~~Bound document extraction (S5): cap input file size
+   before parsing, add a wall-clock timeout, and consider running extraction in a
+   resource-limited subprocess. Reject archives/entries above a sane ratio (zip-bomb
+   guard).~~ `server/extract.py` now rejects files over `MAX_EXTRACT_FILE_BYTES`
+   before ever calling `markitdown`, runs the actual `MarkItDown().convert()` call
+   inside a `ThreadPoolExecutor` with a `MAX_EXTRACT_TIMEOUT_SECS` wall-clock timeout
+   (thread-based so it works on Windows, unlike a signal-based timeout), and rejects
+   zip-based Office formats (`.docx`/`.xlsx`/`.pptx`/`.zip`) whose archive entries
+   exceed a 100x compression ratio (zip-bomb guard). This is a mitigation, not a
+   sandbox — see S5 above.
 9. **[Skipped — 2026-07-07]** ~~Treat profiles and `NAMING.md` as trusted config
    (S6): load profiles only from the packaged `profiles/` dir, validate `PROFILE`
    against a known set (no path separators), and either drop `.organizer/NAMING.md`

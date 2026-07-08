@@ -167,11 +167,13 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 
 ---
 
-### `server/extract.py` (~18 lines)
+### `server/extract.py`
 
-**Role:** Thin wrapper around markitdown for text extraction from binary formats.
+**Role:** Bounded wrapper around markitdown for text extraction from binary formats — S5 hardening: a crash/DoS/zip-bomb guard, not a sandbox.
 
-**Key function:** `extract(path, max_chars) -> str` — calls `MarkItDown().convert(path)`, returns `result.text_content` truncated to `max_chars`.
+**Key function:** `extract(path, max_chars, max_file_bytes=200_000_000, timeout_secs=30.0) -> str` — rejects the input with `ValueError` if it exceeds `max_file_bytes`, runs `_check_not_a_zip_bomb` for zip-based formats (`.docx`/`.xlsx`/`.pptx`/`.zip`), then calls `MarkItDown().convert(path)` inside a `ThreadPoolExecutor` bounded by `timeout_secs` (raises `TimeoutError` on expiry), and returns `result.text_content` truncated to `max_chars`.
+
+**Key helper:** `_check_not_a_zip_bomb(path)` — for zip-based suffixes, opens the archive and raises `ValueError` if any entry's uncompressed:compressed ratio exceeds 100x while its uncompressed size is at least 10MB; an invalid zip despite the extension is let through silently so markitdown's own parser reports the real error.
 
 **Single module-level instance:** `_md = MarkItDown()` — markitdown is initialized once per server process.
 

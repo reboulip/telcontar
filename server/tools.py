@@ -132,15 +132,26 @@ def read_file(path: str, max_chars: int) -> str:
     return text
 
 
-def extract_text(path: str, max_chars: int) -> str:
+def extract_text(
+    path: str,
+    max_chars: int,
+    max_file_bytes: int = 200_000_000,
+    timeout_secs: float = 30.0,
+) -> str:
     """Extract plain text from a PDF or Office file via markitdown."""
     p = Path(path)
     if not p.is_file():
         raise ValueError(f"Not a file: {path}")
-    return _extract(p, max_chars)
+    return _extract(p, max_chars, max_file_bytes, timeout_secs)
 
 
-def compare_documents(path_a: str, path_b: str, max_chars: int) -> dict:
+def compare_documents(
+    path_a: str,
+    path_b: str,
+    max_chars: int,
+    max_file_bytes: int = 200_000_000,
+    timeout_secs: float = 30.0,
+) -> dict:
     """Extract text from two files and return a unified diff between them.
 
     Reuses the markitdown/pypdf extraction path, so it works on PDF/Office as
@@ -156,8 +167,8 @@ def compare_documents(path_a: str, path_b: str, max_chars: int) -> dict:
         raise ValueError(f"Not a file: {path_a}")
     if not pb.is_file():
         raise ValueError(f"Not a file: {path_b}")
-    text_a = _extract(pa, max_chars)
-    text_b = _extract(pb, max_chars)
+    text_a = _extract(pa, max_chars, max_file_bytes, timeout_secs)
+    text_b = _extract(pb, max_chars, max_file_bytes, timeout_secs)
     diff = "\n".join(
         difflib.unified_diff(
             text_a.splitlines(),

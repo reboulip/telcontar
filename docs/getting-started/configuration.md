@@ -48,6 +48,8 @@ The reference below is for **advanced or developer use**: env vars and a project
 |---|---|---|---|
 | `MAX_SNIPPET_CHARS` | no | `4000` | Maximum characters returned by `read_file` and `extract_text`. Defense-in-depth cap even when full content is allowed. |
 | `ALLOWLIST_DIRS` | no | `""` | JSON array of absolute directory paths, e.g. `["C:/Users/me/docs"]`. When set, telcontar can only read content from these paths for `read_file`/`extract_text`/`compare_documents` — a stricter, explicit bound that replaces (not merges with) the default. Leave blank and it now defaults to `[TARGET_DIR]` rather than "no restriction" — narrower than the always-on `TARGET_DIR` + server-cwd confinement described above, which still applies independently to every other path-taking tool. |
+| `MAX_EXTRACT_FILE_BYTES` | no | `200000000` | Input-size cap (bytes) for `extract_text`/`compare_documents`. Files larger than this are rejected before `markitdown` ever runs, with a `ValueError`. S5 hardening — see [Security Model](../developer/security-model.md). |
+| `MAX_EXTRACT_TIMEOUT_SECS` | no | `30` | Wall-clock timeout (seconds) for the `markitdown` parse itself, run in a worker thread so it works cross-platform (including Windows). A parse that exceeds this raises `TimeoutError`. |
 | `EGRESS_ALLOW_EXTERNAL_SINKS` | no | `false` | Allow non-local output sinks (e.g. a MediaWiki MCP integration). The built-in `local_markdown` sink is always allowed regardless of this flag. Set to `true` only when you have connected a separate MCP sink integration and want its name listed in the profile's `[sinks] default`. |
 
 ---

@@ -94,7 +94,12 @@ def extract_text(path: str, max_chars: int = 4000) -> str:
 
     check_allowlist(Path(path), cfg.effective_allowlist_dirs())
     _check_within_root(path, cfg)
-    return tools.extract_text(path, min(max_chars, cfg.max_snippet_chars))
+    return tools.extract_text(
+        path,
+        min(max_chars, cfg.max_snippet_chars),
+        cfg.max_extract_file_bytes,
+        cfg.max_extract_timeout_secs,
+    )
 
 
 @mcp.tool()
@@ -117,7 +122,13 @@ def compare_documents(path_a: str, path_b: str, max_chars: int = 4000) -> dict:
     check_allowlist(Path(path_b), allowed)
     _check_within_root(path_a, cfg)
     _check_within_root(path_b, cfg)
-    return tools.compare_documents(path_a, path_b, min(max_chars, cfg.max_snippet_chars))
+    return tools.compare_documents(
+        path_a,
+        path_b,
+        min(max_chars, cfg.max_snippet_chars),
+        cfg.max_extract_file_bytes,
+        cfg.max_extract_timeout_secs,
+    )
 
 
 # ── Plan management tools ────────────────────────────────────────────────────

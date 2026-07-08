@@ -59,6 +59,12 @@ class Settings(BaseSettings):
 
     # Egress / extraction
     max_snippet_chars: int = 4000
+    # S5: bounds on untrusted-document parsing (markitdown/pypdf) — a crash/DoS/
+    # zip-bomb guard, not a sandbox. Input files larger than this are rejected
+    # before parsing; parsing itself is wall-clock-bounded (works cross-platform,
+    # including Windows, unlike a signal-based timeout).
+    max_extract_file_bytes: int = 200_000_000
+    max_extract_timeout_secs: float = 30.0
     # JSON array of absolute paths, e.g. '["C:/Users/me/docs"]'. Empty defaults to
     # the run's target directory (see effective_allowlist_dirs) — an explicit,
     # non-empty list here always overrides that default and is used as-is.
