@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     graph_path: Path = Path(".organizer/graph.json")
     # Archived-documents journal — log of documents withdrawn from active memory
     archive_path: Path = Path(".organizer/archive.jsonl")
+    # S8: audit trail of document content sent to the LLM endpoint
+    egress_path: Path = Path(".organizer/egress.jsonl")
 
     # Egress / extraction
     max_snippet_chars: int = 4000

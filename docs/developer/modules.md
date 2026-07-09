@@ -153,6 +153,21 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 
 ---
 
+### `server/egress.py`
+
+**Role:** Append-only JSONL audit trail (S8/M12) of document content sent to the LLM endpoint — distinct from the undo journal, event journal, and archive log.
+
+**Key type:** `EgressEntry` — dataclass with `{path, size_bytes, tool, timestamp}`.
+
+| Function | Description |
+|---|---|
+| `append(egress_path, entry)` | Appends one egress entry as a JSONL line; creates parent dirs |
+| `all_entries(egress_path)` | Returns all entries in chronological order; empty list if no file |
+
+**Design note:** Logged from `server/main.py`'s `read_file`/`extract_text`/`compare_documents` handlers via `_log_egress`/`_log_egress_from_disk`, after a successful call. Not exposed as an MCP tool — it's an audit trail of the agent's own information exposure, meant for the operator, not the agent.
+
+---
+
 ### `server/sinks.py` (~76 lines)
 
 **Role:** Output-sink abstraction — defines where the engine's synthesized Markdown artifacts are emitted.

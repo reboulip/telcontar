@@ -187,5 +187,5 @@ explicit decision — already marked skipped in the security doc, not tracked he
 - [x] M11 · Never silently fall back to a plaintext API key (S8) — if the OS keyring is
       unavailable, warn loudly and require explicit opt-in before writing the key to
       `~/.telcontar/config.env`; keep keys out of any CWD `.env`.
-- [ ] M12 · Log egress (S8) — record which files' contents were sent to the LLM endpoint
+- [x] M12 · Log egress (S8) — record which files' contents were sent to the LLM endpoint
       (path + size + timestamp) so an operator can audit what left the machine.

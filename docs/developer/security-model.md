@@ -60,6 +60,11 @@ Three boundaries matter:
 | Derived metadata (title, summary, provenance, people/orgs) | Re-sent to the LLM during synthesis and in query mode | None — this is the product's purpose |
 | Synthesized prose (SUMMARY.md, folder READMEs) | Written locally by the built-in sink; external sinks gated | `EGRESS_ALLOW_EXTERNAL_SINKS` (default `false`) |
 
+**[Done — 2026-07-09, P3 #12]** Every `read_file`/`extract_text`/`compare_documents`
+call is now logged to `.organizer/egress.jsonl` (path, size, tool, timestamp) — this
+doesn't reduce what leaves the machine, but it makes it auditable after the fact,
+which the table above previously had no answer for at all.
+
 **Key point for reviewers:** **[Partially remediated — 2026-07-07, see P0 #2]** the
 target directory is now a real egress boundary in the normal case: `check_within_root`
 confines `read_file`/`extract_text`/`compare_documents` (and every other path-taking
@@ -241,7 +246,7 @@ single-user deployment.
 | **S5** | **Medium** | **[Mitigated — 2026-07-08, see P2 #8]** ~~Untrusted-document parsing (`markitdown`/`pypdf`) runs unsandboxed with no input-size cap or timeout — a crash / DoS / parser-exploit surface on attacker-supplied files.~~ `extract()` now rejects oversized inputs (`MAX_EXTRACT_FILE_BYTES`), rejects Office/zip archives with a suspicious compression ratio (zip-bomb guard), and bounds the `markitdown` parse itself with a thread-based wall-clock timeout (`MAX_EXTRACT_TIMEOUT_SECS`). The named DoS/zip-bomb vectors are now bounded. This is a mitigation, not a sandbox: it does not catch a parser bug deep inside `pypdf`/`markitdown` that doesn't manifest as too-big/too-slow/too-compressed — the underlying risk class (untrusted parser code running unsandboxed) remains open. |
 | **S6** | **Medium** | **System-prompt injection via unsigned config**: profile free-text fields and `.organizer/NAMING.md` are injected verbatim into the system prompt; `PROFILE` is used in a path with no traversal guard. |
 | **S7** | **Medium** | **`compress_quarantine` performs the only real delete, ungated**, and its reversibility depends on artifacts S1 can corrupt. |
-| **S8** | **Low** | **[Partially remediated — 2026-07-09, see P3 #11]** Credential & endpoint trust: ~~the API key falls back to plaintext `~/.telcontar/config.env` when the OS keyring is unavailable~~ — that fallback is no longer silent; it now requires an explicit, warned, second confirmation (`PlaintextKeyFallbackNeeded`, P3 #11). Still open: the key is also read from a CWD `.env` (a legitimate dev-workflow input path, but one an operator might not realize is being consulted), and egress goes to any user-set `base_url` (a third party in dev, e.g. Mammouth) — neither is addressed by this item. Worth stating explicitly as a trust boundary. |
+| **S8** | **Low** | **[Partially remediated — 2026-07-09, see P3 #11, #12]** Credential & endpoint trust: ~~the API key falls back to plaintext `~/.telcontar/config.env` when the OS keyring is unavailable~~ — that fallback is no longer silent; it now requires an explicit, warned, second confirmation (`PlaintextKeyFallbackNeeded`, P3 #11). What actually left the machine is now auditable: every `read_file`/`extract_text`/`compare_documents` call is logged to `.organizer/egress.jsonl` with path, size, tool, and timestamp (P3 #12). Still open: the key is also read from a CWD `.env` (a legitimate dev-workflow input path, but one an operator might not realize is being consulted), and egress goes to any user-set `base_url` (a third party in dev, e.g. Mammouth) — neither is addressed by these items. Worth stating explicitly as a trust boundary. |
 
 ### What already works (defence that is in place)
 
@@ -271,6 +276,10 @@ To be fair to the design, these mitigations exist and should be preserved:
   remediated)**: `save_user_config` raises `PlaintextKeyFallbackNeeded` on a
   keyring failure; the setup wizard and config screen both warn loudly and
   require a second, deliberate button press before writing the key in plaintext.
+- **Egress is now auditable (S8, partially remediated)**: every `read_file` /
+  `extract_text` / `compare_documents` call is logged to `.organizer/egress.jsonl`
+  (path, size, tool, timestamp) — an operator can review exactly what left the
+  machine after any run.
 
 ---
 
@@ -402,8 +411,17 @@ first with the least behavioural disruption.
     happens. The "keep keys out of any CWD `.env`" clause was already satisfied
     before this item: `save_user_config` only ever writes to `~/.telcontar/config.env`,
     never a CWD `.env`, and `.env`/`.envrc` are already gitignored.
-12. **Log egress (S8):** record which files' contents were sent to the endpoint so an
-    operator can audit what left the machine.
+12. **[Done — 2026-07-09]** ~~Log egress (S8): record which files' contents were sent
+    to the endpoint so an operator can audit what left the machine.~~ `read_file`,
+    `extract_text`, and `compare_documents` now append an entry (path, size in
+    bytes, tool, timestamp) to `.organizer/egress.jsonl` (`server/egress.py`) on every
+    successful call — `read_file`/`extract_text` log the actual size of the content
+    returned (post-truncation); `compare_documents` logs the on-disk size of each of
+    its two input files (a conservative upper bound, since it doesn't expose each
+    input's individual contribution to the combined diff). This is a plain,
+    operator-readable append-only log — not exposed as an agent-callable MCP tool,
+    since it is an audit trail of the agent's own information exposure, not something
+    the agent itself needs to consult.
 
 ---
 

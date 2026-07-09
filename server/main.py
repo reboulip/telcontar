@@ -50,6 +50,33 @@ def _check_within_root(path: str, cfg) -> None:
     check_within_root(Path(path), _confinement_roots(cfg))
 
 
+def _log_egress(path: str, content: str, tool: str, cfg) -> None:
+    """Record a file whose content was sent to the LLM endpoint (S8/M12).
+
+    ``content`` is what the tool actually returned (post-truncation), so the
+    logged size reflects what really left the machine, not the file's full
+    on-disk size.
+    """
+    from server import egress as _egress
+
+    size = len(content.encode("utf-8", errors="replace"))
+    _egress.append(cfg.egress_path, _egress.EgressEntry.new(path, size, tool))
+
+
+def _log_egress_from_disk(path: str, tool: str, cfg) -> None:
+    """Like ``_log_egress``, but sizes from the file itself rather than a
+    returned string — used where a tool doesn't expose each input's individual
+    contribution to its output (e.g. ``compare_documents``' combined diff).
+    A conservative (upper-bound) estimate of what could have been exposed."""
+    from server import egress as _egress
+
+    try:
+        size = Path(path).stat().st_size
+    except OSError:
+        return
+    _egress.append(cfg.egress_path, _egress.EgressEntry.new(path, size, tool))
+
+
 # ── Read-only tools ──────────────────────────────────────────────────────────
 
 
@@ -83,7 +110,9 @@ def read_file(path: str, max_chars: int = 4000) -> str:
 
     check_allowlist(Path(path), cfg.effective_allowlist_dirs())
     _check_within_root(path, cfg)
-    return tools.read_file(path, min(max_chars, cfg.max_snippet_chars))
+    result = tools.read_file(path, min(max_chars, cfg.max_snippet_chars))
+    _log_egress(path, result, "read_file", cfg)
+    return result
 
 
 @mcp.tool()
@@ -94,12 +123,14 @@ def extract_text(path: str, max_chars: int = 4000) -> str:
 
     check_allowlist(Path(path), cfg.effective_allowlist_dirs())
     _check_within_root(path, cfg)
-    return tools.extract_text(
+    result = tools.extract_text(
         path,
         min(max_chars, cfg.max_snippet_chars),
         cfg.max_extract_file_bytes,
         cfg.max_extract_timeout_secs,
     )
+    _log_egress(path, result, "extract_text", cfg)
+    return result
 
 
 @mcp.tool()
@@ -122,13 +153,16 @@ def compare_documents(path_a: str, path_b: str, max_chars: int = 4000) -> dict:
     check_allowlist(Path(path_b), allowed)
     _check_within_root(path_a, cfg)
     _check_within_root(path_b, cfg)
-    return tools.compare_documents(
+    result = tools.compare_documents(
         path_a,
         path_b,
         min(max_chars, cfg.max_snippet_chars),
         cfg.max_extract_file_bytes,
         cfg.max_extract_timeout_secs,
     )
+    _log_egress_from_disk(path_a, "compare_documents", cfg)
+    _log_egress_from_disk(path_b, "compare_documents", cfg)
+    return result
 
 
 # ── Plan management tools ────────────────────────────────────────────────────
