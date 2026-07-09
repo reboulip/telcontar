@@ -19,6 +19,17 @@ Gotchas learned the hard way:
   `OutOfBounds`. Size the test terminal generously, and click through
   multi-step wizards in order (later steps are `display: none`, hence
   un-clickable, until earlier steps have been advanced past).
+- A literal `[text]` inside a markup-enabled string (the default for
+  `Label`/`Checkbox` labels) is parsed as a Textual style tag — if `text` isn't
+  a recognized style name, it's silently dropped instead of rendered, e.g.
+  `"foo [overwrite]"` renders as just `"foo"`. Use parentheses (`"(overwrite)"`)
+  or another non-bracket delimiter for literal emphasis text, reserving `[...]`
+  for real markup tags like `[dim]...[/dim]`.
+- A rapid warn-then-reclick confirmation flow (assert a warning appears, click
+  the same button again to confirm) can be flaky under full-suite load with a
+  bare `await pilot.pause()` between the two clicks — the second click can fire
+  before the widget's error-label update has settled. Use an explicit
+  `await pilot.pause(0.1)` after each click in that pattern.
 """
 
 from __future__ import annotations
