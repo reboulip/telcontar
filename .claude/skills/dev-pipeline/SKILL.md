@@ -1,6 +1,6 @@
 ---
 name: dev-pipeline
-description: Orchestrate a full development sprint from ROADMAP.md. Reads unchecked items, implements them in order on a feat/ sub-branch of develop, using feature-forecast for background prefetch, /test-select before each commit, and repo-manager for all git work. Runs /auto-improve at the end. Use when asked to run the sprint, work through the roadmap, or implement all pending items.
+description: Orchestrate a full development sprint from ROADMAP.md. Reads unchecked items, implements them in order on a feat/ sub-branch of develop, using feature-forecast for background prefetch, /test-select before each commit, and repo-manager for all git work. Use when asked to run the sprint, work through the roadmap, or implement all pending items.
 ---
 
 # /dev-pipeline — sprint orchestrator
@@ -259,18 +259,13 @@ Agent({
 
 ---
 
-## Step 8 — Auto-improve
-
-```
-Skill("auto-improve")
-```
-
----
-
-## Step 9 — Sprint complete
+## Step 8 — Sprint complete
 
 Delete the sprint's forecast directory, `.claude/tmp/dev-pipeline/<milestone-slug>/` — its
 briefs are scratch state, no longer needed once every item is committed and merged.
+
+(End-of-session improvement reflection is handled automatically by the global
+Stop hook — no explicit auto-improve step needed here.)
 
 Report:
 - Milestone completed.
