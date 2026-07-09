@@ -241,7 +241,7 @@ single-user deployment.
 | **S5** | **Medium** | **[Mitigated — 2026-07-08, see P2 #8]** ~~Untrusted-document parsing (`markitdown`/`pypdf`) runs unsandboxed with no input-size cap or timeout — a crash / DoS / parser-exploit surface on attacker-supplied files.~~ `extract()` now rejects oversized inputs (`MAX_EXTRACT_FILE_BYTES`), rejects Office/zip archives with a suspicious compression ratio (zip-bomb guard), and bounds the `markitdown` parse itself with a thread-based wall-clock timeout (`MAX_EXTRACT_TIMEOUT_SECS`). The named DoS/zip-bomb vectors are now bounded. This is a mitigation, not a sandbox: it does not catch a parser bug deep inside `pypdf`/`markitdown` that doesn't manifest as too-big/too-slow/too-compressed — the underlying risk class (untrusted parser code running unsandboxed) remains open. |
 | **S6** | **Medium** | **System-prompt injection via unsigned config**: profile free-text fields and `.organizer/NAMING.md` are injected verbatim into the system prompt; `PROFILE` is used in a path with no traversal guard. |
 | **S7** | **Medium** | **`compress_quarantine` performs the only real delete, ungated**, and its reversibility depends on artifacts S1 can corrupt. |
-| **S8** | **Low** | **Credential & endpoint trust**: the API key falls back to plaintext `~/.telcontar/config.env` when the OS keyring is unavailable, is also read from a CWD `.env`, and egress goes to any user-set `base_url` (a third party in dev). Worth stating explicitly as a trust boundary. |
+| **S8** | **Low** | **[Partially remediated — 2026-07-09, see P3 #11]** Credential & endpoint trust: ~~the API key falls back to plaintext `~/.telcontar/config.env` when the OS keyring is unavailable~~ — that fallback is no longer silent; it now requires an explicit, warned, second confirmation (`PlaintextKeyFallbackNeeded`, P3 #11). Still open: the key is also read from a CWD `.env` (a legitimate dev-workflow input path, but one an operator might not realize is being consulted), and egress goes to any user-set `base_url` (a third party in dev, e.g. Mammouth) — neither is addressed by this item. Worth stating explicitly as a trust boundary. |
 
 ### What already works (defence that is in place)
 
@@ -267,6 +267,10 @@ To be fair to the design, these mitigations exist and should be preserved:
   `EGRESS_ALLOW_EXTERNAL_SINKS`; an **allowlist mechanism exists and is now on by
   default (M7)** — an unset `ALLOWLIST_DIRS` defaults to `[target_dir]` via
   `Settings.effective_allowlist_dirs()`, not `[]`.
+- **Plaintext key fallback now requires explicit confirmation (S8, partially
+  remediated)**: `save_user_config` raises `PlaintextKeyFallbackNeeded` on a
+  keyring failure; the setup wizard and config screen both warn loudly and
+  require a second, deliberate button press before writing the key in plaintext.
 
 ---
 
@@ -387,9 +391,17 @@ first with the least behavioural disruption.
 
 ### P3 — credentials & operability
 
-11. **Never fall back to a plaintext key silently (S8):** if the keyring is
-    unavailable, warn loudly and require an explicit opt-in for file storage; keep
-    keys out of any CWD `.env` that could be committed.
+11. **[Done — 2026-07-09]** ~~Never fall back to a plaintext key silently (S8):
+    if the keyring is unavailable, warn loudly and require an explicit opt-in for
+    file storage; keep keys out of any CWD `.env` that could be committed.~~
+    `save_user_config` (`config/settings.py`) now raises `PlaintextKeyFallbackNeeded`
+    instead of silently writing the key when the OS keyring is unavailable. Both UI
+    callers (`SetupScreen`, `ConfigScreen` in `host/app.py`) catch it, show a loud
+    inline warning, and require the user to press the save/finish button a second
+    time — an explicit, deliberate re-click — before the plaintext fallback actually
+    happens. The "keep keys out of any CWD `.env`" clause was already satisfied
+    before this item: `save_user_config` only ever writes to `~/.telcontar/config.env`,
+    never a CWD `.env`, and `.env`/`.envrc` are already gitignored.
 12. **Log egress (S8):** record which files' contents were sent to the endpoint so an
     operator can audit what left the machine.
 

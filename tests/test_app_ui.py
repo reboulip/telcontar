@@ -169,7 +169,10 @@ async def test_setup_wizard_blocks_on_empty_model() -> None:
 
 async def test_setup_wizard_saves_model_name(monkeypatch: pytest.MonkeyPatch) -> None:
     saved: dict = {}
-    monkeypatch.setattr("config.settings.save_user_config", lambda updates: saved.update(updates))
+    monkeypatch.setattr(
+        "config.settings.save_user_config",
+        lambda updates, allow_plaintext_fallback=False: saved.update(updates),
+    )
 
     app = OrganizerApp()
     async with app.run_test(size=(90, 50)) as pilot:
@@ -191,13 +194,60 @@ async def test_setup_wizard_saves_model_name(monkeypatch: pytest.MonkeyPatch) ->
     assert saved.get("llm_model") == "gpt-4o"
 
 
+async def test_setup_wizard_warns_before_plaintext_key_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """S8: keyring-unavailable never silently falls back to plaintext."""
+    from config.settings import PlaintextKeyFallbackNeeded
+
+    saved: dict = {}
+
+    def fake_save(updates: dict, allow_plaintext_fallback: bool = False) -> None:
+        if not allow_plaintext_fallback:
+            raise PlaintextKeyFallbackNeeded("keyring unavailable")
+        saved.update(updates)
+
+    monkeypatch.setattr("config.settings.save_user_config", fake_save)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(90, 50)) as pilot:
+        app.push_screen(SetupScreen())
+        await pilot.pause()
+        await pilot.click("#btn-welcome-next")
+        await pilot.pause()
+        await pilot.click("#btn-svc-other")
+        await pilot.pause()
+        screen = app.screen
+        screen.query_one("#input-url", Input).value = "https://example.com/v1"
+        screen.query_one("#input-key", Input).value = "sk-test"
+        screen.query_one("#input-model", Input).value = "gpt-4o"
+        await pilot.click("#btn-api-next")
+        await pilot.pause()
+
+        # First attempt: warned, not saved yet.
+        await pilot.click("#btn-profile-next")
+        await pilot.pause(0.1)
+        assert not saved
+        assert "keyring" in str(screen.query_one("#profile-error", Label).content).lower()
+        assert screen.query_one("#step-profile").display is True  # still on this step
+
+        # Second click (explicit confirmation): now allowed to proceed.
+        await pilot.click("#btn-profile-next")
+        await pilot.pause(0.1)
+
+    assert saved.get("llm_api_key") == "sk-test"
+
+
 async def test_config_screen_prefills_and_requires_model(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "config.settings.read_user_config",
         lambda: {"llm_base_url": "https://example.com/v1", "llm_model": "claude-sonnet-5"},
     )
     saved: dict = {}
-    monkeypatch.setattr("config.settings.save_user_config", lambda updates: saved.update(updates))
+    monkeypatch.setattr(
+        "config.settings.save_user_config",
+        lambda updates, allow_plaintext_fallback=False: saved.update(updates),
+    )
 
     app = OrganizerApp()
     async with app.run_test(size=(90, 50)) as pilot:
@@ -211,6 +261,43 @@ async def test_config_screen_prefills_and_requires_model(monkeypatch: pytest.Mon
         await pilot.pause()
         assert screen.query_one("#cfg-error", Label).content == "Please enter the model name."
         assert not saved  # blocked before save_user_config was ever called
+
+
+async def test_config_screen_warns_before_plaintext_key_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """S8: keyring-unavailable never silently falls back to plaintext."""
+    from config.settings import PlaintextKeyFallbackNeeded
+
+    monkeypatch.setattr(
+        "config.settings.read_user_config",
+        lambda: {"llm_base_url": "https://example.com/v1", "llm_model": "claude-sonnet-5"},
+    )
+    saved: dict = {}
+
+    def fake_save(updates: dict, allow_plaintext_fallback: bool = False) -> None:
+        if not allow_plaintext_fallback:
+            raise PlaintextKeyFallbackNeeded("keyring unavailable")
+        saved.update(updates)
+
+    monkeypatch.setattr("config.settings.save_user_config", fake_save)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(90, 50)) as pilot:
+        app.push_screen(ConfigScreen())
+        await pilot.pause()
+        screen = app.screen
+        screen.query_one("#cfg-key", Input).value = "sk-new"
+
+        await pilot.click("#btn-cfg-save")
+        await pilot.pause(0.1)
+        assert not saved
+        assert "keyring" in str(screen.query_one("#cfg-error", Label).content).lower()
+
+        await pilot.click("#btn-cfg-save")
+        await pilot.pause(0.1)
+
+    assert saved.get("llm_api_key") == "sk-new"
 
 
 async def test_organizer_screen_groups_tool_events_into_steps(

@@ -539,6 +539,9 @@ class SetupScreen(Screen):
         self._pending_url = ""
         self._pending_key = ""
         self._pending_model = ""
+        # S8: set once the user has explicitly confirmed a plaintext-keyring
+        # fallback warning — never defaulted to True.
+        self._plaintext_confirmed = False
 
     def compose(self) -> ComposeResult:
         profile_options = _load_profile_options()
@@ -728,7 +731,6 @@ class SetupScreen(Screen):
         if select.value is Select.BLANK:
             error.update("Please choose a document type.")
             return
-        error.update("")
         profile = str(select.value)
 
         updates: dict[str, str] = {
@@ -740,9 +742,19 @@ class SetupScreen(Screen):
         if self._service == "azure":
             updates["llm_api_version"] = "2025-01-01-preview"
 
-        from config.settings import save_user_config
+        from config.settings import PlaintextKeyFallbackNeeded, save_user_config
 
-        save_user_config(updates)
+        try:
+            save_user_config(updates, allow_plaintext_fallback=self._plaintext_confirmed)
+        except PlaintextKeyFallbackNeeded:
+            self._plaintext_confirmed = True
+            error.update(
+                '[bold]Your OS keyring is unavailable.[/bold] Press "Finish" again to '
+                "store your API key in PLAINTEXT at ~/.telcontar/config.env, or go back "
+                "and fix your keyring first."
+            )
+            return
+        error.update("")
         self._show_step(4)
 
     # Done → startup
@@ -799,6 +811,12 @@ class ConfigScreen(Screen):
     """
 
     BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def __init__(self) -> None:
+        super().__init__()
+        # S8: set once the user has explicitly confirmed a plaintext-keyring
+        # fallback warning — never defaulted to True.
+        self._plaintext_confirmed = False
 
     def compose(self) -> ComposeResult:
         from config.settings import read_user_config
@@ -906,9 +924,18 @@ class ConfigScreen(Screen):
         if key:
             updates["llm_api_key"] = key
 
-        from config.settings import save_user_config
+        from config.settings import PlaintextKeyFallbackNeeded, save_user_config
 
-        save_user_config(updates)
+        try:
+            save_user_config(updates, allow_plaintext_fallback=self._plaintext_confirmed)
+        except PlaintextKeyFallbackNeeded:
+            self._plaintext_confirmed = True
+            self.query_one("#cfg-error", Label).update(
+                '[bold]Your OS keyring is unavailable.[/bold] Press "Save" again to '
+                "store your API key in PLAINTEXT at ~/.telcontar/config.env, or cancel "
+                "and fix your keyring first."
+            )
+            return
         self.app.pop_screen()
 
     @on(Button.Pressed, "#btn-cfg-cancel")

@@ -13,7 +13,7 @@ The reference below is for **advanced or developer use**: env vars and a project
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `LLM_BASE_URL` | **yes** | `""` | Base URL of the OpenAI-compatible endpoint.<br>Azure: `https://<resource>.openai.azure.com/openai/deployments/<deployment>`<br>Mammouth: the standard Mammouth base URL.<br>Set by the wizard and stored in `~/.telcontar/config.env`. |
-| `LLM_API_KEY` | **yes** | `""` | API key for the endpoint. Set by the wizard and stored in the OS credential store; falls back to `~/.telcontar/config.env` if the keyring is unavailable. |
+| `LLM_API_KEY` | **yes** | `""` | API key for the endpoint. Set by the wizard and stored in the OS credential store. If the keyring is unavailable, the wizard/settings screen warns loudly and requires pressing the save/finish button a second time to explicitly confirm storing it in plaintext at `~/.telcontar/config.env` instead — it is never written there silently. |
 | `LLM_MODEL` | no | `gpt-5` | Model name passed in chat completion requests |
 | `LLM_API_VERSION` | no | `""` | Azure only — `api-version` query parameter (e.g. `2025-01-01-preview`). Leave blank for Mammouth. |
 

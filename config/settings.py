@@ -121,13 +121,25 @@ def is_configured() -> bool:
     return bool(_keyring_get())
 
 
-def save_user_config(updates: dict[str, str]) -> None:
+class PlaintextKeyFallbackNeeded(Exception):
+    """Raised by save_user_config when the OS keyring is unavailable and the
+    caller hasn't explicitly opted into storing the key in plaintext (S8).
+
+    The caller (the setup wizard / config screen) is expected to warn the user
+    loudly and re-call with ``allow_plaintext_fallback=True`` only on their
+    explicit confirmation — never silently.
+    """
+
+
+def save_user_config(updates: dict[str, str], allow_plaintext_fallback: bool = False) -> None:
     """Persist settings to ~/.telcontar/config.env, storing the API key in the OS keyring.
 
-    Non-sensitive values are written as plain KEY=VALUE lines.  The API key is
+    Non-sensitive values are written as plain KEY=VALUE lines. The API key is
     stored via the OS credential manager (Windows Credential Manager, macOS
-    Keychain, SecretService on Linux).  If keyring is unavailable, it falls
-    back to the config file.
+    Keychain, SecretService on Linux). If the keyring is unavailable, this
+    raises ``PlaintextKeyFallbackNeeded`` instead of silently writing the key in
+    plaintext — pass ``allow_plaintext_fallback=True`` only after the caller has
+    explicitly warned the user and gotten their confirmation.
     """
     _USER_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -136,7 +148,12 @@ def save_user_config(updates: dict[str, str]) -> None:
     if api_key is not None:
         stored = _keyring_set(api_key)
         if not stored:
-            # Keyring unavailable — fall back to plain file (less secure).
+            if not allow_plaintext_fallback:
+                raise PlaintextKeyFallbackNeeded(
+                    "The OS keyring is unavailable — storing the API key would fall back "
+                    "to plaintext at ~/.telcontar/config.env unless explicitly confirmed."
+                )
+            # Explicit, user-confirmed fallback — less secure, but no longer silent.
             updates["llm_api_key"] = api_key
 
     # Read the existing file so we can merge rather than overwrite.
