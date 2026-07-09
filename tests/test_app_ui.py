@@ -26,10 +26,16 @@ Gotchas learned the hard way:
   or another non-bracket delimiter for literal emphasis text, reserving `[...]`
   for real markup tags like `[dim]...[/dim]`.
 - A rapid warn-then-reclick confirmation flow (assert a warning appears, click
-  the same button again to confirm) can be flaky under full-suite load with a
-  bare `await pilot.pause()` between the two clicks — the second click can fire
-  before the widget's error-label update has settled. Use an explicit
-  `await pilot.pause(0.1)` after each click in that pattern.
+  the same button again to confirm): `Button.press()` adds an `-active` CSS
+  class for `active_effect_duration` (0.2s), and `Button._on_click` silently
+  drops any click that arrives while that class is set — so a same-button
+  re-click issued too soon is swallowed with no error, no exception, nothing.
+  A fixed `await pilot.pause(0.1)` isn't a long enough guess (< 0.2s) and
+  flaked in CI; polling only for the label update (e.g. `_wait_until`, below)
+  is *worse* since it returns near-instantly, leaving less real time before
+  the re-click than the naive sleep did. Poll `not btn.has_class("-active")`
+  (in addition to whatever state the click was supposed to change) before
+  issuing the second click.
 """
 
 from __future__ import annotations
@@ -65,6 +71,24 @@ def _richlog_text(widget: RichLog) -> str:
 def _transcript_text(screen) -> str:
     """Join the speaker-turn text of the OrganizerScreen chat transcript."""
     return "\n".join(str(w.content) for w in screen.query(".turn"))
+
+
+async def _wait_until(pilot, predicate, timeout: float = 2.0) -> None:
+    """Poll `predicate` after each pump of the message loop until it's true.
+
+    Replaces a fixed `pilot.pause(delay)` for post-click assertions: a fixed
+    delay is a guess at how long the handler takes to settle, and guesses that
+    hold locally can still lose the race under CI load. Polling the actual
+    condition removes the guess; the timeout still bounds worst-case runtime.
+    """
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        await pilot.pause()
+        if predicate():
+            return
+    assert predicate(), f"condition not met within {timeout}s"
 
 
 def _steps_text(screen) -> str:
@@ -236,15 +260,24 @@ async def test_setup_wizard_warns_before_plaintext_key_fallback(
         await pilot.pause()
 
         # First attempt: warned, not saved yet.
-        await pilot.click("#btn-profile-next")
-        await pilot.pause(0.1)
+        btn = screen.query_one("#btn-profile-next")
+        await pilot.click(btn)
+        await _wait_until(
+            pilot,
+            lambda: (
+                "keyring" in str(screen.query_one("#profile-error", Label).content).lower()
+                # Button.press() holds an `-active` class for `active_effect_duration`
+                # (0.2s) and silently drops clicks while it's set — wait it out before
+                # re-clicking, or the confirmation click gets swallowed.
+                and not btn.has_class("-active")
+            ),
+        )
         assert not saved
-        assert "keyring" in str(screen.query_one("#profile-error", Label).content).lower()
         assert screen.query_one("#step-profile").display is True  # still on this step
 
         # Second click (explicit confirmation): now allowed to proceed.
-        await pilot.click("#btn-profile-next")
-        await pilot.pause(0.1)
+        await pilot.click(btn)
+        await _wait_until(pilot, lambda: bool(saved))
 
     assert saved.get("llm_api_key") == "sk-test"
 
@@ -300,13 +333,19 @@ async def test_config_screen_warns_before_plaintext_key_fallback(
         screen = app.screen
         screen.query_one("#cfg-key", Input).value = "sk-new"
 
-        await pilot.click("#btn-cfg-save")
-        await pilot.pause(0.1)
+        btn = screen.query_one("#btn-cfg-save")
+        await pilot.click(btn)
+        await _wait_until(
+            pilot,
+            lambda: (
+                "keyring" in str(screen.query_one("#cfg-error", Label).content).lower()
+                and not btn.has_class("-active")
+            ),
+        )
         assert not saved
-        assert "keyring" in str(screen.query_one("#cfg-error", Label).content).lower()
 
-        await pilot.click("#btn-cfg-save")
-        await pilot.pause(0.1)
+        await pilot.click(btn)
+        await _wait_until(pilot, lambda: bool(saved))
 
     assert saved.get("llm_api_key") == "sk-new"
 
