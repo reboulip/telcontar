@@ -197,6 +197,79 @@ class TestUndoQuarantine:
         assert last(journal_path) is not None
 
 
+class TestUndoCreateFile:
+    def test_deletes_created_file(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        created = tmp_path / "new.txt"
+        created.write_text("x")
+        append(journal_path, _journal_entry("create_file", str(created), ""))
+
+        result = undo_last(journal_path, plans_dir)
+
+        assert result["undone"] is not None
+        assert not created.exists()
+
+    def test_removes_journal_entry_on_success(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        created = tmp_path / "new.txt"
+        created.write_text("x")
+        append(journal_path, _journal_entry("create_file", str(created), ""))
+
+        undo_last(journal_path, plans_dir)
+
+        assert last(journal_path) is None
+
+    def test_noop_if_file_already_gone(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        missing = tmp_path / "already_gone.txt"
+        append(journal_path, _journal_entry("create_file", str(missing), ""))
+
+        result = undo_last(journal_path, plans_dir)
+
+        assert result["undone"] is not None
+        assert last(journal_path) is None
+
+
+class TestUndoUpdateFile:
+    def test_deletes_file(self, tmp_path: Path, plans_dir: Path, journal_path: Path) -> None:
+        updated = tmp_path / "updated.txt"
+        updated.write_text("new content")
+        append(journal_path, _journal_entry("update_file", str(updated), ""))
+
+        result = undo_last(journal_path, plans_dir)
+
+        assert result["undone"] is not None
+        assert not updated.exists()
+
+
+class TestUndoCreateDir:
+    def test_leaves_directory_in_place(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        created = tmp_path / "newdir"
+        created.mkdir()
+        append(journal_path, _journal_entry("create_dir", str(created), ""))
+
+        result = undo_last(journal_path, plans_dir)
+
+        assert result["undone"] is not None
+        assert created.is_dir()  # idempotent op — left in place, not deleted
+
+    def test_removes_journal_entry(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        created = tmp_path / "newdir"
+        created.mkdir()
+        append(journal_path, _journal_entry("create_dir", str(created), ""))
+
+        undo_last(journal_path, plans_dir)
+
+        assert last(journal_path) is None
+
+
 class TestUndoHardStop:
     def test_hard_stop_entry_is_popped_and_noted(self, plans_dir: Path, journal_path: Path) -> None:
         append(

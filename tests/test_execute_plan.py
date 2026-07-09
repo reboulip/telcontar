@@ -491,3 +491,285 @@ class TestExecutePlanRegistryReconcile:
         execute_plan(p.plan_id, plans_dir, journal_path, registry_path)
 
         assert not registry_path.exists()  # registry-optional: no spurious file
+
+
+class TestExecutePlanNewOpTypes:
+    """M1: create_file/update_file/create_dir/archive_document/compress_quarantine
+    are now routed through the plan flow instead of being direct agent tools."""
+
+    def test_create_file_op_succeeds(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        dest = tmp_path / "new.txt"
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("create_file", str(dest), "", params={"content": "hello"}))
+        save(p, plans_dir)
+
+        result = execute_plan(p.plan_id, plans_dir, journal_path)
+
+        assert result["state"] == "done"
+        assert dest.read_text() == "hello"
+
+    def test_create_file_journaled_and_undoable(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        from server.tools import undo_last
+
+        dest = tmp_path / "new.txt"
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("create_file", str(dest), "", params={"content": "hello"}))
+        save(p, plans_dir)
+
+        execute_plan(p.plan_id, plans_dir, journal_path)
+        assert dest.is_file()
+
+        undo_last(journal_path, plans_dir)
+        assert not dest.exists()
+
+    def test_update_file_creates_new_file(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        dest = tmp_path / "new.txt"
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("update_file", str(dest), "", params={"content": "hello"}))
+        save(p, plans_dir)
+
+        result = execute_plan(p.plan_id, plans_dir, journal_path)
+
+        assert result["state"] == "done"
+        assert dest.read_text() == "hello"
+
+    def test_update_file_without_overwrite_fails_on_collision(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        dest = tmp_path / "existing.txt"
+        dest.write_text("old")
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("update_file", str(dest), "", params={"content": "new"}))
+        save(p, plans_dir)
+
+        result = execute_plan(p.plan_id, plans_dir, journal_path)
+
+        assert result["state"] == "failed"
+        assert dest.read_text() == "old"
+
+    def test_update_file_with_overwrite_replaces_content(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        dest = tmp_path / "existing.txt"
+        dest.write_text("old")
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(
+            PlanOp.new("update_file", str(dest), "", params={"content": "new", "overwrite": True})
+        )
+        save(p, plans_dir)
+
+        result = execute_plan(p.plan_id, plans_dir, journal_path)
+
+        assert result["state"] == "done"
+        assert dest.read_text() == "new"
+
+    def test_create_dir_op_succeeds(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        dest = tmp_path / "newdir"
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("create_dir", str(dest), ""))
+        save(p, plans_dir)
+
+        result = execute_plan(p.plan_id, plans_dir, journal_path)
+
+        assert result["state"] == "done"
+        assert dest.is_dir()
+
+    def test_archive_document_op_flips_status_and_quarantines(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        registry_path = tmp_path / ".organizer" / "registry.json"
+        archive_path = tmp_path / ".organizer" / "archive.jsonl"
+        quarantine_dir = tmp_path / "_quarantine"
+        doc = tmp_path / "doc.pdf"
+        doc.write_text("x")
+
+        reg = _registry.Registry()
+        reg.upsert(
+            DocumentRecord.new(
+                checksum="c1", path=str(doc), title="T", type="notes", summary="s", provenance="p"
+            )
+        )
+        _registry.save(reg, registry_path)
+
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(
+            PlanOp.new(
+                "archive_document",
+                str(doc),
+                str(quarantine_dir / "doc.pdf"),
+                params={"checksum": "c1", "reason": "superseded"},
+            )
+        )
+        save(p, plans_dir)
+
+        result = execute_plan(
+            p.plan_id, plans_dir, journal_path, registry_path, quarantine_dir, archive_path
+        )
+
+        assert result["state"] == "done"
+        assert not doc.exists()
+        assert (quarantine_dir / "doc.pdf").exists()
+        rec = _registry.load(registry_path).get("c1")
+        assert rec is not None
+        assert rec.status == "archived"
+
+    def test_archive_document_undoable_via_undo_last(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        from server.tools import undo_last
+
+        registry_path = tmp_path / ".organizer" / "registry.json"
+        archive_path = tmp_path / ".organizer" / "archive.jsonl"
+        quarantine_dir = tmp_path / "_quarantine"
+        doc = tmp_path / "doc.pdf"
+        doc.write_text("x")
+
+        reg = _registry.Registry()
+        reg.upsert(
+            DocumentRecord.new(
+                checksum="c1", path=str(doc), title="T", type="notes", summary="s", provenance="p"
+            )
+        )
+        _registry.save(reg, registry_path)
+
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(
+            PlanOp.new(
+                "archive_document",
+                str(doc),
+                str(quarantine_dir / "doc.pdf"),
+                params={"checksum": "c1", "reason": "superseded"},
+            )
+        )
+        save(p, plans_dir)
+
+        execute_plan(
+            p.plan_id, plans_dir, journal_path, registry_path, quarantine_dir, archive_path
+        )
+        assert not doc.exists()
+
+        undo_last(journal_path, plans_dir)
+        assert doc.exists()
+
+    def test_compress_quarantine_op_archives_loose_files(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        quarantine_dir = tmp_path / "_quarantine"
+        quarantine_dir.mkdir()
+        (quarantine_dir / "junk.txt").write_text("x")
+
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(
+            PlanOp.new(
+                "compress_quarantine",
+                str(quarantine_dir),
+                "",
+                params={"delete_originals": True},
+            )
+        )
+        save(p, plans_dir)
+
+        result = execute_plan(p.plan_id, plans_dir, journal_path, quarantine_dir=quarantine_dir)
+
+        assert result["state"] == "done"
+        assert not (quarantine_dir / "junk.txt").exists()
+        archives = list(quarantine_dir.glob("quarantine_*.zip"))
+        assert len(archives) == 1
+
+
+class TestExecutePlanChainedOps:
+    """F7: a file relocated by an earlier op is tracked so later ops still resolve."""
+
+    def test_move_after_rename_in_same_run(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        src = tmp_path / "old.txt"
+        src.write_text("x")
+        dest_dir = tmp_path / "dest"
+        dest_dir.mkdir()
+        p = Plan.new()
+        p.transition("approved")
+        # Both ops reference the ORIGINAL path (as the LLM builds them pre-execution).
+        p.ops.append(PlanOp.new("rename", str(src), "new.txt"))
+        p.ops.append(PlanOp.new("move", str(src), str(dest_dir)))
+        save(p, plans_dir)
+
+        result = execute_plan(p.plan_id, plans_dir, journal_path)
+
+        assert result["state"] == "done"
+        assert result["ops_completed"] == 2
+        assert result["ops_failed"] == 0
+        # Renamed then moved: lands at dest/new.txt (the renamed name is preserved).
+        assert (dest_dir / "new.txt").exists()
+        assert not (tmp_path / "new.txt").exists()
+        assert not src.exists()
+
+    def test_undo_reverses_chained_rename_then_move(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        from server.tools import undo_last
+
+        src = tmp_path / "old.txt"
+        src.write_text("x")
+        dest_dir = tmp_path / "dest"
+        dest_dir.mkdir()
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("rename", str(src), "new.txt"))
+        p.ops.append(PlanOp.new("move", str(src), str(dest_dir)))
+        save(p, plans_dir)
+        execute_plan(p.plan_id, plans_dir, journal_path)
+        assert (dest_dir / "new.txt").exists()
+
+        undo_last(journal_path, plans_dir)  # reverse the move
+        assert (tmp_path / "new.txt").exists()
+        assert not (dest_dir / "new.txt").exists()
+
+        undo_last(journal_path, plans_dir)  # reverse the rename
+        assert src.exists()
+        assert not (tmp_path / "new.txt").exists()
+
+    def test_registry_reconciles_across_chained_ops(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        registry_path = tmp_path / ".organizer" / "registry.json"
+        src = tmp_path / "old.txt"
+        src.write_text("hello")
+        dest_dir = tmp_path / "dest"
+        dest_dir.mkdir()
+        reg = _registry.Registry()
+        reg.upsert(
+            DocumentRecord.new(
+                checksum="c1", path=str(src), title="T", type="notes", summary="s", provenance="p"
+            )
+        )
+        _registry.save(reg, registry_path)
+
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("rename", str(src), "new.txt"))
+        p.ops.append(PlanOp.new("move", str(src), str(dest_dir)))
+        save(p, plans_dir)
+        execute_plan(p.plan_id, plans_dir, journal_path, registry_path)
+
+        rec = _registry.load(registry_path).get("c1")
+        assert rec is not None
+        assert rec.checksum == "c1"  # identity stays stable across both ops
+        assert rec.path == str(dest_dir / "new.txt")  # path tracked through the chain

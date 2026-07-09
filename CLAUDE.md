@@ -208,6 +208,20 @@ For dev, point `LLM_BASE_URL`/`LLM_API_KEY` at Mammouth. For prod, point them at
 - Never push directly to `main`.
 - Squash commit message: `<type>: <summary>` (imperative, ≤72 chars).
 
+## Releases
+
+Releases are **automated** by `.github/workflows/release.yml`, which triggers on pushing any `v*` tag. To cut a release:
+
+Releases are always tagged on `main`: first merge the `develop` → `main` PR (per the Branch Model), then bump the version and tag.
+
+1. Bump `version` in `pyproject.toml` (PEP 440 — e.g. `1.0.0`, or `0.1.0b2` for a beta), commit.
+2. Push the branch, then push an annotated tag `vX.Y.Z[abrc]N` (e.g. `v0.1.0b2`).
+
+CI then runs `uv build` and creates a GitHub Release with the wheel + sdist attached and auto-generated notes — marked **prerelease** when the tag contains `a`, `b`, or `rc`. It also publishes to PyPI when the `PYPI_ENABLED` repo variable is `true` (otherwise that job is skipped).
+
+- **Do NOT** manually `uv build` + `gh release create` — CI does it, and a manual `gh release create` conflicts with the auto-created release ("release with the same tag name already exists").
+- To improve the auto-generated notes, run `gh release edit <tag> --notes-file <file>` after the workflow has published.
+
 ## Workflow Agents
 
 All git work and task orchestration is delegated to specialized agents and skills. The main session focuses on domain implementation only.
@@ -220,9 +234,7 @@ All git work and task orchestration is delegated to specialized agents and skill
 
 - **`/test-select`**: Select and run the minimal pytest scope for the current branch's changes. Call before every commit. Blocks commit if any test fails.
 
-- **`/auto-improve`**: At the end of a task series, scans the conversation for boilerplate instructions, repeated corrections, and automation opportunities. Proposes improvements to skills, hooks, or config. **Always asks before applying anything.** Run this at the end of each sprint.
-
-- **`/dev-pipeline`**: Full sprint orchestrator. Reads `ROADMAP.md`, implements all unchecked items in order on a `feat/` branch using the agents above, then squash-merges into `develop`. Start here when working through the roadmap.
+- **`/dev-pipeline`**: Full sprint orchestrator. Reads `ROADMAP.md`, implements all unchecked items in order on a `feat/` branch using the agents above, then squash-merges into `develop`. Start here when working through the roadmap. End-of-session improvement reflection (scanning for boilerplate instructions, repeated corrections, automation opportunities) is handled automatically by the global Stop hook — no explicit auto-improve step needed.
 
 ## ROADMAP conventions
 

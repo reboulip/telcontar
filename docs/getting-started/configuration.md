@@ -1,6 +1,6 @@
 # Configuration
 
-For most users, first-run configuration is handled entirely by the **setup wizard** that appears the first time you launch `organizer-host`. The wizard stores the API key in the OS credential store (Windows Credential Manager / macOS Keychain) and saves non-sensitive settings to `~/.telcontar/config.env`. You can revisit any setting at any time via the **⚙ Settings** button on the startup screen.
+For most users, first-run configuration is handled entirely by the **setup wizard** that appears the first time you launch `telcontar`. The wizard stores the API key in the OS credential store (Windows Credential Manager / macOS Keychain) and saves non-sensitive settings to `~/.telcontar/config.env`. You can revisit any setting at any time via the **⚙ Settings** button on the startup screen.
 
 The reference below is for **advanced or developer use**: env vars and a project-local `.env` file always take priority over `~/.telcontar/config.env` when both are present. No code changes are required to switch environments — config only.
 
@@ -13,7 +13,7 @@ The reference below is for **advanced or developer use**: env vars and a project
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `LLM_BASE_URL` | **yes** | `""` | Base URL of the OpenAI-compatible endpoint.<br>Azure: `https://<resource>.openai.azure.com/openai/deployments/<deployment>`<br>Mammouth: the standard Mammouth base URL.<br>Set by the wizard and stored in `~/.telcontar/config.env`. |
-| `LLM_API_KEY` | **yes** | `""` | API key for the endpoint. Set by the wizard and stored in the OS credential store; falls back to `~/.telcontar/config.env` if the keyring is unavailable. |
+| `LLM_API_KEY` | **yes** | `""` | API key for the endpoint. Set by the wizard and stored in the OS credential store. If the keyring is unavailable, the wizard/settings screen warns loudly and requires pressing the save/finish button a second time to explicitly confirm storing it in plaintext at `~/.telcontar/config.env` instead — it is never written there silently. |
 | `LLM_MODEL` | no | `gpt-5` | Model name passed in chat completion requests |
 | `LLM_API_VERSION` | no | `""` | Azure only — `api-version` query parameter (e.g. `2025-01-01-preview`). Leave blank for Mammouth. |
 
@@ -22,6 +22,7 @@ The reference below is for **advanced or developer use**: env vars and a project
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `APPROVAL_MODE` | no | `always` | When to require user approval. See [Approval Modes](../user-guide/approval-modes.md). |
+| `TARGET_DIR` | no | *(unset)* | The directory being organized this run. Not meant to be set by hand — the host sets it automatically (as a subprocess env var) whenever it launches an organize or query session, so the MCP server can confine every path-taking tool to it. Every path-taking tool call is checked against `TARGET_DIR` plus the server's own working directory (where `.organizer/` and the quarantine dir live) via `check_within_root`; a path outside both is rejected regardless of `ALLOWLIST_DIRS`. |
 | `QUARANTINE_DIR` | no | `_quarantine` | Relative path (from the target directory) where clutter files are moved. Never deleted. |
 | `JOURNAL_PATH` | no | `.organizer/journal.jsonl` | Append-only undo journal (file operations, drives `undo_last`). Relative to the project root. |
 | `EVENTS_PATH` | no | `.organizer/events.jsonl` | Append-only project event journal (narrative log, drives `create_event` / `list_events`). Relative to the project root. |
@@ -46,7 +47,10 @@ The reference below is for **advanced or developer use**: env vars and a project
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `MAX_SNIPPET_CHARS` | no | `4000` | Maximum characters returned by `read_file` and `extract_text`. Defense-in-depth cap even when full content is allowed. |
-| `ALLOWLIST_DIRS` | no | `""` | JSON array of absolute directory paths, e.g. `["C:/Users/me/docs"]`. When set, telcontar can only read content from these paths. Leave blank to allow any path. |
+| `ALLOWLIST_DIRS` | no | `""` | JSON array of absolute directory paths, e.g. `["C:/Users/me/docs"]`. When set, telcontar can only read content from these paths for `read_file`/`extract_text`/`compare_documents` — a stricter, explicit bound that replaces (not merges with) the default. Leave blank and it now defaults to `[TARGET_DIR]` rather than "no restriction" — narrower than the always-on `TARGET_DIR` + server-cwd confinement described above, which still applies independently to every other path-taking tool. |
+| `MAX_EXTRACT_FILE_BYTES` | no | `200000000` | Input-size cap (bytes) for `extract_text`/`compare_documents`. Files larger than this are rejected before `markitdown` ever runs, with a `ValueError`. S5 hardening — see [Security Model](../developer/security-model.md). |
+| `MAX_EXTRACT_TIMEOUT_SECS` | no | `30` | Wall-clock timeout (seconds) for the `markitdown` parse itself, run in a worker thread so it works cross-platform (including Windows). A parse that exceeds this raises `TimeoutError`. |
+| `EGRESS_PATH` | no | `.organizer/egress.jsonl` | Append-only audit log: one entry (path, size in bytes, tool, timestamp) per `read_file`/`extract_text`/`compare_documents` call, recording what content was sent to the LLM endpoint. Not exposed as an MCP tool — open the file directly to audit a run. S8 hardening — see [Security Model](../developer/security-model.md). |
 | `EGRESS_ALLOW_EXTERNAL_SINKS` | no | `false` | Allow non-local output sinks (e.g. a MediaWiki MCP integration). The built-in `local_markdown` sink is always allowed regardless of this flag. Set to `true` only when you have connected a separate MCP sink integration and want its name listed in the profile's `[sinks] default`. |
 
 ---

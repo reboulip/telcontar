@@ -36,6 +36,11 @@ class Settings(BaseSettings):
 
     # Safety
     approval_mode: Literal["always", "destructive_only", "never"] = "always"
+    # The directory being organized this run — set by the host as the TARGET_DIR
+    # env var when it launches the MCP server subprocess. None outside a run (e.g.
+    # some test harnesses), in which case path-confinement guards fall back to
+    # just the `.organizer` working dir.
+    target_dir: Path | None = None
     quarantine_dir: Path = Path("_quarantine")
     journal_path: Path = Path(".organizer/journal.jsonl")
     events_path: Path = Path(".organizer/events.jsonl")
@@ -51,14 +56,34 @@ class Settings(BaseSettings):
     graph_path: Path = Path(".organizer/graph.json")
     # Archived-documents journal — log of documents withdrawn from active memory
     archive_path: Path = Path(".organizer/archive.jsonl")
+    # S8: audit trail of document content sent to the LLM endpoint
+    egress_path: Path = Path(".organizer/egress.jsonl")
 
     # Egress / extraction
     max_snippet_chars: int = 4000
-    # JSON array of absolute paths, e.g. '["C:/Users/me/docs"]'. Empty = no restriction.
+    # S5: bounds on untrusted-document parsing (markitdown/pypdf) — a crash/DoS/
+    # zip-bomb guard, not a sandbox. Input files larger than this are rejected
+    # before parsing; parsing itself is wall-clock-bounded (works cross-platform,
+    # including Windows, unlike a signal-based timeout).
+    max_extract_file_bytes: int = 200_000_000
+    max_extract_timeout_secs: float = 30.0
+    # JSON array of absolute paths, e.g. '["C:/Users/me/docs"]'. Empty defaults to
+    # the run's target directory (see effective_allowlist_dirs) — an explicit,
+    # non-empty list here always overrides that default and is used as-is.
     allowlist_dirs: list[Path] = Field(default_factory=list)
     # Gate for non-local output sinks (e.g. a MediaWiki MCP integration). Built-in
     # local_markdown is always allowed; external sinks require this flag = True.
     egress_allow_external_sinks: bool = False
+
+    def effective_allowlist_dirs(self) -> list[Path]:
+        """The allowlist actually enforced (M7/S3): an explicit `allowlist_dirs`
+        always wins; otherwise default to `[target_dir]` (confinement on by
+        default) rather than "no restriction". Stays empty if neither is set."""
+        if self.allowlist_dirs:
+            return self.allowlist_dirs
+        if self.target_dir is not None:
+            return [self.target_dir]
+        return []
 
 
 # ── Public helpers ─────────────────────────────────────────────────────────────
@@ -76,7 +101,7 @@ def load() -> Settings:
 
     if not settings.llm_base_url or not settings.llm_api_key:
         raise ValueError(
-            "LLM endpoint not configured. Launch organizer-host and complete the setup wizard."
+            "LLM endpoint not configured. Launch telcontar and complete the setup wizard."
         )
 
     return settings
@@ -98,13 +123,25 @@ def is_configured() -> bool:
     return bool(_keyring_get())
 
 
-def save_user_config(updates: dict[str, str]) -> None:
+class PlaintextKeyFallbackNeeded(Exception):
+    """Raised by save_user_config when the OS keyring is unavailable and the
+    caller hasn't explicitly opted into storing the key in plaintext (S8).
+
+    The caller (the setup wizard / config screen) is expected to warn the user
+    loudly and re-call with ``allow_plaintext_fallback=True`` only on their
+    explicit confirmation — never silently.
+    """
+
+
+def save_user_config(updates: dict[str, str], allow_plaintext_fallback: bool = False) -> None:
     """Persist settings to ~/.telcontar/config.env, storing the API key in the OS keyring.
 
-    Non-sensitive values are written as plain KEY=VALUE lines.  The API key is
+    Non-sensitive values are written as plain KEY=VALUE lines. The API key is
     stored via the OS credential manager (Windows Credential Manager, macOS
-    Keychain, SecretService on Linux).  If keyring is unavailable, it falls
-    back to the config file.
+    Keychain, SecretService on Linux). If the keyring is unavailable, this
+    raises ``PlaintextKeyFallbackNeeded`` instead of silently writing the key in
+    plaintext — pass ``allow_plaintext_fallback=True`` only after the caller has
+    explicitly warned the user and gotten their confirmation.
     """
     _USER_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -113,7 +150,12 @@ def save_user_config(updates: dict[str, str]) -> None:
     if api_key is not None:
         stored = _keyring_set(api_key)
         if not stored:
-            # Keyring unavailable — fall back to plain file (less secure).
+            if not allow_plaintext_fallback:
+                raise PlaintextKeyFallbackNeeded(
+                    "The OS keyring is unavailable — storing the API key would fall back "
+                    "to plaintext at ~/.telcontar/config.env unless explicitly confirmed."
+                )
+            # Explicit, user-confirmed fallback — less secure, but no longer silent.
             updates["llm_api_key"] = api_key
 
     # Read the existing file so we can merge rather than overwrite.

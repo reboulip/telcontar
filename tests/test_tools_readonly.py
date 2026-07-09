@@ -6,7 +6,14 @@ import hashlib
 import pytest
 from pathlib import Path
 
-from server.tools import compare_documents, compute_checksum, list_dir, read_file, extract_text
+from server.tools import (
+    compare_documents,
+    compute_checksum,
+    list_dir,
+    read_file,
+    extract_text,
+    walk_tree,
+)
 
 
 class TestListDir:
@@ -46,6 +53,81 @@ class TestListDir:
     def test_raises_for_nonexistent(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="Not a directory"):
             list_dir(str(tmp_path / "missing"))
+
+
+class TestWalkTree:
+    def _make_nested(self, root: Path) -> None:
+        # root/top.txt
+        # root/sub/mid.txt
+        # root/sub/deep/leaf.txt
+        (root / "top.txt").write_text("t")
+        (root / "sub").mkdir()
+        (root / "sub" / "mid.txt").write_text("m")
+        (root / "sub" / "deep").mkdir()
+        (root / "sub" / "deep" / "leaf.txt").write_text("l")
+
+    def test_descends_into_subfolders(self, tmp_path: Path) -> None:
+        self._make_nested(tmp_path)
+        result = walk_tree(str(tmp_path), max_depth=3)
+        sub = next(e for e in result["entries"] if e["name"] == "sub")
+        assert sub["type"] == "dir"
+        child_names = {c["name"] for c in sub["children"]}
+        assert "mid.txt" in child_names
+        assert "deep" in child_names
+        deep = next(c for c in sub["children"] if c["name"] == "deep")
+        assert {c["name"] for c in deep["children"]} == {"leaf.txt"}
+
+    def test_max_depth_one_is_flat(self, tmp_path: Path) -> None:
+        self._make_nested(tmp_path)
+        result = walk_tree(str(tmp_path), max_depth=1)
+        sub = next(e for e in result["entries"] if e["name"] == "sub")
+        # A directory at the depth limit is not descended into.
+        assert sub["children"] is None
+        assert sub["truncated"] is True
+
+    def test_deeper_dirs_marked_truncated(self, tmp_path: Path) -> None:
+        self._make_nested(tmp_path)
+        result = walk_tree(str(tmp_path), max_depth=2)
+        sub = next(e for e in result["entries"] if e["name"] == "sub")
+        assert sub["truncated"] is False
+        deep = next(c for c in sub["children"] if c["name"] == "deep")
+        # deep sits at the depth-2 limit: listed, but not descended.
+        assert deep["children"] is None
+        assert deep["truncated"] is True
+
+    def test_file_entry_has_size_and_mtime(self, tmp_path: Path) -> None:
+        (tmp_path / "f.txt").write_text("hello")
+        result = walk_tree(str(tmp_path))
+        entry = next(e for e in result["entries"] if e["name"] == "f.txt")
+        assert entry["type"] == "file"
+        assert isinstance(entry["size"], int)
+        assert isinstance(entry["mtime"], float)
+
+    def test_dirs_sorted_before_files(self, tmp_path: Path) -> None:
+        (tmp_path / "z_file.txt").write_text("x")
+        (tmp_path / "a_dir").mkdir()
+        result = walk_tree(str(tmp_path))
+        types = [e["type"] for e in result["entries"]]
+        assert types.index("dir") < types.index("file")
+
+    def test_empty_directory(self, tmp_path: Path) -> None:
+        result = walk_tree(str(tmp_path))
+        assert result["entries"] == []
+        assert result["max_depth"] == 3
+
+    def test_raises_for_file(self, tmp_path: Path) -> None:
+        f = tmp_path / "f.txt"
+        f.write_text("x")
+        with pytest.raises(ValueError, match="Not a directory"):
+            walk_tree(str(f))
+
+    def test_raises_for_nonexistent(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="Not a directory"):
+            walk_tree(str(tmp_path / "missing"))
+
+    def test_raises_for_bad_depth(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="max_depth"):
+            walk_tree(str(tmp_path), max_depth=0)
 
 
 class TestReadFile:
@@ -102,6 +184,116 @@ class TestExtractText:
     def test_raises_for_nonexistent(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="Not a file"):
             extract_text(str(tmp_path / "missing.pdf"), 100)
+
+    def test_extracts_real_pdf(self, tmp_path: Path) -> None:
+        # Minimal hand-built single-page PDF with a text-drawing content stream.
+        # Regression guard for the markitdown[pdf] extra (pdfminer.six) — without
+        # it, extraction raises MissingDependencyException instead of returning text.
+        pdf_bytes = (
+            b"%PDF-1.4\n"
+            b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+            b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
+            b"3 0 obj\n<< /Type /Page /Parent 2 0 R "
+            b"/Resources << /Font << /F1 4 0 R >> >> "
+            b"/MediaBox [0 0 200 200] /Contents 5 0 R >>\nendobj\n"
+            b"4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n"
+            b"5 0 obj\n<< /Length 44 >>\nstream\n"
+            b"BT /F1 24 Tf 20 100 Td (Hello PDF) Tj ET\n"
+            b"endstream\nendobj\n"
+            b"xref\n0 6\n0000000000 65535 f \ntrailer\n<< /Size 6 /Root 1 0 R >>\n"
+            b"startxref\n0\n%%EOF"
+        )
+        f = tmp_path / "doc.pdf"
+        f.write_bytes(pdf_bytes)
+        result = extract_text(str(f), 1000)
+        assert "Hello PDF" in result
+
+    def test_extracts_real_xlsx(self, tmp_path: Path) -> None:
+        # Regression guard for the markitdown[xlsx] extra (openpyxl) — without it,
+        # extraction raises MissingDependencyException instead of returning text.
+        openpyxl = pytest.importorskip("openpyxl")
+        f = tmp_path / "sheet.xlsx"
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws["A1"] = "Hello"
+        ws["B1"] = "World"
+        wb.save(f)
+        result = extract_text(str(f), 1000)
+        assert "Hello" in result
+        assert "World" in result
+
+    def test_rejects_oversized_file(self, tmp_path: Path) -> None:
+        f = tmp_path / "huge.txt"
+        f.write_text("x" * 1000)
+        with pytest.raises(ValueError, match="exceeding"):
+            extract_text(str(f), 1000, max_file_bytes=100)
+
+    def test_times_out_on_slow_extraction(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import time
+
+        from server import extract as extract_module
+
+        def slow_convert(path):
+            time.sleep(1)
+            raise AssertionError("should have timed out before completing")
+
+        monkeypatch.setattr(extract_module._md, "convert", slow_convert)
+        f = tmp_path / "slow.txt"
+        f.write_text("x")
+        with pytest.raises(TimeoutError, match="timed out"):
+            extract_text(str(f), 1000, timeout_secs=0.05)
+
+    def test_rejects_zip_bomb_like_ratio(self, tmp_path: Path) -> None:
+        import zipfile
+
+        f = tmp_path / "bomb.docx"
+        with zipfile.ZipFile(f, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            # Highly repetitive data compresses to a tiny fraction of its size —
+            # a stand-in for a crafted zip-bomb entry inside an Office file.
+            zf.writestr("word/document.xml", b"A" * 20_000_000)
+        with pytest.raises(ValueError, match="possible zip bomb"):
+            extract_text(str(f), 1000)
+
+
+class TestCheckNotAZipBomb:
+    """Unit tests for the zip-bomb ratio guard itself (server/extract.py)."""
+
+    def test_ignores_non_zip_based_suffix(self, tmp_path: Path) -> None:
+        from server.extract import _check_not_a_zip_bomb
+
+        f = tmp_path / "doc.pdf"
+        f.write_bytes(b"not actually a zip")
+        _check_not_a_zip_bomb(f)  # no exception — suffix isn't zip-based
+
+    def test_ignores_invalid_zip_despite_extension(self, tmp_path: Path) -> None:
+        from server.extract import _check_not_a_zip_bomb
+
+        f = tmp_path / "corrupt.docx"
+        f.write_bytes(b"not a real zip file")
+        _check_not_a_zip_bomb(f)  # no exception — let markitdown report the real error
+
+    def test_passes_for_normal_compression_ratio(self, tmp_path: Path) -> None:
+        import zipfile
+
+        from server.extract import _check_not_a_zip_bomb
+
+        f = tmp_path / "normal.docx"
+        with zipfile.ZipFile(f, "w", compression=zipfile.ZIP_STORED) as zf:
+            zf.writestr("word/document.xml", b"Hello World " * 10)
+        _check_not_a_zip_bomb(f)  # no exception — ratio ~1x, and below the size floor
+
+    def test_raises_for_extreme_compression_ratio(self, tmp_path: Path) -> None:
+        import zipfile
+
+        from server.extract import _check_not_a_zip_bomb
+
+        f = tmp_path / "bomb.xlsx"
+        with zipfile.ZipFile(f, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("xl/worksheets/sheet1.xml", b"A" * 20_000_000)
+        with pytest.raises(ValueError, match="possible zip bomb"):
+            _check_not_a_zip_bomb(f)
 
 
 class TestComputeChecksum:

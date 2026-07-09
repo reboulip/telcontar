@@ -3,7 +3,7 @@
 ## Development setup
 
 ```bash
-git clone https://github.com/rreboulleau/telcontar.git
+git clone https://github.com/reboulip/telcontar.git
 cd telcontar
 
 # Install runtime + dev dependencies
@@ -13,7 +13,7 @@ uv sync --group dev
 uv sync --group test
 ```
 
-For dev, configure your LLM endpoint either by running `organizer-host` once (setup wizard) or by placing a project-local `.env` file with `LLM_BASE_URL` and `LLM_API_KEY`. See [Configuration](../getting-started/configuration.md) for the full reference.
+For dev, configure your LLM endpoint either by running `telcontar` once (setup wizard) or by placing a project-local `.env` file with `LLM_BASE_URL` and `LLM_API_KEY`. See [Configuration](../getting-started/configuration.md) for the full reference.
 
 ---
 
@@ -91,6 +91,7 @@ uv run --group test pytest tests/test_plan.py  # single module
 - Server tool tests (`test_tools_*.py`) use `tmp_path` (pytest fixture) for isolation — no real `.env` needed
 - Host/agent tests (`test_host.py`) mock the MCP `ClientSession` and `AsyncOpenAI` client
 - Registry/journal tests exercise the in-memory classes and file persistence directly
+- `test_e2e_toolchain.py` is a cross-module end-to-end integration suite: no LLM, it drives the real server tool implementations against a seeded fixture directory through the full lifecycle (`list_dir` → `read_file`/`extract_text` → `compute_checksum` → `record_document` → `propose_*` → `review_plan` → `approve_plan` → `execute_plan` with registry reconcile → `undo_last` → `write_index`/`write_summary`), asserting real file-I/O effects. This is an intentional exception to the one-module-per-test convention below.
 
 **Convention:** Each test module maps to one source module. When adding a new module, add `tests/test_<module>.py` and update the `test-select` scope table in `pyproject.toml`.
 

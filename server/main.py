@@ -33,13 +33,73 @@ def _get_profile():
     return _profile
 
 
+def _confinement_roots(cfg) -> list[Path]:
+    """Roots every path-taking tool is confined to (M2/S3): the run's target
+    directory (if the host set one via TARGET_DIR) plus the server's own working
+    directory, where `.organizer` and the quarantine dir live by default."""
+    roots: list[Path] = []
+    if cfg.target_dir is not None:
+        roots.append(cfg.target_dir)
+    roots.append(Path.cwd())
+    return roots
+
+
+def _check_within_root(path: str, cfg) -> None:
+    from server.guards import check_within_root
+
+    check_within_root(Path(path), _confinement_roots(cfg))
+
+
+def _log_egress(path: str, content: str, tool: str, cfg) -> None:
+    """Record a file whose content was sent to the LLM endpoint (S8/M12).
+
+    ``content`` is what the tool actually returned (post-truncation), so the
+    logged size reflects what really left the machine, not the file's full
+    on-disk size.
+    """
+    from server import egress as _egress
+
+    size = len(content.encode("utf-8", errors="replace"))
+    _egress.append(cfg.egress_path, _egress.EgressEntry.new(path, size, tool))
+
+
+def _log_egress_from_disk(path: str, tool: str, cfg) -> None:
+    """Like ``_log_egress``, but sizes from the file itself rather than a
+    returned string — used where a tool doesn't expose each input's individual
+    contribution to its output (e.g. ``compare_documents``' combined diff).
+    A conservative (upper-bound) estimate of what could have been exposed."""
+    from server import egress as _egress
+
+    try:
+        size = Path(path).stat().st_size
+    except OSError:
+        return
+    _egress.append(cfg.egress_path, _egress.EgressEntry.new(path, size, tool))
+
+
 # ── Read-only tools ──────────────────────────────────────────────────────────
 
 
 @mcp.tool()
 def list_dir(path: str) -> dict:
     """Enumerate directory entries with metadata (size, type, mtime)."""
+    cfg = _get_settings()
+    _check_within_root(path, cfg)
     return tools.list_dir(path)
+
+
+@mcp.tool()
+def walk_tree(path: str, max_depth: int = 3) -> dict:
+    """Recursively enumerate a directory tree up to max_depth levels deep.
+
+    Complements list_dir (a single level): use it during ANALYZE to discover
+    documents nested in subfolders in one call and to redesign the whole layout,
+    not just the top level. Directory entries carry a nested `children` list until
+    max_depth is reached, where deeper dirs are marked `truncated` (call walk_tree
+    again on that subpath to go deeper)."""
+    cfg = _get_settings()
+    _check_within_root(path, cfg)
+    return tools.walk_tree(path, max_depth)
 
 
 @mcp.tool()
@@ -48,8 +108,11 @@ def read_file(path: str, max_chars: int = 4000) -> str:
     cfg = _get_settings()
     from server.guards import check_allowlist
 
-    check_allowlist(Path(path), cfg.allowlist_dirs)
-    return tools.read_file(path, min(max_chars, cfg.max_snippet_chars))
+    check_allowlist(Path(path), cfg.effective_allowlist_dirs())
+    _check_within_root(path, cfg)
+    result = tools.read_file(path, min(max_chars, cfg.max_snippet_chars))
+    _log_egress(path, result, "read_file", cfg)
+    return result
 
 
 @mcp.tool()
@@ -58,13 +121,23 @@ def extract_text(path: str, max_chars: int = 4000) -> str:
     cfg = _get_settings()
     from server.guards import check_allowlist
 
-    check_allowlist(Path(path), cfg.allowlist_dirs)
-    return tools.extract_text(path, min(max_chars, cfg.max_snippet_chars))
+    check_allowlist(Path(path), cfg.effective_allowlist_dirs())
+    _check_within_root(path, cfg)
+    result = tools.extract_text(
+        path,
+        min(max_chars, cfg.max_snippet_chars),
+        cfg.max_extract_file_bytes,
+        cfg.max_extract_timeout_secs,
+    )
+    _log_egress(path, result, "extract_text", cfg)
+    return result
 
 
 @mcp.tool()
 def compute_checksum(path: str) -> dict:
     """Compute a file's sha256 checksum, used as its unique document id."""
+    cfg = _get_settings()
+    _check_within_root(path, cfg)
     return tools.compute_checksum(path)
 
 
@@ -75,9 +148,21 @@ def compare_documents(path_a: str, path_b: str, max_chars: int = 4000) -> dict:
     cfg = _get_settings()
     from server.guards import check_allowlist
 
-    check_allowlist(Path(path_a), cfg.allowlist_dirs)
-    check_allowlist(Path(path_b), cfg.allowlist_dirs)
-    return tools.compare_documents(path_a, path_b, min(max_chars, cfg.max_snippet_chars))
+    allowed = cfg.effective_allowlist_dirs()
+    check_allowlist(Path(path_a), allowed)
+    check_allowlist(Path(path_b), allowed)
+    _check_within_root(path_a, cfg)
+    _check_within_root(path_b, cfg)
+    result = tools.compare_documents(
+        path_a,
+        path_b,
+        min(max_chars, cfg.max_snippet_chars),
+        cfg.max_extract_file_bytes,
+        cfg.max_extract_timeout_secs,
+    )
+    _log_egress_from_disk(path_a, "compare_documents", cfg)
+    _log_egress_from_disk(path_b, "compare_documents", cfg)
+    return result
 
 
 # ── Plan management tools ────────────────────────────────────────────────────
@@ -118,6 +203,23 @@ def approve_plan(plan_id: str) -> dict:
     return tools.approve_plan(plan_id, cfg.plans_dir)
 
 
+@mcp.tool()
+def set_plan_rationale(plan_id: str, rationale: str) -> dict:
+    """Attach a plain-language rationale to a plan (shown above the ops at approval)."""
+    cfg = _get_settings()
+    return tools.set_plan_rationale(plan_id, rationale, cfg.plans_dir)
+
+
+@mcp.tool()
+def set_plan_folder_notes(plan_id: str, notes: dict) -> dict:
+    """Attach per-folder purpose notes to a plan for the approval-view target-layout
+    preview. `notes` maps each target folder path to a short one-line purpose note
+    (e.g. {"01_decisions": "Formal decision records", "_quarantine": "Duplicates and
+    drafts"}); shown beside each folder when the user reviews the plan."""
+    cfg = _get_settings()
+    return tools.set_plan_folder_notes(plan_id, notes, cfg.plans_dir)
+
+
 # ── Plan-building tools (write to plan, do not execute) ──────────────────────
 
 
@@ -125,6 +227,7 @@ def approve_plan(plan_id: str) -> dict:
 def propose_rename(path: str, new_name: str, plan_id: str) -> dict:
     """Stage a rename operation in the named plan."""
     cfg = _get_settings()
+    _check_within_root(path, cfg)
     return tools.propose_rename(path, new_name, plan_id, cfg.plans_dir)
 
 
@@ -132,6 +235,8 @@ def propose_rename(path: str, new_name: str, plan_id: str) -> dict:
 def propose_move(path: str, dest_dir: str, plan_id: str) -> dict:
     """Stage a move operation in the named plan."""
     cfg = _get_settings()
+    _check_within_root(path, cfg)
+    _check_within_root(dest_dir, cfg)
     return tools.propose_move(path, dest_dir, plan_id, cfg.plans_dir)
 
 
@@ -139,40 +244,54 @@ def propose_move(path: str, dest_dir: str, plan_id: str) -> dict:
 def propose_quarantine(path: str, plan_id: str) -> dict:
     """Stage a quarantine operation in the named plan."""
     cfg = _get_settings()
+    _check_within_root(path, cfg)
     return tools.propose_quarantine(path, plan_id, cfg.plans_dir, cfg.quarantine_dir)
 
 
-# ── Direct file operations ───────────────────────────────────────────────────
+@mcp.tool()
+def propose_create_file(path: str, content: str, plan_id: str) -> dict:
+    """Stage creating a new file in the named plan; raises if the path already exists."""
+    cfg = _get_settings()
+    _check_within_root(path, cfg)
+    return tools.propose_create_file(path, content, plan_id, cfg.plans_dir)
 
 
 @mcp.tool()
-def move_file(path: str, dest_dir: str) -> dict:
-    """Move a file to dest_dir; raises if the destination already exists."""
-    return tools.move_file(path, dest_dir)
+def propose_update_file(path: str, content: str, plan_id: str, overwrite: bool = False) -> dict:
+    """Stage writing content to an existing (or new) file in the named plan. Refuses
+    to replace an existing file unless overwrite=True — pass it explicitly for the
+    rare legitimate overwrite; it is shown to the user at approval."""
+    cfg = _get_settings()
+    _check_within_root(path, cfg)
+    return tools.propose_update_file(path, content, plan_id, cfg.plans_dir, overwrite)
 
 
 @mcp.tool()
-def rename_file(path: str, new_name: str) -> dict:
-    """Rename a file in place; raises if the new name already exists."""
-    return tools.rename_file(path, new_name)
+def propose_create_dir(path: str, plan_id: str) -> dict:
+    """Stage creating a directory (and parents) in the named plan; idempotent."""
+    cfg = _get_settings()
+    _check_within_root(path, cfg)
+    return tools.propose_create_dir(path, plan_id, cfg.plans_dir)
 
 
 @mcp.tool()
-def create_file(path: str, content: str) -> dict:
-    """Write content to path; raises if the file already exists."""
-    return tools.create_file(path, content)
+def propose_archive_document(checksum: str, plan_id: str, reason: str = "") -> dict:
+    """Stage withdrawing a document from active memory in the named plan: flips its
+    registry status to archived and moves its file to quarantine on execution."""
+    cfg = _get_settings()
+    return tools.propose_archive_document(
+        checksum, reason, plan_id, cfg.plans_dir, cfg.registry_path, cfg.quarantine_dir
+    )
 
 
 @mcp.tool()
-def update_file(path: str, content: str) -> dict:
-    """Overwrite or create content at path."""
-    return tools.update_file(path, content)
-
-
-@mcp.tool()
-def create_dir(path: str) -> dict:
-    """Create a directory (and parents); idempotent if it already exists."""
-    return tools.create_dir(path)
+def propose_compress_quarantine(plan_id: str, delete_originals: bool = True) -> dict:
+    """Stage losslessly compressing loose quarantined files into a verified zip
+    archive in the named plan (reclaims space on execution)."""
+    cfg = _get_settings()
+    return tools.propose_compress_quarantine(
+        plan_id, cfg.plans_dir, cfg.quarantine_dir, delete_originals
+    )
 
 
 # ── Gated execution tools ────────────────────────────────────────────────────
@@ -183,13 +302,21 @@ def execute_plan(plan_id: str) -> dict:
     """Apply all operations in an approved plan; journals each one and reconciles
     registry paths so document records follow their files."""
     cfg = _get_settings()
-    return tools.execute_plan(plan_id, cfg.plans_dir, cfg.journal_path, cfg.registry_path)
+    return tools.execute_plan(
+        plan_id,
+        cfg.plans_dir,
+        cfg.journal_path,
+        cfg.registry_path,
+        cfg.quarantine_dir,
+        cfg.archive_path,
+    )
 
 
 @mcp.tool()
 def write_index(path: str) -> dict:
     """Emit INDEX.md (tree + changelog) and manifest.json for the organized tree at path."""
     cfg = _get_settings()
+    _check_within_root(path, cfg)
     return tools.write_index(path, cfg.journal_path)
 
 
@@ -213,6 +340,7 @@ def _sink_results(results: list[dict]) -> dict:
 def write_summary(path: str, content: str) -> dict:
     """Write the LLM-composed project synthesis to the profile's active output
     sink(s). The built-in local_markdown sink persists it as SUMMARY.md."""
+    _check_within_root(path, _get_settings())
     return _sink_results([s.write_summary(path, content) for s in _resolve_output_sinks()])
 
 
@@ -220,26 +348,8 @@ def write_summary(path: str, content: str) -> dict:
 def write_folder_readme(path: str, content: str) -> dict:
     """Write the LLM-composed per-folder description to the profile's active output
     sink(s). The built-in local_markdown sink persists it as README.md."""
+    _check_within_root(path, _get_settings())
     return _sink_results([s.write_folder_readme(path, content) for s in _resolve_output_sinks()])
-
-
-# ── Recovery tools ───────────────────────────────────────────────────────────
-
-
-@mcp.tool()
-def undo_last() -> dict:
-    """Revert the most recent journaled operation."""
-    cfg = _get_settings()
-    return tools.undo_last(cfg.journal_path, cfg.plans_dir)
-
-
-@mcp.tool()
-def compress_quarantine(delete_originals: bool = True) -> dict:
-    """Losslessly compress loose quarantined files into a single verified zip archive
-    and reclaim space. The archive is checked byte-for-byte before any original is
-    removed, and the whole operation is reversible via undo_last."""
-    cfg = _get_settings()
-    return tools.compress_quarantine(cfg.quarantine_dir, cfg.journal_path, delete_originals)
 
 
 # ── Document registry (the engine's persistent memory) ───────────────────────
@@ -266,6 +376,7 @@ def record_document(
     `provenance` is the document's knowledge contribution (why it is here).
     """
     cfg = _get_settings()
+    _check_within_root(path, cfg)
     return tools.record_document(
         checksum=checksum,
         path=path,
@@ -362,22 +473,8 @@ def get_actors() -> list:
 
 
 # ── Archived-documents journal ("retirer de la mémoire") ─────────────────────
-
-
-@mcp.tool()
-def archive_document(checksum: str, reason: str = "") -> dict:
-    """Withdraw a document from active memory: flip its registry status to archived,
-    move its file to quarantine (journaled, reversible via undo_last), and append to
-    the archive log. Never deletes. Identify the document by its checksum."""
-    cfg = _get_settings()
-    return tools.archive_document(
-        checksum,
-        reason,
-        cfg.registry_path,
-        cfg.quarantine_dir,
-        cfg.journal_path,
-        cfg.archive_path,
-    )
+# archive_document itself is no longer an agent-callable tool (S1) — it's only
+# reached via propose_archive_document → execute_plan, same as compress_quarantine.
 
 
 @mcp.tool()
@@ -388,4 +485,26 @@ def list_archived() -> list:
 
 
 def main() -> None:
+    import argparse
+    from importlib.metadata import PackageNotFoundError, version
+
+    def _version() -> str:
+        try:
+            return version("telcontar")
+        except PackageNotFoundError:  # pragma: no cover - source checkout without install
+            return "0.0.0+unknown"
+
+    parser = argparse.ArgumentParser(
+        prog="telcontar-server",
+        description="MCP stdio server exposing telcontar's guarded file tools.",
+    )
+    parser.add_argument("--version", action="version", version=f"telcontar-server {_version()}")
+    # Tolerate any extra args a launching MCP host may pass; --help/--version
+    # are handled here and exit before the (blocking) stdio server starts.
+    parser.parse_known_args()
+
     mcp.run(transport="stdio")
+
+
+if __name__ == "__main__":
+    main()

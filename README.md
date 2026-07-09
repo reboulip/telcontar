@@ -13,22 +13,22 @@ Local AI assistant that organizes a directory tree: renames files to readable na
 ## Setup
 
 ```bash
-uv tool install git+https://github.com/rreboulleau/telcontar.git
+uv tool install git+https://github.com/reboulip/telcontar.git
 ```
 
-Then launch `organizer-host` once. On first run the **setup wizard** appears automatically — it collects your AI service URL and API key, stores the key in the OS credential store (Windows Credential Manager / macOS Keychain), and saves non-sensitive settings to `~/.telcontar/config.env`. No manual editing of config files required.
+Then launch `telcontar` once. On first run the **setup wizard** appears automatically — it collects your AI service URL and API key, stores the key in the OS credential store (Windows Credential Manager / macOS Keychain), and saves non-sensitive settings to `~/.telcontar/config.env`. No manual editing of config files required.
 
 For developer / contributor setup (clone + `uv sync`), see [docs/getting-started/installation.md](docs/getting-started/installation.md).
 
 ## Usage
 
 ```bash
-organizer-host
+telcontar
 ```
 
 The Textual TUI opens. On first run the **setup wizard** appears; returning users land on the **startup screen**, which offers three actions:
 
-- **Organize** — analyze and reorganize the target directory (full agent loop).
+- **Organize** — opens on a starter pane showing a code-generated directory overview (file/subfolder counts, common file types — no LLM call yet) plus an optional field for steering instructions (e.g. "group by workstream", "don't quarantine drafts"); press **Start organizing** to launch the full agent loop, which recursively surveys nested subfolders (not just the top level) and is free to redesign the existing layout entirely; the agent may pause once, after analysis, to ask a few clarifying questions if something is genuinely ambiguous — answer them or skip to let it use its best judgement — and may pause once more, after re-examining its approach from a second angle, to let you pick between a few competing options (e.g. how to group a set of documents) — choose one per question or skip to let it decide.
 - **Query** — open an interactive read-only chat over the already-analyzed corpus (requires an existing registry at `REGISTRY_PATH`).
 - **⚙ Settings** — edit URL, API key, profile, and approval mode at any time (also accessible by pressing `s`).
 
@@ -45,6 +45,8 @@ uv run mypy .          # type check
 ## Safety model
 
 - `APPROVAL_MODE=always` (default): every plan requires explicit user approval before execution.
+- Every path-taking tool is confined to the directory you're organizing (plus telcontar's own working files) — an agent can't be steered into reading or writing outside it.
 - Nothing is ever deleted — clutter goes to `QUARANTINE_DIR` (`_quarantine/` by default).
-- Every destructive operation is journaled; `undo_last` reverts the most recent one.
-- `compress_quarantine` bundles loose quarantine files into a verified ZIP archive and reclaims space; it is the only tool that removes bytes from disk, and it remains fully reversible via `undo_last`.
+- Every filesystem mutation — renames, moves, quarantines, file writes, folder creation, archiving, and quarantine compression — is staged as a plan op and only takes effect through `execute_plan`; there is no tool that touches the filesystem directly.
+- Every destructive operation is journaled. Undo is a manual, user-only action: press **j** in the Organizer screen to open the operations journal, then **u** to revert the most recent operation — the agent itself has no undo tool.
+- Compressing loose quarantine files into a verified ZIP archive (reclaiming space) is staged the same way and remains fully reversible via undo.

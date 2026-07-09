@@ -19,20 +19,34 @@ Local filesystem  +  .organizer/ state
 
 ## Startup flow
 
-When you run `organizer-host`, the app checks whether a minimum configuration (AI service URL + API key) is present:
+When you run `telcontar`, the app checks whether a minimum configuration (AI service URL + API key) is present:
 
 - **First run** — the **setup wizard** (`SetupScreen`) appears automatically. It guides you through choosing an AI provider, entering the service URL and API key, and selecting a document profile. The key is stored in the OS credential store (Windows Credential Manager / macOS Keychain); other settings go to `~/.telcontar/config.env`.
 - **Returning user** — the **startup screen** (`StartupScreen`) appears directly. It offers three actions: **Organize**, **Query**, and **⚙ Settings**. Press `s` or click **⚙ Settings** at any time to open the settings panel (`ConfigScreen`), where you can change the URL, API key, profile, and approval mode.
 
 ---
 
+## The starter pane
+
+Pressing **Organize** does not launch the agent immediately. The `OrganizerScreen` opens on a **starter pane** first:
+
+- A code-generated, deterministic **directory overview** (`_directory_overview`) — file count, subfolder count, and the most common file extensions, computed by scanning names and directory structure only. No file content is read and no LLM call is made.
+- An optional **steering instructions** field for free text, e.g. "group by workstream", "keep the 2024 invoices together", or "don't quarantine drafts".
+- A **Start organizing** button (pressing Enter in the instructions field works too).
+
+Only once you proceed does the chat transcript appear and the agent loop start. Any instructions you typed are shown as a `you` turn in the transcript and passed to `run_agent(..., instructions=...)`, which appends them to the agent's first user message so the run follows your intent instead of organizing blind.
+
+---
+
 ## The agent loop
 
-When you point telcontar at a directory, the **host** launches the **server** as a subprocess and begins a GPT-5 tool-calling loop. The agent follows a fixed three-phase workflow:
+Once you proceed past the starter pane, the **host** launches the **server** as a subprocess and begins a GPT-5 tool-calling loop. The agent follows a fixed three-phase workflow:
 
 ### Phase A — Analyse
 
-For each document the agent:
+The agent first surveys the **whole directory tree** with `walk_tree` (recursive, up to `max_depth=3` levels; it calls `walk_tree` again on any subpath that comes back marked `truncated` to go deeper) so it discovers documents nested in subfolders, not just those sitting at the top level.
+
+Then, for each document found anywhere in the tree, the agent:
 
 1. Calls `read_file` or `extract_text` (for PDF/Office) to get the content
 2. Calls `compute_checksum` to obtain the file's sha256 content ID
@@ -41,13 +55,16 @@ For each document the agent:
 
 The registry is **content-addressed**: if you rename a file, telcontar still recognises it by checksum on the next run. Analysis results accumulate across sessions.
 
+Between Phase A and Phase B, the agent has two optional, at-most-once checkpoints: it may pause to ask the user a short batch of clarifying questions if it hit genuine ambiguity — see [The clarification checkpoint](#the-clarification-checkpoint) below — and, after re-examining its intended approach from a second angle, it may also surface a few competing options for the user to choose between — see [The multiple-option checkpoint](#the-multiple-option-checkpoint) below.
+
 ### Phase B — Organize
 
-1. The agent designs a **relevant target taxonomy** — a small, shallow, readable folder tree derived from the document types and themes actually found in the corpus (e.g. grouped by document type, workstream, or phase). It creates each folder with `create_dir` (idempotent and collision-safe). Folders are only created for categories the corpus actually contains.
+1. The agent designs a **relevant target taxonomy** — a small, shallow, readable folder tree derived from the document types and themes actually found in the corpus (e.g. grouped by document type, workstream, or phase). It may redesign the **existing nested layout entirely** — documents already sitting in subfolders are reorganized too, not just those at the top level. Folders are only created for categories the corpus actually contains.
 2. The agent calls `create_plan` to open a new plan
-3. It stages operations with `propose_rename`, `propose_move` (filing each document into the taxonomy), and `propose_quarantine` for duplicates or clutter
+3. It stages operations with `propose_create_dir` for each new folder (idempotent and collision-safe), `propose_rename`, `propose_move` (filing each document into the taxonomy), `propose_quarantine` for duplicates or clutter, `propose_create_file`/`propose_update_file` for any new or updated files, and `propose_archive_document` to withdraw a document from active memory when appropriate — **every filesystem mutation is staged this way; there is no tool that writes to disk directly**
 4. It calls `review_plan` for a deduplication pre-flight check
-5. It calls `execute_plan` — at this point the **approval gate** fires
+5. It calls `set_plan_rationale` with a short plain-language paragraph explaining the plan's philosophy — how it grouped, renamed, and quarantined documents and why — and `set_plan_folder_notes` with a one-line purpose note for each target folder. The host shows the rationale above the op list in the approval modal, followed by a target-layout tree with the folder notes beside each folder
+6. It calls `execute_plan` — at this point the **approval gate** fires
 
 ### Phase C — Synthesize
 
@@ -59,6 +76,68 @@ The registry is **content-addressed**: if you rename a file, telcontar still rec
 
 ---
 
+## The clarification checkpoint
+
+After Phase A (Analyse) and before Phase B (Organize) begins, the agent **may** pause once to ask the user a short batch of clarifying questions — but only when it hits genuine ambiguity (unclear document type, competing taxonomy groupings, ambiguous naming). If there is no real ambiguity, the agent skips this and moves straight into Phase B with its own best judgement.
+
+This is a **host-side** capability, not an MCP server tool: `ask_clarification` is a synthetic tool the host injects into the model's tool list, and it is never forwarded to the MCP server.
+
+```
+Agent finishes Phase A (Analyse)
+       │
+       ▼
+Agent calls ask_clarification(questions)   (at most once per run)
+       │
+       ▼
+Host shows ClarificationModal — one free-text input per question
+       │
+   User reviews
+   ├── Submit answers (any subset, blanks are skipped)
+   │       │
+   │       ▼
+   │   Answers fed back to the agent to refine its decisions before create_plan
+   │
+   └── Skip — best judgement
+           │
+           ▼
+       Agent proceeds using its own judgement
+```
+
+A second call to `ask_clarification` in the same run is refused — the host tells the agent it already asked and to proceed with its own best judgement. The agent is instructed not to stall waiting for answers.
+
+---
+
+## The multiple-option checkpoint
+
+Also between Phase A and Phase B, the agent **may** pause once more — after re-examining its intended approach from a second angle — to let the user choose between competing courses of action, when there are genuinely several valid ways to classify or handle the corpus (e.g. group COPIL decks by date vs. by workstream vs. one flat folder). If one approach is clearly best, the agent skips this and moves straight into Phase B.
+
+Like the clarification checkpoint, this is a **host-side** capability, not an MCP server tool: `propose_options` is a synthetic tool the host injects into the model's tool list, and it is never forwarded to the MCP server.
+
+```
+Agent finishes Phase A, re-examines its approach from a second angle
+       │
+       ▼
+Agent calls propose_options(questions)   (at most once per run)
+       │
+       ▼
+Host shows OptionsModal — one RadioSet (2-5 options) per question
+       │
+   User reviews
+   ├── Submit choices (one option per question; first option pre-selected)
+   │       │
+   │       ▼
+   │   Selections fed back to the agent, which follows them before create_plan
+   │
+   └── Skip — best judgement
+           │
+           ▼
+       Agent proceeds using its own judgement
+```
+
+A second call to `propose_options` in the same run is refused — the host tells the agent it already proposed options and to proceed with its own best judgement. Like `ask_clarification`, the agent is instructed to use this only for real, close judgement calls, not to offload every decision, and never to stall.
+
+---
+
 ## The approval gate
 
 Before any file is moved or renamed, telcontar shows the full plan to the user and waits for explicit approval. This is the heart of the safety model:
@@ -67,7 +146,8 @@ Before any file is moved or renamed, telcontar shows the full plan to the user a
 Agent proposes plan
        │
        ▼
-Host fetches plan details  →  shows ApprovalModal
+Host writes the full ops list to .organizer/plan_ops.json,
+fetches plan details  →  shows ApprovalModal
        │
    User reviews
    ├── Approve (with optional per-op deselection)
@@ -77,6 +157,13 @@ Host fetches plan details  →  shows ApprovalModal
    │       │
    │       ▼
    │   Each op executed + journaled + registry reconciled
+   │
+   ├── Refine (free-text change request, e.g. "merge the drafts into one folder")
+   │       │
+   │       ▼
+   │   Plan is NOT executed — the request is fed back to the agent, which
+   │   revises the plan (ops, rationale, folder notes) and calls execute_plan
+   │   again to re-present it
    │
    └── Reject
            │
@@ -96,12 +183,17 @@ All state lives under `.organizer/` in the **project root** (not the target dire
 |---|---|
 | `.organizer/registry.json` | Document records keyed by sha256 — the engine's memory |
 | `.organizer/plans/<uuid>.json` | One JSON file per plan, with ops and state machine |
+| `.organizer/plan_ops.json` | Inspectable snapshot of the most recently presented plan's full op list (plan id, rationale, folder notes, ops) — overwritten each time a plan is shown for approval |
 | `.organizer/journal.jsonl` | Append-only undo log — every executed file op recorded |
 | `.organizer/events.jsonl` | Append-only project event journal — verb-led narrative entries |
 | `.organizer/graph.json` | Knowledge graph — derived from registry + events; rebuilt on demand |
 | `.organizer/archive.jsonl` | Append-only archive log — documents withdrawn from active memory |
 
 Because the registry is keyed by checksum, moving or renaming a file does **not** lose its analysis. The `execute_plan` function reconciles paths automatically as files move.
+
+### Undoing an operation
+
+Undo is a **manual, user-only action** — the agent has no tool to trigger it. In the Organizer screen, press **j** to open the operations-journal viewer, then **u** to revert the most recent journaled operation. This calls `server.tools.undo_last` directly from the TUI, bypassing the agent entirely.
 
 ---
 
@@ -141,9 +233,10 @@ Press **Esc** to return to the previous screen.
 
 ## The server's safety invariants
 
-The MCP server enforces four non-negotiable rules in code:
+The MCP server enforces five non-negotiable rules in code:
 
 1. **No delete tool exists.** The only removal path is `propose_quarantine`, which moves files to `QUARANTINE_DIR`.
 2. **No overwrite.** `check_no_overwrite` raises `FileExistsError` before any move or rename touches an existing destination.
 3. **Every destructive op is journaled.** `execute_plan` appends to the undo journal before returning success.
 4. **Hard-stop on repeated failures.** More than 3 failures in one `execute_plan` run triggers a hard stop and surfaces the failed ops to the user.
+5. **Every mutation goes through the plan flow.** There is no tool that writes, moves, renames, quarantines, or archives a file directly — the agent must always stage a `propose_*` op and apply it via `execute_plan`. Undo, correspondingly, is not something the agent can trigger at all: it's a manual action in the TUI (see [Persistence](#persistence) below).

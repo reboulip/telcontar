@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "telcontar"
-version = "0.1.0"
+version = "0.1.0b3"
 description = "MCP-based local directory organizer driven by GPT-5"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -13,7 +13,7 @@ license = "Apache-2.0"
 dependencies = [
     "mcp>=1.28,<2",          # MCP Python SDK; cap at v2 stable boundary
     "openai>=2.43",          # OpenAI-compatible SDK (Azure / Mammouth)
-    "markitdown>=0.1.6",     # text extraction from Office/binary formats (includes PDF via pypdf)
+    "markitdown[pdf,docx,pptx,xlsx,xls]>=0.1.6",     # text extraction from Office/binary formats (extras for PDF/Office deps)
     "python-dotenv>=1.2",    # .env loading
     "pydantic>=2.13",        # config + data validation
     "pydantic-settings>=2.14",  # Pydantic Settings integration
@@ -24,14 +24,15 @@ dependencies = [
 ]
 
 [project.scripts]
-organizer-host   = "host.main:main"
-organizer-server = "server.main:main"
+telcontar        = "host.main:main"
+telcontar-server = "server.main:main"
 
 [dependency-groups]
 dev = [
     "pytest>=8.0",
     "ruff>=0.15",
     "mypy>=2.1",
+    "textual-dev>=1.8.0",
 ]
 test = [
     "pytest>=8.0",

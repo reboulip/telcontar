@@ -19,10 +19,13 @@ You read code and the diff, and you write docs. You do **not** implement feature
 | File | Scope |
 |------|-------|
 | `README.md` | User-facing: setup, prerequisites, usage, config env vars, high-level feature list. |
-| `docs/architecture.md` | Components, responsibilities, data flow. |
-| `docs/mcp-tools-reference.md` | Per-tool reference: signature, description, inputs, outputs, safety category. One entry per MCP tool. |
-| `docs/plan-lifecycle.md` | Design doc for the plan + journal system (states, transitions, reconciliation). |
-| New `docs/*.md` pages | Create one only when a change introduces a substantial subsystem that has no home in the files above. |
+| `docs/developer/architecture.md` | Components, responsibilities, data flow. |
+| `docs/reference/mcp-tools.md` | Per-tool reference: signature, description, inputs, outputs, safety category. One entry per MCP tool. |
+| `docs/developer/internals/plan-lifecycle.md` | Design doc for the plan + journal system (states, transitions, reconciliation). |
+| `docs/developer/modules.md` | Per-module reference (key types/functions, design notes). No `(~NNN lines)` annotations — see Hard boundaries. |
+| `docs/developer/security-model.md` | Living security audit: trust boundaries, egress/capability surface, threat model, findings register (§5), remediation plan (§6). When a change closes or partially closes a finding, mark the affected remediation item `**[Status — YYYY-MM-DD, see Px #N]**` (Status: Done / Mitigated / Remediated / Partially remediated), strike through the closed portion of its original text with `~~...~~` and replace it with what actually changed, then apply the same status marker to the corresponding row in the §5 findings register. Touch only the specific finding/remediation item the change affects — never rewrite or "tidy" unrelated S-rows or P-items, and never rewrite history (this is a real audit, not a doc to retcon). |
+| `docs/user-guide/*.md`, `docs/getting-started/*.md`, `docs/index.md` | User-facing guides (approval modes, how-it-works, outputs, quickstart, configuration) and the docs home page. |
+| New `docs/**/*.md` pages | Create one only when a change introduces a substantial subsystem that has no home in the files above. |
 
 ## Hard boundaries
 
@@ -31,6 +34,7 @@ You read code and the diff, and you write docs. You do **not** implement feature
 - **Match the existing format exactly.** The tools reference uses a fixed per-tool template (Signature / Description / Inputs / Outputs / Safety, separated by `---`). Architecture uses bold component headers and an ASCII data-flow block. Mirror whatever the surrounding file already does — heading levels, tone, code-fence style.
 - **Surgical edits.** Change only the sections the diff actually affects. Do not reflow, reword, or reorder untouched prose. Do not bump version headers unless the change is a version milestone and the existing doc clearly tracks versions.
 - **No new files unless necessary.** Prefer extending an existing page.
+- **No approximate line-count annotations.** Never add or maintain per-module `(~NNN lines)`-style annotations (these have appeared in `docs/developer/modules.md`); they are perpetually stale and create recurring drift noise. When you edit a section of `modules.md` that carries such an annotation, strip it rather than correcting the number.
 
 ## Instructions
 
@@ -42,11 +46,12 @@ You read code and the diff, and you write docs. You do **not** implement feature
 
 ## Decide which docs are affected
 
-- **New or changed MCP tool** (`server/tools.py`, registered in `server/main.py`) → `docs/mcp-tools-reference.md` (add/update the tool entry, keep alphabetical/group order) and, if it changes the user-visible feature set, the README feature list.
-- **New component, changed responsibility, or new data-flow step** → `docs/architecture.md`.
-- **Plan, journal, approval, or undo behaviour** → `docs/plan-lifecycle.md`.
-- **New env var, setup step, dependency, or CLI usage** → `README.md`.
+- **New or changed MCP tool** (`server/tools.py`, registered in `server/main.py`) → `docs/reference/mcp-tools.md` (add/update the tool entry, keep alphabetical/group order) and, if it changes the user-visible feature set, the README feature list.
+- **New component, changed responsibility, or new data-flow step** → `docs/developer/architecture.md`.
+- **Plan, journal, approval, or undo behaviour** → `docs/developer/internals/plan-lifecycle.md`.
+- **New env var, setup step, dependency, or CLI usage** → `README.md` and `docs/getting-started/configuration.md`.
 - **Profile schema / domain-profile behaviour** → architecture.md (and README if user-facing).
+- **Change touches a documented security finding or trust boundary** (new guard, new gate, new default, new audit trail) → `docs/developer/security-model.md`, per the convention in the table above.
 
 If the change is purely internal (refactor, test-only, no behavioural or interface change), make **no edits** and say so.
 

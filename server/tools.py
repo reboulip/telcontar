@@ -14,7 +14,7 @@ from server import graph as _graph
 from server import plan as _plan
 from server import registry as _registry
 from server.extract import extract as _extract
-from server.guards import check_no_overwrite, safe_quarantine_path
+from server.guards import check_no_overwrite, format_io_error, safe_quarantine_path
 from server.profile import Profile as _Profile
 
 _CHECKSUM_CHUNK = 65536
@@ -51,26 +51,107 @@ def list_dir(path: str) -> dict:
     return {"path": str(p), "entries": entries}
 
 
+def walk_tree(path: str, max_depth: int = 3) -> dict:
+    """Recursively enumerate a directory tree up to ``max_depth`` levels deep.
+
+    Complements ``list_dir`` (a single level) for the ANALYZE pass: the agent can
+    see nested subfolders in one call and redesign the whole layout, not just the
+    top level. Depth is counted from the root — the root's immediate entries are
+    depth 1. Each directory entry carries a nested ``children`` list until
+    ``max_depth`` is reached; deeper directories are returned with
+    ``children: null`` and ``truncated: true`` so the agent knows more lies below
+    (and can call ``walk_tree`` again on that subpath). Files carry ``size`` and
+    ``mtime`` like ``list_dir``; unreadable entries are marked ``type: "unknown"``.
+    """
+    p = Path(path)
+    if not p.is_dir():
+        raise ValueError(f"Not a directory: {path}")
+    if max_depth < 1:
+        raise ValueError(f"max_depth must be >= 1, got {max_depth}")
+
+    def _walk(directory: Path, depth: int) -> list[dict]:
+        try:
+            children = sorted(directory.iterdir(), key=lambda e: (e.is_file(), e.name))
+        except OSError:
+            return []
+        entries: list[dict] = []
+        for entry in children:
+            try:
+                st = entry.stat()
+                if entry.is_dir():
+                    node = {
+                        "name": entry.name,
+                        "path": str(entry),
+                        "type": "dir",
+                        "size": None,
+                        "mtime": st.st_mtime,
+                    }
+                    if depth < max_depth:
+                        node["children"] = _walk(entry, depth + 1)
+                        node["truncated"] = False
+                    else:
+                        node["children"] = None
+                        node["truncated"] = True
+                    entries.append(node)
+                else:
+                    entries.append(
+                        {
+                            "name": entry.name,
+                            "path": str(entry),
+                            "type": "file",
+                            "size": st.st_size,
+                            "mtime": st.st_mtime,
+                        }
+                    )
+            except OSError:
+                entries.append(
+                    {
+                        "name": entry.name,
+                        "path": str(entry),
+                        "type": "unknown",
+                        "size": None,
+                        "mtime": None,
+                    }
+                )
+        return entries
+
+    return {"path": str(p), "max_depth": max_depth, "entries": _walk(p, 1)}
+
+
 def read_file(path: str, max_chars: int) -> str:
     """Return file text up to max_chars characters."""
     p = Path(path)
     if not p.is_file():
         raise ValueError(f"Not a file: {path}")
-    text = p.read_text(encoding="utf-8", errors="replace")
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise OSError(format_io_error("read", p, exc)) from exc
     if len(text) > max_chars:
         return text[:max_chars] + "\n\n[... content truncated ...]"
     return text
 
 
-def extract_text(path: str, max_chars: int) -> str:
+def extract_text(
+    path: str,
+    max_chars: int,
+    max_file_bytes: int = 200_000_000,
+    timeout_secs: float = 30.0,
+) -> str:
     """Extract plain text from a PDF or Office file via markitdown."""
     p = Path(path)
     if not p.is_file():
         raise ValueError(f"Not a file: {path}")
-    return _extract(p, max_chars)
+    return _extract(p, max_chars, max_file_bytes, timeout_secs)
 
 
-def compare_documents(path_a: str, path_b: str, max_chars: int) -> dict:
+def compare_documents(
+    path_a: str,
+    path_b: str,
+    max_chars: int,
+    max_file_bytes: int = 200_000_000,
+    timeout_secs: float = 30.0,
+) -> dict:
     """Extract text from two files and return a unified diff between them.
 
     Reuses the markitdown/pypdf extraction path, so it works on PDF/Office as
@@ -86,8 +167,8 @@ def compare_documents(path_a: str, path_b: str, max_chars: int) -> dict:
         raise ValueError(f"Not a file: {path_a}")
     if not pb.is_file():
         raise ValueError(f"Not a file: {path_b}")
-    text_a = _extract(pa, max_chars)
-    text_b = _extract(pb, max_chars)
+    text_a = _extract(pa, max_chars, max_file_bytes, timeout_secs)
+    text_b = _extract(pb, max_chars, max_file_bytes, timeout_secs)
     diff = "\n".join(
         difflib.unified_diff(
             text_a.splitlines(),
@@ -111,67 +192,13 @@ def compute_checksum(path: str) -> dict:
     if not p.is_file():
         raise ValueError(f"Not a file: {path}")
     h = hashlib.sha256()
-    with p.open("rb") as f:
-        for chunk in iter(lambda: f.read(_CHECKSUM_CHUNK), b""):
-            h.update(chunk)
+    try:
+        with p.open("rb") as f:
+            for chunk in iter(lambda: f.read(_CHECKSUM_CHUNK), b""):
+                h.update(chunk)
+    except OSError as exc:
+        raise OSError(format_io_error("read", p, exc)) from exc
     return {"path": str(p), "checksum": h.hexdigest()}
-
-
-def move_file(path: str, dest_dir: str) -> dict:
-    """Move a file to dest_dir, raising if the destination already exists."""
-    src = Path(path)
-    if not src.is_file():
-        raise ValueError(f"Not a file: {path}")
-    dst_dir = Path(dest_dir)
-    if not dst_dir.is_dir():
-        raise ValueError(f"Not a directory: {dest_dir}")
-    dest = dst_dir / src.name
-    check_no_overwrite(dest)
-    shutil.move(str(src), str(dest))
-    return {"moved": str(dest)}
-
-
-def rename_file(path: str, new_name: str) -> dict:
-    """Rename a file in place, raising if the new name already exists."""
-    src = Path(path)
-    if not src.exists():
-        raise FileNotFoundError(f"Not found: {path}")
-    dest = src.parent / new_name
-    check_no_overwrite(dest)
-    src.rename(dest)
-    return {"renamed": str(dest)}
-
-
-def create_file(path: str, content: str) -> dict:
-    """Write content to path; raises if the file already exists."""
-    p = Path(path)
-    check_no_overwrite(p)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content, encoding="utf-8")
-    return {"created": str(p)}
-
-
-def update_file(path: str, content: str) -> dict:
-    """Overwrite or create content at path."""
-    p = Path(path)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content, encoding="utf-8")
-    return {"updated": str(p)}
-
-
-def create_dir(path: str) -> dict:
-    """Create a directory (and any parents); idempotent if it already exists.
-
-    Collision-safe by construction: an existing directory is returned as-is
-    rather than raising, so the op can be re-run. Raises if ``path`` already
-    exists as a file (not a directory).
-    """
-    p = Path(path)
-    if p.is_file():
-        raise ValueError(f"Path exists and is a file, not a directory: {path}")
-    existed = p.is_dir()
-    p.mkdir(parents=True, exist_ok=True)
-    return {"created": str(p), "existed": existed}
 
 
 # ── Plan management ──────────────────────────────────────────────────────────
@@ -220,6 +247,40 @@ def review_plan(plan_id: str, plans_dir: Path) -> dict:
         "missing_sources": missing,
         "is_valid": not duplicates and not missing,
     }
+
+
+def set_plan_rationale(plan_id: str, rationale: str, plans_dir: Path) -> dict:
+    """Attach the agent's plain-language rationale to a plan (shown at approval).
+
+    A short paragraph explaining the plan's philosophy — how the taxonomy was
+    chosen, why documents were grouped/renamed/quarantined the way they were —
+    surfaced above the raw op list in the approval modal (F8).
+    """
+    p = _plan.load(plan_id, plans_dir)
+    p.rationale = (rationale or "").strip()
+    _plan.save(p, plans_dir)
+    return p.to_dict()
+
+
+def set_plan_folder_notes(plan_id: str, notes: dict, plans_dir: Path) -> dict:
+    """Attach agent-supplied per-folder purpose notes to a plan (L5).
+
+    ``notes`` maps a target folder path to a short one-line purpose note. They are
+    shown beside each folder in the approval view's target-layout preview so the
+    user sees, at a glance, what the organized tree will look like and why each
+    folder exists. Non-string keys/values are coerced to str and blank notes are
+    dropped; a folder with no note simply renders as a bare tree node.
+    """
+    p = _plan.load(plan_id, plans_dir)
+    cleaned: dict[str, str] = {}
+    for folder, note in (notes or {}).items():
+        key = str(folder).strip()
+        text = str(note).strip()
+        if key and text:
+            cleaned[key] = text
+    p.folder_notes = cleaned
+    _plan.save(p, plans_dir)
+    return p.to_dict()
 
 
 def approve_plan(plan_id: str, plans_dir: Path) -> dict:
@@ -308,18 +369,167 @@ def propose_quarantine(path: str, plan_id: str, plans_dir: Path, quarantine_dir:
     }
 
 
+def _load_pending_plan(plan_id: str, plans_dir: Path) -> "_plan.Plan":
+    p = _plan.load(plan_id, plans_dir)
+    if p.state != "pending":
+        raise ValueError(f"Plan must be in 'pending' state to add ops; current state: {p.state!r}")
+    return p
+
+
+def propose_create_file(path: str, content: str, plan_id: str, plans_dir: Path) -> dict:
+    """Append a create_file op to an existing pending plan; eager collision check."""
+    dest = Path(path)
+    check_no_overwrite(dest)
+    p = _load_pending_plan(plan_id, plans_dir)
+    op = _plan.PlanOp.new("create_file", str(dest), "", params={"content": content})
+    p.add_op(op)
+    _plan.save(p, plans_dir)
+    return {
+        "plan_id": plan_id,
+        "op_id": op.op_id,
+        "op_type": "create_file",
+        "src": str(dest),
+        "dst": "",
+        "status": op.status,
+        "ops_count": len(p.ops),
+    }
+
+
+def propose_update_file(
+    path: str, content: str, plan_id: str, plans_dir: Path, overwrite: bool = False
+) -> dict:
+    """Append an update_file op to an existing pending plan.
+
+    Eagerly rejects a collision at proposal time unless ``overwrite=True`` — the
+    same rule ``_apply_op`` re-checks at execution time, so a file that appears
+    between proposal and execution is still caught (M3).
+    """
+    dest = Path(path)
+    if dest.exists() and not overwrite:
+        raise FileExistsError(
+            f"Destination already exists (pass overwrite=True to replace it): {dest}"
+        )
+    p = _load_pending_plan(plan_id, plans_dir)
+    op = _plan.PlanOp.new(
+        "update_file", str(dest), "", params={"content": content, "overwrite": overwrite}
+    )
+    p.add_op(op)
+    _plan.save(p, plans_dir)
+    return {
+        "plan_id": plan_id,
+        "op_id": op.op_id,
+        "op_type": "update_file",
+        "src": str(dest),
+        "dst": "",
+        "status": op.status,
+        "ops_count": len(p.ops),
+    }
+
+
+def propose_create_dir(path: str, plan_id: str, plans_dir: Path) -> dict:
+    """Append a create_dir op to an existing pending plan; idempotent, collision-safe."""
+    dest = Path(path)
+    if dest.is_file():
+        raise ValueError(f"Path exists and is a file, not a directory: {path}")
+    p = _load_pending_plan(plan_id, plans_dir)
+    op = _plan.PlanOp.new("create_dir", str(dest), "")
+    p.add_op(op)
+    _plan.save(p, plans_dir)
+    return {
+        "plan_id": plan_id,
+        "op_id": op.op_id,
+        "op_type": "create_dir",
+        "src": str(dest),
+        "dst": "",
+        "status": op.status,
+        "ops_count": len(p.ops),
+    }
+
+
+def propose_archive_document(
+    checksum: str,
+    reason: str,
+    plan_id: str,
+    plans_dir: Path,
+    registry_path: Path,
+    quarantine_dir: Path,
+) -> dict:
+    """Append an archive_document op; eagerly validates the checksum is recorded."""
+    reg = _registry.load(registry_path)
+    rec = reg.get(checksum)
+    if rec is None:
+        raise ValueError(f"No document recorded for checksum {checksum!r}")
+    src = Path(rec.path)
+    dest_str = ""
+    if src.is_file():
+        quarantine_dir.mkdir(parents=True, exist_ok=True)
+        dest_str = str(safe_quarantine_path(src, quarantine_dir))
+    p = _load_pending_plan(plan_id, plans_dir)
+    op = _plan.PlanOp.new(
+        "archive_document",
+        rec.path,
+        dest_str,
+        params={"checksum": checksum, "reason": reason or ""},
+    )
+    p.add_op(op)
+    _plan.save(p, plans_dir)
+    return {
+        "plan_id": plan_id,
+        "op_id": op.op_id,
+        "op_type": "archive_document",
+        "src": rec.path,
+        "dst": dest_str,
+        "status": op.status,
+        "ops_count": len(p.ops),
+    }
+
+
+def propose_compress_quarantine(
+    plan_id: str, plans_dir: Path, quarantine_dir: Path, delete_originals: bool = True
+) -> dict:
+    """Append a compress_quarantine op; a single global op, not tied to one file."""
+    p = _load_pending_plan(plan_id, plans_dir)
+    op = _plan.PlanOp.new(
+        "compress_quarantine",
+        str(quarantine_dir),
+        "",
+        params={"delete_originals": delete_originals},
+    )
+    p.add_op(op)
+    _plan.save(p, plans_dir)
+    return {
+        "plan_id": plan_id,
+        "op_id": op.op_id,
+        "op_type": "compress_quarantine",
+        "src": str(quarantine_dir),
+        "dst": "",
+        "status": op.status,
+        "ops_count": len(p.ops),
+    }
+
+
+_SELF_JOURNALING_OP_TYPES = frozenset({"archive_document", "compress_quarantine"})
+
+
 def execute_plan(
     plan_id: str,
     plans_dir: Path,
     journal_path: Path,
     registry_path: Path | None = None,
+    quarantine_dir: Path | None = None,
+    archive_path: Path | None = None,
 ) -> dict:
     """Apply approved ops with per-op retry; hard-stop if >3 fail in one run.
 
     When ``registry_path`` points at a non-empty registry, each executed op also
     reconciles the matching document record's path (and status, for quarantine)
     so the checksum stays the identity while paths track moves. Registry-optional:
-    a missing/empty registry is a silent no-op.
+    a missing/empty registry is a silent no-op. ``quarantine_dir``/``archive_path``
+    are only required if the plan contains an ``archive_document`` or
+    ``compress_quarantine`` op (M1) — those op types reuse the standalone
+    ``archive_document``/``compress_quarantine`` functions, which self-journal with
+    the same ``op_type`` strings ``undo_last`` already understands ("quarantine" /
+    "compress"), so this loop skips its generic journal append for them.
     """
     from datetime import datetime, timezone
     from server import journal as _journal
@@ -339,17 +549,53 @@ def execute_plan(
 
     completed_count = 0
     failed_ops: list[dict] = []
+    # Tracks each file's current on-disk path as ops relocate it within this run,
+    # keyed by the op's original src, so chained ops (rename then move) resolve (F7).
+    moved: dict[str, str] = {}
 
     for op in p.ops:
         if op.status != "pending":
             continue
 
+        # A file may have been relocated by an earlier op in this same run (e.g. a
+        # rename before a move). Ops reference the file's ORIGINAL path, so resolve
+        # that through ``moved`` to the file's current on-disk location.
+        src_path = moved.get(op.src, op.src)
+
         success = False
         last_error: str | None = None
+        new_location: str | None = None
 
         for attempt in range(3):
             try:
-                _apply_op(op)
+                if op.op_type == "archive_document":
+                    if registry_path is None or quarantine_dir is None or archive_path is None:
+                        raise ValueError(
+                            "registry_path, quarantine_dir and archive_path are required "
+                            "to execute an archive_document op"
+                        )
+                    params = op.params or {}
+                    result = archive_document(
+                        params["checksum"],
+                        params.get("reason", ""),
+                        registry_path,
+                        quarantine_dir,
+                        journal_path,
+                        archive_path,
+                    )
+                    new_location = result.get("moved") or src_path
+                    # archive_document loads/mutates/saves its own registry copy —
+                    # reload ours so subsequent ops/final save see the fresh state.
+                    if reg is not None:
+                        reg = _registry.load(registry_path)
+                elif op.op_type == "compress_quarantine":
+                    params = op.params or {}
+                    result = compress_quarantine(
+                        Path(op.src), journal_path, bool(params.get("delete_originals", True))
+                    )
+                    new_location = result.get("archive") or op.src
+                else:
+                    new_location = _apply_op(op, src_path)
                 success = True
                 break
             except _NON_RETRYABLE_ERRORS as exc:
@@ -362,18 +608,20 @@ def execute_plan(
         if success:
             op.status = "completed"
             completed_count += 1
-            _journal.append(
-                journal_path,
-                {
-                    "op_type": op.op_type,
-                    "plan_id": plan_id,
-                    "op_id": op.op_id,
-                    "src": op.src,
-                    "dst": op.dst,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                },
-            )
-            if reg is not None and registry_path is not None and _reconcile_op(reg, op):
+            moved[op.src] = new_location  # type: ignore[assignment]
+            if op.op_type not in _SELF_JOURNALING_OP_TYPES:
+                _journal.append(
+                    journal_path,
+                    {
+                        "op_type": op.op_type,
+                        "plan_id": plan_id,
+                        "op_id": op.op_id,
+                        "src": src_path,
+                        "dst": op.dst,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    },
+                )
+            if reg is not None and registry_path is not None and _reconcile_op(reg, op, src_path):
                 _registry.save(reg, registry_path)
         else:
             op.status = "failed"
@@ -418,41 +666,94 @@ def execute_plan(
 _NON_RETRYABLE_ERRORS = (ValueError, FileNotFoundError, FileExistsError)
 
 
-def _reconcile_op(reg: "_registry.Registry", op: "_plan.PlanOp") -> bool:
+def _reconcile_op(reg: "_registry.Registry", op: "_plan.PlanOp", src_path: str) -> bool:
     """Update the registry record's location/status to match an executed op.
 
-    Returns True if a record was updated; False when the op's source file was
-    never recorded (registry-optional reconcile).
+    ``src_path`` is the file's on-disk location *before* this op (which may differ
+    from ``op.src`` if an earlier op in the run already relocated it), so the record
+    is matched by where it currently is. Returns True if a record was updated; False
+    when the source file was never recorded (registry-optional reconcile).
     """
-    src = Path(op.src)
+    src = Path(src_path)
     if op.op_type == "rename":
-        rec = reg.update_path(op.src, str(src.parent / op.dst))
+        rec = reg.update_path(src_path, str(src.parent / op.dst))
     elif op.op_type == "move":
-        rec = reg.update_path(op.src, str(Path(op.dst) / src.name))
+        rec = reg.update_path(src_path, str(Path(op.dst) / src.name))
     elif op.op_type == "quarantine":
-        rec = reg.update_path(op.src, str(Path(op.dst)), status="quarantined")
+        rec = reg.update_path(src_path, str(Path(op.dst)), status="quarantined")
     else:
         return False
     return rec is not None
 
 
-def _apply_op(op: "_plan.PlanOp") -> None:
-    """Execute a single planned op against the filesystem."""
-    src = Path(op.src)
+def _apply_op(op: "_plan.PlanOp", src_path: str) -> str:
+    """Execute a single planned op against the filesystem; return the new path.
+
+    ``src_path`` is the file's current on-disk location (which may differ from
+    ``op.src`` when an earlier op in the same run relocated it — e.g. a move that
+    follows a rename). On an I/O failure the raw ``OSError`` is re-raised with a
+    clearer message (via ``format_io_error``) but the **same exception type**, so
+    ``execute_plan`` keeps classifying it — a transient ``PermissionError`` (e.g.
+    a Windows file lock) stays retryable, a ``FileNotFoundError`` stays fail-fast.
+    """
+    src = Path(src_path)
     if op.op_type == "rename":
         dest = src.parent / op.dst
         check_no_overwrite(dest)
-        src.rename(dest)
+        try:
+            src.rename(dest)
+        except OSError as exc:
+            raise type(exc)(format_io_error("rename", src, exc)) from exc
+        return str(dest)
     elif op.op_type == "move":
         dst_dir = Path(op.dst)
         dest = dst_dir / src.name
         check_no_overwrite(dest)
-        shutil.move(str(src), str(dest))
+        try:
+            shutil.move(str(src), str(dest))
+        except OSError as exc:
+            raise type(exc)(format_io_error("move", src, exc)) from exc
+        return str(dest)
     elif op.op_type == "quarantine":
         dest = Path(op.dst)
         dest.parent.mkdir(parents=True, exist_ok=True)
         check_no_overwrite(dest)
-        shutil.move(str(src), str(dest))
+        try:
+            shutil.move(str(src), str(dest))
+        except OSError as exc:
+            raise type(exc)(format_io_error("quarantine", src, exc)) from exc
+        return str(dest)
+    elif op.op_type == "create_file":
+        content = (op.params or {}).get("content", "")
+        check_no_overwrite(src)
+        try:
+            src.parent.mkdir(parents=True, exist_ok=True)
+            src.write_text(content, encoding="utf-8")
+        except OSError as exc:
+            raise type(exc)(format_io_error("create", src, exc)) from exc
+        return str(src)
+    elif op.op_type == "update_file":
+        params = op.params or {}
+        content = params.get("content", "")
+        overwrite = bool(params.get("overwrite", False))
+        if src.exists() and not overwrite:
+            raise FileExistsError(
+                f"Refusing to overwrite existing file without overwrite=True: {src}"
+            )
+        try:
+            src.parent.mkdir(parents=True, exist_ok=True)
+            src.write_text(content, encoding="utf-8")
+        except OSError as exc:
+            raise type(exc)(format_io_error("update", src, exc)) from exc
+        return str(src)
+    elif op.op_type == "create_dir":
+        if src.is_file():
+            raise ValueError(f"Path exists and is a file, not a directory: {src}")
+        try:
+            src.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise type(exc)(format_io_error("create directory", src, exc)) from exc
+        return str(src)
     else:
         raise ValueError(f"Unknown op_type: {op.op_type!r}")
 
@@ -545,8 +846,11 @@ def write_index(target_dir: str, journal_path: Path) -> dict:
 
     index_path = root / "INDEX.md"
     manifest_path = root / "manifest.json"
-    index_path.write_text(index_content, encoding="utf-8")
-    manifest_path.write_text(_json.dumps(manifest, indent=2), encoding="utf-8")
+    try:
+        index_path.write_text(index_content, encoding="utf-8")
+        manifest_path.write_text(_json.dumps(manifest, indent=2), encoding="utf-8")
+    except OSError as exc:
+        raise OSError(format_io_error("write", root, exc)) from exc
 
     return {"index": str(index_path), "manifest": str(manifest_path)}
 
@@ -554,8 +858,11 @@ def write_index(target_dir: str, journal_path: Path) -> dict:
 def write_summary(target_dir: str, content: str) -> dict:
     """Write LLM-composed prose to SUMMARY.md inside target_dir."""
     p = Path(target_dir) / "SUMMARY.md"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content, encoding="utf-8")
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+    except OSError as exc:
+        raise OSError(format_io_error("write", p, exc)) from exc
     return {"written": str(p)}
 
 
@@ -567,8 +874,11 @@ def write_folder_readme(folder: str, content: str) -> dict:
     it. Overwrites any existing README and creates the folder if needed.
     """
     p = Path(folder) / "README.md"
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content, encoding="utf-8")
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+    except OSError as exc:
+        raise OSError(format_io_error("write", p, exc)) from exc
     return {"written": str(p)}
 
 
@@ -591,6 +901,24 @@ def undo_last(journal_path: Path, plans_dir: Path) -> dict:
 
     if op_type == "compress":
         return _undo_compress(entry, journal_path)
+
+    if op_type in ("create_file", "update_file"):
+        # overwrite=True on update_file loses the prior content forever — undo
+        # can only remove what this op wrote, not restore what it replaced.
+        target = Path(entry["src"])
+        try:
+            if target.is_file():
+                target.unlink()
+        except OSError as exc:
+            return {"undone": None, "error": str(exc)}
+        _journal.pop_last(journal_path)
+        return {"undone": entry}
+
+    if op_type == "create_dir":
+        # Idempotent by design; leave the directory in place rather than risk
+        # deleting something created into it since.
+        _journal.pop_last(journal_path)
+        return {"undone": entry, "note": "create_dir is idempotent; directory left in place"}
 
     src = entry["src"]
     dst = entry["dst"]

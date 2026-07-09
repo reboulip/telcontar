@@ -50,10 +50,10 @@ All file I/O stays on your machine. Only the text content needed for reasoning i
 
 ```bash
 # Install
-uv tool install git+https://github.com/rreboulleau/telcontar.git
+uv tool install git+https://github.com/reboulip/telcontar.git
 
 # Run (first launch opens the setup wizard)
-organizer-host
+telcontar
 ```
 
 The setup wizard guides you through entering your API key (stored securely in the OS credential store). The TUI then asks for a target directory, analyses it, and shows a plan of file operations for your approval before anything is moved.
@@ -62,7 +62,7 @@ The setup wizard guides you through entering your API key (stored securely in th
 
 ## Design principles
 
-- **Safety first.** Nothing is ever deleted — clutter goes to a quarantine folder. Every destructive operation is journaled and reversible via `undo_last`.
+- **Safety first.** Nothing is ever deleted — clutter goes to a quarantine folder. Every destructive operation is journaled and reversible; undo is a deliberate, user-only action in the TUI, never something the agent itself can trigger.
 - **Local execution.** File I/O never leaves the machine; only content snippets go to the model.
 - **Profile-driven.** Swap corpus types (IS/IT project, legal, personal archive…) by pointing at a different TOML file — no code changes.
 - **One language, one toolchain.** Python + uv end to end.

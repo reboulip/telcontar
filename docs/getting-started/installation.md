@@ -26,17 +26,17 @@
 
 === "From GitHub (recommended)"
     ```bash
-    uv tool install git+https://github.com/rreboulleau/telcontar.git
+    uv tool install git+https://github.com/reboulip/telcontar.git
     ```
 
 === "From a local clone"
     ```bash
-    git clone https://github.com/rreboulleau/telcontar.git
+    git clone https://github.com/reboulip/telcontar.git
     cd telcontar
     uv tool install .
     ```
 
-`uv tool install` places `organizer-host` in your PATH so you can run it from any directory.
+`uv tool install` places `telcontar` in your PATH so you can run it from any directory.
 
 ---
 
@@ -45,7 +45,7 @@
 Launch the app once to complete the setup wizard:
 
 ```bash
-organizer-host
+telcontar
 ```
 
 The wizard asks for your AI service URL and API key, then saves them securely (OS credential store on Windows and macOS, or `~/.telcontar/config.env` as fallback). No manual editing of config files required.
@@ -59,7 +59,10 @@ The wizard asks for your AI service URL and API key, then saves them securely (O
 
 ```bash
 # Confirm the entry point resolves
-organizer-host --help
+telcontar --help
+
+# Check the installed version
+telcontar --version
 
 # Run the test suite (if you cloned the repo)
 uv run --group test pytest -q
@@ -71,8 +74,10 @@ uv run --group test pytest -q
 
 | Command | What it does |
 |---|---|
-| `organizer-host` | Launches the Textual TUI (the normal way to use telcontar) |
-| `organizer-server` | Starts the MCP server over stdio (usually invoked automatically by the host) |
+| `telcontar` | Launches the Textual TUI (the normal way to use telcontar) |
+| `telcontar-server` | Starts the MCP server over stdio (usually invoked automatically by the host) |
+
+Both accept `--help` and `--version`, which print and exit immediately without launching the TUI or the server.
 
 ---
 
@@ -81,7 +86,7 @@ uv run --group test pytest -q
 If you want to contribute or run the full test suite, clone and sync the dev dependencies instead:
 
 ```bash
-git clone https://github.com/rreboulleau/telcontar.git
+git clone https://github.com/reboulip/telcontar.git
 cd telcontar
 uv sync --all-groups
 ```

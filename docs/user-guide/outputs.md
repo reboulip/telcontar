@@ -85,7 +85,7 @@ Each record contains: `checksum`, `path`, `title`, `type`, `summary`, `provenanc
 
 ### `.organizer/journal.jsonl`
 
-An **append-only undo log**. Every operation executed by `execute_plan` is written here as a JSONL entry with `op_type`, `src`, `dst`, and `timestamp`. The `undo_last` tool reads the last entry and inverts it.
+An **append-only undo log**. Every operation executed by `execute_plan` is written here as a JSONL entry with `op_type`, `src`, `dst`, and `timestamp`. `undo_last` (a TUI-only action, not an MCP tool — see [Undo](#undo) below) reads the last entry and inverts it.
 
 Hard-stop events are also recorded here (with `op_type: "hard_stop"`) so that `undo_last` can safely skip them.
 
@@ -105,11 +105,6 @@ Completed plans are kept on disk for audit purposes but are not cleaned up autom
 
 ## Undo
 
-To revert the most recent operation:
+`undo_last` is **not** an MCP tool — the agent cannot call it. To revert the most recent operation, press **j** in the Organizer screen to open the operations-journal viewer, then **u** ("Undo last"). This calls `server.tools.undo_last` directly from the TUI, bypassing the agent entirely — undo is a deliberate, user-only action.
 
-```bash
-# Via the MCP server (call from a host session or test)
-undo_last()
-```
-
-`undo_last` reads the last journal entry, inverts the operation (rename → rename back, move → move back, quarantine → move back to original path), removes the entry, and returns the reverted op. It does not touch the registry — path reconciliation only runs forward during `execute_plan`.
+`undo_last` reads the last journal entry, inverts the operation (rename → rename back, move → move back, quarantine → move back to original path, create_file/update_file → delete the written file, create_dir → left in place as a no-op), removes the entry, and returns the reverted op. It does not touch the registry — path reconciliation only runs forward during `execute_plan`.
