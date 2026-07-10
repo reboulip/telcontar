@@ -455,7 +455,7 @@ Raises if the target path already exists (no-overwrite guarantee applies to undo
 
 **Returns:** `{undone: <original entry>}` on success, or `{undone: null, error: "..."}` on failure.
 
-See [Security Model](../developer/security-model.md) (finding S1) for why undo was moved out of the agent's reach, and [Plan Lifecycle](internals/plan-lifecycle.md) for the full reversal mechanics.
+See [Security Model](../developer/security-model.md) (finding S1) for why undo was moved out of the agent's reach, and [Plan Lifecycle](../developer/internals/plan-lifecycle.md) for the full reversal mechanics.
 
 ---
 

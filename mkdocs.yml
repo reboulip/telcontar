@@ -78,4 +78,5 @@ nav:
     - Module Reference: developer/modules.md
     - Adding a Profile: developer/adding-profiles.md
     - Contributing: developer/contributing.md
+    - Security Model: developer/security-model.md
     - Internals — Plan Lifecycle: developer/internals/plan-lifecycle.md

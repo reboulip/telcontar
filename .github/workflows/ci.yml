@@ -40,3 +40,23 @@ jobs:
         with:
           name: dist
           path: dist/
+
+  docs-build:
+    name: Docs build (strict)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history for mkdocs git-revision-date plugin
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install docs dependencies
+        run: uv sync --group docs
+
+      - name: Build docs (strict)
+        run: uv run mkdocs build --strict
