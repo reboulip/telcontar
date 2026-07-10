@@ -192,7 +192,7 @@
     
     
       <div class="md-header__source">
-        <a href="https://github.com/rreboulleau/telcontar" title="Go to repository" class="md-source" data-md-component="source">
+        <a href="https://github.com/reboulip/telcontar" title="Go to repository" class="md-source" data-md-component="source">
   <div class="md-source__icon md-icon">
     
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
@@ -352,7 +352,7 @@
   </label>
   
     <div class="md-nav__source">
-      <a href="https://github.com/rreboulleau/telcontar" title="Go to repository" class="md-source" data-md-component="source">
+      <a href="https://github.com/reboulip/telcontar" title="Go to repository" class="md-source" data-md-component="source">
   <div class="md-source__icon md-icon">
     
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
@@ -1310,6 +1310,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../developer/security-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../developer/internals/plan-lifecycle/" class="md-nav__link">
         
   
@@ -1423,7 +1451,7 @@
 <p>The <strong>document memory</strong> — a content-addressed store of every document the agent has ever analysed, keyed by sha256 checksum. Because identity is the checksum (not the path), a record survives renames and moves. On subsequent runs, telcontar can detect that a file was already analysed even if it was renamed.</p>
 <p>Each record contains: <code>checksum</code>, <code>path</code>, <code>title</code>, <code>type</code>, <code>summary</code>, <code>provenance</code>, <code>date</code>, <code>entities</code>, <code>attributes</code>, <code>status</code> (<code>active</code> | <code>archived</code> | <code>quarantined</code>), <code>first_seen</code>, <code>last_analyzed</code>.</p>
 <h3 id="organizerjournaljsonl"><code>.organizer/journal.jsonl</code><a class="headerlink" href="#organizerjournaljsonl" title="Permanent link">&para;</a></h3>
-<p>An <strong>append-only undo log</strong>. Every operation executed by <code>execute_plan</code> is written here as a JSONL entry with <code>op_type</code>, <code>src</code>, <code>dst</code>, and <code>timestamp</code>. The <code>undo_last</code> tool reads the last entry and inverts it.</p>
+<p>An <strong>append-only undo log</strong>. Every operation executed by <code>execute_plan</code> is written here as a JSONL entry with <code>op_type</code>, <code>src</code>, <code>dst</code>, and <code>timestamp</code>. <code>undo_last</code> (a TUI-only action, not an MCP tool — see <a href="#undo">Undo</a> below) reads the last entry and inverts it.</p>
 <p>Hard-stop events are also recorded here (with <code>op_type: "hard_stop"</code>) so that <code>undo_last</code> can safely skip them.</p>
 <h3 id="organizerplansuuidjson"><code>.organizer/plans/&lt;uuid&gt;.json</code><a class="headerlink" href="#organizerplansuuidjson" title="Permanent link">&para;</a></h3>
 <p>One JSON file per plan. Plans progress through a state machine:</p>
@@ -1434,11 +1462,8 @@
 <p>Completed plans are kept on disk for audit purposes but are not cleaned up automatically.</p>
 <hr />
 <h2 id="undo">Undo<a class="headerlink" href="#undo" title="Permanent link">&para;</a></h2>
-<p>To revert the most recent operation:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Via the MCP server (call from a host session or test)</span>
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>undo_last<span class="o">()</span>
-</code></pre></div>
-<p><code>undo_last</code> reads the last journal entry, inverts the operation (rename → rename back, move → move back, quarantine → move back to original path), removes the entry, and returns the reverted op. It does not touch the registry — path reconciliation only runs forward during <code>execute_plan</code>.</p>
+<p><code>undo_last</code> is <strong>not</strong> an MCP tool — the agent cannot call it. To revert the most recent operation, press <strong>j</strong> in the Organizer screen to open the operations-journal viewer, then <strong>u</strong> ("Undo last"). This calls <code>server.tools.undo_last</code> directly from the TUI, bypassing the agent entirely — undo is a deliberate, user-only action.</p>
+<p><code>undo_last</code> reads the last journal entry, inverts the operation (rename → rename back, move → move back, quarantine → move back to original path, create_file/update_file → delete the written file, create_dir → left in place as a no-op), removes the entry, and returns the reverted op. It does not touch the registry — path reconciliation only runs forward during <code>execute_plan</code>.</p>
 
 
 

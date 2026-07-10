@@ -11,7 +11,7 @@
       
       
       
-        <link rel="prev" href="../../contributing/">
+        <link rel="prev" href="../../security-model/">
       
       
       
@@ -76,7 +76,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#plan-lifecycle-v030" class="md-skip">
+        <a href="#plan-lifecycle-phase-3" class="md-skip">
           Skip to content
         </a>
       
@@ -190,7 +190,7 @@
     
     
       <div class="md-header__source">
-        <a href="https://github.com/rreboulleau/telcontar" title="Go to repository" class="md-source" data-md-component="source">
+        <a href="https://github.com/reboulip/telcontar" title="Go to repository" class="md-source" data-md-component="source">
   <div class="md-source__icon md-icon">
     
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
@@ -350,7 +350,7 @@
   </label>
   
     <div class="md-nav__source">
-      <a href="https://github.com/rreboulleau/telcontar" title="Go to repository" class="md-source" data-md-component="source">
+      <a href="https://github.com/reboulip/telcontar" title="Go to repository" class="md-source" data-md-component="source">
   <div class="md-source__icon md-icon">
     
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
@@ -1136,6 +1136,34 @@
                 
   
   
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
     
   
   
@@ -1310,6 +1338,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#propose_create_filepath-content-plan_id-dict-propose_update_filepath-content-plan_id-overwritefalse-dict-propose_create_dirpath-plan_id-dict-propose_archive_documentchecksum-plan_id-reason-dict-propose_compress_quarantineplan_id-delete_originalstrue-dict" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        propose_create_file(path, content, plan_id) -&gt; dict / propose_update_file(path, content, plan_id, overwrite=False) -&gt; dict / propose_create_dir(path, plan_id) -&gt; dict / propose_archive_document(checksum, plan_id, reason="") -&gt; dict / propose_compress_quarantine(plan_id, delete_originals=True) -&gt; dict
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1356,10 +1395,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#execute_planplan_id-str-dict" class="md-nav__link">
+  <a href="#execute_planplan_id-plans_dir-journal_path-registry_pathnone-quarantine_dirnone-archive_pathnone-dict" class="md-nav__link">
     <span class="md-ellipsis">
       
-        execute_plan(plan_id: str) -&gt; dict
+        execute_plan(plan_id, plans_dir, journal_path, registry_path=None, quarantine_dir=None, archive_path=None) -&gt; dict
       
     </span>
   </a>
@@ -1384,10 +1423,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#undo_last-dict" class="md-nav__link">
+  <a href="#undo_lastjournal_path-plans_dir-dict" class="md-nav__link">
     <span class="md-ellipsis">
       
-        undo_last() -&gt; dict
+        undo_last(journal_path, plans_dir) -&gt; dict
       
     </span>
   </a>
@@ -1485,7 +1524,7 @@
   
 
 
-<h1 id="plan-lifecycle-v030">Plan Lifecycle (v0.3.0)<a class="headerlink" href="#plan-lifecycle-v030" title="Permanent link">&para;</a></h1>
+<h1 id="plan-lifecycle-phase-3">Plan Lifecycle (Phase 3)<a class="headerlink" href="#plan-lifecycle-phase-3" title="Permanent link">&para;</a></h1>
 <p>Design document for the plan + journal system that enables stateful, reversible operations across multiple concurrent sessions.</p>
 <h2 id="plan-states">Plan States<a class="headerlink" href="#plan-states" title="Permanent link">&para;</a></h2>
 <p>A plan moves through these states:</p>
@@ -1502,7 +1541,7 @@ Initial state after propose_<em> calls. The plan contains a list of proposed ope
 <p><strong>approved</strong>
 User has reviewed the plan and explicitly approved it. Only plans in approved state may be executed. Approval is recorded but not persisted in this design—the host manages it in memory.</p>
 <p><strong>executing</strong>
-execute_plan is running. Operations are applied one by one. If an operation fails, the system retries up to 2 times before marking it failed. Each successful operation is journaled immediately. If more than 3 operations fail in a single execution run, the plan transitions to stopped and a hard_stop journal entry is written.</p>
+execute_plan is running. Operations are applied one by one. If an operation fails, the system retries — 3 attempts total — before marking it failed. Each successful operation is journaled immediately. If more than 3 operations fail in a single execution run, the plan transitions to stopped and a hard_stop journal entry is written.</p>
 <p><strong>done</strong>
 All operations in the plan executed successfully. The plan persists on disk but is no longer acted upon.</p>
 <p><strong>stopped</strong>
@@ -1549,14 +1588,18 @@ Reserved for future use: if execute_plan is called on a plan that is already in 
 - plan_id: Stable UUID identifying the plan. Multiple plans may be active concurrently.
 - created_at: ISO 8601 timestamp when the plan was first created.
 - state: Current state of the plan (pending, approved, executing, done, stopped, failed).
+- rationale: Plain-language explanation of the plan's philosophy, set via <code>set_plan_rationale(plan_id, rationale)</code>. Empty string (<code>""</code>) by default and when not yet set. Displayed above the op list in the host's approval modal (not shown in the example below, which predates this field).
+- folder_notes: Agent-supplied per-folder purpose notes, set via <code>set_plan_folder_notes(plan_id, notes)</code>. Maps a target folder path to a short one-line purpose note (e.g. <code>{"01_decisions": "Formal decision records"}</code>); blank keys/notes are dropped and non-string values coerced to str. Empty dict (<code>{}</code>) by default and when not yet set. Rendered beside each folder in the host's target-layout tree preview, shown between the rationale and the op list when the plan has any <code>move</code>/<code>quarantine</code> destinations (not shown in the example below, which predates this field).
 - operations: List of proposed operations.
   - op_id: Sequential index within the plan (0, 1, 2, ...).
-  - op_type: rename, move, or quarantine.
+  - op_type: rename, move, quarantine, create_file, update_file, create_dir, archive_document, or compress_quarantine.
   - src: Absolute path to the source file or directory.
   - new_name (rename only): New name for the file (not a path).
   - dest_dir (move only): Absolute path to the destination directory.
+  - params: Op-specific data that doesn't fit src/dst — e.g. <code>{"content": ...}</code> for create_file/update_file, <code>{"content": ..., "overwrite": ...}</code> for update_file, <code>{"checksum": ..., "reason": ...}</code> for archive_document, <code>{"delete_originals": ...}</code> for compress_quarantine. <code>null</code> for op types that carry no extra data (rename, move, quarantine, create_dir).
   - proposed_at: ISO 8601 timestamp when the operation was proposed.
-  - status: Current status of the operation within the plan. May be pending, done, or failed.</p>
+  - status: Current status of the operation within the plan. May be pending, completed, or failed.</p>
+<p><strong>All mutating tools are staged this way.</strong> As of the M1 security-hardening pass, there is no tool that touches the filesystem directly — <code>propose_create_file</code>, <code>propose_update_file</code>, <code>propose_create_dir</code>, <code>propose_archive_document</code>, and <code>propose_compress_quarantine</code> stage ops onto a plan exactly like <code>propose_rename</code>/<code>propose_move</code>/<code>propose_quarantine</code>, and only <code>execute_plan</code> applies them. <code>archive_document</code> and <code>compress_quarantine</code> ops reuse the pre-existing standalone functions of the same name at execution time rather than duplicating their logic; both self-journal under their own <code>op_type</code> (<code>quarantine</code> and <code>compress</code> respectively) instead of the generic entry <code>execute_plan</code> writes for other op types.</p>
 <h3 id="journal-jsonl">Journal (JSONL)<a class="headerlink" href="#journal-jsonl" title="Permanent link">&para;</a></h3>
 <p>Location: .organizer/journal.jsonl (or value of JOURNAL_PATH)</p>
 <p>Format: One JSON object per line (JSONL). Each entry represents a single executed operation or a system event (hard stop).</p>
@@ -1630,6 +1673,8 @@ Reserved for future use: if execute_plan is called on a plan that is already in 
 2. Generate a safe destination path in QUARANTINE_DIR using safe_quarantine_path (handles collisions by suffixing).
 3. Append the operation to the plan.
 4. Write the plan file.</p>
+<h3 id="propose_create_filepath-content-plan_id-dict-propose_update_filepath-content-plan_id-overwritefalse-dict-propose_create_dirpath-plan_id-dict-propose_archive_documentchecksum-plan_id-reason-dict-propose_compress_quarantineplan_id-delete_originalstrue-dict">propose_create_file(path, content, plan_id) -&gt; dict / propose_update_file(path, content, plan_id, overwrite=False) -&gt; dict / propose_create_dir(path, plan_id) -&gt; dict / propose_archive_document(checksum, plan_id, reason="") -&gt; dict / propose_compress_quarantine(plan_id, delete_originals=True) -&gt; dict<a class="headerlink" href="#propose_create_filepath-content-plan_id-dict-propose_update_filepath-content-plan_id-overwritefalse-dict-propose_create_dirpath-plan_id-dict-propose_archive_documentchecksum-plan_id-reason-dict-propose_compress_quarantineplan_id-delete_originalstrue-dict" title="Permanent link">&para;</a></h3>
+<p>Added by the M1 security-hardening pass, these stage the create_file, update_file, create_dir, archive_document, and compress_quarantine op types the same way: an eager check at proposal time (collision check for create_file/create_dir; existence check for update_file unless <code>overwrite=True</code>; registry lookup for archive_document), then append the op — with any op-specific data in <code>params</code> (see the op schema above) — to the plan and write it back to disk. None of the five touches the filesystem at proposal time; all five only take effect when the plan is approved and executed.</p>
 <h2 id="reviewing-a-plan">Reviewing a Plan<a class="headerlink" href="#reviewing-a-plan" title="Permanent link">&para;</a></h2>
 <h3 id="review_planplan_id-str-dict">review_plan(plan_id: str) -&gt; dict<a class="headerlink" href="#review_planplan_id-str-dict" title="Permanent link">&para;</a></h3>
 <p>Scan a plan for issues without modifying it.</p>
@@ -1639,23 +1684,27 @@ Reserved for future use: if execute_plan is called on a plan that is already in 
 3. Validate that all source files still exist.
 4. Return a report.</p>
 <h2 id="executing-a-plan">Executing a Plan<a class="headerlink" href="#executing-a-plan" title="Permanent link">&para;</a></h2>
-<h3 id="execute_planplan_id-str-dict">execute_plan(plan_id: str) -&gt; dict<a class="headerlink" href="#execute_planplan_id-str-dict" title="Permanent link">&para;</a></h3>
-<p>Apply all operations in an approved plan. Must be in approved state.</p>
+<h3 id="execute_planplan_id-plans_dir-journal_path-registry_pathnone-quarantine_dirnone-archive_pathnone-dict">execute_plan(plan_id, plans_dir, journal_path, registry_path=None, quarantine_dir=None, archive_path=None) -&gt; dict<a class="headerlink" href="#execute_planplan_id-plans_dir-journal_path-registry_pathnone-quarantine_dirnone-archive_pathnone-dict" title="Permanent link">&para;</a></h3>
+<p>Apply all operations in an approved plan. Must be in approved state. <code>quarantine_dir</code> and <code>archive_path</code> are only required if the plan contains an <code>archive_document</code> or <code>compress_quarantine</code> op; the MCP-exposed tool signature is just <code>execute_plan(plan_id: str) -&gt; dict</code> — the server fills in the rest from config.</p>
 <p><strong>Processing:</strong>
 1. Load the plan file.
 2. Check state is approved; raise if not.
 3. Transition plan state to executing and write to disk.
 4. For each operation in the plan (in order):
-   a. Attempt to execute it (rename, move, or quarantine).
-   b. On success: update operation status to done, append a journal entry, update plan file.
-   c. On failure: retry up to 2 times. After 2 failed retries, mark operation status as failed and continue.
+   a. Resolve the op's source: if an earlier op in this same run already relocated the file (see below), use its current path; otherwise use the op's original <code>src</code>.
+   b. Attempt to execute it against the resolved source: <code>rename</code>/<code>move</code>/<code>quarantine</code>/<code>create_file</code>/<code>update_file</code>/<code>create_dir</code> are applied directly; <code>archive_document</code>/<code>compress_quarantine</code> are delegated to the pre-existing standalone functions of the same name (they self-journal and are skipped by step c's generic journal append).
+   c. On success: update operation status to completed, append a journal entry for non-self-journaling op types (recording the resolved source, not necessarily the original <code>src</code>), record the file's new location for later ops, update plan file.
+   d. On failure: retry — 3 attempts total. After the 3rd failed attempt, mark operation status as failed and continue.
 5. After all operations:
    a. If failed count &gt; 3, transition plan state to stopped, append a hard_stop journal entry.
    b. Otherwise, transition plan state to done and write to disk.
 6. Return a summary.</p>
+<p><strong>Chained operations within a single run</strong></p>
+<p>Ops are staged against the file's original path (<code>src</code> at propose time). Within one <code>execute_plan</code> run, an earlier op may relocate a file before a later op that was staged against that same original path runs — the canonical case is a <code>rename</code> followed by a <code>move</code> on the same file. <code>execute_plan</code> tracks each file's current on-disk location in an in-memory map, keyed by the op's original <code>src</code>, and resolves that map before applying every op. So a rename A → B followed by a move (both staged against original path A) moves the <em>renamed</em> file B into the destination, landing at <code>dest/B</code> — not a stale reference to A. Each journal entry records the resolved (effective) source path actually used for that op, so <code>undo_last</code> continues to reverse operations against the correct on-disk locations, in reverse order.</p>
 <h2 id="undoing-operations">Undoing Operations<a class="headerlink" href="#undoing-operations" title="Permanent link">&para;</a></h2>
-<h3 id="undo_last-dict">undo_last() -&gt; dict<a class="headerlink" href="#undo_last-dict" title="Permanent link">&para;</a></h3>
+<h3 id="undo_lastjournal_path-plans_dir-dict">undo_last(journal_path, plans_dir) -&gt; dict<a class="headerlink" href="#undo_lastjournal_path-plans_dir-dict" title="Permanent link">&para;</a></h3>
 <p>Revert the most recent journaled operation.</p>
+<p><strong>Not an MCP tool.</strong> As of the M1 security-hardening pass, <code>undo_last</code> is no longer registered with the server, so the agent has no way to call it. It exists purely as a plain function in <code>server/tools.py</code>, invoked directly (bypassing MCP) from the TUI's <code>JournalScreen</code> — press <strong>j</strong> in the Organizer screen to open it, then <strong>u</strong> to trigger undo. This makes undo a deliberate, user-only action.</p>
 <p><strong>Processing:</strong>
 1. Load the journal.
 2. Call last() to read the most recent entry without removing it. If empty, return an error.
@@ -1664,6 +1713,8 @@ Reserved for future use: if execute_plan is called on a plan that is already in 
    - <strong>rename</strong>: rename back to original name
    - <strong>move</strong>: move back to original directory
    - <strong>quarantine</strong>: move back from quarantine path to original path
+   - <strong>create_file</strong> / <strong>update_file</strong>: delete the file this op wrote (an <code>overwrite=True</code> update cannot restore the content it replaced — undo only removes what this op itself wrote)
+   - <strong>create_dir</strong>: no-op — idempotent by design, the directory is left in place rather than risk deleting something created into it since
    - <strong>compress</strong>: restore each original file from the archive into its recorded <code>src</code> path, then delete the zip. All targets are pre-checked for collisions before any file is written. If <code>deleted_originals</code> was <code>False</code> (originals were kept), only the zip is deleted.
 5. On success, call pop_last() to remove the entry from the journal.
 6. Return the inverted operation.</p>

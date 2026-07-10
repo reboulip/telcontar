@@ -192,7 +192,7 @@
     
     
       <div class="md-header__source">
-        <a href="https://github.com/rreboulleau/telcontar" title="Go to repository" class="md-source" data-md-component="source">
+        <a href="https://github.com/reboulip/telcontar" title="Go to repository" class="md-source" data-md-component="source">
   <div class="md-source__icon md-icon">
     
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
@@ -352,7 +352,7 @@
   </label>
   
     <div class="md-nav__source">
-      <a href="https://github.com/rreboulleau/telcontar" title="Go to repository" class="md-source" data-md-component="source">
+      <a href="https://github.com/reboulip/telcontar" title="Go to repository" class="md-source" data-md-component="source">
   <div class="md-source__icon md-icon">
     
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
@@ -1271,6 +1271,34 @@
   
   
     <li class="md-nav__item">
+      <a href="../../developer/security-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
       <a href="../../developer/internals/plan-lifecycle/" class="md-nav__link">
         
   
@@ -1324,13 +1352,13 @@
 <hr />
 <h2 id="modes">Modes<a class="headerlink" href="#modes" title="Permanent link">&para;</a></h2>
 <h3 id="always-default"><code>always</code> (default)<a class="headerlink" href="#always-default" title="Permanent link">&para;</a></h3>
-<p>Every plan — whether it contains moves, renames, quarantines, or only index/summary writes — requires explicit user approval before execution.</p>
+<p><code>execute_plan</code> — the tool that applies every staged plan op (moves, renames, quarantines, file writes, folder creation, archiving, and quarantine compression) — requires explicit user approval before it runs. There is no tool that mutates the filesystem outside this gate. Read-only tools (<code>list_dir</code>, <code>read_file</code>, <code>extract_text</code>, registry/graph queries, …) and the output-writing tools (<code>write_index</code>, <code>write_summary</code>, <code>write_folder_readme</code>) are never routed through the approval gate; they always run freely, in every mode.</p>
 <p><strong>Best for:</strong> initial use, unfamiliar document corpora, any situation where you want full control.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="na">APPROVAL_MODE</span><span class="o">=</span><span class="s">always</span>
 </code></pre></div>
 <h3 id="destructive_only"><code>destructive_only</code><a class="headerlink" href="#destructive_only" title="Permanent link">&para;</a></h3>
-<p>Only plans containing moves, renames, or quarantines require approval. Read-only operations (building indexes and summaries) run freely without gating.</p>
-<p><strong>Best for:</strong> once you trust the agent's analysis and just want to speed up the index/summary step.</p>
+<p><code>execute_plan</code> is the only tool ever subject to the approval gate, and it is inherently the destructive step (it performs the moves/renames/quarantines) — so in practice <code>destructive_only</code> gates it exactly like <code>always</code> does. Read-only tools and the output-writing tools (<code>write_index</code>, <code>write_summary</code>, <code>write_folder_readme</code>) already run freely without gating in every mode, so this setting does not change their behaviour.</p>
+<p><strong>Best for:</strong> once you trust the agent's analysis and want the same gate as <code>always</code>, without implying that anything else is held back.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="na">APPROVAL_MODE</span><span class="o">=</span><span class="s">destructive_only</span>
 </code></pre></div>
 <h3 id="never"><code>never</code><a class="headerlink" href="#never" title="Permanent link">&para;</a></h3>
@@ -1353,15 +1381,20 @@
 <h2 id="the-approval-modal">The approval modal<a class="headerlink" href="#the-approval-modal" title="Permanent link">&para;</a></h2>
 <p>In <code>always</code> and <code>destructive_only</code> modes, when a plan is ready for execution the host presents an <strong>ApprovalModal</strong>:</p>
 <ul>
-<li><strong>Each proposed operation</strong> is listed as a checked checkbox</li>
+<li><strong>A plan rationale</strong>, if the agent attached one via <code>set_plan_rationale</code>, is shown as a short plain-language paragraph above the op checklist — explaining how the plan groups, renames, and quarantines documents and why. It is preceded by a subtle <code>[dim]</code>-styled disclaimer, "Model-generated rationale — not verified fact:", so you don't mistake the agent's prose for a verified account of what the plan does — the op checklist below it is the thing to actually check</li>
+<li><strong>A target-layout preview</strong>, when the plan has any move/quarantine destinations: a folder tree built from the plan's ops, with each folder's purpose note (set by the agent via <code>set_plan_folder_notes</code>) shown beside it — folders without a note appear as bare tree nodes. Rename-only plans show no tree. When any folder notes are present, a matching disclaimer ("Folder notes are model-generated — not verified fact.") appears above the tree — the tree structure itself is derived from the plan's own op destinations, but the prose notes beside each folder are the agent's commentary, not verified fact</li>
+<li><strong>Each proposed operation</strong> is listed as a checked checkbox — an <code>update_file</code> op that will replace an existing file (<code>overwrite=True</code>) is labelled with a subtle <code>(overwrite)</code> marker so you aren't blindsided by a collision-safe write turning into a replace, and an op whose source resolves outside the directory you're organizing is labelled with an equally subtle <code>(outside target)</code> marker — a best-effort visual cue, not the security boundary itself (that's the server's own path-confinement guard)</li>
 <li>You can <strong>uncheck</strong> individual ops to skip them (the rest still execute)</li>
+<li><strong>A full ops JSON path</strong> is shown below the checklist: every time a plan is presented, its complete op list (plan id, rationale, folder notes, and every op) is written to <code>.organizer/plan_ops.json</code> (latest plan wins), so you can open the file to inspect the full detail while the modal itself only shows the summary</li>
+<li><strong>A free-text refine field</strong>, for when the plan is close but not quite right — describe the change in plain language (e.g. "merge the drafts into one folder", "don't quarantine the specs")</li>
 <li><strong>Approve</strong> confirms the checked ops and triggers <code>execute_plan</code></li>
+<li><strong>Refine</strong> (or pressing Enter in the field) sends your typed text back to the agent instead of executing anything — the agent revises the plan (adjusting ops, rationale, and folder notes) and calls <code>execute_plan</code> again to re-present it for another round of review. Leaving the field blank and pressing Refine is a no-op — the modal stays open</li>
 <li><strong>Reject</strong> sends a rejection back to the agent, which will revise the plan and try again</li>
 <li><strong>Escape</strong> is equivalent to Reject</li>
 </ul>
 <hr />
 <h2 id="hard-stop">Hard stop<a class="headerlink" href="#hard-stop" title="Permanent link">&para;</a></h2>
-<p>Regardless of <code>APPROVAL_MODE</code>, if more than 3 operations fail during a single <code>execute_plan</code> run, the server triggers a <strong>hard stop</strong>: execution is halted, a <code>hard_stop</code> entry is written to the journal, and the agent is notified of the failures. The agent will then explain what went wrong and offer to undo.</p>
+<p>Regardless of <code>APPROVAL_MODE</code>, if more than 3 operations fail during a single <code>execute_plan</code> run, the server triggers a <strong>hard stop</strong>: execution is halted, a <code>hard_stop</code> entry is written to the journal, and the agent is notified of the failures. Each failed op's error message is clear and actionable (e.g. naming a locked file and hinting to close the program holding it), so the agent can explain precisely what went wrong. A transient lock is retried up to 3 times before being counted as a failure; a missing source file fails immediately. The agent will then explain what went wrong and offer to undo.</p>
 
 
 
