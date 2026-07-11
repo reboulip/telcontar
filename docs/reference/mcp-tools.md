@@ -81,10 +81,12 @@ Return the UTF-8 text content of a file, capped at `max_chars`. Binary replaceme
 extract_text(path: str, max_chars: int = 4000) -> str
 ```
 
-Extract plain text from a PDF or Office file (docx, xlsx, pptx…) via **markitdown**. Same truncation semantics as `read_file`.
+Extract plain text from a PDF or Office file (docx, xlsx, pptx…) via **markitdown**, or from an Outlook `.msg` file via **extract-msg**. Same truncation semantics as `read_file`.
+
+For a `.msg` file, the returned text is the message headers (`From`/`To`/`Cc`/`Bcc` when present/`Date`/`Subject`) followed by a blank line and the plain-text body, rather than markitdown's lossy conversion.
 
 !!! note "Bounded extraction (S5)"
-    Before parsing, the file is rejected with `ValueError` if it exceeds `MAX_EXTRACT_FILE_BYTES` (default 200,000,000 bytes), and for zip-based formats (`.docx`/`.xlsx`/`.pptx`/`.zip`) any archive entry with a compressed:uncompressed ratio over 100x (and an uncompressed size ≥ 10MB) is rejected as a possible zip bomb. The actual `markitdown` parse then runs under a `MAX_EXTRACT_TIMEOUT_SECS` wall-clock timeout (default 30s, thread-based so it also works on Windows), raising `TimeoutError` on expiry. This bounds the known DoS/zip-bomb vectors — it is not a sandbox; see [Security Model](../developer/security-model.md).
+    Before parsing, the file is rejected with `ValueError` if it exceeds `MAX_EXTRACT_FILE_BYTES` (default 200,000,000 bytes), and for zip-based formats (`.docx`/`.xlsx`/`.pptx`/`.zip`) any archive entry with a compressed:uncompressed ratio over 100x (and an uncompressed size ≥ 10MB) is rejected as a possible zip bomb (`.msg` is an OLE compound file, not a zip container, so this check does not apply to it). The actual parse (`markitdown`, or `extract-msg` for `.msg`) then runs under a `MAX_EXTRACT_TIMEOUT_SECS` wall-clock timeout (default 30s, thread-based so it also works on Windows), raising `TimeoutError` on expiry. This bounds the known DoS/zip-bomb vectors — it is not a sandbox; see [Security Model](../developer/security-model.md).
 
 ---
 
@@ -94,7 +96,7 @@ Extract plain text from a PDF or Office file (docx, xlsx, pptx…) via **markitd
 compare_documents(path_a: str, path_b: str, max_chars: int = 4000) -> dict
 ```
 
-Extract text from two files and return a unified diff between them. Uses the same markitdown/pypdf extraction path as `extract_text`, so it works on PDF and Office files as well as plain text. Each side is truncated to `max_chars` before diffing; the diff therefore reflects only the extracted (possibly truncated) text.
+Extract text from two files and return a unified diff between them. Uses the same extraction path as `extract_text`, so it works on PDF, Office, and Outlook `.msg` files as well as plain text. Each side is truncated to `max_chars` before diffing; the diff therefore reflects only the extracted (possibly truncated) text.
 
 Typical use case: comparing successive versions of a document (e.g. two COPIL slide decks).
 

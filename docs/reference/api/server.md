@@ -54,6 +54,6 @@ Append-only undo journal (JSONL).
 
 ## server.extract
 
-Text extraction from binary formats via markitdown.
+Text extraction from binary formats via markitdown, plus native Outlook `.msg` parsing via extract-msg.
 
 ::: server.extract

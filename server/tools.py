@@ -138,7 +138,7 @@ def extract_text(
     max_file_bytes: int = 200_000_000,
     timeout_secs: float = 30.0,
 ) -> str:
-    """Extract plain text from a PDF or Office file via markitdown."""
+    """Extract plain text from a PDF, Office, or Outlook email (.msg) file."""
     p = Path(path)
     if not p.is_file():
         raise ValueError(f"Not a file: {path}")

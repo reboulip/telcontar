@@ -117,7 +117,7 @@ def read_file(path: str, max_chars: int = 4000) -> str:
 
 @mcp.tool()
 def extract_text(path: str, max_chars: int = 4000) -> str:
-    """Extract plain text from a PDF or Office file via markitdown."""
+    """Extract plain text from a PDF, Office, or Outlook email (.msg) file."""
     cfg = _get_settings()
     from server.guards import check_allowlist
 

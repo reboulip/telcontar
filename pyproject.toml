@@ -21,6 +21,7 @@ dependencies = [
     "textual>=0.80",         # full TUI framework (host app)
     "plyer>=2.1",            # cross-platform desktop notifications
     "keyring>=24.0",         # OS credential store for the API key
+    "extract-msg>=0.55.0",
 ]
 
 [project.scripts]
