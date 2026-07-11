@@ -1,0 +1,36 @@
+name: Close resolved roadmap issues
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  close-issues:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Close issues resolved by this merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          issue_nums=$(grep -oP '^\s*-\s*\[x\].*\[#\K[0-9]+(?=\])' ROADMAP.md || true)
+          if [ -z "$issue_nums" ]; then
+            echo "No resolved issue references found in ROADMAP.md"
+            exit 0
+          fi
+          sha="${{ github.sha }}"
+          for num in $issue_nums; do
+            state=$(gh issue view "$num" --repo "$REPO" --json state -q .state 2>/dev/null || echo "MISSING")
+            if [ "$state" = "OPEN" ]; then
+              line=$(grep -P "\[#${num}\]" ROADMAP.md | head -1 | sed -E 's/^\s*-\s*\[x\]\s*//')
+              gh issue close "$num" --repo "$REPO" -c "Resolved by ROADMAP item: ${line} (merged in ${sha})."
+              echo "Closed #$num"
+            fi
+          done

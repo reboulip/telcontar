@@ -222,6 +222,10 @@ CI then runs `uv build` and creates a GitHub Release with the wheel + sdist atta
 - **Do NOT** manually `uv build` + `gh release create` — CI does it, and a manual `gh release create` conflicts with the auto-created release ("release with the same tag name already exists").
 - To improve the auto-generated notes, run `gh release edit <tag> --notes-file <file>` after the workflow has published.
 
+## Issue Tracking
+
+ROADMAP items that resolve a GitHub issue must tag it inline: `[#N]` at the end of the line (see Phases 10–11 for examples). On every push to `main` (i.e. after a develop→main PR or hotfix merges), `.github/workflows/close-resolved-issues.yml` scans ROADMAP.md for `[x]` items carrying an `[#N]` tag and auto-closes the matching issue if still open, with a comment citing the roadmap line and commit SHA. No manual issue-closing should be needed once this convention is followed.
+
 ## Workflow Agents
 
 All git work and task orchestration is delegated to specialized agents and skills. The main session focuses on domain implementation only.
@@ -229,6 +233,8 @@ All git work and task orchestration is delegated to specialized agents and skill
 - **`repo-manager`** (Haiku subagent): Handles all git operations and edits to generic project files (`pyproject.toml`, `.gitignore`, `README.md`, `ROADMAP.md`, `CLAUDE.md`). **Always delegate git commits and branch operations here — never run `git commit` in the main session.**
 
 - **`feature-forecast`** (Haiku subagent, background): Pre-reads the codebase for the next ROADMAP item while the current item is being implemented. Invoked automatically by `/dev-pipeline` with `run_in_background: true`.
+
+- **`sprint-planner`** (Opus subagent, xhigh reasoning): Strategic, up-front sprint planner. At the start of a non-trivial sprint, `/dev-pipeline` partitions the in-scope ROADMAP items into feature clusters and spawns one `sprint-planner` per cluster (up to 4, in parallel) to deep-read the code and return a Planning Report — recommended approach/sequencing, cross-cutting decisions, open questions, proposed roadmap adjustments, and risks. The root aggregates these, asks the user once (consolidated), and writes an uncommitted `sprint-brief.md` (in gitignored `.claude/tmp/dev-pipeline/<slug>/`) that the rest of the sprint follows and that a resumed sprint reuses. Read-only; never edits, never asks the user directly. This replaces the old standalone design-clarification step.
 
 - **`doc-keeper`** (Sonnet subagent): Documentation maintainer. Runs at the end of each feature implementation step (Step 4.5 of `/dev-pipeline`, before the commit), reads the changed source and the existing docs, and makes surgical updates to `README.md` and `docs/**` so the documentation stays in sync with the code. Edits docs only — never source, `ROADMAP.md`, or `CLAUDE.md`. Doc changes land in the same commit as the code.
 

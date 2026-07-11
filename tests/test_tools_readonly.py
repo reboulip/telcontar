@@ -256,6 +256,60 @@ class TestExtractText:
         with pytest.raises(ValueError, match="possible zip bomb"):
             extract_text(str(f), 1000)
 
+    def test_extracts_msg_headers_and_body(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from server import extract as extract_module
+
+        class FakeMsg:
+            sender = "Alice <alice@example.com>"
+            to = "Bob <bob@example.com>"
+            cc = None
+            bcc = None
+            date = "Mon, 1 Jan 2024 00:00:00"
+            subject = "Test Subject"
+            body = "Hello body text"
+            closed = False
+
+            def close(self) -> None:
+                self.closed = True
+
+        fake = FakeMsg()
+        monkeypatch.setattr(extract_module.extract_msg, "openMsg", lambda path: fake)
+        f = tmp_path / "email.msg"
+        f.write_bytes(b"dummy ole bytes")
+        result = extract_text(str(f), 1000)
+        assert "From: Alice <alice@example.com>" in result
+        assert "To: Bob <bob@example.com>" in result
+        assert "Subject: Test Subject" in result
+        assert "Hello body text" in result
+        assert "Cc:" not in result
+        assert fake.closed
+
+    def test_extracts_msg_with_cc_and_bcc(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from server import extract as extract_module
+
+        class FakeMsg:
+            sender = "Alice <alice@example.com>"
+            to = "Bob <bob@example.com>"
+            cc = "Carol <carol@example.com>"
+            bcc = "Dave <dave@example.com>"
+            date = "Mon, 1 Jan 2024 00:00:00"
+            subject = "Test Subject"
+            body = "Hello body text"
+
+            def close(self) -> None:
+                pass
+
+        monkeypatch.setattr(extract_module.extract_msg, "openMsg", lambda path: FakeMsg())
+        f = tmp_path / "email.msg"
+        f.write_bytes(b"dummy ole bytes")
+        result = extract_text(str(f), 1000)
+        assert "Cc: Carol <carol@example.com>" in result
+        assert "Bcc: Dave <dave@example.com>" in result
+
 
 class TestCheckNotAZipBomb:
     """Unit tests for the zip-bomb ratio guard itself (server/extract.py)."""

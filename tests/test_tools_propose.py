@@ -163,6 +163,18 @@ class TestProposeMove:
         with pytest.raises(ValueError, match="pending"):
             propose_move(str(src), str(dst_dir), pending_plan.plan_id, plans_dir)
 
+    def test_allows_move_to_dir_queued_for_creation(
+        self, tmp_path: Path, plans_dir: Path, pending_plan: Plan
+    ) -> None:
+        src = tmp_path / "file.txt"
+        src.write_text("x")
+        dst_dir = tmp_path / "not-yet-created"
+        propose_create_dir(str(dst_dir), pending_plan.plan_id, plans_dir)
+        result = propose_move(str(src), str(dst_dir), pending_plan.plan_id, plans_dir)
+        assert result["op_type"] == "move"
+        assert result["dst"] == str(dst_dir)
+        assert result["ops_count"] == 2
+
 
 class TestProposeQuarantine:
     def test_appends_op_and_returns_dict(

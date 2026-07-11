@@ -178,7 +178,7 @@ Propose moving a file to a different directory.
 - dest_dir: Absolute path to the destination directory.
 
 **Processing:**
-1. Validate that path is a file and dest_dir is a directory.
+1. Validate that path is a file and dest_dir is either an existing directory or the exact path of a `create_dir` op already queued earlier in the same pending plan (so a create-then-move sequence can be proposed within one plan); otherwise raise ValueError.
 2. Check for collision: if a file with the same name already exists in dest_dir, raise FileExistsError.
 3. Append the operation to the plan.
 4. Write the plan file.

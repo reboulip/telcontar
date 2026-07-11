@@ -138,7 +138,7 @@ def extract_text(
     max_file_bytes: int = 200_000_000,
     timeout_secs: float = 30.0,
 ) -> str:
-    """Extract plain text from a PDF or Office file via markitdown."""
+    """Extract plain text from a PDF, Office, or Outlook email (.msg) file."""
     p = Path(path)
     if not p.is_file():
         raise ValueError(f"Not a file: {path}")
@@ -324,13 +324,16 @@ def propose_move(path: str, dest_dir: str, plan_id: str, plans_dir: Path) -> dic
     if not src.is_file():
         raise ValueError(f"Not a file: {path}")
     dst_dir = Path(dest_dir)
-    if not dst_dir.is_dir():
-        raise ValueError(f"Not a directory: {dest_dir}")
-    dest = dst_dir / src.name
-    check_no_overwrite(dest)
     p = _plan.load(plan_id, plans_dir)
     if p.state != "pending":
         raise ValueError(f"Plan must be in 'pending' state to add ops; current state: {p.state!r}")
+    queued_for_creation = any(
+        op.op_type == "create_dir" and Path(op.src) == dst_dir for op in p.ops
+    )
+    if not dst_dir.is_dir() and not queued_for_creation:
+        raise ValueError(f"Not a directory: {dest_dir}")
+    dest = dst_dir / src.name
+    check_no_overwrite(dest)
     op = _plan.PlanOp.new("move", str(src), str(dst_dir))
     p.add_op(op)
     _plan.save(p, plans_dir)

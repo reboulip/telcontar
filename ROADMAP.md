@@ -189,3 +189,12 @@ explicit decision — already marked skipped in the security doc, not tracked he
       `~/.telcontar/config.env`; keep keys out of any CWD `.env`.
 - [x] M12 · Log egress (S8) — record which files' contents were sent to the LLM endpoint
       (path + size + timestamp) so an operator can audit what left the machine.
+
+---
+
+## Phase 13 — Follow-up fixes
+
+- [x] N1 · Fix plan-move validation for not-yet-existing directories — allow `propose_move` to target a directory that has a `propose_create_dir` op already queued earlier in the same plan (currently rejected as "does not exist"), so create-then-move sequences work in a single plan [#22]
+- [x] N2 · Add native `.msg` (Outlook email) extraction support — new extraction path in `server/extract.py` (e.g. via `extract-msg`) preserving sender/recipients/date/subject metadata rather than lossy conversion to another format [#21]
+
+---

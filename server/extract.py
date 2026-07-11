@@ -11,6 +11,7 @@ import zipfile
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as _FutureTimeoutError
 from pathlib import Path
 
+import extract_msg
 from markitdown import MarkItDown
 
 _md = MarkItDown()
@@ -47,6 +48,26 @@ def _check_not_a_zip_bomb(path: Path) -> None:
         return
 
 
+def _extract_msg(path: Path) -> str:
+    """Parse an Outlook .msg file, preserving sender/recipients/date/subject
+    as headers ahead of the body rather than lossily converting via markitdown."""
+    msg = extract_msg.openMsg(str(path))
+    try:
+        headers = [
+            f"From: {msg.sender or ''}",
+            f"To: {msg.to or ''}",
+        ]
+        if msg.cc:
+            headers.append(f"Cc: {msg.cc}")
+        if msg.bcc:
+            headers.append(f"Bcc: {msg.bcc}")
+        headers.append(f"Date: {msg.date or ''}")
+        headers.append(f"Subject: {msg.subject or ''}")
+        return "\n".join(headers) + "\n\n" + (msg.body or "")
+    finally:
+        msg.close()
+
+
 def extract(
     path: Path,
     max_chars: int,
@@ -66,17 +87,21 @@ def extract(
         )
     _check_not_a_zip_bomb(path)
 
+    def _parse() -> str:
+        if path.suffix.lower() == ".msg":
+            return _extract_msg(path)
+        return _md.convert(str(path)).text_content
+
     with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_md.convert, str(path))
+        future = executor.submit(_parse)
         try:
-            result = future.result(timeout=timeout_secs)
+            text = future.result(timeout=timeout_secs)
         except _FutureTimeoutError as exc:
             raise TimeoutError(
                 f"Extraction timed out after {timeout_secs:.0f}s: {path} "
                 "(the file may be corrupted, pathological, or simply very large)"
             ) from exc
 
-    text = result.text_content
     if len(text) > max_chars:
         return text[:max_chars] + "\n\n[... content truncated ...]"
     return text
