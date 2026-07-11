@@ -211,7 +211,7 @@ working in chat after a stop instead of being pushed to the read-only journal/qu
       one bad file doesn't fail the batch; wire egress logging per file and extend
       `_wrap_untrusted_content` in `host/agent.py` to delimit each file's content
       individually.
-- [ ] O2 · `record_document_batch` tool — accepts a list of document dicts (same shape as
+- [x] O2 · `record_document_batch` tool — accepts a list of document dicts (same shape as
       `record_document`'s params) and upserts each into the registry in one call,
       collecting per-document validation errors instead of failing the whole batch
       (requires: O1).

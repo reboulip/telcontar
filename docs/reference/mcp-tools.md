@@ -525,6 +525,21 @@ Upsert an analyzed document into the registry. Validates `type` against the acti
 
 ---
 
+### `record_document_batch`
+
+```python
+record_document_batch(documents: list[dict]) -> dict
+```
+
+Batch form of `record_document`: upsert many analyzed documents into the registry in one MCP round trip instead of one call per document. Each item in `documents` has the same shape as `record_document`'s parameters (`checksum`, `path`, `title`, `type`, `summary`, `provenance`, `date`, `entities`, `attributes`, `status`). Validated with the exact same rules and error strings as `record_document` (shared via an internal `_validate_and_build_record` helper). One invalid document — bad `type`, bad entity `role`, or an entity missing `name` — never fails the whole batch: its error is collected instead of raised, keyed by its positional `index` in the input list (a failure may carry a missing or blank checksum/path, so position is the only safe correlation key).
+
+**Returns:** `{"recorded": [record_dict, ...], "errors": [{"index", "checksum", "path", "error"}, ...]}`.
+
+!!! note
+    The registry is loaded once and saved once for the whole batch, not once per document — a deliberate efficiency trade-off; a mid-batch crash persists nothing. This differs from `read_file_batch`/`extract_text_batch`/`compute_checksum_batch`: this is a **mutating** tool, so it is *not* in `QUERY_ALLOWED_TOOLS` (query mode is read-only). Its per-document path confinement check also behaves differently from the read-only batch tools: `record_document_batch` runs `check_within_root` for every document's `path` *before* calling into `server.tools`, and a `PermissionError` on any one path raises immediately and aborts the whole call — it does not degrade to a per-item `{"error": ...}` entry the way a disallowed path does in `read_file_batch`/`extract_text_batch`/`compute_checksum_batch`.
+
+---
+
 ### `get_document`
 
 ```python

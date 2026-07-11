@@ -164,6 +164,30 @@ class TestGuardedHandlers:
         assert isinstance(result[str(outside)], dict)
         assert "error" in result[str(outside)]
 
+    def test_record_document_batch_raises_when_a_path_is_outside_target(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        target = tmp_path / "target"
+        target.mkdir()
+        outside = tmp_path / "elsewhere" / "doc.txt"
+        outside.parent.mkdir()
+        outside.write_text("x")
+        monkeypatch.setattr(server_main, "_get_settings", lambda: Settings(target_dir=target))
+
+        with pytest.raises(PermissionError):
+            server_main.record_document_batch(
+                [
+                    {
+                        "checksum": "c1",
+                        "path": str(outside),
+                        "title": "t",
+                        "type": "notes",
+                        "summary": "s",
+                        "provenance": "p",
+                    }
+                ]
+            )
+
     def test_propose_move_raises_when_source_outside_target(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

@@ -109,7 +109,8 @@ where empty means unrestricted). `server/main.py` calls it — via the
 `_check_within_root` helper — in every path-taking tool handler (`list_dir`,
 `walk_tree`, `read_file`, `extract_text`, `compute_checksum`, `compare_documents`,
 `read_file_batch`, `extract_text_batch`, `compute_checksum_batch`, every `propose_*`
-tool, `write_index`, `write_summary`, `write_folder_readme`, `record_document`).
+tool, `write_index`, `write_summary`, `write_folder_readme`, `record_document`,
+`record_document_batch`).
 The batch tools apply the check per path, before that path is read/extracted, so
 one disallowed path in a batch surfaces as `{"error": ...}` for that entry rather
 than failing the whole call. `_confinement_roots(cfg)` builds the allowed roots as
@@ -165,7 +166,13 @@ The ANALYZE phase's system prompt instructs the agent to survey the whole tree w
 
 `read_file_batch`, `extract_text_batch`, and `compute_checksum_batch` in `server/tools.py` are batch counterparts of `read_file`/`extract_text`/`compute_checksum`: each takes a `paths: list[str]` instead of a single `path` and returns one dict keyed by the exact input path string, `{path: content_or_checksum | {"error": message}}`. A failure on one path (guard rejection, missing file, extraction error) never fails the whole batch — it just becomes that path's `{"error": ...}` entry, so the caller (host or agent) must discriminate a successful entry from a failed one by type (`str` vs `dict`). The `server/main.py` wrappers apply the same per-path guard sequence as their singular counterparts (allowlist + `check_within_root` for the two content tools, `check_within_root` alone for the checksum tool) before delegating to `server.tools`, and log egress per successful file the same way `read_file`/`extract_text` do.
 
-These tools exist to cut MCP round trips: fetching N files one at a time costs N request/response cycles (and N LLM turns, if the agent reasons between each), while a batch call fetches them all in one. They are read-only and available in both organize mode (full toolset, no filter) and query mode (added to `QUERY_ALLOWED_TOOLS`). This item is additive infrastructure only — no MCP tool signature changed, and the system prompts do not yet instruct the agent to prefer the batch forms over the singular ones; a later item is expected to rewrite the ANALYZE-phase prompt to use them for per-turn document batching, and another to add a corresponding `record_document_batch`.
+These tools exist to cut MCP round trips: fetching N files one at a time costs N request/response cycles (and N LLM turns, if the agent reasons between each), while a batch call fetches them all in one. They are read-only and available in both organize mode (full toolset, no filter) and query mode (added to `QUERY_ALLOWED_TOOLS`). This item is additive infrastructure only — no MCP tool signature changed, and the system prompts do not yet instruct the agent to prefer the batch forms over the singular ones; a later item is expected to rewrite the ANALYZE-phase prompt to use them for per-turn document batching.
+
+### Batch document-registry tool (O2)
+
+`record_document_batch` (`server/tools.py`) is the mutating counterpart to O1's read-only batch tools: it upserts many analyzed documents into the registry in one call instead of one `record_document` call per document. Validation is shared with the singular tool via a factored-out `_validate_and_build_record(doc, profile)` helper, so both enforce identical rules and identical error strings. A validation failure on one document (bad `type`, bad entity `role`, a missing entity `name`) is collected into an `errors` list keyed by the document's positional index rather than aborting the batch; valid documents are still upserted and returned in `recorded`. The registry is loaded once and saved once for the whole batch rather than once per document — an efficiency trade-off that means a mid-batch crash persists nothing.
+
+Because it mutates the registry, it is *not* added to `QUERY_ALLOWED_TOOLS` (query mode stays strictly read-only). Its path-confinement behaviour also diverges from the O1 read-only batch tools: the `server/main.py` wrapper runs `_check_within_root` on every document's `path` before delegating to `server.tools`, and — unlike `read_file_batch`/`extract_text_batch`/`compute_checksum_batch`, which turn a disallowed path into that entry's `{"error": ...}` — a `PermissionError` here propagates and aborts the whole call, since registry validation errors and confinement errors are handled at different layers (`server.tools` vs. the `server.main` wrapper).
 
 ### Knowledge graph
 

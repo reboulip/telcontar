@@ -1146,6 +1146,48 @@ def _undo_compress(entry: dict, journal_path: Path) -> dict:
 # ── Document registry ─────────────────────────────────────────────────────────
 
 
+def _validate_and_build_record(doc: dict, profile: _Profile) -> _registry.DocumentRecord:
+    """Validate one document dict against the profile and build its `DocumentRecord`.
+
+    Shared by `record_document` and `record_document_batch` so both enforce the
+    exact same rules with the exact same error strings. Raises `ValueError` on
+    any validation failure — callers decide whether that aborts the whole call
+    (singular) or is caught and collected per-item (batch).
+    """
+    type_ = doc.get("type", "")
+    valid_types = profile.document_type_ids()
+    if type_ not in valid_types:
+        raise ValueError(
+            f"Invalid document type {type_!r}; profile {profile.name!r} allows: {valid_types}"
+        )
+    valid_roles = set(profile.entity_roles())
+    norm_entities: list[dict] = []
+    for e in doc.get("entities") or []:
+        name = e.get("name")
+        if not name:
+            raise ValueError(f"Entity missing 'name': {e!r}")
+        role = e.get("role", "")
+        if role and valid_roles and role not in valid_roles:
+            raise ValueError(
+                f"Invalid entity role {role!r}; profile {profile.name!r} allows: "
+                f"{sorted(valid_roles)}"
+            )
+        norm_entities.append({"name": name, "role": role, "kind": e.get("kind", "person")})
+
+    return _registry.DocumentRecord.new(
+        checksum=doc.get("checksum", ""),
+        path=doc.get("path", ""),
+        title=doc.get("title", ""),
+        type=type_,
+        summary=doc.get("summary", ""),
+        provenance=doc.get("provenance", ""),
+        date=doc.get("date"),
+        entities=norm_entities,
+        attributes=doc.get("attributes") or {},
+        status=doc.get("status") or "active",
+    )
+
+
 def record_document(
     checksum: str,
     path: str,
@@ -1167,41 +1209,64 @@ def record_document(
     guardrail (only include people explicitly named, never inferred) is a prompt
     instruction, not enforced here.
     """
-    valid_types = profile.document_type_ids()
-    if type not in valid_types:
-        raise ValueError(
-            f"Invalid document type {type!r}; profile {profile.name!r} allows: {valid_types}"
-        )
-    valid_roles = set(profile.entity_roles())
-    norm_entities: list[dict] = []
-    for e in entities or []:
-        name = e.get("name")
-        if not name:
-            raise ValueError(f"Entity missing 'name': {e!r}")
-        role = e.get("role", "")
-        if role and valid_roles and role not in valid_roles:
-            raise ValueError(
-                f"Invalid entity role {role!r}; profile {profile.name!r} allows: "
-                f"{sorted(valid_roles)}"
-            )
-        norm_entities.append({"name": name, "role": role, "kind": e.get("kind", "person")})
-
-    reg = _registry.load(registry_path)
-    rec = _registry.DocumentRecord.new(
-        checksum=checksum,
-        path=path,
-        title=title,
-        type=type,
-        summary=summary,
-        provenance=provenance,
-        date=date,
-        entities=norm_entities,
-        attributes=attributes or {},
-        status=status or "active",  # type: ignore[arg-type]
+    rec = _validate_and_build_record(
+        {
+            "checksum": checksum,
+            "path": path,
+            "title": title,
+            "type": type,
+            "summary": summary,
+            "provenance": provenance,
+            "date": date,
+            "entities": entities,
+            "attributes": attributes,
+            "status": status,
+        },
+        profile,
     )
+    reg = _registry.load(registry_path)
     reg.upsert(rec)
     _registry.save(reg, registry_path)
     return rec.to_dict()
+
+
+def record_document_batch(
+    documents: list[dict],
+    registry_path: Path,
+    profile: _Profile,
+) -> dict:
+    """Upsert many analyzed documents into the registry in one call.
+
+    Each item in ``documents`` has the same shape as `record_document`'s
+    parameters. One invalid document never fails the whole batch — its
+    validation error is collected in ``errors`` instead, keyed by its
+    positional ``index`` in the input list (a failure may carry a missing or
+    blank checksum/path, so position is the only safe correlation key).
+    Returns ``{"recorded": [record_dict, ...], "errors": [{"index", "checksum",
+    "path", "error"}, ...]}``. The registry is loaded once and saved once at
+    the end (a mid-batch crash persists nothing — an accepted trade-off for
+    the round-trip savings over one load/save per document).
+    """
+    reg = _registry.load(registry_path)
+    recorded: list[dict] = []
+    errors: list[dict] = []
+    for index, doc in enumerate(documents):
+        try:
+            rec = _validate_and_build_record(doc, profile)
+        except ValueError as exc:
+            errors.append(
+                {
+                    "index": index,
+                    "checksum": doc.get("checksum", ""),
+                    "path": doc.get("path", ""),
+                    "error": str(exc),
+                }
+            )
+            continue
+        reg.upsert(rec)
+        recorded.append(rec.to_dict())
+    _registry.save(reg, registry_path)
+    return {"recorded": recorded, "errors": errors}
 
 
 def get_registry(registry_path: Path) -> dict:

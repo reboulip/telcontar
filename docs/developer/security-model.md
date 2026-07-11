@@ -104,7 +104,7 @@ second check — this path is well isolated.
 | Capability | Tools | Human in the loop? |
 |---|---|---|
 | Read / list / extract / diff | `list_dir`, `walk_tree`, `read_file`, `extract_text`, `compare_documents`, `compute_checksum`, and the batch forms `read_file_batch`, `extract_text_batch`, `compute_checksum_batch` (O1) | No (by design — read-only) |
-| Registry / graph / events | `record_document`, `get_*`, `list_*`, `build_graph`, `create_event`, … | No (metadata only) |
+| Registry / graph / events | `record_document`, `record_document_batch` (O2), `get_*`, `list_*`, `build_graph`, `create_event`, … | No (metadata only) |
 | **Plan → approve → execute** | `create_plan`, `propose_rename`/`propose_move`/`propose_quarantine`/`propose_create_file`/`propose_update_file`/`propose_create_dir`/`propose_archive_document`/`propose_compress_quarantine`, `review_plan`, `approve_plan`, `execute_plan` | **Yes** — `execute_plan` routes through the approval modal |
 | **Undo** (not an MCP tool) | `undo_last` | **Yes, exclusively** — the agent cannot call it at all; it is triggered only by the user pressing **u** in the TUI's `JournalScreen` (opened with **j**) |
 

@@ -474,6 +474,25 @@ def record_document(
 
 
 @mcp.tool()
+def record_document_batch(documents: list[dict]) -> dict:
+    """Record (upsert) many analyzed documents in the registry in one call.
+
+    Each item in `documents` has the same shape as `record_document`'s
+    parameters (checksum, path, title, type, summary, provenance, date,
+    entities, attributes, status). One invalid document never fails the whole
+    batch — its validation error is collected instead. Returns
+    `{"recorded": [record, ...], "errors": [{"index", "checksum", "path",
+    "error"}, ...]}`.
+    """
+    cfg = _get_settings()
+    for doc in documents:
+        path = doc.get("path")
+        if path:
+            _check_within_root(path, cfg)
+    return tools.record_document_batch(documents, cfg.registry_path, _get_profile())
+
+
+@mcp.tool()
 def get_document(checksum: str) -> dict | None:
     """Return a single registry record by checksum, or null if not recorded."""
     cfg = _get_settings()
