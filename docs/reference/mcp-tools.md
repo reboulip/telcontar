@@ -257,7 +257,7 @@ Stage a rename of `path` to `new_name` (basename only, not a full path). Raises 
 propose_move(path: str, dest_dir: str, plan_id: str) -> dict
 ```
 
-Stage moving `path` into `dest_dir`. Raises `FileExistsError` if `dest_dir/filename` already exists. Raises `ValueError` if `dest_dir` is not an existing directory.
+Stage moving `path` into `dest_dir`. Raises `FileExistsError` if `dest_dir/filename` already exists. Raises `ValueError` if `dest_dir` is not an existing directory **and** no `propose_create_dir` op for that exact path is already queued earlier in the same pending plan — this lets the agent propose "create a folder, then move a file into it" within a single plan; `execute_plan` already runs ops in list order, so the `create_dir` completes before the dependent `move`.
 
 ---
 
