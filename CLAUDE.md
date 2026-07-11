@@ -222,6 +222,10 @@ CI then runs `uv build` and creates a GitHub Release with the wheel + sdist atta
 - **Do NOT** manually `uv build` + `gh release create` — CI does it, and a manual `gh release create` conflicts with the auto-created release ("release with the same tag name already exists").
 - To improve the auto-generated notes, run `gh release edit <tag> --notes-file <file>` after the workflow has published.
 
+## Issue Tracking
+
+ROADMAP items that resolve a GitHub issue must tag it inline: `[#N]` at the end of the line (see Phases 10–11 for examples). On every push to `main` (i.e. after a develop→main PR or hotfix merges), `.github/workflows/close-resolved-issues.yml` scans ROADMAP.md for `[x]` items carrying an `[#N]` tag and auto-closes the matching issue if still open, with a comment citing the roadmap line and commit SHA. No manual issue-closing should be needed once this convention is followed.
+
 ## Workflow Agents
 
 All git work and task orchestration is delegated to specialized agents and skills. The main session focuses on domain implementation only.
