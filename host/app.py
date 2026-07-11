@@ -1822,8 +1822,16 @@ class OrganizerApp(App):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _fmt_exc(exc: Exception) -> str:
-    """Format an exception with its type so errors are actionable, not just a message."""
+def _fmt_exc(exc: BaseException) -> str:
+    """Format an exception with its type so errors are actionable, not just a message.
+
+    anyio/asyncio TaskGroups (the MCP session, the LLM HTTP client) wrap any child
+    failure in an ExceptionGroup whose own message is just "unhandled errors in a
+    TaskGroup (N sub-exception(s))" — useless on its own. Drill into `.exceptions`
+    (recursively, since groups can nest) to surface the real leaf error(s) instead.
+    """
+    if isinstance(exc, BaseExceptionGroup):
+        return "; ".join(_fmt_exc(sub) for sub in exc.exceptions)
     return f"{type(exc).__name__}: {exc}"
 
 
