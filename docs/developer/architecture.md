@@ -108,8 +108,11 @@ As of the security-hardening pass that closed finding S3, `server/guards.py` exp
 where empty means unrestricted). `server/main.py` calls it — via the
 `_check_within_root` helper — in every path-taking tool handler (`list_dir`,
 `walk_tree`, `read_file`, `extract_text`, `compute_checksum`, `compare_documents`,
-every `propose_*` tool, `write_index`, `write_summary`, `write_folder_readme`,
-`record_document`). `_confinement_roots(cfg)` builds the allowed roots as
+`read_file_batch`, `extract_text_batch`, `compute_checksum_batch`, every `propose_*`
+tool, `write_index`, `write_summary`, `write_folder_readme`, `record_document`).
+The batch tools apply the check per path, before that path is read/extracted, so
+one disallowed path in a batch surfaces as `{"error": ...}` for that entry rather
+than failing the whole call. `_confinement_roots(cfg)` builds the allowed roots as
 `[settings.target_dir, Path.cwd()]` (target_dir omitted when unset). `target_dir`
 is populated from a `TARGET_DIR` env var that `host/agent.py`'s `mcp_session` sets
 on the server subprocess whenever a `target` is passed in — i.e. on every real
@@ -117,11 +120,11 @@ organize (`run_agent`) or query (`run_query`) session — and `Path.cwd()` is
 included because the server always runs with its cwd set to the project root,
 where `.organizer/*` and the quarantine dir live regardless of which directory is
 being organized. Both `.resolve()`-normalize the candidate path first, so an
-absolute escape and a `..` traversal are rejected identically. For the three
-tools that already ran `check_allowlist` (`read_file`, `extract_text`,
-`compare_documents`), `check_within_root` runs *after* it — the allowlist remains
-a stricter, opt-in bound; target-dir confinement is the always-on floor
-underneath it.
+absolute escape and a `..` traversal are rejected identically. For the tools
+that already run `check_allowlist` (`read_file`, `extract_text`,
+`compare_documents`, and the batch forms `read_file_batch`/`extract_text_batch`),
+`check_within_root` runs *after* it — the allowlist remains a stricter, opt-in
+bound; target-dir confinement is the always-on floor underneath it.
 
 ### Injection-resistance delimiter for document content (M10)
 
@@ -142,11 +145,27 @@ markers is data, never an instruction, regardless of phrasing. This is a
 mitigation, not a sandboxed boundary — it raises the bar against indirect prompt
 injection rather than eliminating it; see `docs/developer/security-model.md` (S2).
 
+The batch counterparts `read_file_batch`/`extract_text_batch` (O1) return
+`{path: text | {"error": ...}}` rather than a bare string, so wrapping the whole
+result would either miss the per-file content or wrap error dicts nonsensically.
+`_wrap_untrusted_content` handles `_DOCUMENT_CONTENT_BATCH_TOOLS =
+frozenset({"read_file_batch", "extract_text_batch"})` by wrapping each successful
+(`str`) entry individually and passing error dicts through unchanged, so every
+file's content in a batch carries the same delimiter as a singular `read_file`/
+`extract_text` call would. `compute_checksum_batch` is deliberately excluded, same
+as the singular `compute_checksum` — a checksum is not untrusted content.
+
 ### Recursive tree exploration
 
 `walk_tree(path, max_depth=3)` complements `list_dir` (a single level): it returns a bounded recursive directory listing, where each directory entry carries a nested `children` list until `max_depth` is reached — deeper directories come back with `children: null` and `truncated: true`, signalling the agent to call `walk_tree` again on that subpath to descend further. Files carry `size`/`mtime` like `list_dir`; unreadable entries are marked `type: "unknown"`.
 
 The ANALYZE phase's system prompt instructs the agent to survey the whole tree with `walk_tree` first, rather than stopping at the top level, so documents nested in subfolders are discovered in one pass. The ORGANIZE phase's prompt correspondingly permits the agent to redesign the *existing* nested layout entirely, not just reorganize what already sits at the root.
+
+### Batch document-content tools (O1)
+
+`read_file_batch`, `extract_text_batch`, and `compute_checksum_batch` in `server/tools.py` are batch counterparts of `read_file`/`extract_text`/`compute_checksum`: each takes a `paths: list[str]` instead of a single `path` and returns one dict keyed by the exact input path string, `{path: content_or_checksum | {"error": message}}`. A failure on one path (guard rejection, missing file, extraction error) never fails the whole batch — it just becomes that path's `{"error": ...}` entry, so the caller (host or agent) must discriminate a successful entry from a failed one by type (`str` vs `dict`). The `server/main.py` wrappers apply the same per-path guard sequence as their singular counterparts (allowlist + `check_within_root` for the two content tools, `check_within_root` alone for the checksum tool) before delegating to `server.tools`, and log egress per successful file the same way `read_file`/`extract_text` do.
+
+These tools exist to cut MCP round trips: fetching N files one at a time costs N request/response cycles (and N LLM turns, if the agent reasons between each), while a batch call fetches them all in one. They are read-only and available in both organize mode (full toolset, no filter) and query mode (added to `QUERY_ALLOWED_TOOLS`). This item is additive infrastructure only — no MCP tool signature changed, and the system prompts do not yet instruct the agent to prefer the batch forms over the singular ones; a later item is expected to rewrite the ANALYZE-phase prompt to use them for per-turn document batching, and another to add a corresponding `record_document_batch`.
 
 ### Knowledge graph
 
@@ -211,7 +230,8 @@ Any sink name not in the built-in registry is treated as an external sink. If `e
 5. Host dispatches to server via MCP
 6. Server executes tool, returns result
 7. Host feeds result back to GPT-5 as tool message — document content from
-   read_file/extract_text/compare_documents's diff field is wrapped in the
+   read_file/extract_text/compare_documents's diff field (and, per-file, from
+   their batch forms read_file_batch/extract_text_batch) is wrapped in the
    untrusted-content delimiter first (M10)
 8. Steps 4-7 repeat (up to MAX_TURNS = 50)
 9. Once analysis is far enough along, the agent MAY call ask_clarification once with a

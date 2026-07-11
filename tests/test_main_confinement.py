@@ -130,6 +130,40 @@ class TestGuardedHandlers:
         result = server_main.list_dir(str(target))
         assert result["path"] == str(target)
 
+    def test_read_file_batch_isolates_out_of_root_path_as_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        target = tmp_path / "target"
+        target.mkdir()
+        inside = target / "doc.txt"
+        inside.write_text("hello")
+        outside = tmp_path / "elsewhere" / "secret.txt"
+        outside.parent.mkdir()
+        outside.write_text("x")
+        monkeypatch.setattr(server_main, "_get_settings", lambda: Settings(target_dir=target))
+
+        result = server_main.read_file_batch([str(inside), str(outside)])
+        assert result[str(inside)] == "hello"
+        assert isinstance(result[str(outside)], dict)
+        assert "error" in result[str(outside)]
+
+    def test_compute_checksum_batch_isolates_out_of_root_path_as_error(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        target = tmp_path / "target"
+        target.mkdir()
+        inside = target / "doc.txt"
+        inside.write_bytes(b"hello")
+        outside = tmp_path / "elsewhere" / "secret.txt"
+        outside.parent.mkdir()
+        outside.write_text("x")
+        monkeypatch.setattr(server_main, "_get_settings", lambda: Settings(target_dir=target))
+
+        result = server_main.compute_checksum_batch([str(inside), str(outside)])
+        assert isinstance(result[str(inside)], str)
+        assert isinstance(result[str(outside)], dict)
+        assert "error" in result[str(outside)]
+
     def test_propose_move_raises_when_source_outside_target(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

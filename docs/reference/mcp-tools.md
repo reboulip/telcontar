@@ -8,7 +8,7 @@ The server registers tools via FastMCP (`server/main.py`); the implementations l
     Tools that touch disk (`read_file`, `compute_checksum`, `execute_plan`, `write_index`, `write_summary`, `write_folder_readme`) re-raise I/O failures as a clear `Could not <action> <path>: <detail>` message instead of a raw traceback, with a plain-language hint for the two operator-actionable cases: a locked file (`... the file is open in another program — close it and retry`) and a plain permission denial (`... permission denied`). The original exception *type* is preserved, so `execute_plan`'s retry/fail-fast classification (below) is unaffected. File writes (`create_file`, `update_file`, `create_dir`) are staged via `propose_*` calls and only touch disk inside `execute_plan` — there is no standalone tool for them.
 
 !!! note "Path confinement"
-    Every tool that takes a `path` (or `path_a`/`path_b`/`dest_dir`) argument is checked with `check_within_root` before it runs, and raises `PermissionError` if the resolved path falls outside both the run's `TARGET_DIR` and the server's own working directory (where `.organizer/` and the quarantine dir live). This applies whether the escape attempt is an absolute path or a `..` traversal. For `read_file` / `extract_text` / `compare_documents`, `ALLOWLIST_DIRS` is also checked first via `Settings.effective_allowlist_dirs()` — an explicit, non-empty `ALLOWLIST_DIRS` is used as-is; otherwise it defaults to `[TARGET_DIR]` rather than no restriction — and `check_within_root` then applies as the always-on floor underneath it. See [Security Model](../developer/security-model.md).
+    Every tool that takes a `path` (or `path_a`/`path_b`/`dest_dir`) argument is checked with `check_within_root` before it runs, and raises `PermissionError` if the resolved path falls outside both the run's `TARGET_DIR` and the server's own working directory (where `.organizer/` and the quarantine dir live). This applies whether the escape attempt is an absolute path or a `..` traversal. For `read_file` / `extract_text` / `compare_documents` and their batch forms `read_file_batch` / `extract_text_batch`, `ALLOWLIST_DIRS` is also checked first via `Settings.effective_allowlist_dirs()` — an explicit, non-empty `ALLOWLIST_DIRS` is used as-is; otherwise it defaults to `[TARGET_DIR]` rather than no restriction — and `check_within_root` then applies as the always-on floor underneath it. In the batch forms, both checks run per path *before* that file is read/extracted, so one disallowed path in a batch surfaces as `{"error": ...}` for that entry rather than raising and failing the whole call. See [Security Model](../developer/security-model.md).
 
 ---
 
@@ -133,6 +133,45 @@ compute_checksum(path: str) -> dict
 Compute the sha256 checksum of a file (chunk-streamed, memory-safe). This checksum is used as the document's unique identity in the registry.
 
 **Returns:** `{path, checksum}` — `checksum` is a 64-character hex string.
+
+---
+
+### `read_file_batch`
+
+```python
+read_file_batch(paths: list[str], max_chars: int = 4000) -> dict
+```
+
+Batch form of `read_file`: fetch text for many files in one MCP round trip instead of one call per file — the basis for analyzing several documents in a single LLM turn.
+
+**Returns:** `{path: content | {"error": message}}`, keyed by the exact path strings passed in. A failure reading one file never fails the whole batch — the caller must discriminate a successful entry (a `str`) from a failed one (a `{"error": ...}` dict).
+
+!!! note
+    Each path gets the same `ALLOWLIST_DIRS` (`effective_allowlist_dirs()`) and `check_within_root` checks as `read_file`, applied individually before that file is read; a path that fails either check never reaches `read_file` and appears in the result as `{"error": ...}` directly, without failing the other paths in the batch. The effective cap per file is `min(max_chars, MAX_SNIPPET_CHARS)`, same as `read_file`.
+
+---
+
+### `extract_text_batch`
+
+```python
+extract_text_batch(paths: list[str], max_chars: int = 4000) -> dict
+```
+
+Batch form of `extract_text`: extract text from many PDF/Office/Outlook `.msg` files in one round trip. Same return shape, per-path guard checks, and error semantics as `read_file_batch`. Each file's extraction is bounded the same way as the singular `extract_text` — see "Bounded extraction (S5)" above.
+
+**Returns:** `{path: content | {"error": message}}`, keyed by the exact path strings passed in.
+
+---
+
+### `compute_checksum_batch`
+
+```python
+compute_checksum_batch(paths: list[str]) -> dict
+```
+
+Batch form of `compute_checksum`: sha256 for many files in one round trip.
+
+**Returns:** `{path: checksum_hex | {"error": message}}`, keyed by the exact path strings passed in. Unlike `read_file_batch`/`extract_text_batch`, a successful entry is the checksum hex string directly, not a `{path, checksum}` dict (matching what the singular `compute_checksum` nests under its `checksum` field).
 
 ---
 

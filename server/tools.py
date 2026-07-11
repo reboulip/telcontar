@@ -201,6 +201,55 @@ def compute_checksum(path: str) -> dict:
     return {"path": str(p), "checksum": h.hexdigest()}
 
 
+# ── Batch document-content tools (O1) ─────────────────────────────────────────
+# Fetch content/checksums for many files in one round trip so the host can
+# factor several documents into one LLM turn instead of one-doc-per-turn.
+# Each result is keyed by the exact path string passed in (no normalization,
+# so the caller can correlate results back to its input list). A per-file
+# failure never fails the whole batch: the value for that key is
+# ``{"error": message}`` instead of raising, so callers must discriminate
+# success (a plain str) from failure (a dict) — this contract is relied on by
+# host/agent.py's `_wrap_untrusted_content`.
+
+
+def read_file_batch(paths: list[str], max_chars: int) -> dict[str, str | dict]:
+    """Batch form of `read_file`: `{path: text | {"error": msg}}`."""
+    results: dict[str, str | dict] = {}
+    for path in paths:
+        try:
+            results[path] = read_file(path, max_chars)
+        except Exception as exc:
+            results[path] = {"error": str(exc)}
+    return results
+
+
+def extract_text_batch(
+    paths: list[str],
+    max_chars: int,
+    max_file_bytes: int = 200_000_000,
+    timeout_secs: float = 30.0,
+) -> dict[str, str | dict]:
+    """Batch form of `extract_text`: `{path: text | {"error": msg}}`."""
+    results: dict[str, str | dict] = {}
+    for path in paths:
+        try:
+            results[path] = extract_text(path, max_chars, max_file_bytes, timeout_secs)
+        except Exception as exc:
+            results[path] = {"error": str(exc)}
+    return results
+
+
+def compute_checksum_batch(paths: list[str]) -> dict[str, str | dict]:
+    """Batch form of `compute_checksum`: `{path: checksum_hex | {"error": msg}}`."""
+    results: dict[str, str | dict] = {}
+    for path in paths:
+        try:
+            results[path] = compute_checksum(path)["checksum"]
+        except Exception as exc:
+            results[path] = {"error": str(exc)}
+    return results
+
+
 # ── Plan management ──────────────────────────────────────────────────────────
 
 

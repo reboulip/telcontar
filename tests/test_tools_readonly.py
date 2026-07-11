@@ -9,8 +9,11 @@ from pathlib import Path
 from server.tools import (
     compare_documents,
     compute_checksum,
+    compute_checksum_batch,
+    extract_text_batch,
     list_dir,
     read_file,
+    read_file_batch,
     extract_text,
     walk_tree,
 )
@@ -381,6 +384,68 @@ class TestComputeChecksum:
     def test_raises_for_nonexistent(self, tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="Not a file"):
             compute_checksum(str(tmp_path / "missing.txt"))
+
+
+class TestReadFileBatch:
+    def test_returns_content_for_each_path(self, tmp_path: Path) -> None:
+        a = tmp_path / "a.txt"
+        b = tmp_path / "b.txt"
+        a.write_text("hello a")
+        b.write_text("hello b")
+        result = read_file_batch([str(a), str(b)], 100)
+        assert result[str(a)] == "hello a"
+        assert result[str(b)] == "hello b"
+
+    def test_one_bad_path_does_not_fail_the_batch(self, tmp_path: Path) -> None:
+        good = tmp_path / "good.txt"
+        good.write_text("ok")
+        missing = str(tmp_path / "missing.txt")
+        result = read_file_batch([str(good), missing], 100)
+        assert result[str(good)] == "ok"
+        assert isinstance(result[missing], dict)
+        assert "error" in result[missing]
+
+    def test_empty_paths_returns_empty_dict(self) -> None:
+        assert read_file_batch([], 100) == {}
+
+
+class TestExtractTextBatch:
+    def test_returns_content_for_each_path(self, tmp_path: Path) -> None:
+        a = tmp_path / "a.txt"
+        b = tmp_path / "b.txt"
+        a.write_text("content a")
+        b.write_text("content b")
+        result = extract_text_batch([str(a), str(b)], 1000)
+        assert "content a" in result[str(a)]
+        assert "content b" in result[str(b)]
+
+    def test_one_bad_path_does_not_fail_the_batch(self, tmp_path: Path) -> None:
+        good = tmp_path / "good.txt"
+        good.write_text("ok")
+        missing = str(tmp_path / "missing.pdf")
+        result = extract_text_batch([str(good), missing], 1000)
+        assert "ok" in result[str(good)]
+        assert result[missing] == {"error": f"Not a file: {missing}"}
+
+
+class TestComputeChecksumBatch:
+    def test_returns_checksum_hex_for_each_path(self, tmp_path: Path) -> None:
+        a = tmp_path / "a.txt"
+        b = tmp_path / "b.txt"
+        a.write_bytes(b"content a")
+        b.write_bytes(b"content b")
+        result = compute_checksum_batch([str(a), str(b)])
+        assert result[str(a)] == hashlib.sha256(b"content a").hexdigest()
+        assert result[str(b)] == hashlib.sha256(b"content b").hexdigest()
+
+    def test_one_bad_path_does_not_fail_the_batch(self, tmp_path: Path) -> None:
+        good = tmp_path / "good.txt"
+        good.write_bytes(b"ok")
+        missing = str(tmp_path / "missing.txt")
+        result = compute_checksum_batch([str(good), missing])
+        assert result[str(good)] == hashlib.sha256(b"ok").hexdigest()
+        assert isinstance(result[missing], dict)
+        assert "error" in result[missing]
 
 
 class TestCompareDocuments:

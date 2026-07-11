@@ -198,3 +198,56 @@ explicit decision — already marked skipped in the security doc, not tracked he
 - [x] N2 · Add native `.msg` (Outlook email) extraction support — new extraction path in `server/extract.py` (e.g. via `extract-msg`) preserving sender/recipients/date/subject metadata rather than lossy conversion to another format [#21]
 
 ---
+
+## Phase 14 — Exhaustive batch analysis, progress & resumable chat
+
+Full-corpus coverage and cost control for the ANALYZE pass, plus letting the user keep
+working in chat after a stop instead of being pushed to the read-only journal/query views.
+
+- [x] O1 · Batch document-content tools — `extract_text_batch(paths, max_chars)`,
+      `read_file_batch(paths, max_chars)`, `compute_checksum_batch(paths)` in
+      `server/tools.py` + `server/main.py`, mirroring the existing singular tools' guards
+      (`check_allowlist`, `check_within_root`) and returning `{path: result_or_error}` so
+      one bad file doesn't fail the batch; wire egress logging per file and extend
+      `_wrap_untrusted_content` in `host/agent.py` to delimit each file's content
+      individually.
+- [ ] O2 · `record_document_batch` tool — accepts a list of document dicts (same shape as
+      `record_document`'s params) and upserts each into the registry in one call,
+      collecting per-document validation errors instead of failing the whole batch
+      (requires: O1).
+- [ ] O3 · Rewrite the ANALYZE prompt for batching + full coverage — update step A of
+      `_SYSTEM_PROMPT_TEMPLATE` in `host/agent.py` to have the agent work through
+      documents in batches via the new tools (factoring the prompt instead of one document
+      per LLM turn), and explicitly require every document discovered by `walk_tree` to be
+      analyzed before moving to ORGANIZE — never sample a subset (requires: O1, O2).
+- [ ] O4 · Adaptive turn budget — replace the fixed `_MAX_TURNS = 50` in `host/agent.py`
+      with a budget that scales with the number of documents discovered, so a large corpus
+      doesn't hit an artificial ceiling mid-analysis; keep a sane hard ceiling as a safety
+      valve against runaway loops.
+- [ ] O5 · Analysis progress tracking — track documents discovered (accumulated from
+      `walk_tree` results) vs. documents analyzed (from `record_document`/
+      `record_document_batch` calls) inside `run_agent_loop`, and emit a new `"progress"`
+      `AgentEvent` on each change.
+- [ ] O6 · Progress bar in the TUI — add a Textual `ProgressBar` to `OrganizerScreen`,
+      wired to the `"progress"` event, showing analyzed/total document counts during the
+      run (requires: O5).
+- [ ] O7 · Resumable chat after a stop — refactor `run_agent_loop` to take/return
+      conversation history (mirroring `run_query_loop`'s `history` in/out shape) so a run
+      that finished, errored, or hit the turn ceiling can be continued with a new free-text
+      user message using the same mutating toolset, instead of only offering the journal
+      viewer or read-only query mode. Add a chat `Input` to `OrganizerScreen` (mirroring
+      `QueryScreen`'s pattern) enabled once the run reaches a terminal state, keeping the
+      MCP session open across turns.
+- [ ] O8 · Pre-ANALYZE token-estimate approval gate — before the first
+      `extract_text_batch`/`read_file_batch`/`compute_checksum_batch`/`record_document_batch`
+      call in a run, the host computes a rough total input-token estimate for the whole
+      ANALYZE pass from the documents discovered so far via `walk_tree` (e.g.
+      `min(file_size, max_snippet_chars) / 4` per file, summed) and gates those batch
+      tool calls behind a one-time user approval — mirroring `execute_plan`'s
+      `on_approval_needed`/`APPROVAL_MODE` gating pattern in `host/agent.py`'s
+      `_dispatch` — showing something like "~N documents, ~M input tokens estimated,
+      batched in groups of 10 — proceed?". This is a single approval for the whole
+      ANALYZE pass, not one per batch. Add a matching `CostEstimateModal` in
+      `host/app.py` (mirrors `ApprovalModal`) (requires: O1, O2, O5).
+
+---

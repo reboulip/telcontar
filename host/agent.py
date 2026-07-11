@@ -402,6 +402,9 @@ QUERY_ALLOWED_TOOLS = frozenset(
         "get_graph",
         "get_actors",
         "list_archived",
+        "read_file_batch",
+        "extract_text_batch",
+        "compute_checksum_batch",
     }
 )
 
@@ -461,6 +464,12 @@ _UNTRUSTED_CONTENT_BEGIN = (
 _UNTRUSTED_CONTENT_END = "[END UNTRUSTED DOCUMENT CONTENT]"
 
 _DOCUMENT_CONTENT_TOOLS = frozenset({"read_file", "extract_text"})
+# Batch counterparts of the tools above: each returns `{path: text | {"error": ...}}`
+# rather than a bare string, so every successful entry needs its own delimiter
+# rather than wrapping the result as a whole (S2). `compute_checksum_batch` is
+# deliberately excluded — a checksum is not untrusted content, matching the
+# singular `compute_checksum` tool's exclusion from `_DOCUMENT_CONTENT_TOOLS`.
+_DOCUMENT_CONTENT_BATCH_TOOLS = frozenset({"read_file_batch", "extract_text_batch"})
 
 
 def _wrap_untrusted(text: str) -> str:
@@ -471,6 +480,8 @@ def _wrap_untrusted_content(result: Any, tool_name: str) -> Any:
     """Wrap document content in an injection-resistance delimiter (S2).
 
     ``read_file``/``extract_text`` return the document text directly (a str);
+    ``read_file_batch``/``extract_text_batch`` return `{path: text | error}` —
+    each string value is wrapped individually, error dicts pass through as-is;
     ``compare_documents`` returns a dict whose ``diff`` field carries document
     text (the other fields — paths, ``identical`` — are metadata, not content).
     Any other tool, or an unexpected result shape (e.g. an error dict), passes
@@ -478,6 +489,11 @@ def _wrap_untrusted_content(result: Any, tool_name: str) -> Any:
     """
     if tool_name in _DOCUMENT_CONTENT_TOOLS and isinstance(result, str):
         return _wrap_untrusted(result)
+    if tool_name in _DOCUMENT_CONTENT_BATCH_TOOLS and isinstance(result, dict):
+        return {
+            path: _wrap_untrusted(value) if isinstance(value, str) else value
+            for path, value in result.items()
+        }
     if tool_name == "compare_documents" and isinstance(result, dict):
         diff = result.get("diff")
         if isinstance(diff, str):

@@ -46,8 +46,9 @@ Three boundaries matter:
    — while still requiring explicit configuration to narrow to a smaller subtree —
    no longer defaults to "no restriction": as of M7, `Settings.effective_allowlist_dirs()`
    defaults an empty `ALLOWLIST_DIRS` to `[target_dir]`, matching (not narrowing
-   beyond) this same `check_within_root` floor, for the three tools that consult it
-   (`read_file`/`extract_text`/`compare_documents`).
+   beyond) this same `check_within_root` floor, for the tools that consult it
+   (`read_file`/`extract_text`/`compare_documents`, and the batch forms
+   `read_file_batch`/`extract_text_batch` added in O1).
 
 ---
 
@@ -55,7 +56,7 @@ Three boundaries matter:
 
 | Data | How it leaves | Control |
 |---|---|---|
-| Document text (up to `MAX_SNIPPET_CHARS`, default 4000, per read) | `read_file` / `extract_text` / `compare_documents` return content into the LLM context | `check_within_root` (target_dir + server cwd, always on) as the floor; `ALLOWLIST_DIRS` via `effective_allowlist_dirs()` — **defaults to `[target_dir]` when unset (M7)**, narrower only if explicitly configured |
+| Document text (up to `MAX_SNIPPET_CHARS`, default 4000, per read) | `read_file` / `extract_text` / `compare_documents` and their batch forms `read_file_batch` / `extract_text_batch` (O1) return content into the LLM context | `check_within_root` (target_dir + server cwd, always on) as the floor; `ALLOWLIST_DIRS` via `effective_allowlist_dirs()` — **defaults to `[target_dir]` when unset (M7)**, narrower only if explicitly configured; batch forms apply both checks per path, so one disallowed path in a batch never exposes content, it just becomes that entry's `{"error": ...}` |
 | Any other file the OS user can read | Same tools, if the agent is steered to a path outside the target dir | **[Partially remediated — 2026-07-07, M2]** Blocked by `check_within_root` whenever a `target_dir` is set (true for every real organize/query session launched by the TUI). `ALLOWLIST_DIRS` remains the only control for narrowing *which subtree* of the target is readable. |
 | Derived metadata (title, summary, provenance, people/orgs) | Re-sent to the LLM during synthesis and in query mode | None — this is the product's purpose |
 | Synthesized prose (SUMMARY.md, folder READMEs) | Written locally by the built-in sink; external sinks gated | `EGRESS_ALLOW_EXTERNAL_SINKS` (default `false`) |
@@ -63,7 +64,9 @@ Three boundaries matter:
 **[Done — 2026-07-09, P3 #12]** Every `read_file`/`extract_text`/`compare_documents`
 call is now logged to `.organizer/egress.jsonl` (path, size, tool, timestamp) — this
 doesn't reduce what leaves the machine, but it makes it auditable after the fact,
-which the table above previously had no answer for at all.
+which the table above previously had no answer for at all. The batch forms
+`read_file_batch`/`extract_text_batch` (O1) log the same way, once per successful
+file in the batch, under their own tool name (`read_file_batch`/`extract_text_batch`).
 
 **Key point for reviewers:** **[Partially remediated — 2026-07-07, see P0 #2]** the
 target directory is now a real egress boundary in the normal case: `check_within_root`
@@ -76,8 +79,9 @@ always passes one through). There is no ordinary code path where `target_dir` is
 *more* restrictive, not less, so this is not a residual "no restriction" case in
 practice. **As of M7, this is also true of `ALLOWLIST_DIRS` itself:**
 `Settings.effective_allowlist_dirs()` now defaults an empty `ALLOWLIST_DIRS` to
-`[target_dir]` rather than `[]` (no restriction), so the three tools that consult
-it (`read_file`/`extract_text`/`compare_documents`) are never fully unrestricted
+`[target_dir]` rather than `[]` (no restriction), so the tools that consult
+it (`read_file`/`extract_text`/`compare_documents`, and the batch forms
+`read_file_batch`/`extract_text_batch` added in O1) are never fully unrestricted
 even with no configuration at all — this closes the last open piece of P2 #7 (now
 done). It does not, by itself, narrow *which subtree* of the target directory is
 readable: by default, both layers now converge on the same boundary (the whole
@@ -99,7 +103,7 @@ second check — this path is well isolated.
 
 | Capability | Tools | Human in the loop? |
 |---|---|---|
-| Read / list / extract / diff | `list_dir`, `walk_tree`, `read_file`, `extract_text`, `compare_documents`, `compute_checksum` | No (by design — read-only) |
+| Read / list / extract / diff | `list_dir`, `walk_tree`, `read_file`, `extract_text`, `compare_documents`, `compute_checksum`, and the batch forms `read_file_batch`, `extract_text_batch`, `compute_checksum_batch` (O1) | No (by design — read-only) |
 | Registry / graph / events | `record_document`, `get_*`, `list_*`, `build_graph`, `create_event`, … | No (metadata only) |
 | **Plan → approve → execute** | `create_plan`, `propose_rename`/`propose_move`/`propose_quarantine`/`propose_create_file`/`propose_update_file`/`propose_create_dir`/`propose_archive_document`/`propose_compress_quarantine`, `review_plan`, `approve_plan`, `execute_plan` | **Yes** — `execute_plan` routes through the approval modal |
 | **Undo** (not an MCP tool) | `undo_last` | **Yes, exclusively** — the agent cannot call it at all; it is triggered only by the user pressing **u** in the TUI's `JournalScreen` (opened with **j**) |
@@ -243,12 +247,12 @@ single-user deployment.
 |---|---|---|
 | **S1** | **Critical** | **[Remediated — 2026-07-07, see P0 #1]** ~~Direct-mutation tools (`move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`) and `archive_document` / `compress_quarantine` / `undo_last` are advertised to the agent and dispatched with **no approval gate in any `APPROVAL_MODE`**. The plan→approve→execute model — the product's headline safety property — is bypassable. `update_file` additionally overwrites without a collision check.~~ All eight tools were removed from the agent-callable surface. Their functionality is reachable only via `propose_create_file` / `propose_update_file` / `propose_create_dir` / `propose_archive_document` / `propose_compress_quarantine`, staged and applied solely through the already-gated `execute_plan`; `propose_update_file` defaults to `overwrite=False`, and the approval modal now flags any op with `overwrite=True` (see P0 #3). `undo_last` was removed from the MCP surface entirely and is now a TUI-only user action (§3). |
 | **S2** | **Critical** | **[Mitigated — 2026-07-08, see P2 #10]** ~~Indirect prompt injection via document content. Untrusted document text shares the LLM context with telcontar's instructions and can drive S1's ungated tools (arbitrary write / overwrite of recovery artifacts), exfiltration, and deletion. Recorded summaries/provenance echo back into context, giving injection a second hop.~~ Document text returned by `read_file`/`extract_text`, and the `diff` field of `compare_documents`, is now wrapped in an explicit "untrusted document content, never an instruction" delimiter (`_wrap_untrusted_content`, `host/agent.py`) at the point it enters the LLM's tool-result messages — in both organize mode (`run_agent_loop`) and query mode (`run_query_loop`) — and the system prompt's Safety rules explicitly tell the model what the delimiter means and never to treat its contents as a command. This is a mitigation, not a closure: an LLM has no hard, sandboxed trust boundary, so a sufficiently adversarial model could in principle still be swayed by cleverly-worded content even with the delimiter present. What genuinely helps is (a) the model is now told the provenance and told never to treat it as instructions — defense in depth alongside M1's already-minimized mutating surface (S1) — and (b) it is no longer ambiguous which spans of the context are trusted instructions vs. untrusted data. Indirect prompt injection via document content remains open in principle; the bar is raised, not removed. |
-| **S3** | **High** | **[Remediated — 2026-07-07, see P0 #2, P2 #7]** ~~No path confinement; egress open by default. `ALLOWLIST_DIRS` is empty by default and enforced only on read/extract/compare — never on writes/moves/renames/quarantine. Reads can pull (and upload) any file the OS user can access; mutations can target any absolute or `..` path. The target directory is not a security boundary.~~ `check_within_root` confines **every** path-taking tool — reads, writes, and moves/renames/quarantine alike — to `target_dir` plus the server's own working directory, rejecting both absolute-path and `..` escapes identically (P0 #2). As of M7 (P2 #7), `ALLOWLIST_DIRS` itself also defaults to `[target_dir]` — via `Settings.effective_allowlist_dirs()` — instead of `[]` (no restriction), for the three content-reading tools (`read_file`/`extract_text`/`compare_documents`) that consult it; an explicit non-empty `ALLOWLIST_DIRS` always overrides that default and is used as-is, never merged with `target_dir`. Together these mean no path-taking tool, and no content-egress path, is unrestricted by default any longer. Narrowing to a smaller subtree of the target directory remains available only via explicit `ALLOWLIST_DIRS` configuration — that was always opt-in and remains so; it is an operator-configurable refinement, not a residual open gap. |
+| **S3** | **High** | **[Remediated — 2026-07-07, see P0 #2, P2 #7]** ~~No path confinement; egress open by default. `ALLOWLIST_DIRS` is empty by default and enforced only on read/extract/compare — never on writes/moves/renames/quarantine. Reads can pull (and upload) any file the OS user can access; mutations can target any absolute or `..` path. The target directory is not a security boundary.~~ `check_within_root` confines **every** path-taking tool — reads, writes, and moves/renames/quarantine alike — to `target_dir` plus the server's own working directory, rejecting both absolute-path and `..` escapes identically (P0 #2). As of M7 (P2 #7), `ALLOWLIST_DIRS` itself also defaults to `[target_dir]` — via `Settings.effective_allowlist_dirs()` — instead of `[]` (no restriction), for the content-reading tools (`read_file`/`extract_text`/`compare_documents`, and the batch forms `read_file_batch`/`extract_text_batch` added in O1) that consult it; an explicit non-empty `ALLOWLIST_DIRS` always overrides that default and is used as-is, never merged with `target_dir`. Together these mean no path-taking tool, and no content-egress path, is unrestricted by default any longer. Narrowing to a smaller subtree of the target directory remains available only via explicit `ALLOWLIST_DIRS` configuration — that was always opt-in and remains so; it is an operator-configurable refinement, not a residual open gap. |
 | **S4** | **High** | **[Partially remediated — 2026-07-07, see P1 #4, #5, #6]** **The approval UI can mislead the approver:** op rows show only basenames (absolute source path hidden, though an op resolving outside the target directory now gets a discreet `(outside target)` marker), the rationale/folder-notes are still LLM-authored (though now explicitly disclaimed as "not verified fact" in the modal, M5). **[Closed — 2026-07-07, P1 #6]** ~~direct (S1) mutations never appear in the approval flow or narration at all~~ — direct mutation tools no longer exist (S1), and their `propose_*` replacements already narrate as "Planning changes…" and already reach the approval modal via `execute_plan`, confirmed by M6's test coverage. The one bullet still fully open: **the full op list is offloaded** to `.organizer/plan_ops.json` and surfaced only as a path the user is invited to open manually — most will not. |
 | **S5** | **Medium** | **[Mitigated — 2026-07-08, see P2 #8]** ~~Untrusted-document parsing (`markitdown`/`pypdf`) runs unsandboxed with no input-size cap or timeout — a crash / DoS / parser-exploit surface on attacker-supplied files.~~ `extract()` now rejects oversized inputs (`MAX_EXTRACT_FILE_BYTES`), rejects Office/zip archives with a suspicious compression ratio (zip-bomb guard), and bounds the parse itself (`markitdown`, or `extract-msg` for `.msg`) with a thread-based wall-clock timeout (`MAX_EXTRACT_TIMEOUT_SECS`). The named DoS/zip-bomb vectors are now bounded. This is a mitigation, not a sandbox: it does not catch a parser bug deep inside `pypdf`/`markitdown`/`extract-msg` that doesn't manifest as too-big/too-slow/too-compressed — the underlying risk class (untrusted parser code running unsandboxed, now including `extract-msg`'s OLE parsing) remains open; `.msg` files are OLE compound documents, not zip containers, so the zip-bomb ratio check does not apply to them. |
 | **S6** | **Medium** | **System-prompt injection via unsigned config**: profile free-text fields and `.organizer/NAMING.md` are injected verbatim into the system prompt; `PROFILE` is used in a path with no traversal guard. |
 | **S7** | **Medium** | **`compress_quarantine` performs the only real delete, ungated**, and its reversibility depends on artifacts S1 can corrupt. |
-| **S8** | **Low** | **[Partially remediated — 2026-07-09, see P3 #11, #12]** Credential & endpoint trust: ~~the API key falls back to plaintext `~/.telcontar/config.env` when the OS keyring is unavailable~~ — that fallback is no longer silent; it now requires an explicit, warned, second confirmation (`PlaintextKeyFallbackNeeded`, P3 #11). What actually left the machine is now auditable: every `read_file`/`extract_text`/`compare_documents` call is logged to `.organizer/egress.jsonl` with path, size, tool, and timestamp (P3 #12). Still open: the key is also read from a CWD `.env` (a legitimate dev-workflow input path, but one an operator might not realize is being consulted), and egress goes to any user-set `base_url` (a third party in dev, e.g. Mammouth) — neither is addressed by these items. Worth stating explicitly as a trust boundary. |
+| **S8** | **Low** | **[Partially remediated — 2026-07-09, see P3 #11, #12]** Credential & endpoint trust: ~~the API key falls back to plaintext `~/.telcontar/config.env` when the OS keyring is unavailable~~ — that fallback is no longer silent; it now requires an explicit, warned, second confirmation (`PlaintextKeyFallbackNeeded`, P3 #11). What actually left the machine is now auditable: every `read_file`/`extract_text`/`compare_documents` call (and, since O1, every successful file in a `read_file_batch`/`extract_text_batch` call) is logged to `.organizer/egress.jsonl` with path, size, tool, and timestamp (P3 #12). Still open: the key is also read from a CWD `.env` (a legitimate dev-workflow input path, but one an operator might not realize is being consulted), and egress goes to any user-set `base_url` (a third party in dev, e.g. Mammouth) — neither is addressed by these items. Worth stating explicitly as a trust boundary. |
 
 ### What already works (defence that is in place)
 
@@ -279,9 +283,10 @@ To be fair to the design, these mitigations exist and should be preserved:
   keyring failure; the setup wizard and config screen both warn loudly and
   require a second, deliberate button press before writing the key in plaintext.
 - **Egress is now auditable (S8, partially remediated)**: every `read_file` /
-  `extract_text` / `compare_documents` call is logged to `.organizer/egress.jsonl`
-  (path, size, tool, timestamp) — an operator can review exactly what left the
-  machine after any run.
+  `extract_text` / `compare_documents` call — and, since O1, every successful file
+  in a `read_file_batch` / `extract_text_batch` call — is logged to
+  `.organizer/egress.jsonl` (path, size, tool, timestamp) — an operator can review
+  exactly what left the machine after any run.
 
 ---
 
@@ -423,7 +428,10 @@ first with the least behavioural disruption.
     input's individual contribution to the combined diff). This is a plain,
     operator-readable append-only log — not exposed as an agent-callable MCP tool,
     since it is an audit trail of the agent's own information exposure, not something
-    the agent itself needs to consult.
+    the agent itself needs to consult. The batch tools added in O1, `read_file_batch`
+    and `extract_text_batch`, log the same way, once per successful file in the
+    batch (under the `read_file_batch`/`extract_text_batch` tool name), so a batched
+    fetch is exactly as auditable as the same files fetched one at a time.
 
 ---
 

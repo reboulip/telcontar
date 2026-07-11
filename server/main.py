@@ -141,6 +141,86 @@ def compute_checksum(path: str) -> dict:
     return tools.compute_checksum(path)
 
 
+# ── Batch document-content tools (O1) ─────────────────────────────────────────
+
+
+@mcp.tool()
+def read_file_batch(paths: list[str], max_chars: int = 4000) -> dict:
+    """Batch form of read_file: fetch text for many files in one round trip.
+
+    Returns `{path: content | {"error": message}}` keyed by the exact path
+    strings passed in — one bad path never fails the whole batch."""
+    cfg = _get_settings()
+    from server.guards import check_allowlist
+
+    allowed = cfg.effective_allowlist_dirs()
+    results: dict[str, str | dict] = {}
+    ok_paths: list[str] = []
+    for path in paths:
+        try:
+            check_allowlist(Path(path), allowed)
+            _check_within_root(path, cfg)
+            ok_paths.append(path)
+        except Exception as exc:
+            results[path] = {"error": str(exc)}
+    batch = tools.read_file_batch(ok_paths, min(max_chars, cfg.max_snippet_chars))
+    for path, value in batch.items():
+        results[path] = value
+        if isinstance(value, str):
+            _log_egress(path, value, "read_file_batch", cfg)
+    return results
+
+
+@mcp.tool()
+def extract_text_batch(paths: list[str], max_chars: int = 4000) -> dict:
+    """Batch form of extract_text: extract text from many PDF/Office/.msg files
+    in one round trip. Returns `{path: content | {"error": message}}` keyed by
+    the exact path strings passed in — one bad path never fails the whole batch."""
+    cfg = _get_settings()
+    from server.guards import check_allowlist
+
+    allowed = cfg.effective_allowlist_dirs()
+    results: dict[str, str | dict] = {}
+    ok_paths: list[str] = []
+    for path in paths:
+        try:
+            check_allowlist(Path(path), allowed)
+            _check_within_root(path, cfg)
+            ok_paths.append(path)
+        except Exception as exc:
+            results[path] = {"error": str(exc)}
+    batch = tools.extract_text_batch(
+        ok_paths,
+        min(max_chars, cfg.max_snippet_chars),
+        cfg.max_extract_file_bytes,
+        cfg.max_extract_timeout_secs,
+    )
+    for path, value in batch.items():
+        results[path] = value
+        if isinstance(value, str):
+            _log_egress(path, value, "extract_text_batch", cfg)
+    return results
+
+
+@mcp.tool()
+def compute_checksum_batch(paths: list[str]) -> dict:
+    """Batch form of compute_checksum: sha256 for many files in one round trip.
+
+    Returns `{path: checksum_hex | {"error": message}}` keyed by the exact
+    path strings passed in — one bad path never fails the whole batch."""
+    cfg = _get_settings()
+    results: dict[str, str | dict] = {}
+    ok_paths: list[str] = []
+    for path in paths:
+        try:
+            _check_within_root(path, cfg)
+            ok_paths.append(path)
+        except Exception as exc:
+            results[path] = {"error": str(exc)}
+    results.update(tools.compute_checksum_batch(ok_paths))
+    return results
+
+
 @mcp.tool()
 def compare_documents(path_a: str, path_b: str, max_chars: int = 4000) -> dict:
     """Extract text from two files and return a unified diff between them — e.g. to

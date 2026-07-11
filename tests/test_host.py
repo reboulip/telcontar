@@ -1147,3 +1147,50 @@ async def test_no_token_event_when_usage_absent(tmp_path: Path) -> None:
         on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
     )
     assert not [e for e in events if e.kind == "tokens"]
+
+
+# ── O1: batch document-content tools — injection-resistance wrapping ──────────
+
+
+def test_wrap_untrusted_content_wraps_singular_content_tools() -> None:
+    from host.agent import _UNTRUSTED_CONTENT_BEGIN, _wrap_untrusted_content
+
+    wrapped = _wrap_untrusted_content("hello world", "read_file")
+    assert _UNTRUSTED_CONTENT_BEGIN in wrapped
+    assert "hello world" in wrapped
+
+
+def test_wrap_untrusted_content_wraps_each_batch_value_individually() -> None:
+    from host.agent import _UNTRUSTED_CONTENT_BEGIN, _wrap_untrusted_content
+
+    result = {"a.txt": "content a", "b.txt": "content b"}
+    wrapped = _wrap_untrusted_content(result, "extract_text_batch")
+    assert wrapped["a.txt"].count(_UNTRUSTED_CONTENT_BEGIN) == 1
+    assert "content a" in wrapped["a.txt"]
+    assert wrapped["b.txt"].count(_UNTRUSTED_CONTENT_BEGIN) == 1
+    assert "content b" in wrapped["b.txt"]
+
+
+def test_wrap_untrusted_content_leaves_batch_errors_unwrapped() -> None:
+    from host.agent import _wrap_untrusted_content
+
+    result = {"good.txt": "ok", "missing.txt": {"error": "Not a file: missing.txt"}}
+    wrapped = _wrap_untrusted_content(result, "read_file_batch")
+    assert wrapped["missing.txt"] == {"error": "Not a file: missing.txt"}
+
+
+def test_wrap_untrusted_content_does_not_wrap_checksum_batch() -> None:
+    from host.agent import _wrap_untrusted_content
+
+    result = {"a.txt": "deadbeef"}
+    wrapped = _wrap_untrusted_content(result, "compute_checksum_batch")
+    assert wrapped == {"a.txt": "deadbeef"}
+
+
+def test_query_allowed_tools_includes_readonly_batch_tools() -> None:
+    from host.agent import QUERY_ALLOWED_TOOLS
+
+    assert "read_file_batch" in QUERY_ALLOWED_TOOLS
+    assert "extract_text_batch" in QUERY_ALLOWED_TOOLS
+    assert "compute_checksum_batch" in QUERY_ALLOWED_TOOLS
+    assert "record_document_batch" not in QUERY_ALLOWED_TOOLS

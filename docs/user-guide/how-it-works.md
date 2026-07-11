@@ -220,6 +220,7 @@ For each question:
    - `find_duplicates` / `find_modified_documents` — duplicate clusters and modified versions
    - `list_archived` — documents withdrawn from active memory
    - `list_dir` / `read_file` / `extract_text` / `compare_documents` / `compute_checksum` — for ad-hoc file inspection
+   - `read_file_batch` / `extract_text_batch` / `compute_checksum_batch` — batch forms of the above, for inspecting several files in one round trip
 3. The model produces an answer citing specifics (titles, dates, actor names, event sentences) drawn only from the tool results.
 4. The answer appears in the log; the next question can be typed immediately.
 
