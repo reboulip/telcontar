@@ -1696,11 +1696,13 @@ the agent:</p>
   pathologically large PDFs are a crash / resource-exhaustion surface.~~ <code>extract()</code>
   (<code>server/extract.py</code>) now rejects oversized input files before parsing
   (<code>MAX_EXTRACT_FILE_BYTES</code>), rejects zip-based Office formats whose archive entries
-  have a suspicious compression ratio (possible zip bomb), and runs the actual
-  <code>MarkItDown().convert()</code> call under a thread-based wall-clock timeout
+  have a suspicious compression ratio (possible zip bomb — not applicable to <code>.msg</code>,
+  an OLE compound file rather than a zip container), and runs the actual parse call
+  (<code>MarkItDown().convert()</code>, or <code>extract_msg.openMsg()</code> for <code>.msg</code>) under a
+  thread-based wall-clock timeout
   (<code>MAX_EXTRACT_TIMEOUT_SECS</code>, works on Windows unlike a signal-based timeout). This is
   a bound on the named DoS/zip-bomb vectors, not a sandbox — a parser bug deep inside
-  <code>pypdf</code>/<code>markitdown</code> that doesn't manifest as "too big / too slow / too-compressed"
+  <code>pypdf</code>/<code>markitdown</code>/<code>extract-msg</code> that doesn't manifest as "too big / too slow / too-compressed"
   is still unaddressed; the underlying risk class (untrusted parser code running
   unsandboxed) is not closed.</li>
 <li><strong>System-prompt injection via unsigned config.</strong> Profile TOML free-text fields
@@ -1745,7 +1747,7 @@ single-user deployment.</p>
 <tr>
 <td><strong>S5</strong></td>
 <td><strong>Medium</strong></td>
-<td><strong>[Mitigated — 2026-07-08, see P2 #8]</strong> ~~Untrusted-document parsing (<code>markitdown</code>/<code>pypdf</code>) runs unsandboxed with no input-size cap or timeout — a crash / DoS / parser-exploit surface on attacker-supplied files.~~ <code>extract()</code> now rejects oversized inputs (<code>MAX_EXTRACT_FILE_BYTES</code>), rejects Office/zip archives with a suspicious compression ratio (zip-bomb guard), and bounds the <code>markitdown</code> parse itself with a thread-based wall-clock timeout (<code>MAX_EXTRACT_TIMEOUT_SECS</code>). The named DoS/zip-bomb vectors are now bounded. This is a mitigation, not a sandbox: it does not catch a parser bug deep inside <code>pypdf</code>/<code>markitdown</code> that doesn't manifest as too-big/too-slow/too-compressed — the underlying risk class (untrusted parser code running unsandboxed) remains open.</td>
+<td><strong>[Mitigated — 2026-07-08, see P2 #8]</strong> ~~Untrusted-document parsing (<code>markitdown</code>/<code>pypdf</code>) runs unsandboxed with no input-size cap or timeout — a crash / DoS / parser-exploit surface on attacker-supplied files.~~ <code>extract()</code> now rejects oversized inputs (<code>MAX_EXTRACT_FILE_BYTES</code>), rejects Office/zip archives with a suspicious compression ratio (zip-bomb guard), and bounds the parse itself (<code>markitdown</code>, or <code>extract-msg</code> for <code>.msg</code>) with a thread-based wall-clock timeout (<code>MAX_EXTRACT_TIMEOUT_SECS</code>). The named DoS/zip-bomb vectors are now bounded. This is a mitigation, not a sandbox: it does not catch a parser bug deep inside <code>pypdf</code>/<code>markitdown</code>/<code>extract-msg</code> that doesn't manifest as too-big/too-slow/too-compressed — the underlying risk class (untrusted parser code running unsandboxed, now including <code>extract-msg</code>'s OLE parsing) remains open; <code>.msg</code> files are OLE compound documents, not zip containers, so the zip-bomb ratio check does not apply to them.</td>
 </tr>
 <tr>
 <td><strong>S6</strong></td>
