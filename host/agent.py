@@ -34,6 +34,7 @@ EventKind = Literal[
     "question",
     "options",
     "progress",
+    "cost_estimate",
     "tokens",
     "done",
     "error",
@@ -63,6 +64,18 @@ class ApprovalResult:
 
 
 ApprovalCallback = Callable[[str, dict], Awaitable[ApprovalResult]]
+
+
+# ── Cost-estimate approval (O8) ───────────────────────────────────────────────
+
+
+@dataclass
+class CostApprovalResult:
+    approved: bool
+
+
+# Given (summary_text, {"documents": int, "estimated_tokens": int}) → CostApprovalResult.
+CostApprovalCallback = Callable[[str, dict], Awaitable[CostApprovalResult]]
 
 
 # ── Clarification checkpoint (K1) ─────────────────────────────────────────────
@@ -609,8 +622,8 @@ def _should_skip_discovery(name: str, path: str, settings: Settings) -> bool:
     return bool(quarantine_name) and quarantine_name in parts
 
 
-def _extract_discovered_paths(walk_result: Any, settings: Settings) -> list[str]:
-    """Recursively collect file paths from a `walk_tree` result, skipping noise.
+def _extract_discovered_entries(walk_result: Any, settings: Settings) -> list[tuple[str, int | None]]:
+    """Recursively collect (path, size) pairs from a `walk_tree` result, skipping noise.
 
     Directories marked `truncated` stop the recursion there — their children are
     `None` until a later `walk_tree` call descends into them, which will surface
@@ -618,7 +631,7 @@ def _extract_discovered_paths(walk_result: Any, settings: Settings) -> list[str]
     """
     if not isinstance(walk_result, dict):
         return []
-    paths: list[str] = []
+    entries_out: list[tuple[str, int | None]] = []
 
     def _walk(entries: Any) -> None:
         if not isinstance(entries, list):
@@ -629,12 +642,17 @@ def _extract_discovered_paths(walk_result: Any, settings: Settings) -> list[str]
             if entry.get("type") == "file":
                 name, path = entry.get("name", ""), entry.get("path", "")
                 if path and not _should_skip_discovery(name, path, settings):
-                    paths.append(path)
+                    entries_out.append((path, entry.get("size")))
             elif entry.get("type") == "dir":
                 _walk(entry.get("children"))
 
     _walk(walk_result.get("entries"))
-    return paths
+    return entries_out
+
+
+def _extract_discovered_paths(walk_result: Any, settings: Settings) -> list[str]:
+    """Recursively collect file paths from a `walk_tree` result, skipping noise."""
+    return [path for path, _ in _extract_discovered_entries(walk_result, settings)]
 
 
 @dataclass
@@ -643,20 +661,35 @@ class _ProgressTracker:
 
     `total` is the union of discovered and analyzed paths (not just discovered)
     so a document recorded without ever being seen via `walk_tree` still counts,
-    and so total only grows monotonically.
+    and so total only grows monotonically. `sizes` (bytes, from `walk_tree`) feeds
+    O8's pre-ANALYZE token-estimate approval gate.
     """
 
     discovered: set[str] = field(default_factory=set)
     analyzed: set[str] = field(default_factory=set)
+    sizes: dict[str, int] = field(default_factory=dict)
 
-    def add_discovered(self, path: str) -> None:
-        self.discovered.add(_normalize_path(path))
+    def add_discovered(self, path: str, size: int | None = None) -> None:
+        normalized = _normalize_path(path)
+        self.discovered.add(normalized)
+        if size is not None:
+            self.sizes[normalized] = size
 
     def add_analyzed(self, path: str) -> None:
         self.analyzed.add(_normalize_path(path))
 
     def counts(self) -> tuple[int, int]:
         return len(self.analyzed), len(self.discovered | self.analyzed)
+
+    def cost_estimate(self, max_snippet_chars: int) -> tuple[int, int]:
+        """Return (document_count, estimated_input_tokens) from discovered file sizes.
+
+        A rough chars-per-token heuristic (4 chars/token), local to already-gathered
+        `walk_tree` metadata — no extraction or LLM call needed to produce it.
+        """
+        doc_count = len(self.discovered)
+        tokens = sum(min(size, max_snippet_chars) // 4 for size in self.sizes.values())
+        return doc_count, tokens
 
 
 # ── Public entry points ───────────────────────────────────────────────────────
@@ -670,6 +703,7 @@ async def run_agent(
     on_approval_needed: ApprovalCallback,
     on_questions_needed: QuestionsCallback | None = None,
     on_options_needed: OptionsCallback | None = None,
+    on_cost_approval_needed: CostApprovalCallback | None = None,
     instructions: str | None = None,
 ) -> str:
     """Launch the MCP server and run the agent loop. Returns final summary text.
@@ -677,7 +711,8 @@ async def run_agent(
     ``instructions`` carries the user's optional pre-analysis steering text (L3);
     it is appended to the agent's first user turn so the run follows the user's
     intent instead of auto-organizing blind. ``on_options_needed`` wires the L7
-    multiple-option checkpoint.
+    multiple-option checkpoint. ``on_cost_approval_needed`` wires the O8
+    pre-ANALYZE token-estimate approval gate.
     """
     project_root = Path(__file__).resolve().parent.parent
     async with mcp_session(project_root, target=target) as session:
@@ -690,6 +725,7 @@ async def run_agent(
             on_approval_needed=on_approval_needed,
             on_questions_needed=on_questions_needed,
             on_options_needed=on_options_needed,
+            on_cost_approval_needed=on_cost_approval_needed,
             project_root=project_root,
             instructions=instructions,
         )
@@ -704,6 +740,7 @@ async def run_agent_loop(
     on_approval_needed: ApprovalCallback,
     on_questions_needed: QuestionsCallback | None = None,
     on_options_needed: OptionsCallback | None = None,
+    on_cost_approval_needed: CostApprovalCallback | None = None,
     project_root: Path | None = None,
     instructions: str | None = None,
 ) -> str:
@@ -712,7 +749,10 @@ async def run_agent_loop(
     Separated from run_agent so tests can inject a mock session directly.
     ``instructions`` is the user's optional pre-analysis steering text (L3),
     appended to the seed user message when present. ``on_options_needed`` wires the
-    L7 multiple-option checkpoint.
+    L7 multiple-option checkpoint. ``on_cost_approval_needed`` wires the O8
+    pre-ANALYZE token-estimate approval gate — when None, or when
+    ``settings.approval_mode == "never"``, the gate auto-approves (still emits the
+    "cost_estimate" event for observability, just never blocks on it).
     """
     if project_root is None:
         project_root = Path(__file__).resolve().parent.parent
@@ -727,6 +767,7 @@ async def run_agent_loop(
 
     clarification_used = False
     options_used = False
+    cost_approval_shown = False
     tracker = _ProgressTracker()
     previous_progress = tracker.counts()
 
@@ -785,6 +826,24 @@ async def run_agent_loop(
                     on_options_needed=on_options_needed,
                     already_used=options_used,
                 )
+            elif name in _COST_GATED_BATCH_TOOLS and not cost_approval_shown:
+                gate_error, cost_approval_shown = await _handle_cost_approval(
+                    tracker=tracker,
+                    settings=settings,
+                    on_event=on_event,
+                    on_cost_approval_needed=on_cost_approval_needed,
+                )
+                if gate_error is not None:
+                    result = gate_error
+                else:
+                    result = await _dispatch(
+                        name=name,
+                        args=args,
+                        session=session,
+                        settings=settings,
+                        on_event=on_event,
+                        on_approval_needed=on_approval_needed,
+                    )
             else:
                 result = await _dispatch(
                     name=name,
@@ -798,8 +857,8 @@ async def run_agent_loop(
             on_event(AgentEvent("tool_result", _fmt_result(result)))
 
             if name == "walk_tree":
-                for discovered_path in _extract_discovered_paths(result, settings):
-                    tracker.add_discovered(discovered_path)
+                for discovered_path, discovered_size in _extract_discovered_entries(result, settings):
+                    tracker.add_discovered(discovered_path, discovered_size)
             elif name == "record_document" and isinstance(result, dict) and result.get("path"):
                 tracker.add_analyzed(result["path"])
             elif name == "record_document_batch" and isinstance(result, dict):
@@ -1065,6 +1124,61 @@ async def _handle_options(
             True,
         )
     return {"selections": result.selections}, True
+
+
+# ── Pre-ANALYZE cost-estimate gate (O8) ───────────────────────────────────────
+
+# The four batch tools whose first call in a run triggers the one-time cost
+# estimate + approval gate. Singular counterparts (read_file, extract_text, ...)
+# are intentionally NOT gated — only the batch workflow O3 steers the agent
+# toward represents meaningful ANALYZE-pass spend.
+_COST_GATED_BATCH_TOOLS = frozenset(
+    {"extract_text_batch", "read_file_batch", "compute_checksum_batch", "record_document_batch"}
+)
+
+
+async def _handle_cost_approval(
+    *,
+    tracker: _ProgressTracker,
+    settings: Settings,
+    on_event: EventCallback,
+    on_cost_approval_needed: CostApprovalCallback | None,
+) -> tuple[Any, bool]:
+    """Gate the first batch-tool call behind a one-time token-estimate approval.
+
+    Returns (error_or_None, shown). ``error_or_None`` is None when the triggering
+    batch-tool call may proceed, or an error dict to hand back to the agent instead
+    of forwarding the call when the user rejects. ``shown`` is always True — the
+    gate fires at most once per run, mirroring the clarification/options checkpoints.
+    """
+    doc_count, estimated_tokens = tracker.cost_estimate(settings.max_snippet_chars)
+    summary = (
+        f"~{doc_count} documents, ~{estimated_tokens} input tokens estimated, "
+        "batched in groups of 10 — proceed?"
+    )
+    on_event(
+        AgentEvent(
+            "cost_estimate",
+            summary,
+            data={"documents": doc_count, "estimated_tokens": estimated_tokens},
+        )
+    )
+
+    if settings.approval_mode == "never" or on_cost_approval_needed is None:
+        return None, True
+
+    approval = await on_cost_approval_needed(
+        summary, {"documents": doc_count, "estimated_tokens": estimated_tokens}
+    )
+    if not approval.approved:
+        return (
+            {
+                "error": "The user did not approve proceeding with document analysis; "
+                "stop and report back"
+            },
+            True,
+        )
+    return None, True
 
 
 async def _handle_execute_plan(

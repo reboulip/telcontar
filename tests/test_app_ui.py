@@ -372,6 +372,7 @@ async def test_organizer_screen_groups_tool_events_into_steps(
         on_approval_needed,
         on_questions_needed=None,
         on_options_needed=None,
+        on_cost_approval_needed=None,
         instructions=None,
     ):
         on_event(AgentEvent("tool_call", "list_dir(path='.')"))
@@ -937,6 +938,56 @@ async def test_options_modal_skip_returns_empty(tmp_path: Path) -> None:
         assert res.selections == {}
 
 
+# ── O8: pre-ANALYZE cost-estimate modal ───────────────────────────────────────
+
+
+async def test_cost_estimate_modal_shows_summary(tmp_path: Path) -> None:
+    from textual.widgets import Static
+
+    from host.app import CostEstimateModal
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(CostEstimateModal(documents=42, estimated_tokens=12345))
+        await pilot.pause()
+        summary = app.screen.query_one("#cost-summary", Static)
+        assert "42 documents" in str(summary.content)
+        assert "12345 input tokens" in str(summary.content)
+        assert "groups of 10" in str(summary.content)
+
+
+async def test_cost_estimate_modal_proceed_approves(tmp_path: Path) -> None:
+    from host.app import CostEstimateModal
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        captured: dict = {}
+        app.push_screen(
+            CostEstimateModal(documents=1, estimated_tokens=100),
+            lambda res: captured.update(res=res),
+        )
+        await pilot.pause()
+        await pilot.click("#cost-proceed-btn")
+        await pilot.pause()
+        assert captured["res"].approved is True
+
+
+async def test_cost_estimate_modal_cancel_rejects(tmp_path: Path) -> None:
+    from host.app import CostEstimateModal
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        captured: dict = {}
+        app.push_screen(
+            CostEstimateModal(documents=1, estimated_tokens=100),
+            lambda res: captured.update(res=res),
+        )
+        await pilot.pause()
+        await pilot.click("#cost-cancel-btn")
+        await pilot.pause()
+        assert captured["res"].approved is False
+
+
 # ── F9: the status bar surfaces running token usage ──────────────────────────
 
 
@@ -962,6 +1013,7 @@ async def test_organizer_status_bar_shows_token_usage(
         on_approval_needed,
         on_questions_needed=None,
         on_options_needed=None,
+        on_cost_approval_needed=None,
         instructions=None,
     ):
         on_event(AgentEvent("tokens", "12.3K in / 1.0K out", data={"in": 12300, "out": 1000}))
@@ -1004,6 +1056,7 @@ async def test_organizer_narrates_macro_tasks_in_transcript(
         on_approval_needed,
         on_questions_needed=None,
         on_options_needed=None,
+        on_cost_approval_needed=None,
         instructions=None,
     ):
         on_event(AgentEvent("tool_call", "read_file(path='a')", data={"tool": "read_file"}))
@@ -1071,6 +1124,7 @@ async def test_organizer_narrates_new_propose_tools_as_planning_changes(
         on_approval_needed,
         on_questions_needed=None,
         on_options_needed=None,
+        on_cost_approval_needed=None,
         instructions=None,
     ):
         for tool in new_propose_tools:

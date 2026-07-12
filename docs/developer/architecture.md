@@ -184,7 +184,15 @@ This is purely additive to the event stream — no MCP tool signature or tool li
 
 `run_agent_loop`'s turn ceiling scales with corpus size instead of a flat cap, so a large directory doesn't hit an artificial wall mid-analysis. `_analysis_turn_budget(total_discovered)` returns `max(_MAX_TURNS, min(_MAX_TURN_BUDGET, _TURN_BUDGET_BASE + _TURN_BUDGET_PER_DOCUMENT * total_discovered))` — floor `_MAX_TURNS = 50`, ceiling `_MAX_TURN_BUDGET = 2000`, `_TURN_BUDGET_BASE = 30` plus `_TURN_BUDGET_PER_DOCUMENT = 3` turns per document discovered so far (the O5 `_ProgressTracker`'s `total` count). The loop recomputes the budget every iteration as more documents surface via `walk_tree`/`record_document`, and the "reached maximum turns" error event/return string reports the actual computed budget rather than a hard-coded number.
 
-This is a backstop against a misbehaving or looping agent, not the primary cost control — that role belongs to a separate, not-yet-implemented pre-ANALYZE token-estimate approval gate (O8). `run_query_loop` (query/chat mode) is untouched and still uses the fixed `_MAX_TURNS = 50` ceiling — see the query data-flow section below.
+This is a backstop against a misbehaving or looping agent, not the primary cost control — that role belongs to the pre-ANALYZE cost-approval gate (O8), described next. `run_query_loop` (query/chat mode) is untouched and still uses the fixed `_MAX_TURNS = 50` ceiling — see the query data-flow section below.
+
+### Pre-ANALYZE cost-approval gate (O8)
+
+This is the **primary** cost control for an organize run — the adaptive turn budget above is a secondary runaway-loop backstop, not the primary lever. The first call, in a given run, to any of the four O1/O2 batch document tools — `extract_text_batch`, `read_file_batch`, `compute_checksum_batch`, `record_document_batch` (`_COST_GATED_BATCH_TOOLS` in `host/agent.py`) — is intercepted by `_handle_cost_approval` before it is forwarded to the MCP server. Their singular counterparts (`read_file`, `extract_text`, `compute_checksum`, `record_document`) are deliberately not gated, since the ANALYZE-phase prompt (O3) already steers the agent toward the batch workflow as the one representing meaningful spend.
+
+The estimate is purely local — no extraction, no LLM call: `_ProgressTracker.cost_estimate(max_snippet_chars)` returns `(document_count, estimated_input_tokens)` from the file sizes already gathered while processing `walk_tree` results (`sizes: dict[str, int]`, populated by an updated `add_discovered(path, size)`), using the rough heuristic `sum(min(size, max_snippet_chars) // 4 for size in sizes.values())` (4 chars/token). `_handle_cost_approval` emits a `"cost_estimate"` `AgentEvent` with this estimate, then — unless `settings.approval_mode == "never"` or no `on_cost_approval_needed` callback is wired — awaits the host's `CostApprovalCallback` (`Callable[[str, dict], Awaitable[CostApprovalResult]]`). Rejection returns `{"error": ...}` in place of the tool call, telling the agent to stop and report back instead of proceeding; approval lets the call dispatch normally. Like the clarification/options checkpoints, the gate fires **at most once per run** (`cost_approval_shown`).
+
+`host/app.py` wires the callback to `CostEstimateModal` — simpler than `ApprovalModal`: no op list, no refinement, just the estimate and Proceed/Cancel — and narrates the estimate and the user's choice into the transcript. The status bar shows "Awaiting cost approval…" while the modal is open.
 
 ### Knowledge graph
 
@@ -252,7 +260,12 @@ Any sink name not in the built-in registry is treated as an external sink. If `e
    read_file/extract_text/compare_documents's diff field (and, per-file, from
    their batch forms read_file_batch/extract_text_batch) is wrapped in the
    untrusted-content delimiter first (M10)
-8. Steps 4-7 repeat (up to the adaptive turn budget — see below)
+8. Steps 4-7 repeat (up to the adaptive turn budget — see below). The FIRST call in
+   the run to any of the four batch document tools (extract_text_batch,
+   read_file_batch, compute_checksum_batch, record_document_batch) is intercepted
+   here: the host computes a local token estimate from walk_tree-discovered file
+   sizes, emits a "cost_estimate" AgentEvent, shows CostEstimateModal, and only
+   forwards the call on approval — see "Pre-ANALYZE cost-approval gate (O8)" above
 9. Once analysis is far enough along, the agent MAY call ask_clarification once with a
    short batch of questions; the host emits a "question" AgentEvent, shows
    ClarificationModal, and feeds the user's answers (or a "proceed with best judgement"

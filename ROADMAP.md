@@ -238,7 +238,7 @@ working in chat after a stop instead of being pushed to the read-only journal/qu
       viewer or read-only query mode. Add a chat `Input` to `OrganizerScreen` (mirroring
       `QueryScreen`'s pattern) enabled once the run reaches a terminal state, keeping the
       MCP session open across turns.
-- [ ] O8 · Pre-ANALYZE token-estimate approval gate — before the first
+- [x] O8 · Pre-ANALYZE token-estimate approval gate — before the first
       `extract_text_batch`/`read_file_batch`/`compute_checksum_batch`/`record_document_batch`
       call in a run, the host computes a rough total input-token estimate for the whole
       ANALYZE pass from the documents discovered so far via `walk_tree` (e.g.

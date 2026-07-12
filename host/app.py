@@ -43,7 +43,13 @@ from textual.widgets import (
     Static,
 )
 
-from host.agent import AgentEvent, ApprovalResult, ClarificationResult, OptionsResult
+from host.agent import (
+    AgentEvent,
+    ApprovalResult,
+    ClarificationResult,
+    CostApprovalResult,
+    OptionsResult,
+)
 
 # Package root: host/app.py → host/ → project root (or site-packages/).
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -456,6 +462,83 @@ class OptionsModal(ModalScreen[OptionsResult]):
     @on(Button.Pressed, "#options-skip")
     def action_skip(self) -> None:
         self.dismiss(OptionsResult(selections={}, provided=False))
+
+
+# ── Cost-estimate modal (O8) ──────────────────────────────────────────────────
+
+
+class CostEstimateModal(ModalScreen[CostApprovalResult]):
+    """One-time pre-ANALYZE approval: show the estimated cost, let the user proceed or cancel.
+
+    Shown at most once per run, before the first batch document-content tool call.
+    Unlike ApprovalModal there is no op list or refinement — just a rough estimate
+    and a yes/no.
+    """
+
+    DEFAULT_CSS = """
+    CostEstimateModal {
+        align: center middle;
+    }
+    #cost-dialog {
+        width: 60%;
+        border: round $accent;
+        background: $surface;
+        padding: 1 2;
+    }
+    #cost-title {
+        text-style: bold;
+        padding-bottom: 1;
+        color: $accent;
+    }
+    #cost-summary {
+        padding-bottom: 1;
+    }
+    #cost-disclaimer {
+        color: $text-muted;
+        padding-bottom: 1;
+    }
+    #cost-buttons {
+        align: center middle;
+        padding-top: 1;
+        height: 3;
+    }
+    #cost-buttons Button {
+        margin: 0 2;
+    }
+    """
+
+    BINDINGS = [("escape", "cancel", "Cancel")]
+
+    def __init__(self, documents: int, estimated_tokens: int, batch_size: int = 10) -> None:
+        super().__init__()
+        self._documents = documents
+        self._estimated_tokens = estimated_tokens
+        self._batch_size = batch_size
+
+    def compose(self) -> ComposeResult:
+        with Container(id="cost-dialog"):
+            yield Label("Analyze this corpus?", id="cost-title")
+            yield Static(
+                f"~{self._documents} documents, ~{self._estimated_tokens} input tokens "
+                f"estimated, batched in groups of {self._batch_size}.",
+                id="cost-summary",
+            )
+            yield Label(
+                "[dim]A rough estimate from file sizes, not a real tokenization.[/dim]",
+                id="cost-disclaimer",
+                markup=True,
+            )
+            with Horizontal(id="cost-buttons"):
+                yield Button("Proceed", variant="success", id="cost-proceed-btn")
+                yield Button("Cancel", variant="error", id="cost-cancel-btn")
+
+    @on(Button.Pressed, "#cost-proceed-btn")
+    def _proceed(self) -> None:
+        self.dismiss(CostApprovalResult(approved=True))
+
+    @on(Button.Pressed, "#cost-cancel-btn")
+    def action_cancel(self) -> None:
+        self.dismiss(CostApprovalResult(approved=False))
 
 
 # ── Setup screen (first-run wizard) ──────────────────────────────────────────
@@ -1433,6 +1516,8 @@ class OrganizerScreen(Screen):
                     self._set_status("Awaiting your answers…")
                 case "options":
                     self._set_status("Awaiting your choice…")
+                case "cost_estimate":
+                    self._set_status("Awaiting cost approval…")
                 case "tokens":
                     self._set_tokens(event.text)
                 case "done":
@@ -1496,6 +1581,20 @@ class OrganizerScreen(Screen):
                 self._add_turn("user", "[dim]Skipped — the agent will use its best judgement[/dim]")
             return choice
 
+        async def on_cost_approval_needed(summary: str, data: dict) -> CostApprovalResult:
+            self._add_turn(
+                "telcontar",
+                f"[bold cyan]Cost estimate:[/bold cyan] {summary}",
+            )
+            result: CostApprovalResult = await self.app.push_screen_wait(
+                CostEstimateModal(data.get("documents", 0), data.get("estimated_tokens", 0))
+            )
+            self._add_turn(
+                "user",
+                "[green]Proceed[/green]" if result.approved else "[red]Cancelled[/red]",
+            )
+            return result
+
         try:
             await run_agent(
                 target=self._target,
@@ -1505,6 +1604,7 @@ class OrganizerScreen(Screen):
                 on_approval_needed=on_approval_needed,
                 on_questions_needed=on_questions_needed,
                 on_options_needed=on_options_needed,
+                on_cost_approval_needed=on_cost_approval_needed,
                 instructions=instructions,
             )
         except Exception as exc:

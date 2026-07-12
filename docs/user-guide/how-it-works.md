@@ -52,6 +52,8 @@ Then the agent works through the discovered documents in **batches of 10** (smal
 2. Calls `record_document_batch` once to upsert title, type, summary, date, and entities for the whole batch into the **registry** — a validation failure on one document doesn't block the rest
 3. Once every discovered document is recorded, calls `find_duplicates` and `find_modified_documents` to identify candidates for quarantine
 
+The very first call to any of these four batch tools triggers a one-time **cost-approval gate** — see [The cost-estimate approval gate](#the-cost-estimate-approval-gate) below.
+
 The registry is **content-addressed**: if you rename a file, telcontar still recognises it by checksum on the next run. Analysis results accumulate across sessions.
 
 Between Phase A and Phase B, the agent has two optional, at-most-once checkpoints: it may pause to ask the user a short batch of clarifying questions if it hit genuine ambiguity — see [The clarification checkpoint](#the-clarification-checkpoint) below — and, after re-examining its intended approach from a second angle, it may also surface a few competing options for the user to choose between — see [The multiple-option checkpoint](#the-multiple-option-checkpoint) below.
@@ -72,6 +74,34 @@ Between Phase A and Phase B, the agent has two optional, at-most-once checkpoint
 3. `write_index` walks the organized tree and emits `INDEX.md` + `manifest.json`
 4. The agent composes the project narrative as Markdown — structured by the sections defined in the active profile's `[synthesis]` table — drawing on `list_documents`, `get_registry`, `list_events`, `get_graph`, and `get_actors`. It calls `write_summary` to persist the result as `SUMMARY.md`
 5. The agent responds with a final text summary and the loop ends
+
+---
+
+## The cost-estimate approval gate
+
+Before any document content is actually fetched, telcontar pauses once to show a rough cost estimate and let you decide whether to proceed. This is the run's **primary cost control** — a single upfront checkpoint before the model can trigger real analysis spend, distinct from the adaptive turn budget that only acts as a backstop against a runaway or looping agent.
+
+The gate fires on the **first call** to any of the batch tools (`extract_text_batch`, `read_file_batch`, `compute_checksum_batch`, `record_document_batch`) — i.e. right at the start of Phase A's per-batch work — and never again for the rest of the run. The estimate itself is a rough, local calculation from the file sizes already discovered via `walk_tree` (no extraction and no LLM call needed to produce it), shown as e.g. "~42 documents, ~18,500 input tokens estimated, batched in groups of 10 — proceed?".
+
+```
+Agent is about to call the first batch tool (e.g. extract_text_batch)
+       │
+       ▼
+Host computes a size-based estimate, shows CostEstimateModal
+       │
+   User reviews
+   ├── Proceed
+   │       │
+   │       ▼
+   │   The call is forwarded and Phase A continues normally
+   │
+   └── Cancel
+           │
+           ▼
+       The agent is told the user did not approve; it stops and reports back
+```
+
+In `APPROVAL_MODE=never`, this gate is skipped automatically (the estimate is still emitted for observability, it just never blocks). In `always` and `destructive_only`, it always shows once per run.
 
 ---
 

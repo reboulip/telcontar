@@ -12,6 +12,7 @@ from host.agent import (
     AgentEvent,
     ApprovalResult,
     ClarificationResult,
+    CostApprovalResult,
     OptionsResult,
     _extract_content,
     run_agent_loop,
@@ -99,6 +100,7 @@ def _settings(plans_dir: Path, approval_mode: str = "always") -> MagicMock:
     cfg.plans_dir = plans_dir
     cfg.approval_mode = approval_mode
     cfg.quarantine_dir = Path("_quarantine")
+    cfg.max_snippet_chars = 4000
     return cfg
 
 
@@ -109,18 +111,21 @@ async def _run(
     call_results: dict[str, Any],
     llm_responses: list[MagicMock],
     on_approval_needed: AsyncMock | None = None,
+    on_cost_approval_needed: AsyncMock | None = None,
     on_event: Any = None,
     plans_dir: Path | None = None,
+    approval_mode: str = "always",
 ) -> str:
     if plans_dir is None:
         plans_dir = tmp_path
     return await run_agent_loop(
         target=tmp_path,
-        settings=_settings(plans_dir),
+        settings=_settings(plans_dir, approval_mode=approval_mode),
         llm=_llm(*llm_responses),
         session=_session(tool_names, call_results),
         on_event=on_event or (lambda _: None),
         on_approval_needed=on_approval_needed or AsyncMock(return_value=ApprovalResult(True)),
+        on_cost_approval_needed=on_cost_approval_needed,
     )
 
 
@@ -1478,3 +1483,148 @@ def test_system_prompt_untrusted_delimiter_names_batch_tools() -> None:
     assert "read_file_batch" in prompt
     assert "extract_text_batch" in prompt
     assert "UNTRUSTED DOCUMENT CONTENT" in prompt
+
+
+# ── Pre-ANALYZE cost-estimate gate (O8) ──────────────────────────────────────
+
+
+def _walk_result_with_sizes(paths_and_sizes: list[tuple[str, int]]) -> dict:
+    return {
+        "path": "root",
+        "max_depth": 3,
+        "entries": [
+            {"name": Path(p).name, "path": p, "type": "file", "size": s, "mtime": 0.0}
+            for p, s in paths_and_sizes
+        ],
+    }
+
+
+async def test_cost_gate_fires_before_first_batch_tool_call(tmp_path: Path) -> None:
+    events: list[AgentEvent] = []
+    a = str(tmp_path / "a.txt")
+    on_cost_approval = AsyncMock(return_value=CostApprovalResult(approved=True))
+
+    await _run(
+        tmp_path,
+        tool_names=["walk_tree", "extract_text_batch"],
+        call_results={
+            "walk_tree": _walk_result_with_sizes([(a, 4000)]),
+            "extract_text_batch": {a: "hello"},
+        },
+        llm_responses=[
+            _tool_response("walk_tree", {"path": str(tmp_path)}, call_id="tc1"),
+            _tool_response("extract_text_batch", {"paths": [a]}, call_id="tc2"),
+            _text_response("Done."),
+        ],
+        on_cost_approval_needed=on_cost_approval,
+        on_event=events.append,
+    )
+
+    on_cost_approval.assert_awaited_once()
+    summary, data = on_cost_approval.await_args.args
+    assert data == {"documents": 1, "estimated_tokens": 1000}
+    assert "1 documents" in summary
+    assert any(e.kind == "cost_estimate" for e in events)
+
+
+async def test_cost_gate_shown_at_most_once_per_run(tmp_path: Path) -> None:
+    a, b = str(tmp_path / "a.txt"), str(tmp_path / "b.txt")
+    on_cost_approval = AsyncMock(return_value=CostApprovalResult(approved=True))
+
+    await _run(
+        tmp_path,
+        tool_names=["walk_tree", "extract_text_batch", "read_file_batch"],
+        call_results={
+            "walk_tree": _walk_result_with_sizes([(a, 100), (b, 100)]),
+            "extract_text_batch": {a: "x"},
+            "read_file_batch": {b: "y"},
+        },
+        llm_responses=[
+            _tool_response("walk_tree", {"path": str(tmp_path)}, call_id="tc1"),
+            _tool_response("extract_text_batch", {"paths": [a]}, call_id="tc2"),
+            _tool_response("read_file_batch", {"paths": [b]}, call_id="tc3"),
+            _text_response("Done."),
+        ],
+        on_cost_approval_needed=on_cost_approval,
+    )
+
+    on_cost_approval.assert_awaited_once()
+
+
+async def test_cost_gate_rejection_blocks_the_batch_call_and_reports_error(tmp_path: Path) -> None:
+    a = str(tmp_path / "a.txt")
+    on_cost_approval = AsyncMock(return_value=CostApprovalResult(approved=False))
+    s = _session(["walk_tree", "extract_text_batch"], {"walk_tree": _walk_result_with_sizes([(a, 100)])})
+
+    result = await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=_llm(
+            _tool_response("walk_tree", {"path": str(tmp_path)}, call_id="tc1"),
+            _tool_response("extract_text_batch", {"paths": [a]}, call_id="tc2"),
+            _text_response("Done."),
+        ),
+        session=s,
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+        on_cost_approval_needed=on_cost_approval,
+    )
+
+    assert result == "Done."
+    s.call_tool.assert_any_call("walk_tree", {"path": str(tmp_path)})
+    assert all(call.args[0] != "extract_text_batch" for call in s.call_tool.await_args_list)
+
+
+async def test_cost_gate_auto_approves_in_never_mode(tmp_path: Path) -> None:
+    a = str(tmp_path / "a.txt")
+
+    result = await _run(
+        tmp_path,
+        tool_names=["walk_tree", "extract_text_batch"],
+        call_results={
+            "walk_tree": _walk_result_with_sizes([(a, 100)]),
+            "extract_text_batch": {a: "hello"},
+        },
+        llm_responses=[
+            _tool_response("walk_tree", {"path": str(tmp_path)}, call_id="tc1"),
+            _tool_response("extract_text_batch", {"paths": [a]}, call_id="tc2"),
+            _text_response("Done."),
+        ],
+        on_cost_approval_needed=None,
+        approval_mode="never",
+    )
+
+    assert result == "Done."
+
+
+async def test_cost_gate_auto_approves_when_callback_not_wired(tmp_path: Path) -> None:
+    a = str(tmp_path / "a.txt")
+
+    result = await _run(
+        tmp_path,
+        tool_names=["walk_tree", "extract_text_batch"],
+        call_results={
+            "walk_tree": _walk_result_with_sizes([(a, 100)]),
+            "extract_text_batch": {a: "hello"},
+        },
+        llm_responses=[
+            _tool_response("walk_tree", {"path": str(tmp_path)}, call_id="tc1"),
+            _tool_response("extract_text_batch", {"paths": [a]}, call_id="tc2"),
+            _text_response("Done."),
+        ],
+        on_cost_approval_needed=None,
+    )
+
+    assert result == "Done."
+
+
+def test_progress_tracker_cost_estimate_uses_max_snippet_chars_cap() -> None:
+    from host.agent import _ProgressTracker
+
+    tracker = _ProgressTracker()
+    tracker.add_discovered("/root/small.txt", 400)
+    tracker.add_discovered("/root/big.txt", 40_000)
+    doc_count, tokens = tracker.cost_estimate(max_snippet_chars=4000)
+    assert doc_count == 2
+    # small.txt: 400 // 4 = 100; big.txt capped at 4000 // 4 = 1000
+    assert tokens == 1100
