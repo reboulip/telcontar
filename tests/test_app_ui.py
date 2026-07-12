@@ -1134,7 +1134,9 @@ async def test_organizer_progress_row_shows_and_updates_on_progress_event(
         history=None,
         message=None,
     ):
-        on_event(AgentEvent("progress", "Analyzed 3 / 10 documents", data={"analyzed": 3, "total": 10}))
+        on_event(
+            AgentEvent("progress", "Analyzed 3 / 10 documents", data={"analyzed": 3, "total": 10})
+        )
         return "in progress", []
 
     _patch_run_agent_loop(monkeypatch, fake_run_agent)
@@ -1178,7 +1180,9 @@ async def test_organizer_progress_row_hides_on_done(
         history=None,
         message=None,
     ):
-        on_event(AgentEvent("progress", "Analyzed 3 / 10 documents", data={"analyzed": 3, "total": 10}))
+        on_event(
+            AgentEvent("progress", "Analyzed 3 / 10 documents", data={"analyzed": 3, "total": 10})
+        )
         on_event(AgentEvent("done", "done"))
         return "done", []
 
@@ -1221,7 +1225,9 @@ async def test_organizer_progress_row_hides_on_error(
         history=None,
         message=None,
     ):
-        on_event(AgentEvent("progress", "Analyzed 3 / 10 documents", data={"analyzed": 3, "total": 10}))
+        on_event(
+            AgentEvent("progress", "Analyzed 3 / 10 documents", data={"analyzed": 3, "total": 10})
+        )
         on_event(AgentEvent("error", "Reached maximum turns (50); stopping."))
         return "Stopped: maximum turns (50) reached.", []
 
@@ -1400,7 +1406,14 @@ async def test_startup_picker_selection_drives_organize(
     monkeypatch.setattr("host.app._send_notification", lambda target: None)
 
     async def fake_run_agent(
-        *, target, settings, llm, on_event, on_approval_needed, on_questions_needed=None, **kwargs: object
+        *,
+        target,
+        settings,
+        llm,
+        on_event,
+        on_approval_needed,
+        on_questions_needed=None,
+        **kwargs: object,
     ):
         return "done", []
 
@@ -1660,7 +1673,11 @@ async def test_organize_input_submit_continues_the_conversation(
             on_event(AgentEvent("done", "Initial done."))
             return "Initial done.", [{"role": "system"}, {"role": "user"}, {"role": "assistant"}]
         on_event(AgentEvent("done", "Follow-up done."))
-        return "Follow-up done.", [*history, {"role": "user", "content": message}, {"role": "assistant"}]
+        return "Follow-up done.", [
+            *history,
+            {"role": "user", "content": message},
+            {"role": "assistant"},
+        ]
 
     _patch_run_agent_loop(monkeypatch, fake_run_agent_loop)
 
@@ -1706,7 +1723,9 @@ async def test_organize_input_blank_submit_is_noop(
 
     calls: list[dict] = []
 
-    async def fake_run_agent_loop(*, history=None, message=None, **kwargs: object) -> tuple[str, list]:
+    async def fake_run_agent_loop(
+        *, history=None, message=None, **kwargs: object
+    ) -> tuple[str, list]:
         calls.append({"history": history, "message": message})
         return "done", []
 
@@ -1749,7 +1768,11 @@ async def test_organizer_notification_and_g_keybinding_fire_once_across_continua
             on_event(AgentEvent("done", "Initial done."))
             return "Initial done.", [{"role": "system"}, {"role": "user"}, {"role": "assistant"}]
         on_event(AgentEvent("done", "Follow-up done."))
-        return "Follow-up done.", [*history, {"role": "user", "content": message}, {"role": "assistant"}]
+        return "Follow-up done.", [
+            *history,
+            {"role": "user", "content": message},
+            {"role": "assistant"},
+        ]
 
     _patch_run_agent_loop(monkeypatch, fake_run_agent_loop)
 

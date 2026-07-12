@@ -604,7 +604,15 @@ async def _discover_openai_tools(
 # Telcontar's own output artifacts and OS/dotfile noise never count as documents
 # to analyze — mirrors the `_SKIP` precedent in server/tools.py's write_index.
 _DISCOVERY_SKIP_NAMES = frozenset(
-    {"INDEX.md", "manifest.json", "SUMMARY.md", "README.md", "Thumbs.db", ".DS_Store", "desktop.ini"}
+    {
+        "INDEX.md",
+        "manifest.json",
+        "SUMMARY.md",
+        "README.md",
+        "Thumbs.db",
+        ".DS_Store",
+        "desktop.ini",
+    }
 )
 
 
@@ -622,7 +630,9 @@ def _should_skip_discovery(name: str, path: str, settings: Settings) -> bool:
     return bool(quarantine_name) and quarantine_name in parts
 
 
-def _extract_discovered_entries(walk_result: Any, settings: Settings) -> list[tuple[str, int | None]]:
+def _extract_discovered_entries(
+    walk_result: Any, settings: Settings
+) -> list[tuple[str, int | None]]:
     """Recursively collect (path, size) pairs from a `walk_tree` result, skipping noise.
 
     Directories marked `truncated` stop the recursion there — their children are
@@ -848,9 +858,7 @@ async def run_agent_loop(
                 name = tool_call.function.name
                 args: dict[str, Any] = json.loads(tool_call.function.arguments or "{}")
 
-                on_event(
-                    AgentEvent("tool_call", f"{name}({_fmt_args(args)})", data={"tool": name})
-                )
+                on_event(AgentEvent("tool_call", f"{name}({_fmt_args(args)})", data={"tool": name}))
 
                 if name == _CLARIFY_TOOL_NAME:
                     result, clarification_used = await _handle_clarification(

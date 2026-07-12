@@ -1210,7 +1210,10 @@ def _walk_result(paths: list[str]) -> dict:
     return {
         "path": "root",
         "max_depth": 3,
-        "entries": [{"name": Path(p).name, "path": p, "type": "file", "size": 1, "mtime": 0.0} for p in paths],
+        "entries": [
+            {"name": Path(p).name, "path": p, "type": "file", "size": 1, "mtime": 0.0}
+            for p in paths
+        ],
     }
 
 
@@ -1396,7 +1399,10 @@ async def test_run_agent_loop_stops_at_floor_budget_with_no_discovery(tmp_path: 
     from host.agent import _MAX_TURNS
 
     events: list[AgentEvent] = []
-    filler_responses = [_tool_response("list_dir", {"path": str(tmp_path)}, call_id=f"tc{i}") for i in range(_MAX_TURNS)]
+    filler_responses = [
+        _tool_response("list_dir", {"path": str(tmp_path)}, call_id=f"tc{i}")
+        for i in range(_MAX_TURNS)
+    ]
 
     result = await _run(
         tmp_path,
@@ -1410,7 +1416,9 @@ async def test_run_agent_loop_stops_at_floor_budget_with_no_discovery(tmp_path: 
     assert any(e.kind == "error" and f"({_MAX_TURNS})" in e.text for e in events)
 
 
-async def test_run_agent_loop_extends_budget_past_floor_when_documents_discovered(tmp_path: Path) -> None:
+async def test_run_agent_loop_extends_budget_past_floor_when_documents_discovered(
+    tmp_path: Path,
+) -> None:
     from host.agent import _MAX_TURNS, _analysis_turn_budget
 
     events: list[AgentEvent] = []
@@ -1424,7 +1432,8 @@ async def test_run_agent_loop_extends_budget_past_floor_when_documents_discovere
     filler_count = _MAX_TURNS + 2
     responses = [_tool_response("walk_tree", {"path": str(tmp_path)}, call_id="tc0")]
     responses += [
-        _tool_response("list_dir", {"path": str(tmp_path)}, call_id=f"tc{i + 1}") for i in range(filler_count)
+        _tool_response("list_dir", {"path": str(tmp_path)}, call_id=f"tc{i + 1}")
+        for i in range(filler_count)
     ]
     responses.append(_text_response("Done."))
     assert 1 + filler_count + 1 <= budget
@@ -1555,7 +1564,9 @@ async def test_cost_gate_shown_at_most_once_per_run(tmp_path: Path) -> None:
 async def test_cost_gate_rejection_blocks_the_batch_call_and_reports_error(tmp_path: Path) -> None:
     a = str(tmp_path / "a.txt")
     on_cost_approval = AsyncMock(return_value=CostApprovalResult(approved=False))
-    s = _session(["walk_tree", "extract_text_batch"], {"walk_tree": _walk_result_with_sizes([(a, 100)])})
+    s = _session(
+        ["walk_tree", "extract_text_batch"], {"walk_tree": _walk_result_with_sizes([(a, 100)])}
+    )
 
     result, _ = await run_agent_loop(
         target=tmp_path,
@@ -1644,7 +1655,9 @@ def _multi_tool_response(calls: list[tuple[str, dict, str]]) -> MagicMock:
         tc.function.name = name
         tc.function.arguments = json.dumps(args)
         tcs.append(tc)
-        tool_calls_json.append({"id": call_id, "function": {"name": name, "arguments": json.dumps(args)}})
+        tool_calls_json.append(
+            {"id": call_id, "function": {"name": name, "arguments": json.dumps(args)}}
+        )
     msg = MagicMock()
     msg.tool_calls = tcs
     msg.content = None
@@ -1672,7 +1685,9 @@ async def test_run_agent_loop_returns_history_alongside_text(tmp_path: Path) -> 
     assert history[-1]["role"] == "assistant"
 
 
-async def test_run_agent_loop_continuation_reuses_history_and_appends_message(tmp_path: Path) -> None:
+async def test_run_agent_loop_continuation_reuses_history_and_appends_message(
+    tmp_path: Path,
+) -> None:
     text1, history1 = await run_agent_loop(
         target=tmp_path,
         settings=_settings(tmp_path),
@@ -1697,7 +1712,9 @@ async def test_run_agent_loop_continuation_reuses_history_and_appends_message(tm
     assert text2 == "Second done."
     assert history2 is history1  # reused in place, not rebuilt
     assert len(history2) == len(history1)  # history1 mutated in place by the continuation
-    continuation_user_turn = [m for m in history2 if m.get("content") == "please also quarantine the drafts"]
+    continuation_user_turn = [
+        m for m in history2 if m.get("content") == "please also quarantine the drafts"
+    ]
     assert len(continuation_user_turn) == 1
     assert continuation_user_turn[0]["role"] == "user"
     assert history2[-1] == {"role": "assistant", "content": "Second done."}
@@ -1764,7 +1781,9 @@ async def test_run_agent_loop_synthesizes_tool_errors_on_exception_and_allows_re
 
     # Every tool_call the failing assistant turn made has a matching tool result
     # (list_dir's real one, read_file's synthesized error) — no dangling calls.
-    assistant_msg = next(m for m in messages if m.get("role") == "assistant" and m.get("tool_calls"))
+    assistant_msg = next(
+        m for m in messages if m.get("role") == "assistant" and m.get("tool_calls")
+    )
     call_ids = {tc["id"] for tc in assistant_msg["tool_calls"]}
     tool_msg_ids = {m["tool_call_id"] for m in messages if m.get("role") == "tool"}
     assert call_ids <= tool_msg_ids
@@ -1801,7 +1820,8 @@ async def test_run_agent_loop_continuation_gets_a_fresh_turn_budget(tmp_path: Pa
     # must not be starved by the initial call's own turn usage.
     filler_count = _MAX_TURNS - 1
     responses = [
-        _tool_response("list_dir", {"path": str(tmp_path)}, call_id=f"tc{i}") for i in range(filler_count)
+        _tool_response("list_dir", {"path": str(tmp_path)}, call_id=f"tc{i}")
+        for i in range(filler_count)
     ]
     responses.append(_text_response("Second done."))
 

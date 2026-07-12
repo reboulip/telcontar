@@ -1369,7 +1369,7 @@ class OrganizerScreen(Screen):
         # Resumable-chat input (O7): disabled until the run reaches a terminal
         # state, then re-enabled after every subsequent chat turn too.
         yield Input(
-            placeholder="Once done, keep chatting to refine (e.g. \"quarantine the drafts too\")…",
+            placeholder='Once done, keep chatting to refine (e.g. "quarantine the drafts too")…',
             id="organize-input",
             disabled=True,
         )
