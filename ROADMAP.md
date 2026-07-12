@@ -215,7 +215,7 @@ working in chat after a stop instead of being pushed to the read-only journal/qu
       `record_document`'s params) and upserts each into the registry in one call,
       collecting per-document validation errors instead of failing the whole batch
       (requires: O1).
-- [ ] O3 · Rewrite the ANALYZE prompt for batching + full coverage — update step A of
+- [x] O3 · Rewrite the ANALYZE prompt for batching + full coverage — update step A of
       `_SYSTEM_PROMPT_TEMPLATE` in `host/agent.py` to have the agent work through
       documents in batches via the new tools (factoring the prompt instead of one document
       per LLM turn), and explicitly require every document discovered by `walk_tree` to be

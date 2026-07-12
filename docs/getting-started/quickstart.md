@@ -135,15 +135,15 @@ Expand an **internal steps** group to see the raw calls and results behind it, e
 ```
 ▶ walk_tree(path='C:/Users/me/Documents/messy', max_depth=3)
   {"path": "...", "max_depth": 3, "entries": [...]}
-▶ extract_text(path='.../rapport final v3.docx', max_chars=4000)
-  "Rapport trimestriel Q1 2024..."
-▶ compute_checksum(path='.../rapport final v3.docx')
-  {"checksum": "a3f9..."}
-▶ record_document(checksum='a3f9...', title='Rapport Q1 2024', ...)
-  {"checksum": "a3f9...", "status": "active"}
+▶ extract_text_batch(paths=['.../rapport final v3.docx', ...])
+  {".../rapport final v3.docx": "Rapport trimestriel Q1 2024...", ...}
+▶ compute_checksum_batch(paths=['.../rapport final v3.docx', ...])
+  {".../rapport final v3.docx": {"checksum": "a3f9..."}, ...}
+▶ record_document_batch(documents=[{"checksum": "a3f9...", "title": "Rapport Q1 2024", ...}, ...])
+  {"recorded": [{"checksum": "a3f9...", "status": "active"}, ...], "errors": []}
 ```
 
-The agent reads, checksums, and records each document in the registry, then uses `find_duplicates` to spot the copy.
+The agent works through the discovered documents in batches of 10, reading, checksumming, and recording each batch in the registry in one call apiece, then uses `find_duplicates` to spot the copy.
 
 ---
 

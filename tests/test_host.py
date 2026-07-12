@@ -1436,3 +1436,45 @@ async def test_run_agent_loop_extends_budget_past_floor_when_documents_discovere
 
     assert result == "Done."
     assert not any(e.kind == "error" for e in events)
+
+
+# ── ANALYZE prompt batching (O3) ─────────────────────────────────────────────
+
+
+def test_system_prompt_directs_batch_workflow() -> None:
+    from config.settings import load
+
+    from host.agent import _build_system_prompt
+
+    prompt = _build_system_prompt(_PROJECT_ROOT, load())
+
+    assert "extract_text_batch" in prompt
+    assert "read_file_batch" in prompt
+    assert "compute_checksum_batch" in prompt
+    assert "record_document_batch" in prompt
+    assert "batches of 10" in prompt
+    # batch analysis still precedes taxonomy/plan design
+    assert prompt.index("record_document_batch") < prompt.index("create_plan")
+
+
+def test_system_prompt_requires_full_truncated_re_walk() -> None:
+    from config.settings import load
+
+    from host.agent import _build_system_prompt
+
+    prompt = _build_system_prompt(_PROJECT_ROOT, load())
+
+    assert "truncated" in prompt.lower()
+    assert "never sample a subset" in prompt.lower()
+
+
+def test_system_prompt_untrusted_delimiter_names_batch_tools() -> None:
+    from config.settings import load
+
+    from host.agent import _build_system_prompt
+
+    prompt = _build_system_prompt(_PROJECT_ROOT, load())
+
+    assert "read_file_batch" in prompt
+    assert "extract_text_batch" in prompt
+    assert "UNTRUSTED DOCUMENT CONTENT" in prompt

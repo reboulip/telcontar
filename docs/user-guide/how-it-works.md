@@ -44,14 +44,13 @@ Once you proceed past the starter pane, the **host** launches the **server** as 
 
 ### Phase A — Analyse
 
-The agent first surveys the **whole directory tree** with `walk_tree` (recursive, up to `max_depth=3` levels; it calls `walk_tree` again on any subpath that comes back marked `truncated` to go deeper) so it discovers documents nested in subfolders, not just those sitting at the top level.
+The agent first surveys the **whole directory tree** with `walk_tree` (recursive, up to `max_depth=3` levels; if a subpath comes back marked `truncated`, it **must** call `walk_tree` again on it, repeating until no truncated directory remains anywhere) so it discovers documents nested in subfolders, not just those sitting at the top level. Full coverage is mandatory — the agent is directed to never sample a subset of the discovered documents.
 
-Then, for each document found anywhere in the tree, the agent:
+Then the agent works through the discovered documents in **batches of 10** (smaller only for unusually large individual files). For each batch:
 
-1. Calls `read_file` or `extract_text` (for PDF/Office) to get the content
-2. Calls `compute_checksum` to obtain the file's sha256 content ID
-3. Calls `record_document` to upsert title, type, summary, date, and entities into the **registry**
-4. Calls `find_duplicates` and `find_modified_documents` to identify candidates for quarantine
+1. Calls `read_file_batch` or `extract_text_batch` (for PDF/Office) to get the content of the batch's paths, and `compute_checksum_batch` for their sha256 content IDs — a bad path in a batch surfaces as that entry's error without failing the rest
+2. Calls `record_document_batch` once to upsert title, type, summary, date, and entities for the whole batch into the **registry** — a validation failure on one document doesn't block the rest
+3. Once every discovered document is recorded, calls `find_duplicates` and `find_modified_documents` to identify candidates for quarantine
 
 The registry is **content-addressed**: if you rename a file, telcontar still recognises it by checksum on the next run. Analysis results accumulate across sessions.
 
