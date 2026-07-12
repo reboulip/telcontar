@@ -448,6 +448,22 @@ def _build_query_system_prompt(project_root: Path, settings: Settings) -> str:
 
 _MAX_TURNS = 50
 
+# ── Adaptive turn budget (O4) ─────────────────────────────────────────────────
+
+# A backstop against a misbehaving/looping agent, not the primary cost control —
+# that's O8's pre-ANALYZE approval gate. `run_agent_loop` scales its ceiling with
+# corpus size so a large directory doesn't hit an artificial wall mid-analysis;
+# `run_query_loop` keeps the fixed `_MAX_TURNS` ceiling unchanged.
+_MAX_TURN_BUDGET = 2000
+_TURN_BUDGET_BASE = 30
+_TURN_BUDGET_PER_DOCUMENT = 3
+
+
+def _analysis_turn_budget(total_discovered: int) -> int:
+    base = _TURN_BUDGET_BASE + _TURN_BUDGET_PER_DOCUMENT * total_discovered
+    return max(_MAX_TURNS, min(_MAX_TURN_BUDGET, base))
+
+
 # ── Injection-resistance delimiter (S2) ───────────────────────────────────────
 
 # Document text is untrusted input sharing the LLM's context with telcontar's
@@ -716,7 +732,8 @@ async def run_agent_loop(
     on_event(AgentEvent("thinking", f"Starting agent for {target}"))
 
     token_totals = {"in": 0, "out": 0}
-    for _turn in range(_MAX_TURNS):
+    turn = 0
+    while turn < _analysis_turn_budget(tracker.counts()[1]):
         on_event(AgentEvent("thinking", "Calling LLM…"))
 
         response = await llm.chat.completions.create(
@@ -797,8 +814,11 @@ async def run_agent_loop(
                 }
             )
 
-    on_event(AgentEvent("error", f"Reached maximum turns ({_MAX_TURNS}); stopping."))
-    return f"Stopped: maximum turns ({_MAX_TURNS}) reached."
+        turn += 1
+
+    final_budget = _analysis_turn_budget(tracker.counts()[1])
+    on_event(AgentEvent("error", f"Reached maximum turns ({final_budget}); stopping."))
+    return f"Stopped: maximum turns ({final_budget}) reached."
 
 
 async def run_query(

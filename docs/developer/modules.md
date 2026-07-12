@@ -244,7 +244,7 @@ The MCP host package. Drives the GPT-5 agent loop and presents the Textual TUI.
 - `_accumulate_tokens(response, totals, on_event)` — reads `response.usage.prompt_tokens` / `completion_tokens` after each LLM call (both organize and query loops), adds them to the run's running total, and emits a `"tokens"` `AgentEvent` whose text is the compact rendering from `_fmt_tokens` (e.g. `"42.3K in / 5.1K out"`) and whose `data` carries the raw `{in, out}` totals; a no-op when the endpoint's response omits `usage`
 - `_fmt_tokens(n)` — compact human-readable token count: `512`, `12K`, `12.3K`, `3.5M`
 
-**Turn limit:** `_MAX_TURNS = 50` — both loops raise an error event if the model has not produced a final (no-tool-call) response within 50 turns.
+**Turn limit:** `run_query_loop` raises an error event if the model has not produced a final (no-tool-call) response within `_MAX_TURNS = 50` turns. `run_agent_loop` (organize mode) instead uses an adaptive budget, `_analysis_turn_budget(total_discovered)` — `max(_MAX_TURNS, min(_MAX_TURN_BUDGET, _TURN_BUDGET_BASE + _TURN_BUDGET_PER_DOCUMENT * total_discovered))`, i.e. floor 50, ceiling `_MAX_TURN_BUDGET = 2000`, `_TURN_BUDGET_BASE = 30` plus `_TURN_BUDGET_PER_DOCUMENT = 3` turns per document discovered so far — recomputed each iteration as the O5 progress tracker's discovered count grows. It's a backstop against a runaway/looping agent, not the primary cost control (that's the separate, not-yet-implemented O8 pre-ANALYZE approval gate).
 
 ---
 

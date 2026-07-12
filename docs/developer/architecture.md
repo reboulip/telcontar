@@ -180,6 +180,12 @@ Because it mutates the registry, it is *not* added to `QUERY_ALLOWED_TOOLS` (que
 
 This is purely additive to the event stream — no MCP tool signature or tool list changed, and no UI currently consumes the `"progress"` event (a progress bar is a later roadmap item, O6).
 
+### Adaptive turn budget (O4)
+
+`run_agent_loop`'s turn ceiling scales with corpus size instead of a flat cap, so a large directory doesn't hit an artificial wall mid-analysis. `_analysis_turn_budget(total_discovered)` returns `max(_MAX_TURNS, min(_MAX_TURN_BUDGET, _TURN_BUDGET_BASE + _TURN_BUDGET_PER_DOCUMENT * total_discovered))` — floor `_MAX_TURNS = 50`, ceiling `_MAX_TURN_BUDGET = 2000`, `_TURN_BUDGET_BASE = 30` plus `_TURN_BUDGET_PER_DOCUMENT = 3` turns per document discovered so far (the O5 `_ProgressTracker`'s `total` count). The loop recomputes the budget every iteration as more documents surface via `walk_tree`/`record_document`, and the "reached maximum turns" error event/return string reports the actual computed budget rather than a hard-coded number.
+
+This is a backstop against a misbehaving or looping agent, not the primary cost control — that role belongs to a separate, not-yet-implemented pre-ANALYZE token-estimate approval gate (O8). `run_query_loop` (query/chat mode) is untouched and still uses the fixed `_MAX_TURNS = 50` ceiling — see the query data-flow section below.
+
 ### Knowledge graph
 
 `server/graph.py` projects the registry and event journal into a node/edge graph persisted at `GRAPH_PATH` (`.organizer/graph.json`). The graph is a pure, reproducible derivation — no independent state. Node kinds: `document` (one per registry record), `entity` (deduplicated person/org by normalized name), `event` (one per recorded event). Edge types: doc→entity (role-typed), entity↔entity `co_occurrence` (weighted by shared documents), event→entity `mentions` (entity name found in event sentence). Exposed via `build_graph` (rebuild + persist + return), `get_graph` (return last persisted), and `get_actors` (entity nodes ranked by centrality, capped at `salient_cap`).
@@ -246,7 +252,7 @@ Any sink name not in the built-in registry is treated as an external sink. If `e
    read_file/extract_text/compare_documents's diff field (and, per-file, from
    their batch forms read_file_batch/extract_text_batch) is wrapped in the
    untrusted-content delimiter first (M10)
-8. Steps 4-7 repeat (up to MAX_TURNS = 50)
+8. Steps 4-7 repeat (up to the adaptive turn budget — see below)
 9. Once analysis is far enough along, the agent MAY call ask_clarification once with a
    short batch of questions; the host emits a "question" AgentEvent, shows
    ClarificationModal, and feeds the user's answers (or a "proceed with best judgement"
@@ -301,7 +307,7 @@ Any sink name not in the built-in registry is treated as an external sink. If `e
 11. User types another question (goto step 4) or presses Esc to return to the previous screen
 ```
 
-The query loop shares `_MAX_TURNS = 50` with the organize loop. `QUERY_ALLOWED_TOOLS` is a
+The query loop uses the fixed `_MAX_TURNS = 50` ceiling; the organize loop (`run_agent_loop`) instead scales its ceiling with corpus size via `_analysis_turn_budget` (see "Adaptive turn budget (O4)" above) — `_MAX_TURNS` remains its floor. `QUERY_ALLOWED_TOOLS` is a
 `frozenset` defined in `host/agent.py`; it covers inspection tools only — no plan, execution,
 write, graph-build, event-creation, or archive tools are exposed to the model.
 

@@ -1360,3 +1360,79 @@ def test_progress_tracker_total_is_union_of_discovered_and_analyzed() -> None:
     tracker.add_analyzed("/root/a.txt")
     tracker.add_analyzed("/root/never-walked.txt")
     assert tracker.counts() == (2, 2)
+
+
+# ── Adaptive turn budget (O4) ────────────────────────────────────────────────
+
+
+def test_analysis_turn_budget_floors_at_max_turns() -> None:
+    from host.agent import _MAX_TURNS, _analysis_turn_budget
+
+    assert _analysis_turn_budget(0) == _MAX_TURNS
+    assert _analysis_turn_budget(1) == _MAX_TURNS
+
+
+def test_analysis_turn_budget_scales_with_discovered_count() -> None:
+    from host.agent import _analysis_turn_budget
+
+    assert _analysis_turn_budget(10) == 60
+    assert _analysis_turn_budget(100) == 330
+
+
+def test_analysis_turn_budget_caps_at_ceiling() -> None:
+    from host.agent import _analysis_turn_budget
+
+    assert _analysis_turn_budget(1000) == 2000
+    assert _analysis_turn_budget(1_000_000) == 2000
+
+
+async def test_run_agent_loop_stops_at_floor_budget_with_no_discovery(tmp_path: Path) -> None:
+    from host.agent import _MAX_TURNS
+
+    events: list[AgentEvent] = []
+    filler_responses = [_tool_response("list_dir", {"path": str(tmp_path)}, call_id=f"tc{i}") for i in range(_MAX_TURNS)]
+
+    result = await _run(
+        tmp_path,
+        tool_names=["list_dir"],
+        call_results={"list_dir": {"entries": []}},
+        llm_responses=filler_responses,
+        on_event=events.append,
+    )
+
+    assert result == f"Stopped: maximum turns ({_MAX_TURNS}) reached."
+    assert any(e.kind == "error" and f"({_MAX_TURNS})" in e.text for e in events)
+
+
+async def test_run_agent_loop_extends_budget_past_floor_when_documents_discovered(tmp_path: Path) -> None:
+    from host.agent import _MAX_TURNS, _analysis_turn_budget
+
+    events: list[AgentEvent] = []
+    discovered = [str(tmp_path / f"doc{i}.txt") for i in range(10)]
+    budget = _analysis_turn_budget(len(discovered))
+    assert budget > _MAX_TURNS  # sanity: this test only proves something if the budget grew
+
+    # One walk_tree turn discovers 10 docs, then enough filler turns to exceed the
+    # old fixed ceiling of _MAX_TURNS before finally finishing — proving the loop
+    # kept going past 50 because the budget scaled with discovery.
+    filler_count = _MAX_TURNS + 2
+    responses = [_tool_response("walk_tree", {"path": str(tmp_path)}, call_id="tc0")]
+    responses += [
+        _tool_response("list_dir", {"path": str(tmp_path)}, call_id=f"tc{i + 1}") for i in range(filler_count)
+    ]
+    responses.append(_text_response("Done."))
+    assert 1 + filler_count + 1 <= budget
+
+    result = await _run(
+        tmp_path,
+        tool_names=["walk_tree", "list_dir"],
+        call_results={
+            "walk_tree": _walk_result(discovered),
+            "list_dir": {"entries": []},
+        },
+        llm_responses=responses,
+        on_event=events.append,
+    )
+
+    assert result == "Done."
+    assert not any(e.kind == "error" for e in events)

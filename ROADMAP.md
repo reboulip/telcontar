@@ -220,7 +220,7 @@ working in chat after a stop instead of being pushed to the read-only journal/qu
       documents in batches via the new tools (factoring the prompt instead of one document
       per LLM turn), and explicitly require every document discovered by `walk_tree` to be
       analyzed before moving to ORGANIZE — never sample a subset (requires: O1, O2).
-- [ ] O4 · Adaptive turn budget — replace the fixed `_MAX_TURNS = 50` in `host/agent.py`
+- [x] O4 · Adaptive turn budget — replace the fixed `_MAX_TURNS = 50` in `host/agent.py`
       with a budget that scales with the number of documents discovered, so a large corpus
       doesn't hit an artificial ceiling mid-analysis; keep a sane hard ceiling as a safety
       valve against runaway loops.
