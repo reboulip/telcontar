@@ -191,7 +191,7 @@ messy/
     └── copy_of_rapport_final_v3.docx
 ```
 
-A desktop notification fires when the agent is done. Press **g** to open query mode and ask questions about the corpus, **j** to view the operations journal (and **u** there to undo the most recent operation), or **q** to quit the TUI.
+A desktop notification fires when the agent is done. At this point a chat box appears at the bottom of the screen — type a follow-up message (e.g. "quarantine the drafts too") to keep going on the same conversation, with the same mutating toolset, without restarting the run. Press **g** instead to open a separate read-only query mode and ask questions about the corpus, **j** to view the operations journal (and **u** there to undo the most recent operation), or **q** to quit the TUI.
 
 ---
 

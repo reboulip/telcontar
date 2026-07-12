@@ -96,6 +96,26 @@ def _steps_text(screen) -> str:
     return "\n".join(str(w.content) for w in screen.query(".steps-log"))
 
 
+def _patch_run_agent_loop(monkeypatch: pytest.MonkeyPatch, fake_run_agent_loop) -> None:
+    """Patch OrganizerScreen's agent-loop entry points for a test double (O7).
+
+    O7 restructured `OrganizerScreen._agent_worker` off the one-shot `run_agent`
+    convenience call onto `mcp_session(...) + run_agent_loop(...)` directly (so the
+    MCP session stays open across the initial run and any follow-up chat turns) —
+    mirroring `QueryScreen._query_worker`'s pattern. Test doubles patch at this
+    same seam: a no-op `mcp_session` context manager plus a `fake_run_agent_loop`
+    matching `run_agent_loop`'s signature, returning `(text, history)`.
+    """
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def fake_mcp_session(project_root, target=None):
+        yield object()
+
+    monkeypatch.setattr("host.agent.mcp_session", fake_mcp_session)
+    monkeypatch.setattr("host.agent.run_agent_loop", fake_run_agent_loop)
+
+
 async def test_setup_wizard_welcome_step_wraps_instead_of_truncating(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -368,19 +388,23 @@ async def test_organizer_screen_groups_tool_events_into_steps(
         target,
         settings,
         llm,
+        session=None,
         on_event,
         on_approval_needed,
         on_questions_needed=None,
         on_options_needed=None,
         on_cost_approval_needed=None,
+        project_root=None,
         instructions=None,
+        history=None,
+        message=None,
     ):
         on_event(AgentEvent("tool_call", "list_dir(path='.')"))
         on_event(AgentEvent("tool_result", "{'entries': []}"))
         on_event(AgentEvent("done", "All done."))
-        return "All done."
+        return "All done.", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
@@ -416,10 +440,10 @@ async def test_organizer_screen_q_shortcut_quits(
     monkeypatch.setattr("config.settings.is_configured", lambda: True)
     monkeypatch.setattr("host.app._send_notification", lambda target: None)
 
-    async def fake_run_agent(**kwargs: object) -> str:
-        return "done"
+    async def fake_run_agent(**kwargs: object) -> tuple[str, list]:
+        return "done", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
@@ -1009,18 +1033,22 @@ async def test_organizer_status_bar_shows_token_usage(
         target,
         settings,
         llm,
+        session=None,
         on_event,
         on_approval_needed,
         on_questions_needed=None,
         on_options_needed=None,
         on_cost_approval_needed=None,
+        project_root=None,
         instructions=None,
+        history=None,
+        message=None,
     ):
         on_event(AgentEvent("tokens", "12.3K in / 1.0K out", data={"in": 12300, "out": 1000}))
         on_event(AgentEvent("done", "done"))
-        return "done"
+        return "done", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
@@ -1052,16 +1080,20 @@ async def test_organizer_progress_row_hidden_until_first_progress_event(
         target,
         settings,
         llm,
+        session=None,
         on_event,
         on_approval_needed,
         on_questions_needed=None,
         on_options_needed=None,
         on_cost_approval_needed=None,
+        project_root=None,
         instructions=None,
+        history=None,
+        message=None,
     ):
-        return "done"
+        return "done", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
@@ -1091,17 +1123,21 @@ async def test_organizer_progress_row_shows_and_updates_on_progress_event(
         target,
         settings,
         llm,
+        session=None,
         on_event,
         on_approval_needed,
         on_questions_needed=None,
         on_options_needed=None,
         on_cost_approval_needed=None,
+        project_root=None,
         instructions=None,
+        history=None,
+        message=None,
     ):
         on_event(AgentEvent("progress", "Analyzed 3 / 10 documents", data={"analyzed": 3, "total": 10}))
-        return "in progress"
+        return "in progress", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
@@ -1131,18 +1167,22 @@ async def test_organizer_progress_row_hides_on_done(
         target,
         settings,
         llm,
+        session=None,
         on_event,
         on_approval_needed,
         on_questions_needed=None,
         on_options_needed=None,
         on_cost_approval_needed=None,
+        project_root=None,
         instructions=None,
+        history=None,
+        message=None,
     ):
         on_event(AgentEvent("progress", "Analyzed 3 / 10 documents", data={"analyzed": 3, "total": 10}))
         on_event(AgentEvent("done", "done"))
-        return "done"
+        return "done", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
@@ -1170,18 +1210,22 @@ async def test_organizer_progress_row_hides_on_error(
         target,
         settings,
         llm,
+        session=None,
         on_event,
         on_approval_needed,
         on_questions_needed=None,
         on_options_needed=None,
         on_cost_approval_needed=None,
+        project_root=None,
         instructions=None,
+        history=None,
+        message=None,
     ):
         on_event(AgentEvent("progress", "Analyzed 3 / 10 documents", data={"analyzed": 3, "total": 10}))
         on_event(AgentEvent("error", "Reached maximum turns (50); stopping."))
-        return "Stopped: maximum turns (50) reached."
+        return "Stopped: maximum turns (50) reached.", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
@@ -1212,12 +1256,16 @@ async def test_organizer_narrates_macro_tasks_in_transcript(
         target,
         settings,
         llm,
+        session=None,
         on_event,
         on_approval_needed,
         on_questions_needed=None,
         on_options_needed=None,
         on_cost_approval_needed=None,
+        project_root=None,
         instructions=None,
+        history=None,
+        message=None,
     ):
         on_event(AgentEvent("tool_call", "read_file(path='a')", data={"tool": "read_file"}))
         # Same macro-task → must collapse to one narration turn.
@@ -1226,9 +1274,9 @@ async def test_organizer_narrates_macro_tasks_in_transcript(
             AgentEvent("tool_call", "compute_checksum(path='a')", data={"tool": "compute_checksum"})
         )
         on_event(AgentEvent("done", "done"))
-        return "done"
+        return "done", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
@@ -1280,19 +1328,23 @@ async def test_organizer_narrates_new_propose_tools_as_planning_changes(
         target,
         settings,
         llm,
+        session=None,
         on_event,
         on_approval_needed,
         on_questions_needed=None,
         on_options_needed=None,
         on_cost_approval_needed=None,
+        project_root=None,
         instructions=None,
+        history=None,
+        message=None,
     ):
         for tool in new_propose_tools:
             on_event(AgentEvent("tool_call", f"{tool}(...)", data={"tool": tool}))
         on_event(AgentEvent("done", "done"))
-        return "done"
+        return "done", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
@@ -1348,11 +1400,11 @@ async def test_startup_picker_selection_drives_organize(
     monkeypatch.setattr("host.app._send_notification", lambda target: None)
 
     async def fake_run_agent(
-        *, target, settings, llm, on_event, on_approval_needed, on_questions_needed=None
+        *, target, settings, llm, on_event, on_approval_needed, on_questions_needed=None, **kwargs: object
     ):
-        return "done"
+        return "done", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
@@ -1416,11 +1468,11 @@ async def test_organizer_proceed_reveals_transcript_and_starts_agent(
 
     started = {"count": 0}
 
-    async def fake_run_agent(**kwargs: object) -> str:
+    async def fake_run_agent(**kwargs: object) -> tuple[str, list]:
         started["count"] += 1
-        return "done"
+        return "done", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
@@ -1450,11 +1502,11 @@ async def test_organizer_passes_steering_instructions_to_agent(
 
     captured: dict = {}
 
-    async def fake_run_agent(*, instructions=None, **kwargs: object) -> str:
+    async def fake_run_agent(*, instructions=None, **kwargs: object) -> tuple[str, list]:
         captured["instructions"] = instructions
-        return "done"
+        return "done", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
@@ -1519,7 +1571,7 @@ async def test_ops_journal_empty_then_updates_as_operations_execute(
     journal_path = tmp_path / "journal.jsonl"  # does not exist yet
     monkeypatch.setattr("host.app._resolve_journal_path", lambda root: journal_path)
 
-    async def fake_run_agent(*, on_event, instructions=None, **kwargs: object) -> str:
+    async def fake_run_agent(*, on_event, instructions=None, **kwargs: object) -> tuple[str, list]:
         # A move operation lands in the undo journal mid-run…
         journal_path.write_text(
             json.dumps(
@@ -1538,9 +1590,9 @@ async def test_ops_journal_empty_then_updates_as_operations_execute(
         )
         on_event(AgentEvent("tool_result", "{'ops_completed': 1}"))
         on_event(AgentEvent("done", "done"))
-        return "done"
+        return "done", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(120, 40)) as pilot:
@@ -1555,3 +1607,168 @@ async def test_ops_journal_empty_then_updates_as_operations_execute(
         journal_log = _richlog_text(app.screen.query_one("#ops-journal", RichLog))
         assert "report.pdf" in journal_log
         assert "move" in journal_log
+
+
+# ── O7: resumable chat after a stop ───────────────────────────────────────────
+
+
+async def test_organize_input_disabled_until_first_terminal_state(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    async def fake_run_agent_loop(**kwargs: object) -> tuple[str, list]:
+        return "done", []
+
+    _patch_run_agent_loop(monkeypatch, fake_run_agent_loop)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        assert app.screen.query_one("#organize-input", Input).disabled is True
+        await pilot.click("#proceed-btn")
+        await pilot.pause()
+        await pilot.pause(0.1)
+        assert app.screen.query_one("#organize-input", Input).disabled is False
+
+
+async def test_organize_input_submit_continues_the_conversation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    calls: list[dict] = []
+
+    async def fake_run_agent_loop(
+        *, on_event, history=None, message=None, **kwargs: object
+    ) -> tuple[str, list]:
+        calls.append({"history": history, "message": message})
+        if history is None:
+            on_event(AgentEvent("done", "Initial done."))
+            return "Initial done.", [{"role": "system"}, {"role": "user"}, {"role": "assistant"}]
+        on_event(AgentEvent("done", "Follow-up done."))
+        return "Follow-up done.", [*history, {"role": "user", "content": message}, {"role": "assistant"}]
+
+    _patch_run_agent_loop(monkeypatch, fake_run_agent_loop)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        await pilot.click("#proceed-btn")
+        await pilot.pause()
+        await pilot.pause(0.1)
+        assert len(calls) == 1
+        assert calls[0]["history"] is None
+
+        organize_input = app.screen.query_one("#organize-input", Input)
+        organize_input.focus()
+        await pilot.pause()
+        organize_input.value = "also quarantine the drafts"
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause(0.1)
+
+        assert len(calls) == 2
+        assert calls[1]["message"] == "also quarantine the drafts"
+        assert calls[1]["history"] is not None
+        transcript = _transcript_text(app.screen)
+        assert "also quarantine the drafts" in transcript
+        assert "Follow-up done." in transcript
+        # Input clears after submit and re-enables once the follow-up turn finishes.
+        assert organize_input.value == ""
+        assert organize_input.disabled is False
+
+
+async def test_organize_input_blank_submit_is_noop(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    calls: list[dict] = []
+
+    async def fake_run_agent_loop(*, history=None, message=None, **kwargs: object) -> tuple[str, list]:
+        calls.append({"history": history, "message": message})
+        return "done", []
+
+    _patch_run_agent_loop(monkeypatch, fake_run_agent_loop)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        await pilot.click("#proceed-btn")
+        await pilot.pause()
+        await pilot.pause(0.1)
+        assert len(calls) == 1
+
+        organize_input = app.screen.query_one("#organize-input", Input)
+        organize_input.value = "   "
+        await pilot.press("enter")
+        await pilot.pause()
+
+        # A blank submit never queues a second call.
+        assert len(calls) == 1
+
+
+async def test_organizer_notification_and_g_keybinding_fire_once_across_continuations(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    notifications: list[Path] = []
+    monkeypatch.setattr("host.app._send_notification", lambda target: notifications.append(target))
+
+    async def fake_run_agent_loop(
+        *, on_event, history=None, message=None, **kwargs: object
+    ) -> tuple[str, list]:
+        if history is None:
+            on_event(AgentEvent("done", "Initial done."))
+            return "Initial done.", [{"role": "system"}, {"role": "user"}, {"role": "assistant"}]
+        on_event(AgentEvent("done", "Follow-up done."))
+        return "Follow-up done.", [*history, {"role": "user", "content": message}, {"role": "assistant"}]
+
+    _patch_run_agent_loop(monkeypatch, fake_run_agent_loop)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        await pilot.click("#proceed-btn")
+        await pilot.pause()
+        await pilot.pause(0.1)
+        assert len(notifications) == 1
+
+        organize_input = app.screen.query_one("#organize-input", Input)
+        organize_input.focus()
+        await pilot.pause()
+        organize_input.value = "one more thing"
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause(0.1)
+
+        # The follow-up turn's own "done" event must not repeat the notification.
+        assert len(notifications) == 1

@@ -1293,6 +1293,10 @@ class OrganizerScreen(Screen):
         color: $text-muted;
         padding: 0 1;
     }
+    #organize-input {
+        dock: bottom;
+        margin: 0 1 1 1;
+    }
     """
 
     BINDINGS = [
@@ -1324,6 +1328,13 @@ class OrganizerScreen(Screen):
         # closes the group so the next tool call opens a fresh Collapsible).
         self._steps_widget: Static | None = None
         self._steps_lines: list[str] = []
+        # Resumable chat (O7): the conversation history returned by the last
+        # run_agent_loop call, threaded into the next one so a follow-up chat
+        # message continues the same conversation on the same MCP session.
+        # Free-text messages typed into #organize-input once a run reaches a
+        # terminal state (done/error/max-turns).
+        self._history: list[dict] | None = None
+        self._messages: asyncio.Queue[str] = asyncio.Queue()
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -1355,6 +1366,13 @@ class OrganizerScreen(Screen):
             yield Label("", id="progress-label")
             yield ProgressBar(total=None, show_eta=False, id="progress-bar")
         yield Static(self._status, id="status-bar")
+        # Resumable-chat input (O7): disabled until the run reaches a terminal
+        # state, then re-enabled after every subsequent chat turn too.
+        yield Input(
+            placeholder="Once done, keep chatting to refine (e.g. \"quarantine the drafts too\")…",
+            id="organize-input",
+            disabled=True,
+        )
         yield Footer()
 
     def on_mount(self) -> None:
@@ -1364,6 +1382,15 @@ class OrganizerScreen(Screen):
         self._set_status("Review the overview, add any instructions, then Start organizing.")
         self._refresh_ops_journal()
         self.query_one("#instructions-input", Input).focus()
+
+    @on(Input.Submitted, "#organize-input")
+    def _organize_submit(self, event: Input.Submitted) -> None:
+        message = event.value.strip()
+        if not message:
+            return
+        self.query_one("#organize-input", Input).value = ""
+        self._add_turn("user", message)
+        self._messages.put_nowait(message)
 
     @on(Button.Pressed, "#proceed-btn")
     def _proceed_button(self) -> None:
@@ -1462,6 +1489,24 @@ class OrganizerScreen(Screen):
         except NoMatches:
             pass
 
+    def _note_terminal_state(self) -> None:
+        """Fire the one-time "you can chat/query now" cue (O7).
+
+        Called from every "done"/"error" event, but the notification and 'g'
+        keybinding unlock only happen on the FIRST terminal state — subsequent
+        chat-turn completions re-enable the chat input (handled by the worker's
+        queue loop) without repeating the notification.
+        """
+        if self._done:
+            return
+        self._done = True
+        self._add_turn(
+            "telcontar",
+            "[bold]Press [cyan]g[/cyan] to ask questions about this corpus, or keep "
+            "chatting below to refine. [cyan]q[/cyan] to quit.[/bold]",
+        )
+        _send_notification(self._target)
+
     def _set_status(self, text: str) -> None:
         self._status = text
         self._refresh_status_bar()
@@ -1523,7 +1568,7 @@ class OrganizerScreen(Screen):
 
     async def _agent_worker(self, instructions: str | None = None) -> None:
         from config.settings import load as load_settings
-        from host.agent import run_agent
+        from host.agent import mcp_session, run_agent_loop
         from host.llm import make_client
 
         try:
@@ -1568,6 +1613,7 @@ class OrganizerScreen(Screen):
                     self._refresh_ops_journal()
                     self._set_status("Done")
                     self._hide_progress()
+                    self._note_terminal_state()
                 case "error":
                     self._add_turn(
                         "telcontar",
@@ -1576,6 +1622,7 @@ class OrganizerScreen(Screen):
                     )
                     self._set_status("Error")
                     self._hide_progress()
+                    self._note_terminal_state()
 
         async def on_approval_needed(plan_id: str, plan_data: dict) -> ApprovalResult:
             self._add_turn(
@@ -1640,18 +1687,42 @@ class OrganizerScreen(Screen):
             )
             return result
 
+        project_root = Path(__file__).resolve().parent.parent
         try:
-            await run_agent(
-                target=self._target,
-                settings=settings,
-                llm=llm,
-                on_event=on_event,
-                on_approval_needed=on_approval_needed,
-                on_questions_needed=on_questions_needed,
-                on_options_needed=on_options_needed,
-                on_cost_approval_needed=on_cost_approval_needed,
-                instructions=instructions,
-            )
+            async with mcp_session(project_root, target=self._target) as session:
+                _summary, self._history = await run_agent_loop(
+                    target=self._target,
+                    settings=settings,
+                    llm=llm,
+                    session=session,
+                    on_event=on_event,
+                    on_approval_needed=on_approval_needed,
+                    on_questions_needed=on_questions_needed,
+                    on_options_needed=on_options_needed,
+                    on_cost_approval_needed=on_cost_approval_needed,
+                    project_root=project_root,
+                    instructions=instructions,
+                )
+
+                organize_input = self.query_one("#organize-input", Input)
+                while True:
+                    organize_input.disabled = False
+                    message = await self._messages.get()
+                    organize_input.disabled = True
+                    _summary, self._history = await run_agent_loop(
+                        target=self._target,
+                        settings=settings,
+                        llm=llm,
+                        session=session,
+                        on_event=on_event,
+                        on_approval_needed=on_approval_needed,
+                        on_questions_needed=on_questions_needed,
+                        on_options_needed=on_options_needed,
+                        on_cost_approval_needed=on_cost_approval_needed,
+                        project_root=project_root,
+                        history=self._history,
+                        message=message,
+                    )
         except Exception as exc:
             self._add_turn(
                 "telcontar",
@@ -1659,15 +1730,6 @@ class OrganizerScreen(Screen):
                 "[dim]Press j to view the operation journal for details.[/dim]",
             )
             self._set_status("Error")
-            return
-
-        self._done = True
-        self._add_turn(
-            "telcontar",
-            "[bold]Press [cyan]g[/cyan] to ask questions about this corpus, "
-            "or [cyan]q[/cyan] to quit.[/bold]",
-        )
-        _send_notification(self._target)
 
     def action_query_corpus(self) -> None:
         """Switch into interactive query mode over the just-organized corpus."""

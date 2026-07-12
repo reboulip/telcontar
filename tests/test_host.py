@@ -118,7 +118,7 @@ async def _run(
 ) -> str:
     if plans_dir is None:
         plans_dir = tmp_path
-    return await run_agent_loop(
+    text, _ = await run_agent_loop(
         target=tmp_path,
         settings=_settings(plans_dir, approval_mode=approval_mode),
         llm=_llm(*llm_responses),
@@ -127,6 +127,7 @@ async def _run(
         on_approval_needed=on_approval_needed or AsyncMock(return_value=ApprovalResult(True)),
         on_cost_approval_needed=on_cost_approval_needed,
     )
+    return text
 
 
 # ── Loop termination ──────────────────────────────────────────────────────────
@@ -1556,7 +1557,7 @@ async def test_cost_gate_rejection_blocks_the_batch_call_and_reports_error(tmp_p
     on_cost_approval = AsyncMock(return_value=CostApprovalResult(approved=False))
     s = _session(["walk_tree", "extract_text_batch"], {"walk_tree": _walk_result_with_sizes([(a, 100)])})
 
-    result = await run_agent_loop(
+    result, _ = await run_agent_loop(
         target=tmp_path,
         settings=_settings(tmp_path),
         llm=_llm(
@@ -1628,3 +1629,191 @@ def test_progress_tracker_cost_estimate_uses_max_snippet_chars_cap() -> None:
     assert doc_count == 2
     # small.txt: 400 // 4 = 100; big.txt capped at 4000 // 4 = 1000
     assert tokens == 1100
+
+
+# ── Resumable chat (O7) ───────────────────────────────────────────────────────
+
+
+def _multi_tool_response(calls: list[tuple[str, dict, str]]) -> MagicMock:
+    """LLM response with several tool calls in a single turn."""
+    tcs = []
+    tool_calls_json = []
+    for name, args, call_id in calls:
+        tc = MagicMock()
+        tc.id = call_id
+        tc.function.name = name
+        tc.function.arguments = json.dumps(args)
+        tcs.append(tc)
+        tool_calls_json.append({"id": call_id, "function": {"name": name, "arguments": json.dumps(args)}})
+    msg = MagicMock()
+    msg.tool_calls = tcs
+    msg.content = None
+    msg.model_dump.return_value = {"role": "assistant", "tool_calls": tool_calls_json}
+    choice = MagicMock()
+    choice.message = msg
+    resp = MagicMock()
+    resp.choices = [choice]
+    return resp
+
+
+async def test_run_agent_loop_returns_history_alongside_text(tmp_path: Path) -> None:
+    text, history = await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=_llm(_text_response("All done.")),
+        session=_session(["list_dir"], {}),
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+    )
+
+    assert text == "All done."
+    assert history[0]["role"] == "system"
+    assert history[1]["role"] == "user"
+    assert history[-1]["role"] == "assistant"
+
+
+async def test_run_agent_loop_continuation_reuses_history_and_appends_message(tmp_path: Path) -> None:
+    text1, history1 = await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=_llm(_text_response("First done.")),
+        session=_session(["list_dir"], {}),
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+    )
+    assert text1 == "First done."
+
+    text2, history2 = await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=_llm(_text_response("Second done.")),
+        session=_session(["list_dir"], {}),
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+        history=history1,
+        message="please also quarantine the drafts",
+    )
+
+    assert text2 == "Second done."
+    assert history2 is history1  # reused in place, not rebuilt
+    assert len(history2) == len(history1)  # history1 mutated in place by the continuation
+    continuation_user_turn = [m for m in history2 if m.get("content") == "please also quarantine the drafts"]
+    assert len(continuation_user_turn) == 1
+    assert continuation_user_turn[0]["role"] == "user"
+    assert history2[-1] == {"role": "assistant", "content": "Second done."}
+
+
+async def test_run_agent_loop_continuation_without_message_just_resumes(tmp_path: Path) -> None:
+    text1, history1 = await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=_llm(_text_response("First done.")),
+        session=_session(["list_dir"], {}),
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+    )
+    turns_before = len(history1)
+
+    text2, history2 = await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=_llm(_text_response("Second done.")),
+        session=_session(["list_dir"], {}),
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+        history=history1,
+    )
+
+    assert text2 == "Second done."
+    # No new user turn was appended — only the fresh assistant reply.
+    assert len(history2) == turns_before + 1
+
+
+async def test_run_agent_loop_synthesizes_tool_errors_on_exception_and_allows_recovery(
+    tmp_path: Path,
+) -> None:
+    events: list[AgentEvent] = []
+    s = AsyncMock()
+    s.list_tools.return_value = _list_tools(["list_dir", "read_file"])
+
+    async def _call(name: str, args: dict | None = None) -> MagicMock:
+        if name == "read_file":
+            raise RuntimeError("boom")
+        return _mcp_result({"entries": []})
+
+    s.call_tool.side_effect = _call
+
+    llm = AsyncMock()
+    llm.chat.completions.create.side_effect = [
+        _multi_tool_response(
+            [("list_dir", {"path": "."}, "tc1"), ("read_file", {"path": "a.txt"}, "tc2")]
+        ),
+    ]
+
+    text, messages = await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=llm,
+        session=s,
+        on_event=events.append,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+    )
+
+    assert text.startswith("Error:")
+    assert any(e.kind == "error" for e in events)
+
+    # Every tool_call the failing assistant turn made has a matching tool result
+    # (list_dir's real one, read_file's synthesized error) — no dangling calls.
+    assistant_msg = next(m for m in messages if m.get("role") == "assistant" and m.get("tool_calls"))
+    call_ids = {tc["id"] for tc in assistant_msg["tool_calls"]}
+    tool_msg_ids = {m["tool_call_id"] for m in messages if m.get("role") == "tool"}
+    assert call_ids <= tool_msg_ids
+    synthesized = next(m for m in messages if m.get("tool_call_id") == "tc2")
+    assert json.loads(synthesized["content"])["error"].startswith("Error:")
+
+    # Recovery: a follow-up call reusing this history succeeds.
+    text2, _messages2 = await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=_llm(_text_response("Recovered.")),
+        session=s,
+        on_event=events.append,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+        history=messages,
+        message="try again",
+    )
+    assert text2 == "Recovered."
+
+
+async def test_run_agent_loop_continuation_gets_a_fresh_turn_budget(tmp_path: Path) -> None:
+    from host.agent import _MAX_TURNS
+
+    text1, history1 = await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=_llm(_text_response("First done.")),
+        session=_session(["list_dir"], {}),
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+    )
+
+    # A continuation that itself needs _MAX_TURNS - 1 filler turns before finishing
+    # must not be starved by the initial call's own turn usage.
+    filler_count = _MAX_TURNS - 1
+    responses = [
+        _tool_response("list_dir", {"path": str(tmp_path)}, call_id=f"tc{i}") for i in range(filler_count)
+    ]
+    responses.append(_text_response("Second done."))
+
+    text2, _history2 = await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=_llm(*responses),
+        session=_session(["list_dir"], {"list_dir": {"entries": []}}),
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+        history=history1,
+        message="do a lot of work",
+    )
+
+    assert text2 == "Second done."

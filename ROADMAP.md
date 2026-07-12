@@ -231,7 +231,7 @@ working in chat after a stop instead of being pushed to the read-only journal/qu
 - [x] O6 · Progress bar in the TUI — add a Textual `ProgressBar` to `OrganizerScreen`,
       wired to the `"progress"` event, showing analyzed/total document counts during the
       run (requires: O5).
-- [ ] O7 · Resumable chat after a stop — refactor `run_agent_loop` to take/return
+- [x] O7 · Resumable chat after a stop — refactor `run_agent_loop` to take/return
       conversation history (mirroring `run_query_loop`'s `history` in/out shape) so a run
       that finished, errored, or hit the turn ceiling can be continued with a new free-text
       user message using the same mutating toolset, instead of only offering the journal

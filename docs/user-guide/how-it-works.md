@@ -34,7 +34,7 @@ Pressing **Organize** does not launch the agent immediately. The `OrganizerScree
 - An optional **steering instructions** field for free text, e.g. "group by workstream", "keep the 2024 invoices together", or "don't quarantine drafts".
 - A **Start organizing** button (pressing Enter in the instructions field works too).
 
-Only once you proceed does the chat transcript appear and the agent loop start. Any instructions you typed are shown as a `you` turn in the transcript and passed to `run_agent(..., instructions=...)`, which appends them to the agent's first user message so the run follows your intent instead of organizing blind.
+Only once you proceed does the chat transcript appear and the agent loop start. Any instructions you typed are shown as a `you` turn in the transcript and passed to `run_agent_loop(..., instructions=...)`, which appends them to the agent's first user message so the run follows your intent instead of organizing blind.
 
 ---
 
@@ -223,6 +223,44 @@ Because the registry is keyed by checksum, moving or renaming a file does **not*
 ### Undoing an operation
 
 Undo is a **manual, user-only action** — the agent has no tool to trigger it. In the Organizer screen, press **j** to open the operations-journal viewer, then **u** to revert the most recent journaled operation. This calls `server.tools.undo_last` directly from the TUI, bypassing the agent entirely.
+
+---
+
+## Continuing after a run (resumable chat)
+
+A run doesn't have to end the conversation. Once it reaches a **terminal state** — it finishes normally, hits an error, or exhausts its turn budget — a chat box (`#organize-input`) appears at the bottom of the Organizer screen, and the same MCP server subprocess stays open for as long as the screen does.
+
+Typing a message there:
+
+1. Echoes it into the transcript as a `you` turn
+2. Resumes the agent loop with the conversation history returned by the previous call, plus your new message appended as a fresh user turn
+3. Runs with the **full mutating toolset** — plan, execute, write, everything the initial run had — so a follow-up like "quarantine the drafts too" or "actually group these by workstream" continues the *same* conversation instead of starting a fresh one
+
+```
+Run reaches a terminal state (done / error / max turns)
+       │
+       ▼
+Chat box becomes enabled; "press g or keep chatting" cue shown once
+       │
+   You type a message
+       │
+       ▼
+Message echoed as a "you" turn; the agent loop resumes on the SAME
+session with (history=<previous>, message=<your text>)
+       │
+       ▼
+Agent responds — may call any tool, including execute_plan (a new
+plan gets a new approval) — chat box disables while the turn runs,
+then re-enables once it reaches a terminal state again
+```
+
+This is distinct from **query mode** (`g`): query mode opens a *separate* screen on a *separate* MCP session with a strictly read-only toolset — safe for "just asking" without risking a mutation. The chat box instead continues the mutating conversation in place. Both become available once a run reaches its first terminal state, and either can be used depending on what you need next.
+
+A couple of things carry over differently on a continuation:
+
+- Each chat message gets its **own fresh turn budget**, not a share of the original run's. Since a continuation doesn't re-survey the tree with `walk_tree`, the adaptive turn-budget calculation (which scales with corpus size) resets to its floor of 50 turns — in practice not a limitation, since a follow-up message is normally a small, targeted ask rather than a fresh full-corpus analysis.
+- The desktop notification and the "press g / keep chatting" cue fire only once, on the *first* terminal state — not again after every subsequent chat turn.
+- If a turn raises an unhandled error partway through a batch of tool calls, telcontar no longer crashes the conversation: any tool call left without a result is answered with a synthetic error so the history stays valid, and you can keep typing to try again.
 
 ---
 

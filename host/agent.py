@@ -705,14 +705,21 @@ async def run_agent(
     on_options_needed: OptionsCallback | None = None,
     on_cost_approval_needed: CostApprovalCallback | None = None,
     instructions: str | None = None,
-) -> str:
-    """Launch the MCP server and run the agent loop. Returns final summary text.
+    history: list[dict[str, Any]] | None = None,
+    message: str | None = None,
+) -> tuple[str, list[dict[str, Any]]]:
+    """Launch the MCP server and run the agent loop. Returns (final_text, history).
 
     ``instructions`` carries the user's optional pre-analysis steering text (L3);
     it is appended to the agent's first user turn so the run follows the user's
     intent instead of auto-organizing blind. ``on_options_needed`` wires the L7
     multiple-option checkpoint. ``on_cost_approval_needed`` wires the O8
-    pre-ANALYZE token-estimate approval gate.
+    pre-ANALYZE token-estimate approval gate. ``history``/``message`` mirror
+    ``run_query_loop``'s shape (O7): pass the history returned by a previous call
+    back in, with a new free-text ``message``, to continue the same conversation
+    with a new chat turn instead of starting a fresh run. For a multi-turn chat,
+    keep a single session open and call ``run_agent_loop`` directly instead (one
+    server subprocess for the whole conversation).
     """
     project_root = Path(__file__).resolve().parent.parent
     async with mcp_session(project_root, target=target) as session:
@@ -728,6 +735,8 @@ async def run_agent(
             on_cost_approval_needed=on_cost_approval_needed,
             project_root=project_root,
             instructions=instructions,
+            history=history,
+            message=message,
         )
 
 
@@ -743,7 +752,9 @@ async def run_agent_loop(
     on_cost_approval_needed: CostApprovalCallback | None = None,
     project_root: Path | None = None,
     instructions: str | None = None,
-) -> str:
+    history: list[dict[str, Any]] | None = None,
+    message: str | None = None,
+) -> tuple[str, list[dict[str, Any]]]:
     """Run the GPT-5 tool-calling loop against an already-connected MCP session.
 
     Separated from run_agent so tests can inject a mock session directly.
@@ -753,6 +764,27 @@ async def run_agent_loop(
     pre-ANALYZE token-estimate approval gate — when None, or when
     ``settings.approval_mode == "never"``, the gate auto-approves (still emits the
     "cost_estimate" event for observability, just never blocks on it).
+
+    ``history``/``message`` (O7): when ``history`` is None (the default), a fresh
+    run is seeded from ``target``/``instructions`` as before. When ``history`` is
+    given (the list returned by a previous call), it is reused as-is and
+    ``message`` — a new free-text user turn — is appended before resuming, so a
+    run that finished, errored, or hit the turn ceiling can be continued with the
+    same mutating toolset instead of only offering read-only query mode. Returns
+    ``(final_text, updated_history)``.
+
+    A per-call turn budget is used even on a continuation (each chat message gets
+    its own fresh allowance, not a shared budget) — note this also means the O4
+    adaptive-budget formula sees a fresh, empty progress tracker on a continuation
+    call (no new ``walk_tree`` survey happens), so a continuation's budget floors
+    at ``_MAX_TURNS`` rather than reflecting the full corpus size from the initial
+    pass — acceptable since a follow-up chat turn is typically a small, targeted
+    ask, not a fresh full-corpus ANALYZE.
+
+    An unhandled exception during the loop never propagates: it's caught, any
+    tool call left without a matching tool-result message is answered with a
+    synthetic error response (so ``messages`` stays valid for a follow-up call),
+    and ``(error_text, messages)`` is returned instead.
     """
     if project_root is None:
         project_root = Path(__file__).resolve().parent.parent
@@ -771,70 +803,87 @@ async def run_agent_loop(
     tracker = _ProgressTracker()
     previous_progress = tracker.counts()
 
-    user_content = f"Please organize the directory: {target}"
-    if instructions and instructions.strip():
-        user_content += (
-            "\n\nThe user gave these steering instructions before analysis — "
-            f"follow them:\n{instructions.strip()}"
-        )
-    messages: list[dict[str, Any]] = [
-        {"role": "system", "content": _build_system_prompt(project_root, settings)},
-        {"role": "user", "content": user_content},
-    ]
-
-    on_event(AgentEvent("thinking", f"Starting agent for {target}"))
+    if history is None:
+        user_content = f"Please organize the directory: {target}"
+        if instructions and instructions.strip():
+            user_content += (
+                "\n\nThe user gave these steering instructions before analysis — "
+                f"follow them:\n{instructions.strip()}"
+            )
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": _build_system_prompt(project_root, settings)},
+            {"role": "user", "content": user_content},
+        ]
+        on_event(AgentEvent("thinking", f"Starting agent for {target}"))
+    else:
+        messages = history
+        if message and message.strip():
+            messages.append({"role": "user", "content": message.strip()})
+        on_event(AgentEvent("thinking", f"Continuing agent for {target}"))
 
     token_totals = {"in": 0, "out": 0}
     turn = 0
-    while turn < _analysis_turn_budget(tracker.counts()[1]):
-        on_event(AgentEvent("thinking", "Calling LLM…"))
+    try:
+        while turn < _analysis_turn_budget(tracker.counts()[1]):
+            on_event(AgentEvent("thinking", "Calling LLM…"))
 
-        response = await llm.chat.completions.create(
-            model=settings.llm_model,
-            messages=messages,  # type: ignore[arg-type]
-            tools=openai_tools,  # type: ignore[arg-type]
-            tool_choice="auto",
-        )
-        _accumulate_tokens(response, token_totals, on_event)
+            response = await llm.chat.completions.create(
+                model=settings.llm_model,
+                messages=messages,  # type: ignore[arg-type]
+                tools=openai_tools,  # type: ignore[arg-type]
+                tool_choice="auto",
+            )
+            _accumulate_tokens(response, token_totals, on_event)
 
-        choice = response.choices[0]
-        messages.append(choice.message.model_dump(exclude_none=True))
+            choice = response.choices[0]
+            messages.append(choice.message.model_dump(exclude_none=True))
 
-        # No tool calls → agent is finished
-        if not choice.message.tool_calls:
-            final_text = choice.message.content or "Done."
-            on_event(AgentEvent("done", final_text))
-            return final_text
+            # No tool calls → agent is finished
+            if not choice.message.tool_calls:
+                final_text = choice.message.content or "Done."
+                on_event(AgentEvent("done", final_text))
+                return final_text, messages
 
-        for tool_call in choice.message.tool_calls:
-            name = tool_call.function.name
-            args: dict[str, Any] = json.loads(tool_call.function.arguments or "{}")
+            for tool_call in choice.message.tool_calls:
+                name = tool_call.function.name
+                args: dict[str, Any] = json.loads(tool_call.function.arguments or "{}")
 
-            on_event(AgentEvent("tool_call", f"{name}({_fmt_args(args)})", data={"tool": name}))
-
-            if name == _CLARIFY_TOOL_NAME:
-                result, clarification_used = await _handle_clarification(
-                    args=args,
-                    on_event=on_event,
-                    on_questions_needed=on_questions_needed,
-                    already_used=clarification_used,
+                on_event(
+                    AgentEvent("tool_call", f"{name}({_fmt_args(args)})", data={"tool": name})
                 )
-            elif name == _OPTIONS_TOOL_NAME:
-                result, options_used = await _handle_options(
-                    args=args,
-                    on_event=on_event,
-                    on_options_needed=on_options_needed,
-                    already_used=options_used,
-                )
-            elif name in _COST_GATED_BATCH_TOOLS and not cost_approval_shown:
-                gate_error, cost_approval_shown = await _handle_cost_approval(
-                    tracker=tracker,
-                    settings=settings,
-                    on_event=on_event,
-                    on_cost_approval_needed=on_cost_approval_needed,
-                )
-                if gate_error is not None:
-                    result = gate_error
+
+                if name == _CLARIFY_TOOL_NAME:
+                    result, clarification_used = await _handle_clarification(
+                        args=args,
+                        on_event=on_event,
+                        on_questions_needed=on_questions_needed,
+                        already_used=clarification_used,
+                    )
+                elif name == _OPTIONS_TOOL_NAME:
+                    result, options_used = await _handle_options(
+                        args=args,
+                        on_event=on_event,
+                        on_options_needed=on_options_needed,
+                        already_used=options_used,
+                    )
+                elif name in _COST_GATED_BATCH_TOOLS and not cost_approval_shown:
+                    gate_error, cost_approval_shown = await _handle_cost_approval(
+                        tracker=tracker,
+                        settings=settings,
+                        on_event=on_event,
+                        on_cost_approval_needed=on_cost_approval_needed,
+                    )
+                    if gate_error is not None:
+                        result = gate_error
+                    else:
+                        result = await _dispatch(
+                            name=name,
+                            args=args,
+                            session=session,
+                            settings=settings,
+                            on_event=on_event,
+                            on_approval_needed=on_approval_needed,
+                        )
                 else:
                     result = await _dispatch(
                         name=name,
@@ -844,52 +893,77 @@ async def run_agent_loop(
                         on_event=on_event,
                         on_approval_needed=on_approval_needed,
                     )
-            else:
-                result = await _dispatch(
-                    name=name,
-                    args=args,
-                    session=session,
-                    settings=settings,
-                    on_event=on_event,
-                    on_approval_needed=on_approval_needed,
-                )
 
-            on_event(AgentEvent("tool_result", _fmt_result(result)))
+                on_event(AgentEvent("tool_result", _fmt_result(result)))
 
-            if name == "walk_tree":
-                for discovered_path, discovered_size in _extract_discovered_entries(result, settings):
-                    tracker.add_discovered(discovered_path, discovered_size)
-            elif name == "record_document" and isinstance(result, dict) and result.get("path"):
-                tracker.add_analyzed(result["path"])
-            elif name == "record_document_batch" and isinstance(result, dict):
-                for record in result.get("recorded", []):
-                    if isinstance(record, dict) and record.get("path"):
-                        tracker.add_analyzed(record["path"])
+                if name == "walk_tree":
+                    for discovered_path, discovered_size in _extract_discovered_entries(
+                        result, settings
+                    ):
+                        tracker.add_discovered(discovered_path, discovered_size)
+                elif name == "record_document" and isinstance(result, dict) and result.get("path"):
+                    tracker.add_analyzed(result["path"])
+                elif name == "record_document_batch" and isinstance(result, dict):
+                    for record in result.get("recorded", []):
+                        if isinstance(record, dict) and record.get("path"):
+                            tracker.add_analyzed(record["path"])
 
-            progress = tracker.counts()
-            if progress != previous_progress:
-                previous_progress = progress
-                on_event(
-                    AgentEvent(
-                        "progress",
-                        f"Analyzed {progress[0]} / {progress[1]} documents",
-                        data={"analyzed": progress[0], "total": progress[1]},
+                progress = tracker.counts()
+                if progress != previous_progress:
+                    previous_progress = progress
+                    on_event(
+                        AgentEvent(
+                            "progress",
+                            f"Analyzed {progress[0]} / {progress[1]} documents",
+                            data={"analyzed": progress[0], "total": progress[1]},
+                        )
                     )
+
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "content": json.dumps(_wrap_untrusted_content(result, name)),
+                    }
                 )
 
-            messages.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": json.dumps(_wrap_untrusted_content(result, name)),
-                }
-            )
-
-        turn += 1
+            turn += 1
+    except Exception as exc:
+        error_text = f"Error: {exc}"
+        # If the turn failed partway through a batch of tool calls — e.g. an
+        # earlier call in the same batch already succeeded and got its tool
+        # message appended before a later one raised — the most recent assistant
+        # message (not necessarily the last message overall) may have tool_calls
+        # with no matching tool-result yet. Synthesize one for each so `messages`
+        # stays valid for a follow-up LLM call (dangling tool_calls otherwise
+        # break continuation).
+        last_assistant_idx = next(
+            (i for i in range(len(messages) - 1, -1, -1) if messages[i].get("role") == "assistant"),
+            None,
+        )
+        if last_assistant_idx is not None:
+            tool_calls = messages[last_assistant_idx].get("tool_calls") or []
+            answered_ids = {
+                m.get("tool_call_id")
+                for m in messages[last_assistant_idx + 1 :]
+                if m.get("role") == "tool"
+            }
+            for tc in tool_calls:
+                call_id = tc.get("id")
+                if call_id and call_id not in answered_ids:
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call_id,
+                            "content": json.dumps({"error": error_text}),
+                        }
+                    )
+        on_event(AgentEvent("error", error_text))
+        return error_text, messages
 
     final_budget = _analysis_turn_budget(tracker.counts()[1])
     on_event(AgentEvent("error", f"Reached maximum turns ({final_budget}); stopping."))
-    return f"Stopped: maximum turns ({final_budget}) reached."
+    return f"Stopped: maximum turns ({final_budget}) reached.", messages
 
 
 async def run_query(

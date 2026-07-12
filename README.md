@@ -32,7 +32,7 @@ The Textual TUI opens. On first run the **setup wizard** appears; returning user
 - **Query** — open an interactive read-only chat over the already-analyzed corpus (requires an existing registry at `REGISTRY_PATH`).
 - **⚙ Settings** — edit URL, API key, profile, and approval mode at any time (also accessible by pressing `s`).
 
-After organizing, press **g** in the Organizer screen to jump straight into query mode over the just-analyzed corpus.
+Once the run reaches a stopping point (done, error, or max-turns), a chat box appears at the bottom of the Organizer screen — type a follow-up message (e.g. "quarantine the drafts too") to resume the same conversation, on the same MCP session, with the full mutating toolset. Press **g** instead to jump into a separate read-only query mode over the just-analyzed corpus.
 
 ## Development
 
