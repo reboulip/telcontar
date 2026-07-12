@@ -33,6 +33,7 @@ EventKind = Literal[
     "plan_ready",
     "question",
     "options",
+    "progress",
     "tokens",
     "done",
     "error",
@@ -557,6 +558,79 @@ async def _discover_openai_tools(
     ]
 
 
+# ── Progress tracking (O5) ────────────────────────────────────────────────────
+
+# Telcontar's own output artifacts and OS/dotfile noise never count as documents
+# to analyze — mirrors the `_SKIP` precedent in server/tools.py's write_index.
+_DISCOVERY_SKIP_NAMES = frozenset(
+    {"INDEX.md", "manifest.json", "SUMMARY.md", "README.md", "Thumbs.db", ".DS_Store", "desktop.ini"}
+)
+
+
+def _normalize_path(path: str) -> str:
+    return os.path.normcase(str(Path(path)))
+
+
+def _should_skip_discovery(name: str, path: str, settings: Settings) -> bool:
+    if name in _DISCOVERY_SKIP_NAMES or name.startswith("."):
+        return True
+    parts = Path(_normalize_path(path)).parts
+    if ".organizer" in parts:
+        return True
+    quarantine_name = Path(str(settings.quarantine_dir)).name
+    return bool(quarantine_name) and quarantine_name in parts
+
+
+def _extract_discovered_paths(walk_result: Any, settings: Settings) -> list[str]:
+    """Recursively collect file paths from a `walk_tree` result, skipping noise.
+
+    Directories marked `truncated` stop the recursion there — their children are
+    `None` until a later `walk_tree` call descends into them, which will surface
+    those files on its own.
+    """
+    if not isinstance(walk_result, dict):
+        return []
+    paths: list[str] = []
+
+    def _walk(entries: Any) -> None:
+        if not isinstance(entries, list):
+            return
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("type") == "file":
+                name, path = entry.get("name", ""), entry.get("path", "")
+                if path and not _should_skip_discovery(name, path, settings):
+                    paths.append(path)
+            elif entry.get("type") == "dir":
+                _walk(entry.get("children"))
+
+    _walk(walk_result.get("entries"))
+    return paths
+
+
+@dataclass
+class _ProgressTracker:
+    """Accumulates discovered-vs-analyzed document paths across a run (O5).
+
+    `total` is the union of discovered and analyzed paths (not just discovered)
+    so a document recorded without ever being seen via `walk_tree` still counts,
+    and so total only grows monotonically.
+    """
+
+    discovered: set[str] = field(default_factory=set)
+    analyzed: set[str] = field(default_factory=set)
+
+    def add_discovered(self, path: str) -> None:
+        self.discovered.add(_normalize_path(path))
+
+    def add_analyzed(self, path: str) -> None:
+        self.analyzed.add(_normalize_path(path))
+
+    def counts(self) -> tuple[int, int]:
+        return len(self.analyzed), len(self.discovered | self.analyzed)
+
+
 # ── Public entry points ───────────────────────────────────────────────────────
 
 
@@ -625,6 +699,8 @@ async def run_agent_loop(
 
     clarification_used = False
     options_used = False
+    tracker = _ProgressTracker()
+    previous_progress = tracker.counts()
 
     user_content = f"Please organize the directory: {target}"
     if instructions and instructions.strip():
@@ -691,6 +767,27 @@ async def run_agent_loop(
                 )
 
             on_event(AgentEvent("tool_result", _fmt_result(result)))
+
+            if name == "walk_tree":
+                for discovered_path in _extract_discovered_paths(result, settings):
+                    tracker.add_discovered(discovered_path)
+            elif name == "record_document" and isinstance(result, dict) and result.get("path"):
+                tracker.add_analyzed(result["path"])
+            elif name == "record_document_batch" and isinstance(result, dict):
+                for record in result.get("recorded", []):
+                    if isinstance(record, dict) and record.get("path"):
+                        tracker.add_analyzed(record["path"])
+
+            progress = tracker.counts()
+            if progress != previous_progress:
+                previous_progress = progress
+                on_event(
+                    AgentEvent(
+                        "progress",
+                        f"Analyzed {progress[0]} / {progress[1]} documents",
+                        data={"analyzed": progress[0], "total": progress[1]},
+                    )
+                )
 
             messages.append(
                 {

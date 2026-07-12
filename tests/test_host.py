@@ -98,6 +98,7 @@ def _settings(plans_dir: Path, approval_mode: str = "always") -> MagicMock:
     cfg.llm_model = "gpt-5"
     cfg.plans_dir = plans_dir
     cfg.approval_mode = approval_mode
+    cfg.quarantine_dir = Path("_quarantine")
     return cfg
 
 
@@ -1194,3 +1195,168 @@ def test_query_allowed_tools_includes_readonly_batch_tools() -> None:
     assert "extract_text_batch" in QUERY_ALLOWED_TOOLS
     assert "compute_checksum_batch" in QUERY_ALLOWED_TOOLS
     assert "record_document_batch" not in QUERY_ALLOWED_TOOLS
+
+
+# ── Progress tracking (O5) ──────────────────────────────────────────────────
+
+
+def _walk_result(paths: list[str]) -> dict:
+    return {
+        "path": "root",
+        "max_depth": 3,
+        "entries": [{"name": Path(p).name, "path": p, "type": "file", "size": 1, "mtime": 0.0} for p in paths],
+    }
+
+
+async def test_walk_tree_emits_progress_event_with_discovered_total(tmp_path: Path) -> None:
+    events: list[AgentEvent] = []
+    a, b = str(tmp_path / "a.txt"), str(tmp_path / "b.txt")
+
+    await _run(
+        tmp_path,
+        tool_names=["walk_tree"],
+        call_results={"walk_tree": _walk_result([a, b])},
+        llm_responses=[
+            _tool_response("walk_tree", {"path": str(tmp_path)}),
+            _text_response("Done."),
+        ],
+        on_event=events.append,
+    )
+
+    progress = [e for e in events if e.kind == "progress"]
+    assert len(progress) == 1
+    assert progress[0].data == {"analyzed": 0, "total": 2}
+    assert progress[0].text == "Analyzed 0 / 2 documents"
+
+
+async def test_record_document_advances_progress(tmp_path: Path) -> None:
+    events: list[AgentEvent] = []
+    a, b = str(tmp_path / "a.txt"), str(tmp_path / "b.txt")
+
+    await _run(
+        tmp_path,
+        tool_names=["walk_tree", "record_document"],
+        call_results={
+            "walk_tree": _walk_result([a, b]),
+            "record_document": {"path": a, "checksum": "deadbeef"},
+        },
+        llm_responses=[
+            _tool_response("walk_tree", {"path": str(tmp_path)}, call_id="tc1"),
+            _tool_response("record_document", {"path": a}, call_id="tc2"),
+            _text_response("Done."),
+        ],
+        on_event=events.append,
+    )
+
+    progress = [e for e in events if e.kind == "progress"]
+    assert [p.data for p in progress] == [
+        {"analyzed": 0, "total": 2},
+        {"analyzed": 1, "total": 2},
+    ]
+
+
+async def test_record_document_batch_counts_all_recorded(tmp_path: Path) -> None:
+    events: list[AgentEvent] = []
+    a, b = str(tmp_path / "a.txt"), str(tmp_path / "b.txt")
+
+    await _run(
+        tmp_path,
+        tool_names=["walk_tree", "record_document_batch"],
+        call_results={
+            "walk_tree": _walk_result([a, b]),
+            "record_document_batch": {
+                "recorded": [{"path": a, "checksum": "aaa"}, {"path": b, "checksum": "bbb"}],
+                "errors": [],
+            },
+        },
+        llm_responses=[
+            _tool_response("walk_tree", {"path": str(tmp_path)}, call_id="tc1"),
+            _tool_response("record_document_batch", {"documents": []}, call_id="tc2"),
+            _text_response("Done."),
+        ],
+        on_event=events.append,
+    )
+
+    progress = [e for e in events if e.kind == "progress"]
+    assert [p.data for p in progress] == [
+        {"analyzed": 0, "total": 2},
+        {"analyzed": 2, "total": 2},
+    ]
+
+
+async def test_progress_not_re_emitted_when_unchanged(tmp_path: Path) -> None:
+    events: list[AgentEvent] = []
+    a = str(tmp_path / "a.txt")
+
+    await _run(
+        tmp_path,
+        tool_names=["walk_tree"],
+        call_results={"walk_tree": _walk_result([a])},
+        llm_responses=[
+            _tool_response("walk_tree", {"path": str(tmp_path)}, call_id="tc1"),
+            _tool_response("walk_tree", {"path": str(tmp_path)}, call_id="tc2"),
+            _text_response("Done."),
+        ],
+        on_event=events.append,
+    )
+
+    assert len([e for e in events if e.kind == "progress"]) == 1
+
+
+async def test_walk_tree_skips_organizer_artifacts_from_discovery(tmp_path: Path) -> None:
+    events: list[AgentEvent] = []
+    doc = str(tmp_path / "doc.txt")
+    noise = [
+        str(tmp_path / "INDEX.md"),
+        str(tmp_path / "manifest.json"),
+        str(tmp_path / "SUMMARY.md"),
+        str(tmp_path / ".organizer" / "registry.json"),
+        str(tmp_path / "_quarantine" / "old.txt"),
+    ]
+
+    await _run(
+        tmp_path,
+        tool_names=["walk_tree"],
+        call_results={"walk_tree": _walk_result([doc, *noise])},
+        llm_responses=[
+            _tool_response("walk_tree", {"path": str(tmp_path)}),
+            _text_response("Done."),
+        ],
+        on_event=events.append,
+    )
+
+    progress = [e for e in events if e.kind == "progress"]
+    assert progress[0].data == {"analyzed": 0, "total": 1}
+
+
+def test_extract_discovered_paths_skips_truncated_subdir_children() -> None:
+    from host.agent import _extract_discovered_paths
+
+    walk_result = {
+        "path": "root",
+        "max_depth": 1,
+        "entries": [
+            {"name": "a.txt", "path": "/root/a.txt", "type": "file", "size": 1, "mtime": 0.0},
+            {
+                "name": "sub",
+                "path": "/root/sub",
+                "type": "dir",
+                "size": None,
+                "mtime": 0.0,
+                "children": None,
+                "truncated": True,
+            },
+        ],
+    }
+    settings = MagicMock(quarantine_dir=Path("_quarantine"))
+    assert _extract_discovered_paths(walk_result, settings) == ["/root/a.txt"]
+
+
+def test_progress_tracker_total_is_union_of_discovered_and_analyzed() -> None:
+    from host.agent import _ProgressTracker
+
+    tracker = _ProgressTracker()
+    tracker.add_discovered("/root/a.txt")
+    tracker.add_analyzed("/root/a.txt")
+    tracker.add_analyzed("/root/never-walked.txt")
+    assert tracker.counts() == (2, 2)

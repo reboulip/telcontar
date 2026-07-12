@@ -224,7 +224,7 @@ working in chat after a stop instead of being pushed to the read-only journal/qu
       with a budget that scales with the number of documents discovered, so a large corpus
       doesn't hit an artificial ceiling mid-analysis; keep a sane hard ceiling as a safety
       valve against runaway loops.
-- [ ] O5 · Analysis progress tracking — track documents discovered (accumulated from
+- [x] O5 · Analysis progress tracking — track documents discovered (accumulated from
       `walk_tree` results) vs. documents analyzed (from `record_document`/
       `record_document_batch` calls) inside `run_agent_loop`, and emit a new `"progress"`
       `AgentEvent` on each change.
