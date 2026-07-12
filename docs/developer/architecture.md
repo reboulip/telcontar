@@ -178,7 +178,7 @@ Because it mutates the registry, it is *not* added to `QUERY_ALLOWED_TOOLS` (que
 
 `host/agent.py`'s `run_agent_loop` tracks how many documents have been discovered versus analyzed over a run and emits a `"progress"` `AgentEvent` (text `"Analyzed {analyzed} / {total} documents"`, `data={"analyzed": int, "total": int}`) whenever those counts change. A `_ProgressTracker` dataclass accumulates two path sets: `discovered`, populated by recursively walking every `walk_tree` tool result (`_extract_discovered_paths`, skipping telcontar's own output artifacts, dotfiles, OS junk, `.organizer`, and the configured quarantine directory — mirroring the `_SKIP` precedent in `server/tools.py`'s `write_index`); and `analyzed`, populated from `record_document` and `record_document_batch` tool results. `total` is the union of both sets rather than `discovered` alone, so a document recorded without ever surfacing via `walk_tree` still counts, and the total only grows monotonically.
 
-This is purely additive to the event stream — no MCP tool signature or tool list changed, and no UI currently consumes the `"progress"` event (a progress bar is a later roadmap item, O6).
+This is purely additive to the event stream — no MCP tool signature or tool list changed. As of O6, `host/app.py`'s `OrganizerScreen` consumes the `"progress"` event: a `#progress-row` (a numeric `#progress-label` plus a Textual `ProgressBar`) sits between `#ops-journal` and the status bar, hidden until the first progress event carrying a known `total > 0` arrives (an unknown/`None` total is never shown, since that would trigger Textual's indeterminate spinning-bar mode), and hidden again — without snapping to 100% first — once the run reaches `"done"` or `"error"`.
 
 ### Adaptive turn budget (O4)
 

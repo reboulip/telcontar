@@ -228,7 +228,7 @@ working in chat after a stop instead of being pushed to the read-only journal/qu
       `walk_tree` results) vs. documents analyzed (from `record_document`/
       `record_document_batch` calls) inside `run_agent_loop`, and emit a new `"progress"`
       `AgentEvent` on each change.
-- [ ] O6 · Progress bar in the TUI — add a Textual `ProgressBar` to `OrganizerScreen`,
+- [x] O6 · Progress bar in the TUI — add a Textual `ProgressBar` to `OrganizerScreen`,
       wired to the `"progress"` event, showing analyzed/total document counts during the
       run (requires: O5).
 - [ ] O7 · Resumable chat after a stop — refactor `run_agent_loop` to take/return

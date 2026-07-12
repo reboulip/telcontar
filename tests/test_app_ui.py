@@ -1033,6 +1033,166 @@ async def test_organizer_status_bar_shows_token_usage(
         assert "12.3K in" in status
 
 
+# ── O6: ANALYZE progress bar ──────────────────────────────────────────────────
+
+
+async def test_organizer_progress_row_hidden_until_first_progress_event(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    async def fake_run_agent(
+        *,
+        target,
+        settings,
+        llm,
+        on_event,
+        on_approval_needed,
+        on_questions_needed=None,
+        on_options_needed=None,
+        on_cost_approval_needed=None,
+        instructions=None,
+    ):
+        return "done"
+
+    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        assert app.screen.query_one("#progress-row").display is False
+        await pilot.click("#proceed-btn")
+        await pilot.pause()
+        assert app.screen.query_one("#progress-row").display is False
+
+
+async def test_organizer_progress_row_shows_and_updates_on_progress_event(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from textual.widgets import Label
+
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    async def fake_run_agent(
+        *,
+        target,
+        settings,
+        llm,
+        on_event,
+        on_approval_needed,
+        on_questions_needed=None,
+        on_options_needed=None,
+        on_cost_approval_needed=None,
+        instructions=None,
+    ):
+        on_event(AgentEvent("progress", "Analyzed 3 / 10 documents", data={"analyzed": 3, "total": 10}))
+        return "in progress"
+
+    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        await pilot.click("#proceed-btn")
+        await pilot.pause()
+        await pilot.pause(0.1)
+        assert app.screen.query_one("#progress-row").display is True
+        label = str(app.screen.query_one("#progress-label", Label).content)
+        assert "3 / 10 documents" in label
+
+
+async def test_organizer_progress_row_hides_on_done(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    async def fake_run_agent(
+        *,
+        target,
+        settings,
+        llm,
+        on_event,
+        on_approval_needed,
+        on_questions_needed=None,
+        on_options_needed=None,
+        on_cost_approval_needed=None,
+        instructions=None,
+    ):
+        on_event(AgentEvent("progress", "Analyzed 3 / 10 documents", data={"analyzed": 3, "total": 10}))
+        on_event(AgentEvent("done", "done"))
+        return "done"
+
+    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        await pilot.click("#proceed-btn")
+        await pilot.pause()
+        await pilot.pause(0.1)
+        assert app.screen.query_one("#progress-row").display is False
+
+
+async def test_organizer_progress_row_hides_on_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    async def fake_run_agent(
+        *,
+        target,
+        settings,
+        llm,
+        on_event,
+        on_approval_needed,
+        on_questions_needed=None,
+        on_options_needed=None,
+        on_cost_approval_needed=None,
+        instructions=None,
+    ):
+        on_event(AgentEvent("progress", "Analyzed 3 / 10 documents", data={"analyzed": 3, "total": 10}))
+        on_event(AgentEvent("error", "Reached maximum turns (50); stopping."))
+        return "Stopped: maximum turns (50) reached."
+
+    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        await pilot.click("#proceed-btn")
+        await pilot.pause()
+        await pilot.pause(0.1)
+        assert app.screen.query_one("#progress-row").display is False
+
+
 # ── F10: macro-task narration in the conversation pane ───────────────────────
 
 

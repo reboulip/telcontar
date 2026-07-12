@@ -35,6 +35,7 @@ from textual.widgets import (
     Header,
     Input,
     Label,
+    ProgressBar,
     RadioButton,
     RadioSet,
     RichLog,
@@ -1273,6 +1274,19 @@ class OrganizerScreen(Screen):
         padding: 0 1;
         scrollbar-size-horizontal: 1;
     }
+    #progress-row {
+        height: 1;
+        background: $panel;
+        padding: 0 1;
+    }
+    #progress-label {
+        width: auto;
+        color: $text-muted;
+        padding-right: 1;
+    }
+    #progress-bar {
+        width: 1fr;
+    }
     #status-bar {
         height: 1;
         background: $panel;
@@ -1335,12 +1349,18 @@ class OrganizerScreen(Screen):
         # Operations journal (L4): a compact bottom strip of the file operations
         # recorded in the undo journal, one line per entry, horizontally scrollable.
         yield RichLog(id="ops-journal", markup=True, highlight=False, wrap=False)
+        # ANALYZE progress bar (O6): hidden until the first "progress" event with
+        # a known total arrives, hidden again once the run reaches a terminal state.
+        with Horizontal(id="progress-row"):
+            yield Label("", id="progress-label")
+            yield ProgressBar(total=None, show_eta=False, id="progress-bar")
         yield Static(self._status, id="status-bar")
         yield Footer()
 
     def on_mount(self) -> None:
         # Show the starter pane first; the transcript/agent starts on "proceed".
         self.query_one("#main-split").display = False
+        self.query_one("#progress-row").display = False
         self._set_status("Review the overview, add any instructions, then Start organizing.")
         self._refresh_ops_journal()
         self.query_one("#instructions-input", Input).focus()
@@ -1420,6 +1440,27 @@ class OrganizerScreen(Screen):
         self._steps_lines.append(line)
         self._steps_widget.update("\n".join(self._steps_lines))
         self._scroll_end()
+
+    def _update_progress(self, data: dict) -> None:
+        """Reveal/update the ANALYZE progress bar from a "progress" AgentEvent (O6).
+
+        Never mounted with an unknown total (Textual's indeterminate spinner mode
+        would be misleading) — only revealed once a real ``total > 0`` arrives.
+        """
+        total = data.get("total", 0)
+        if not total:
+            return
+        analyzed = data.get("analyzed", 0)
+        self.query_one("#progress-row").display = True
+        self.query_one("#progress-label", Label).update(f"{analyzed} / {total} documents analyzed")
+        self.query_one("#progress-bar", ProgressBar).update(total=total, progress=analyzed)
+
+    def _hide_progress(self) -> None:
+        """Hide the progress row once ANALYZE finishes — never snap to 100% first."""
+        try:
+            self.query_one("#progress-row").display = False
+        except NoMatches:
+            pass
 
     def _set_status(self, text: str) -> None:
         self._status = text
@@ -1518,12 +1559,15 @@ class OrganizerScreen(Screen):
                     self._set_status("Awaiting your choice…")
                 case "cost_estimate":
                     self._set_status("Awaiting cost approval…")
+                case "progress":
+                    self._update_progress(event.data or {})
                 case "tokens":
                     self._set_tokens(event.text)
                 case "done":
                     self._add_turn("telcontar", f"[bold green]✓ Done[/bold green]\n{event.text}")
                     self._refresh_ops_journal()
                     self._set_status("Done")
+                    self._hide_progress()
                 case "error":
                     self._add_turn(
                         "telcontar",
@@ -1531,6 +1575,7 @@ class OrganizerScreen(Screen):
                         "[dim]Press j to view the operation journal for details.[/dim]",
                     )
                     self._set_status("Error")
+                    self._hide_progress()
 
         async def on_approval_needed(plan_id: str, plan_data: dict) -> ApprovalResult:
             self._add_turn(
