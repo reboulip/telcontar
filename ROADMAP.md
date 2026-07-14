@@ -251,3 +251,53 @@ working in chat after a stop instead of being pushed to the read-only journal/qu
       `host/app.py` (mirrors `ApprovalModal`) (requires: O1, O2, O5).
 
 ---
+
+## Phase 15 — Stateless analysis, per-directory memory & live chat
+
+Kill the quadratic ANALYZE token cost (content sent to the API at most once, ever),
+make `.organizer` live inside the organized directory and skip already-analyzed
+files on re-runs, keep the chat input live for the whole run (clarifications and
+option picks become normal chat turns), and stop create-dir/move ordering from
+hard-stopping plan execution.
+
+- [ ] P1 · Two-sub-phase plan execution — `execute_plan` runs all `create_dir` ops
+      first, then file ops, preserving relative order within each group; the `move`
+      executor creates missing destination parents so a deselected or failed
+      `create_dir` can no longer cascade into a hard stop.
+- [ ] P2 · Per-directory `.organizer` memory — `Settings.for_target(target)` rebases
+      every relative memory path (journal, events, plans, registry, graph, archive,
+      egress, `_quarantine`) onto the target dir; applied in `config.settings.load()`
+      when `TARGET_DIR` is set (server) and explicitly in the host worker/screens;
+      server CWD stays at project root. Hide `.organizer` from `walk_tree`,
+      `write_index` and the starter-pane overview. No migration (beta).
+- [ ] P3 · `lookup_documents(checksums)` read-only tool — batch registry lookup
+      `{checksum: record | null}`; add to `QUERY_ALLOWED_TOOLS`. (requires: P2)
+- [ ] P4 · Deterministic host pre-pass — host code (no LLM) walks the tree to
+      exhaustion (re-walking `truncated` dirs), checksums via
+      `compute_checksum_batch`, partitions known/new via `lookup_documents`,
+      re-homes known records whose path changed, emits `progress` events.
+      (requires: P2, P3)
+- [ ] P5 · Stateless analyzer with accurate cost gate — per batch of ≤10 NEW docs,
+      fetch via `extract_text_batch`/`read_file_batch` (egress/confinement/bounds
+      unchanged), one isolated LLM call with profile extraction rules + untrusted
+      delimiters, forced `submit_document_records` tool call, records rejoined to
+      host-authoritative path/checksum by index, persisted via
+      `record_document_batch`. Cost gate fires once, counts only new docs, skipped
+      when nothing is new. (requires: P4)
+- [ ] P6 · ORGANIZE-only agent loop + digest — `run_agent_loop` runs pre-pass +
+      analyzer internally on a fresh run, seeds the conversation with the digest,
+      rewrites system-prompt section A ("corpus already analyzed"), removes the
+      in-loop `_COST_GATED_BATCH_TOOLS` gate, feeds pre-pass corpus size into the
+      turn budget. (requires: P5)
+- [ ] P7 · Live mid-run chat — `run_agent_loop` gains `message_queue`; queued user
+      messages injected as user turns between agent turns; `#organize-input`
+      enabled for the whole run. (requires: P6)
+- [ ] P8 · `ask_user` chat checkpoint — merge `ask_clarification`/`propose_options`
+      into one synthetic `ask_user` tool that renders in the transcript and awaits
+      the next chat message; delete `ClarificationModal`/`OptionsModal`.
+      `CostEstimateModal` reworded to "N new documents (M already analyzed,
+      skipped)". (requires: P7)
+- [ ] P9 · Settings from anywhere — app-level `ctrl+s` binding opening
+      `ConfigScreen` from any screen, guarded against double-push.
+
+---
