@@ -54,7 +54,7 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 | Plan-building | `propose_rename`, `propose_move`, `propose_quarantine`, `propose_create_file`, `propose_update_file`, `propose_create_dir`, `propose_archive_document`, `propose_compress_quarantine` |
 | Gated execution | `execute_plan`, `write_index`, `write_summary` |
 | Recovery (not MCP tools) | `undo_last` — no longer registered as an MCP tool (M1); called directly by the TUI's `JournalScreen` |
-| Registry | `record_document`, `get_document`, `list_documents`, `get_registry`, `find_duplicates`, `find_modified_documents` |
+| Registry | `record_document`, `get_document`, `lookup_documents`, `list_documents`, `get_registry`, `find_duplicates`, `find_modified_documents` |
 | Event journal | `create_event`, `list_events` |
 | Knowledge graph | `build_graph`, `get_graph`, `get_actors` |
 | Archive | `archive_document` (no longer an MCP tool; called by `execute_plan` for `archive_document` ops), `list_archived` |

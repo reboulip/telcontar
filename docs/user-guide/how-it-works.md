@@ -281,7 +281,7 @@ For each question:
 
 1. The host sends the query-mode system prompt (built from the active profile) plus the user's question to GPT-5.
 2. GPT-5 calls read-only tools to gather facts:
-   - `list_documents` / `get_registry` / `get_document` — recorded documents and their metadata
+   - `list_documents` / `get_registry` / `get_document` / `lookup_documents` — recorded documents and their metadata (`lookup_documents` is the batch form of `get_document`, one round trip for many checksums)
    - `list_events` — the dated project timeline
    - `get_graph` / `get_actors` — the knowledge graph and ranked main actors
    - `find_duplicates` / `find_modified_documents` — duplicate clusters and modified versions

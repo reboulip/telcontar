@@ -501,6 +501,14 @@ def get_document(checksum: str) -> dict | None:
 
 
 @mcp.tool()
+def lookup_documents(checksums: list[str]) -> dict:
+    """Batch registry lookup: {checksum: record | null}. Efficient known/new
+    partitioning for a corpus without one get_document call per checksum."""
+    cfg = _get_settings()
+    return tools.lookup_documents(checksums, cfg.registry_path)
+
+
+@mcp.tool()
 def list_documents() -> list:
     """Return all recorded documents with their metadata, oldest first."""
     cfg = _get_settings()

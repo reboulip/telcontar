@@ -270,7 +270,7 @@ hard-stopping plan execution.
       when `TARGET_DIR` is set (server) and explicitly in the host worker/screens;
       server CWD stays at project root. Hide `.organizer` from `walk_tree`,
       `write_index` and the starter-pane overview. No migration (beta).
-- [ ] P3 · `lookup_documents(checksums)` read-only tool — batch registry lookup
+- [x] P3 · `lookup_documents(checksums)` read-only tool — batch registry lookup
       `{checksum: record | null}`; add to `QUERY_ALLOWED_TOOLS`. (requires: P2)
 - [ ] P4 · Deterministic host pre-pass — host code (no LLM) walks the tree to
       exhaustion (re-walking `truncated` dirs), checksums via

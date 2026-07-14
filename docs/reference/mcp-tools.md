@@ -556,6 +556,18 @@ Return a single registry record by checksum, or `null` if not found.
 
 ---
 
+### `lookup_documents`
+
+```python
+lookup_documents(checksums: list[str]) -> dict
+```
+
+Batch form of `get_document`: look up many checksums against the registry in one round trip instead of one `get_document` call per checksum. Takes no `path` argument, so it needs no confinement/egress guard — it is a pure registry read, the same trust level as `get_document`/`list_documents` (P3).
+
+**Returns:** `{checksum: record | null}`, keyed by the exact checksum strings passed in — mirrors `compute_checksum_batch`'s keyed-by-input contract.
+
+---
+
 ### `list_documents`
 
 ```python

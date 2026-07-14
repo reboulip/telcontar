@@ -1200,6 +1200,7 @@ def test_query_allowed_tools_includes_readonly_batch_tools() -> None:
     assert "read_file_batch" in QUERY_ALLOWED_TOOLS
     assert "extract_text_batch" in QUERY_ALLOWED_TOOLS
     assert "compute_checksum_batch" in QUERY_ALLOWED_TOOLS
+    assert "lookup_documents" in QUERY_ALLOWED_TOOLS
     assert "record_document_batch" not in QUERY_ALLOWED_TOOLS
 
 

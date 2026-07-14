@@ -67,6 +67,7 @@ _TOOL_NARRATION: dict[str, str] = {
     "extract_text_batch": "Reading documents…",
     "compute_checksum": "Computing checksums…",
     "compute_checksum_batch": "Computing checksums…",
+    "lookup_documents": "Looking up documents in memory…",
     "record_document": "Recording documents in memory…",
     "record_document_batch": "Recording documents in memory…",
     "find_duplicates": "Checking for duplicates…",

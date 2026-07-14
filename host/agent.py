@@ -420,6 +420,7 @@ QUERY_ALLOWED_TOOLS = frozenset(
         "compute_checksum",
         "compare_documents",
         "get_document",
+        "lookup_documents",
         "list_documents",
         "get_registry",
         "find_duplicates",

@@ -13,6 +13,7 @@ from server.tools import (
     get_document,
     get_registry,
     list_documents,
+    lookup_documents,
     record_document,
     record_document_batch,
 )
@@ -179,6 +180,27 @@ def test_record_document_batch_upserts_by_checksum(reg_path: Path, profile: Prof
 def test_get_document_missing_returns_none(reg_path: Path, profile: Profile) -> None:
     _record(reg_path, profile, checksum="c1")
     assert get_document("nope", reg_path) is None
+
+
+def test_lookup_documents_returns_hits_and_misses_keyed_by_input(
+    reg_path: Path, profile: Profile
+) -> None:
+    _record(reg_path, profile, checksum="c1", title="One")
+    _record(reg_path, profile, checksum="c2", title="Two")
+
+    result = lookup_documents(["c1", "missing", "c2"], reg_path)
+
+    assert set(result.keys()) == {"c1", "missing", "c2"}
+    assert result["c1"]["title"] == "One"
+    assert result["c2"]["title"] == "Two"
+    assert result["missing"] is None
+
+
+def test_lookup_documents_empty_input_returns_empty_dict(
+    reg_path: Path, profile: Profile
+) -> None:
+    _record(reg_path, profile, checksum="c1")
+    assert lookup_documents([], reg_path) == {}
 
 
 def test_get_registry_shape(reg_path: Path, profile: Profile) -> None:

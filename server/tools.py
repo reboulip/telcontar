@@ -1306,6 +1306,20 @@ def get_document(checksum: str, registry_path: Path) -> dict | None:
     return rec.to_dict() if rec is not None else None
 
 
+def lookup_documents(checksums: list[str], registry_path: Path) -> dict[str, dict | None]:
+    """Batch form of `get_document`: `{checksum: record | None}` (P3).
+
+    Lets the host pre-pass partition a corpus into known/new documents with a
+    single call instead of one `get_document` round trip per checksum.
+    """
+    reg = _registry.load(registry_path)
+    result: dict[str, dict | None] = {}
+    for checksum in checksums:
+        rec = reg.get(checksum)
+        result[checksum] = rec.to_dict() if rec is not None else None
+    return result
+
+
 def find_duplicates(registry_path: Path) -> list[list[dict]]:
     """Return fuzzy candidate-duplicate clusters for the host to judge."""
     reg = _registry.load(registry_path)
