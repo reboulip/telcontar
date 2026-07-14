@@ -1055,6 +1055,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#config.settings.Settings.for_target" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        for_target
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1505,6 +1516,30 @@ explicit confirmation — never silently.</p>
         <p>The allowlist actually enforced (M7/S3): an explicit <code>allowlist_dirs</code>
 always wins; otherwise default to <code>[target_dir]</code> (confinement on by
 default) rather than "no restriction". Stays empty if neither is set.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="config.settings.Settings.for_target" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">for_target</span><span class="p">(</span><span class="n">target</span><span class="p">)</span></code>
+
+<a href="#config.settings.Settings.for_target" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Rebase this run's memory paths onto <code>target</code> (P2, per-directory
+memory): each <code>.organizer</code>/quarantine path becomes absolute, anchored at
+the target directory, so a run's journal/registry/plans/etc. live inside
+the directory being organized rather than the project root. Absolute
+paths (an explicit override) pass through unchanged. <code>profiles_dir</code> (a
+cross-corpus, project-level convention, not per-run memory) is
+deliberately left untouched.</p>
 
 
     </div>

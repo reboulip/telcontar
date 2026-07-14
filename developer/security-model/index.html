@@ -1491,8 +1491,9 @@ the known weak points, and gives operators a way to run it safely today.</p>
    — while still requiring explicit configuration to narrow to a smaller subtree —
    no longer defaults to "no restriction": as of M7, <code>Settings.effective_allowlist_dirs()</code>
    defaults an empty <code>ALLOWLIST_DIRS</code> to <code>[target_dir]</code>, matching (not narrowing
-   beyond) this same <code>check_within_root</code> floor, for the three tools that consult it
-   (<code>read_file</code>/<code>extract_text</code>/<code>compare_documents</code>).</li>
+   beyond) this same <code>check_within_root</code> floor, for the tools that consult it
+   (<code>read_file</code>/<code>extract_text</code>/<code>compare_documents</code>, and the batch forms
+   <code>read_file_batch</code>/<code>extract_text_batch</code> added in O1).</li>
 </ol>
 <hr />
 <h2 id="2-what-leaves-the-machine-egress-surface">2. What leaves the machine (egress surface)<a class="headerlink" href="#2-what-leaves-the-machine-egress-surface" title="Permanent link">&para;</a></h2>
@@ -1507,8 +1508,8 @@ the known weak points, and gives operators a way to run it safely today.</p>
 <tbody>
 <tr>
 <td>Document text (up to <code>MAX_SNIPPET_CHARS</code>, default 4000, per read)</td>
-<td><code>read_file</code> / <code>extract_text</code> / <code>compare_documents</code> return content into the LLM context</td>
-<td><code>check_within_root</code> (target_dir + server cwd, always on) as the floor; <code>ALLOWLIST_DIRS</code> via <code>effective_allowlist_dirs()</code> — <strong>defaults to <code>[target_dir]</code> when unset (M7)</strong>, narrower only if explicitly configured</td>
+<td><code>read_file</code> / <code>extract_text</code> / <code>compare_documents</code> and their batch forms <code>read_file_batch</code> / <code>extract_text_batch</code> (O1) return content into the LLM context</td>
+<td><code>check_within_root</code> (target_dir + server cwd, always on) as the floor; <code>ALLOWLIST_DIRS</code> via <code>effective_allowlist_dirs()</code> — <strong>defaults to <code>[target_dir]</code> when unset (M7)</strong>, narrower only if explicitly configured; batch forms apply both checks per path, so one disallowed path in a batch never exposes content, it just becomes that entry's <code>{"error": ...}</code></td>
 </tr>
 <tr>
 <td>Any other file the OS user can read</td>
@@ -1530,20 +1531,37 @@ the known weak points, and gives operators a way to run it safely today.</p>
 <p><strong>[Done — 2026-07-09, P3 #12]</strong> Every <code>read_file</code>/<code>extract_text</code>/<code>compare_documents</code>
 call is now logged to <code>.organizer/egress.jsonl</code> (path, size, tool, timestamp) — this
 doesn't reduce what leaves the machine, but it makes it auditable after the fact,
-which the table above previously had no answer for at all.</p>
+which the table above previously had no answer for at all. The batch forms
+<code>read_file_batch</code>/<code>extract_text_batch</code> (O1) log the same way, once per successful
+file in the batch, under their own tool name (<code>read_file_batch</code>/<code>extract_text_batch</code>).
+This logging lives server-side (<code>server/main.py</code>), so it fires identically
+regardless of caller: as of P5, the stateless per-batch analyzer's
+<code>_fetch_batch_content</code> (<code>host/agent.py</code>) also calls these same batch tools
+directly, host-side rather than via the model's own tool-calling decision, and
+gets the same egress log entries — no new logging mechanism, just a new caller.
+As of P6, this analyzer is wired into <code>run_agent_loop</code>, and it is now the
+<strong>only</strong> path a live organize run ever reaches these batch tools through:
+<code>ORGANIZE_DENIED_TOOLS</code> structurally excludes <code>read_file_batch</code>/
+<code>extract_text_batch</code> from the ORGANIZE-phase model's own toolset, so the model
+itself can no longer trigger this egress path directly in organize mode (it
+still can in query mode, via <code>QUERY_ALLOWED_TOOLS</code>).</p>
 <p><strong>Key point for reviewers:</strong> <strong>[Partially remediated — 2026-07-07, see P0 #2]</strong> the
 target directory is now a real egress boundary in the normal case: <code>check_within_root</code>
 confines <code>read_file</code>/<code>extract_text</code>/<code>compare_documents</code> (and every other path-taking
-tool) to <code>target_dir</code> plus the server's own <code>.organizer</code>/quarantine working directory,
-even when <code>ALLOWLIST_DIRS</code> is unset. This holds whenever a <code>target_dir</code> is actually
+tool) to <code>target_dir</code> plus the server's own working directory, even when
+<code>ALLOWLIST_DIRS</code> is unset. As of per-directory memory (P2), <code>target_dir</code> is also
+where the run's own <code>.organizer</code>/quarantine folders physically live, so this
+boundary and the run's memory now coincide rather than the memory sitting at a
+separate, always-in-bounds server working directory. This holds whenever a <code>target_dir</code> is actually
 set — which is every real organize or query session the TUI launches (<code>mcp_session</code>
 always passes one through). There is no ordinary code path where <code>target_dir</code> is
 <code>None</code> and the guard silently opens up; the fallback (roots = server cwd only) is
 <em>more</em> restrictive, not less, so this is not a residual "no restriction" case in
 practice. <strong>As of M7, this is also true of <code>ALLOWLIST_DIRS</code> itself:</strong>
 <code>Settings.effective_allowlist_dirs()</code> now defaults an empty <code>ALLOWLIST_DIRS</code> to
-<code>[target_dir]</code> rather than <code>[]</code> (no restriction), so the three tools that consult
-it (<code>read_file</code>/<code>extract_text</code>/<code>compare_documents</code>) are never fully unrestricted
+<code>[target_dir]</code> rather than <code>[]</code> (no restriction), so the tools that consult
+it (<code>read_file</code>/<code>extract_text</code>/<code>compare_documents</code>, and the batch forms
+<code>read_file_batch</code>/<code>extract_text_batch</code> added in O1) are never fully unrestricted
 even with no configuration at all — this closes the last open piece of P2 #7 (now
 done). It does not, by itself, narrow <em>which subtree</em> of the target directory is
 readable: by default, both layers now converge on the same boundary (the whole
@@ -1554,11 +1572,21 @@ operator must still set <code>ALLOWLIST_DIRS</code> explicitly to a narrower pat
 exclude it.</p>
 <hr />
 <h2 id="3-what-the-agent-can-touch-capability-surface">3. What the agent can touch (capability surface)<a class="headerlink" href="#3-what-the-agent-can-touch-capability-surface" title="Permanent link">&para;</a></h2>
-<p>Every <code>@mcp.tool()</code> in <code>server/main.py</code> is advertised to the model. In <strong>organize
-mode</strong> the agent is given the <em>full</em> toolset with no filter
-(<code>_discover_openai_tools(session)</code> in <code>host/agent.py</code>). In <strong>query mode</strong> the agent
-is restricted to a read-only allowlist (<code>QUERY_ALLOWED_TOOLS</code>) with a defence-in-depth
-second check — this path is well isolated.</p>
+<p>Every <code>@mcp.tool()</code> in <code>server/main.py</code> is advertised to the model, subject to a
+mode filter (<code>_discover_openai_tools(session, allowed=..., denied=...)</code> in
+<code>host/agent.py</code>). <strong>As of P6, organize mode is no longer an unfiltered full
+toolset:</strong> it uses a <strong>denylist</strong>, <code>ORGANIZE_DENIED_TOOLS</code> — <code>read_file</code>,
+<code>extract_text</code>, <code>read_file_batch</code>, <code>extract_text_batch</code>, <code>compute_checksum</code>,
+<code>compute_checksum_batch</code>, <code>record_document</code>, <code>record_document_batch</code>,
+<code>compare_documents</code>, <code>lookup_documents</code>, <code>rehome_documents</code> — none of which are
+advertised to the ORGANIZE-phase model, because the corpus is now fully
+analyzed by a deterministic host pre-pass + stateless analyzer (P4/P5) <em>before</em>
+the ORGANIZE turn loop starts, leaving the model with no legitimate reason to
+fetch or record document content again. A hallucinated call to one of these is
+rejected with an explicit error even though it was never advertised (defense in
+depth, mirroring the query-mode check below). In <strong>query mode</strong> the agent is
+restricted to a read-only allowlist (<code>QUERY_ALLOWED_TOOLS</code>) with a
+defence-in-depth second check — this path is well isolated.</p>
 <table>
 <thead>
 <tr>
@@ -1570,12 +1598,12 @@ second check — this path is well isolated.</p>
 <tbody>
 <tr>
 <td>Read / list / extract / diff</td>
-<td><code>list_dir</code>, <code>walk_tree</code>, <code>read_file</code>, <code>extract_text</code>, <code>compare_documents</code>, <code>compute_checksum</code></td>
+<td><code>list_dir</code>, <code>walk_tree</code>, <code>read_file</code>, <code>extract_text</code>, <code>compare_documents</code>, <code>compute_checksum</code>, and the batch forms <code>read_file_batch</code>, <code>extract_text_batch</code>, <code>compute_checksum_batch</code> (O1) — as of P6, <code>read_file</code>/<code>extract_text</code>/<code>compare_documents</code>/<code>compute_checksum</code> and their batch forms are excluded from the ORGANIZE-phase model's own toolset (<code>ORGANIZE_DENIED_TOOLS</code>); <code>list_dir</code>/<code>walk_tree</code> remain available there for inspecting the current on-disk layout</td>
 <td>No (by design — read-only)</td>
 </tr>
 <tr>
 <td>Registry / graph / events</td>
-<td><code>record_document</code>, <code>get_*</code>, <code>list_*</code>, <code>build_graph</code>, <code>create_event</code>, …</td>
+<td><code>record_document</code>, <code>record_document_batch</code> (O2), <code>rehome_documents</code> (P4), <code>get_*</code>, <code>list_*</code>, <code>build_graph</code>, <code>create_event</code>, … — as of P6, <code>record_document</code>/<code>record_document_batch</code>/<code>lookup_documents</code>/<code>rehome_documents</code> are also excluded from the ORGANIZE-phase model's own toolset (<code>ORGANIZE_DENIED_TOOLS</code>); the read-only <code>get_*</code>/<code>list_*</code>/<code>build_graph</code>/<code>create_event</code> tools remain available</td>
 <td>No (metadata only)</td>
 </tr>
 <tr>
@@ -1591,7 +1619,7 @@ second check — this path is well isolated.</p>
 </tbody>
 </table>
 <p><strong>Remediated (S1, 2026-07-07):</strong> <code>move_file</code>, <code>rename_file</code>, <code>create_file</code>, <code>update_file</code>, <code>create_dir</code>, <code>archive_document</code>, and <code>compress_quarantine</code> no longer exist as standalone tools. Every filesystem-mutating operation they used to perform — file writes, folder creation, archiving a document, and compressing quarantine — is now staged via a <code>propose_*</code> call and applied only through <code>execute_plan</code>, exactly like moves/renames/quarantines already were. <code>undo_last</code> was removed from the MCP tool surface entirely rather than gated; it survives only as a plain function invoked directly by the TUI (bypassing the agent and MCP both). See §6, P0 #1.</p>
-<p><strong>Remediated (S3, 2026-07-07):</strong> every tool in the table above that takes a <code>path</code> argument — not just the read-only row, but the plan-building <code>propose_*</code> tools and the write tools too — is now checked with <code>check_within_root</code> before it runs, confining it to the run's <code>target_dir</code> plus the server's own working directory. Advertising the full toolset with no filter in organize mode is therefore no longer equivalent to giving the agent free rein over the filesystem; it is still free rein <em>within the target directory</em>. See §6, P0 #2.</p>
+<p><strong>Remediated (S3, 2026-07-07):</strong> every tool in the table above that takes a <code>path</code> argument — not just the read-only row, but the plan-building <code>propose_*</code> tools and the write tools too — is now checked with <code>check_within_root</code> before it runs, confining it to the run's <code>target_dir</code> plus the server's own working directory. Advertising most of the toolset (full pre-P6, denylist-filtered as of P6 — see above) to organize mode is therefore no longer equivalent to giving the agent free rein over the filesystem; it is still free rein <em>within the target directory</em>. See §6, P0 #2.</p>
 <hr />
 <h2 id="4-threat-model-the-three-questions">4. Threat model — the three questions<a class="headerlink" href="#4-threat-model-the-three-questions" title="Permanent link">&para;</a></h2>
 <h3 id="41-can-a-user-be-fooled-by-the-system">4.1 Can a user be fooled by the system?<a class="headerlink" href="#41-can-a-user-be-fooled-by-the-system" title="Permanent link">&para;</a></h3>
@@ -1672,8 +1700,9 @@ the agent:</p>
   <code>propose_create_file</code>/<code>propose_update_file</code>/<code>propose_create_dir</code> are also
   <code>check_within_root</code>-checked, so "anywhere" is no longer literal — a target like the
   Windows Startup folder is now rejected outright unless it happens to fall inside
-  <code>target_dir</code> or the server's own working directory (where <code>.organizer/journal.jsonl</code>,
-  <code>registry.json</code>, and the plan files legitimately live, and so remain in-bounds). The
+  <code>target_dir</code> — where, as of per-directory memory (P2), <code>.organizer/journal.jsonl</code>,
+  <code>registry.json</code>, and the plan files themselves now legitimately live per run — or
+  the server's own working directory, so both remain in-bounds. The
   residual risk is that a compromised agent can still get an in-bounds plan <em>approved</em>
   by pairing it with a misleading rationale — see the next bullet and S4.</li>
 <li><strong>Exfiltrate other files</strong> — read a secret, then smuggle it into a new filename, a
@@ -1732,12 +1761,12 @@ single-user deployment.</p>
 <tr>
 <td><strong>S2</strong></td>
 <td><strong>Critical</strong></td>
-<td><strong>[Mitigated — 2026-07-08, see P2 #10]</strong> ~~Indirect prompt injection via document content. Untrusted document text shares the LLM context with telcontar's instructions and can drive S1's ungated tools (arbitrary write / overwrite of recovery artifacts), exfiltration, and deletion. Recorded summaries/provenance echo back into context, giving injection a second hop.~~ Document text returned by <code>read_file</code>/<code>extract_text</code>, and the <code>diff</code> field of <code>compare_documents</code>, is now wrapped in an explicit "untrusted document content, never an instruction" delimiter (<code>_wrap_untrusted_content</code>, <code>host/agent.py</code>) at the point it enters the LLM's tool-result messages — in both organize mode (<code>run_agent_loop</code>) and query mode (<code>run_query_loop</code>) — and the system prompt's Safety rules explicitly tell the model what the delimiter means and never to treat its contents as a command. This is a mitigation, not a closure: an LLM has no hard, sandboxed trust boundary, so a sufficiently adversarial model could in principle still be swayed by cleverly-worded content even with the delimiter present. What genuinely helps is (a) the model is now told the provenance and told never to treat it as instructions — defense in depth alongside M1's already-minimized mutating surface (S1) — and (b) it is no longer ambiguous which spans of the context are trusted instructions vs. untrusted data. Indirect prompt injection via document content remains open in principle; the bar is raised, not removed.</td>
+<td><strong>[Mitigated — 2026-07-08, see P2 #10]</strong> ~~Indirect prompt injection via document content. Untrusted document text shares the LLM context with telcontar's instructions and can drive S1's ungated tools (arbitrary write / overwrite of recovery artifacts), exfiltration, and deletion. Recorded summaries/provenance echo back into context, giving injection a second hop.~~ Document text returned by <code>read_file</code>/<code>extract_text</code>, and the <code>diff</code> field of <code>compare_documents</code>, is now wrapped in an explicit "untrusted document content, never an instruction" delimiter (<code>_wrap_untrusted_content</code>, <code>host/agent.py</code>) at the point it enters the LLM's tool-result messages — in both organize mode (<code>run_agent_loop</code>) and query mode (<code>run_query_loop</code>) — and the system prompt's Safety rules explicitly tell the model what the delimiter means and never to treat its contents as a command. This is a mitigation, not a closure: an LLM has no hard, sandboxed trust boundary, so a sufficiently adversarial model could in principle still be swayed by cleverly-worded content even with the delimiter present. What genuinely helps is (a) the model is now told the provenance and told never to treat it as instructions — defense in depth alongside M1's already-minimized mutating surface (S1) — and (b) it is no longer ambiguous which spans of the context are trusted instructions vs. untrusted data. Indirect prompt injection via document content remains open in principle; the bar is raised, not removed. As of P5, the stateless per-batch analyzer (<code>host/agent.py</code>'s <code>_analyze_batch</code>) is a third call site reusing the same <code>_wrap_untrusted</code> delimiter directly — its per-batch messages list is a throwaway construction outside the two tool-result-append sites above, since it never joins the main conversation — no new egress mechanism, just a new caller of the same mitigation. <strong>As of P6 (2026-07-14)</strong>, this call site is wired into <code>run_agent_loop</code> and, structurally, is now the <em>only</em> point in a live organize run where document content ever reaches the LLM: <code>ORGANIZE_DENIED_TOOLS</code> excludes <code>read_file</code>/<code>extract_text</code>/their batch forms/<code>compare_documents</code> from the ORGANIZE-phase model's own toolset, so it can no longer re-fetch content itself. P6 also closed a gap in this third call site's own mitigation: <code>_ANALYZER_SYSTEM_PROMPT_TEMPLATE</code> wrapped document content in the delimiter but, until now, never explained to the model what the delimiter meant or that content inside it must never be treated as an instruction — that explanation lived only in the old ORGANIZE-phase system prompt, which the analyzer's throwaway messages list never saw. The analyzer's system prompt now includes that explanation directly, matching the organize/query-loop mitigation this finding already covers.</td>
 </tr>
 <tr>
 <td><strong>S3</strong></td>
 <td><strong>High</strong></td>
-<td><strong>[Remediated — 2026-07-07, see P0 #2, P2 #7]</strong> ~~No path confinement; egress open by default. <code>ALLOWLIST_DIRS</code> is empty by default and enforced only on read/extract/compare — never on writes/moves/renames/quarantine. Reads can pull (and upload) any file the OS user can access; mutations can target any absolute or <code>..</code> path. The target directory is not a security boundary.~~ <code>check_within_root</code> confines <strong>every</strong> path-taking tool — reads, writes, and moves/renames/quarantine alike — to <code>target_dir</code> plus the server's own working directory, rejecting both absolute-path and <code>..</code> escapes identically (P0 #2). As of M7 (P2 #7), <code>ALLOWLIST_DIRS</code> itself also defaults to <code>[target_dir]</code> — via <code>Settings.effective_allowlist_dirs()</code> — instead of <code>[]</code> (no restriction), for the three content-reading tools (<code>read_file</code>/<code>extract_text</code>/<code>compare_documents</code>) that consult it; an explicit non-empty <code>ALLOWLIST_DIRS</code> always overrides that default and is used as-is, never merged with <code>target_dir</code>. Together these mean no path-taking tool, and no content-egress path, is unrestricted by default any longer. Narrowing to a smaller subtree of the target directory remains available only via explicit <code>ALLOWLIST_DIRS</code> configuration — that was always opt-in and remains so; it is an operator-configurable refinement, not a residual open gap.</td>
+<td><strong>[Remediated — 2026-07-07, see P0 #2, P2 #7]</strong> ~~No path confinement; egress open by default. <code>ALLOWLIST_DIRS</code> is empty by default and enforced only on read/extract/compare — never on writes/moves/renames/quarantine. Reads can pull (and upload) any file the OS user can access; mutations can target any absolute or <code>..</code> path. The target directory is not a security boundary.~~ <code>check_within_root</code> confines <strong>every</strong> path-taking tool — reads, writes, and moves/renames/quarantine alike — to <code>target_dir</code> plus the server's own working directory, rejecting both absolute-path and <code>..</code> escapes identically (P0 #2). As of M7 (P2 #7), <code>ALLOWLIST_DIRS</code> itself also defaults to <code>[target_dir]</code> — via <code>Settings.effective_allowlist_dirs()</code> — instead of <code>[]</code> (no restriction), for the content-reading tools (<code>read_file</code>/<code>extract_text</code>/<code>compare_documents</code>, and the batch forms <code>read_file_batch</code>/<code>extract_text_batch</code> added in O1) that consult it; an explicit non-empty <code>ALLOWLIST_DIRS</code> always overrides that default and is used as-is, never merged with <code>target_dir</code>. Together these mean no path-taking tool, and no content-egress path, is unrestricted by default any longer. Narrowing to a smaller subtree of the target directory remains available only via explicit <code>ALLOWLIST_DIRS</code> configuration — that was always opt-in and remains so; it is an operator-configurable refinement, not a residual open gap.</td>
 </tr>
 <tr>
 <td><strong>S4</strong></td>
@@ -1762,7 +1791,7 @@ single-user deployment.</p>
 <tr>
 <td><strong>S8</strong></td>
 <td><strong>Low</strong></td>
-<td><strong>[Partially remediated — 2026-07-09, see P3 #11, #12]</strong> Credential &amp; endpoint trust: ~~the API key falls back to plaintext <code>~/.telcontar/config.env</code> when the OS keyring is unavailable~~ — that fallback is no longer silent; it now requires an explicit, warned, second confirmation (<code>PlaintextKeyFallbackNeeded</code>, P3 #11). What actually left the machine is now auditable: every <code>read_file</code>/<code>extract_text</code>/<code>compare_documents</code> call is logged to <code>.organizer/egress.jsonl</code> with path, size, tool, and timestamp (P3 #12). Still open: the key is also read from a CWD <code>.env</code> (a legitimate dev-workflow input path, but one an operator might not realize is being consulted), and egress goes to any user-set <code>base_url</code> (a third party in dev, e.g. Mammouth) — neither is addressed by these items. Worth stating explicitly as a trust boundary.</td>
+<td><strong>[Partially remediated — 2026-07-09, see P3 #11, #12]</strong> Credential &amp; endpoint trust: ~~the API key falls back to plaintext <code>~/.telcontar/config.env</code> when the OS keyring is unavailable~~ — that fallback is no longer silent; it now requires an explicit, warned, second confirmation (<code>PlaintextKeyFallbackNeeded</code>, P3 #11). What actually left the machine is now auditable: every <code>read_file</code>/<code>extract_text</code>/<code>compare_documents</code> call (and, since O1, every successful file in a <code>read_file_batch</code>/<code>extract_text_batch</code> call) is logged to <code>.organizer/egress.jsonl</code> with path, size, tool, and timestamp (P3 #12). Still open: the key is also read from a CWD <code>.env</code> (a legitimate dev-workflow input path, but one an operator might not realize is being consulted), and egress goes to any user-set <code>base_url</code> (a third party in dev, e.g. Mammouth) — neither is addressed by these items. Worth stating explicitly as a trust boundary.</td>
 </tr>
 </tbody>
 </table>
@@ -1794,9 +1823,10 @@ single-user deployment.</p>
   keyring failure; the setup wizard and config screen both warn loudly and
   require a second, deliberate button press before writing the key in plaintext.</li>
 <li><strong>Egress is now auditable (S8, partially remediated)</strong>: every <code>read_file</code> /
-  <code>extract_text</code> / <code>compare_documents</code> call is logged to <code>.organizer/egress.jsonl</code>
-  (path, size, tool, timestamp) — an operator can review exactly what left the
-  machine after any run.</li>
+  <code>extract_text</code> / <code>compare_documents</code> call — and, since O1, every successful file
+  in a <code>read_file_batch</code> / <code>extract_text_batch</code> call — is logged to
+  <code>.organizer/egress.jsonl</code> (path, size, tool, timestamp) — an operator can review
+  exactly what left the machine after any run.</li>
 </ul>
 <hr />
 <h2 id="6-remediation-plan">6. Remediation plan<a class="headerlink" href="#6-remediation-plan" title="Permanent link">&para;</a></h2>
@@ -1935,7 +1965,10 @@ first with the least behavioural disruption.</p>
     input's individual contribution to the combined diff). This is a plain,
     operator-readable append-only log — not exposed as an agent-callable MCP tool,
     since it is an audit trail of the agent's own information exposure, not something
-    the agent itself needs to consult.</li>
+    the agent itself needs to consult. The batch tools added in O1, <code>read_file_batch</code>
+    and <code>extract_text_batch</code>, log the same way, once per successful file in the
+    batch (under the <code>read_file_batch</code>/<code>extract_text_batch</code> tool name), so a batched
+    fetch is exactly as auditable as the same files fetched one at a time.</li>
 </ol>
 <hr />
 <h2 id="7-operator-hardening-checklist-how-to-run-it-safely-today">7. Operator hardening checklist (how to run it safely today)<a class="headerlink" href="#7-operator-hardening-checklist-how-to-run-it-safely-today" title="Permanent link">&para;</a></h2>

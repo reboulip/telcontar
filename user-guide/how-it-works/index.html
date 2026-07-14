@@ -693,10 +693,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#phase-a-analyse" class="md-nav__link">
+  <a href="#analysis-before-the-chat-loop-starts" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase A — Analyse
+        Analysis — before the chat loop starts
       
     </span>
   </a>
@@ -704,10 +704,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#phase-b-organize" class="md-nav__link">
+  <a href="#phase-a-organize" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase B — Organize
+        Phase A — Organize
       
     </span>
   </a>
@@ -715,10 +715,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#phase-c-synthesize" class="md-nav__link">
+  <a href="#phase-b-synthesize" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase C — Synthesize
+        Phase B — Synthesize
       
     </span>
   </a>
@@ -731,10 +731,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#the-clarification-checkpoint" class="md-nav__link">
+  <a href="#the-cost-estimate-approval-gate" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The clarification checkpoint
+        The cost-estimate approval gate
       
     </span>
   </a>
@@ -742,10 +742,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#the-multiple-option-checkpoint" class="md-nav__link">
+  <a href="#the-ask_user-chat-checkpoint" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The multiple-option checkpoint
+        The ask_user chat checkpoint
       
     </span>
   </a>
@@ -780,6 +780,45 @@
     <span class="md-ellipsis">
       
         Undoing an operation
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#chatting-during-and-after-a-run-live-chat-resumable-chat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Chatting during and after a run (live chat + resumable chat)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Chatting during and after a run (live chat + resumable chat)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#live-mid-run-chat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Live mid-run chat
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#continuing-after-a-run-resumable-chat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Continuing after a run (resumable chat)
       
     </span>
   </a>
@@ -1477,6 +1516,7 @@
 <ul>
 <li><strong>First run</strong> — the <strong>setup wizard</strong> (<code>SetupScreen</code>) appears automatically. It guides you through choosing an AI provider, entering the service URL and API key, and selecting a document profile. The key is stored in the OS credential store (Windows Credential Manager / macOS Keychain); other settings go to <code>~/.telcontar/config.env</code>.</li>
 <li><strong>Returning user</strong> — the <strong>startup screen</strong> (<code>StartupScreen</code>) appears directly. It offers three actions: <strong>Organize</strong>, <strong>Query</strong>, and <strong>⚙ Settings</strong>. Press <code>s</code> or click <strong>⚙ Settings</strong> at any time to open the settings panel (<code>ConfigScreen</code>), where you can change the URL, API key, profile, and approval mode.</li>
+<li><strong>From anywhere</strong> — press <code>Ctrl+S</code> at any point in the app, on any screen, to open the same settings panel — not just from the startup screen. It even works while a modal (plan approval, cost estimate) is on screen; the settings panel stacks on top and pops back cleanly. It's a no-op if settings are already open, or during the first-run setup wizard (to avoid persisting a half-configured state that skips the wizard's guided keyring/plaintext-fallback flow).</li>
 </ul>
 <hr />
 <h2 id="the-starter-pane">The starter pane<a class="headerlink" href="#the-starter-pane" title="Permanent link">&para;</a></h2>
@@ -1486,31 +1526,29 @@
 <li>An optional <strong>steering instructions</strong> field for free text, e.g. "group by workstream", "keep the 2024 invoices together", or "don't quarantine drafts".</li>
 <li>A <strong>Start organizing</strong> button (pressing Enter in the instructions field works too).</li>
 </ul>
-<p>Only once you proceed does the chat transcript appear and the agent loop start. Any instructions you typed are shown as a <code>you</code> turn in the transcript and passed to <code>run_agent(..., instructions=...)</code>, which appends them to the agent's first user message so the run follows your intent instead of organizing blind.</p>
+<p>Only once you proceed does the chat transcript appear and the agent loop start. Any instructions you typed are shown as a <code>you</code> turn in the transcript and passed to <code>run_agent_loop(..., instructions=...)</code>, which appends them to the agent's first user message so the run follows your intent instead of organizing blind.</p>
 <hr />
 <h2 id="the-agent-loop">The agent loop<a class="headerlink" href="#the-agent-loop" title="Permanent link">&para;</a></h2>
-<p>Once you proceed past the starter pane, the <strong>host</strong> launches the <strong>server</strong> as a subprocess and begins a GPT-5 tool-calling loop. The agent follows a fixed three-phase workflow:</p>
-<h3 id="phase-a-analyse">Phase A — Analyse<a class="headerlink" href="#phase-a-analyse" title="Permanent link">&para;</a></h3>
-<p>The agent first surveys the <strong>whole directory tree</strong> with <code>walk_tree</code> (recursive, up to <code>max_depth=3</code> levels; it calls <code>walk_tree</code> again on any subpath that comes back marked <code>truncated</code> to go deeper) so it discovers documents nested in subfolders, not just those sitting at the top level.</p>
-<p>Then, for each document found anywhere in the tree, the agent:</p>
+<p>Once you proceed past the starter pane, the <strong>host</strong> launches the <strong>server</strong> as a subprocess. Before any chat turn happens, telcontar analyzes the corpus deterministically; only once that finishes does the GPT-5 tool-calling loop begin, and it follows a fixed two-phase workflow.</p>
+<h3 id="analysis-before-the-chat-loop-starts">Analysis — before the chat loop starts<a class="headerlink" href="#analysis-before-the-chat-loop-starts" title="Permanent link">&para;</a></h3>
+<p>This step is <strong>not</strong> the model reasoning turn-by-turn — it is host-orchestrated code, in two stages, so that each document's content is sent to the model <strong>at most once, ever</strong>:</p>
 <ol>
-<li>Calls <code>read_file</code> or <code>extract_text</code> (for PDF/Office) to get the content</li>
-<li>Calls <code>compute_checksum</code> to obtain the file's sha256 content ID</li>
-<li>Calls <code>record_document</code> to upsert title, type, summary, date, and entities into the <strong>registry</strong></li>
-<li>Calls <code>find_duplicates</code> and <code>find_modified_documents</code> to identify candidates for quarantine</li>
+<li><strong>Deterministic discovery (no LLM call).</strong> The host recursively walks the <strong>whole directory tree</strong> (re-walking any subpath the server marks <code>truncated</code>, repeating until none remain anywhere — full coverage is mandatory), computes a sha256 checksum for every discovered file, and looks each checksum up against the registry to split the corpus into documents already known from a previous run and genuinely new ones. A known document whose on-disk location has drifted since it was last seen is silently corrected in the registry.</li>
+<li><strong>Isolated, per-batch analysis of the NEW documents only.</strong> If there are new documents, telcontar pauses once to show a rough cost estimate scoped to just those new documents — see <a href="#the-cost-estimate-approval-gate">The cost-estimate approval gate</a> below. On approval, the new documents are processed in <strong>batches of 10</strong> (smaller only for unusually large individual files): each batch's content is fetched (<code>read_file_batch</code> or <code>extract_text_batch</code> for PDF/Office) and sent to the model in a single, isolated call that must return one structured record — title, type, summary, date, entities — per document in the batch, in order; that call never joins the chat conversation you see afterward. The results are upserted into the <strong>registry</strong> via <code>record_document_batch</code>.</li>
 </ol>
-<p>The registry is <strong>content-addressed</strong>: if you rename a file, telcontar still recognises it by checksum on the next run. Analysis results accumulate across sessions.</p>
-<p>Between Phase A and Phase B, the agent has two optional, at-most-once checkpoints: it may pause to ask the user a short batch of clarifying questions if it hit genuine ambiguity — see <a href="#the-clarification-checkpoint">The clarification checkpoint</a> below — and, after re-examining its intended approach from a second angle, it may also surface a few competing options for the user to choose between — see <a href="#the-multiple-option-checkpoint">The multiple-option checkpoint</a> below.</p>
-<h3 id="phase-b-organize">Phase B — Organize<a class="headerlink" href="#phase-b-organize" title="Permanent link">&para;</a></h3>
+<p>The registry is <strong>content-addressed</strong>: if you rename a file, telcontar still recognises it by checksum on the next run, so a re-run only ever analyzes documents it hasn't seen before — previously-known documents are reused from the registry without being re-read or re-sent to the model at all.</p>
+<p>Once analysis finishes, the host builds a compact <strong>corpus digest</strong> — every document's title, type, and path, plus totals — and hands it to the agent as the first message of the chat loop, in place of a blank "please organize" instruction. From here on, the chat-loop agent works from the digest and the read-only registry tools (<code>list_documents</code>, <code>get_registry</code>, <code>find_duplicates</code>, <code>find_modified_documents</code>, …) — it can no longer read raw file content, checksum a file, or record a document itself; those tools simply aren't offered to it.</p>
+<h3 id="phase-a-organize">Phase A — Organize<a class="headerlink" href="#phase-a-organize" title="Permanent link">&para;</a></h3>
 <ol>
-<li>The agent designs a <strong>relevant target taxonomy</strong> — a small, shallow, readable folder tree derived from the document types and themes actually found in the corpus (e.g. grouped by document type, workstream, or phase). It may redesign the <strong>existing nested layout entirely</strong> — documents already sitting in subfolders are reorganized too, not just those at the top level. Folders are only created for categories the corpus actually contains.</li>
+<li>The agent designs a <strong>relevant target taxonomy</strong> — a small, shallow, readable folder tree derived from the document types and themes already recorded (e.g. grouped by document type, workstream, or phase). It may redesign the <strong>existing nested layout entirely</strong> — documents already sitting in subfolders are reorganized too, not just those at the top level; it can call <code>walk_tree</code> to check the current on-disk layout first. Folders are only created for categories the corpus actually contains.</li>
 <li>The agent calls <code>create_plan</code> to open a new plan</li>
 <li>It stages operations with <code>propose_create_dir</code> for each new folder (idempotent and collision-safe), <code>propose_rename</code>, <code>propose_move</code> (filing each document into the taxonomy), <code>propose_quarantine</code> for duplicates or clutter, <code>propose_create_file</code>/<code>propose_update_file</code> for any new or updated files, and <code>propose_archive_document</code> to withdraw a document from active memory when appropriate — <strong>every filesystem mutation is staged this way; there is no tool that writes to disk directly</strong></li>
 <li>It calls <code>review_plan</code> for a deduplication pre-flight check</li>
 <li>It calls <code>set_plan_rationale</code> with a short plain-language paragraph explaining the plan's philosophy — how it grouped, renamed, and quarantined documents and why — and <code>set_plan_folder_notes</code> with a one-line purpose note for each target folder. The host shows the rationale above the op list in the approval modal, followed by a target-layout tree with the folder notes beside each folder</li>
 <li>It calls <code>execute_plan</code> — at this point the <strong>approval gate</strong> fires</li>
 </ol>
-<h3 id="phase-c-synthesize">Phase C — Synthesize<a class="headerlink" href="#phase-c-synthesize" title="Permanent link">&para;</a></h3>
+<p>At any point before or while building the plan, the agent may pause to check in with the user — genuine clarifying questions, competing options to choose between, or a mix — see <a href="#the-ask_user-chat-checkpoint">The ask_user chat checkpoint</a> below.</p>
+<h3 id="phase-b-synthesize">Phase B — Synthesize<a class="headerlink" href="#phase-b-synthesize" title="Permanent link">&para;</a></h3>
 <ol>
 <li>Throughout the run, the agent records key project milestones with <code>create_event</code> — one short, verb-led, dated sentence per decision or delivery</li>
 <li>The agent calls <code>build_graph</code> to project the registry and events into the knowledge graph, then <code>get_actors</code> for the ranked main actors and <code>list_events</code> for the timeline</li>
@@ -1519,53 +1557,52 @@
 <li>The agent responds with a final text summary and the loop ends</li>
 </ol>
 <hr />
-<h2 id="the-clarification-checkpoint">The clarification checkpoint<a class="headerlink" href="#the-clarification-checkpoint" title="Permanent link">&para;</a></h2>
-<p>After Phase A (Analyse) and before Phase B (Organize) begins, the agent <strong>may</strong> pause once to ask the user a short batch of clarifying questions — but only when it hits genuine ambiguity (unclear document type, competing taxonomy groupings, ambiguous naming). If there is no real ambiguity, the agent skips this and moves straight into Phase B with its own best judgement.</p>
-<p>This is a <strong>host-side</strong> capability, not an MCP server tool: <code>ask_clarification</code> is a synthetic tool the host injects into the model's tool list, and it is never forwarded to the MCP server.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>Agent finishes Phase A (Analyse)
+<h2 id="the-cost-estimate-approval-gate">The cost-estimate approval gate<a class="headerlink" href="#the-cost-estimate-approval-gate" title="Permanent link">&para;</a></h2>
+<p>After deterministic discovery finds the corpus's <strong>new</strong> (previously-unanalyzed) documents but before any of their content is actually fetched, telcontar pauses once to show a rough cost estimate scoped to just those new documents, and lets you decide whether to proceed. This is the run's <strong>primary cost control</strong> — a single upfront checkpoint before the model can trigger real analysis spend, distinct from the adaptive turn budget that only acts as a backstop against a runaway or looping agent.</p>
+<p>Because the estimate only ever covers new documents, re-running Organize on a folder that's mostly already analyzed shows a small estimate (or none at all — the gate is skipped entirely when there is nothing new to analyze), not a recalculation of the whole corpus. The estimate itself is a rough, local calculation from the file sizes discovery already found (no extraction and no LLM call needed to produce it), shown as e.g. "~42 new document(s) (10 already analyzed, skipped), ~18,500 input tokens estimated, batched in groups of 10 — proceed?".</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>Discovery finishes; N new (previously-unanalyzed) documents found
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>       │
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>       ▼
-<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>Agent calls ask_clarification(questions)   (at most once per run)
-<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>       │
-<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>       ▼
-<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>Host shows ClarificationModal — one free-text input per question
-<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>       │
-<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>   User reviews
-<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>   ├── Submit answers (any subset, blanks are skipped)
-<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>   │       │
-<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>   │       ▼
-<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>   │   Answers fed back to the agent to refine its decisions before create_plan
-<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>   │
-<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>   └── Skip — best judgement
-<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>           │
-<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>           ▼
-<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>       Agent proceeds using its own judgement
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>Host computes a size-based estimate scoped to just those N documents,
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>shows CostEstimateModal
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>       │
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>   User reviews
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>   ├── Proceed
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>   │       │
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>   │       ▼
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>   │   The new documents are analyzed, then the chat loop begins
+<a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a>   │
+<a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>   └── Cancel
+<a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>           │
+<a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a>           ▼
+<a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>       Analysis is skipped for this run — the new documents stay
+<a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>       unrecorded; the chat loop begins with only the already-known
+<a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>       documents in the digest
 </code></pre></div>
-<p>A second call to <code>ask_clarification</code> in the same run is refused — the host tells the agent it already asked and to proceed with its own best judgement. The agent is instructed not to stall waiting for answers.</p>
+<p>In <code>APPROVAL_MODE=never</code>, this gate is skipped automatically (the estimate is still emitted for observability, it just never blocks). In <code>always</code> and <code>destructive_only</code>, it shows once per run whenever there are new documents to analyze.</p>
 <hr />
-<h2 id="the-multiple-option-checkpoint">The multiple-option checkpoint<a class="headerlink" href="#the-multiple-option-checkpoint" title="Permanent link">&para;</a></h2>
-<p>Also between Phase A and Phase B, the agent <strong>may</strong> pause once more — after re-examining its intended approach from a second angle — to let the user choose between competing courses of action, when there are genuinely several valid ways to classify or handle the corpus (e.g. group COPIL decks by date vs. by workstream vs. one flat folder). If one approach is clearly best, the agent skips this and moves straight into Phase B.</p>
-<p>Like the clarification checkpoint, this is a <strong>host-side</strong> capability, not an MCP server tool: <code>propose_options</code> is a synthetic tool the host injects into the model's tool list, and it is never forwarded to the MCP server.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>Agent finishes Phase A, re-examines its approach from a second angle
+<h2 id="the-ask_user-chat-checkpoint">The ask_user chat checkpoint<a class="headerlink" href="#the-ask_user-chat-checkpoint" title="Permanent link">&para;</a></h2>
+<p>At any point before or while building the plan, the agent <strong>may</strong> call <code>ask_user</code> with a short batch of items — plain clarifying questions, multiple-choice options for the user to pick from, or a mix in the same call — when it hits genuine ambiguity (unclear document type, competing taxonomy groupings, ambiguous naming) or there are genuinely several valid ways to classify or handle the corpus (e.g. group COPIL decks by date vs. by workstream vs. one flat folder). If there is no real ambiguity, the agent skips this and proceeds with its own best judgement.</p>
+<p>This is a <strong>host-side</strong> capability, not an MCP server tool: <code>ask_user</code> is a synthetic tool the host injects into the model's tool list, and it is never forwarded to the MCP server. Unlike the modal-based checkpoints it replaces, it has no dialog of its own — it renders as a normal <code>telcontar</code> turn in the chat transcript and blocks on the exact same live-chat message queue described in <a href="#chatting-during-and-after-a-run-live-chat-resumable-chat">Chatting during and after a run</a> below, so your next chat message is read as the reply. There is no once-per-run cap: because it's a normal chat exchange rather than an interruptive modal, the agent can check in as many times as it genuinely needs to.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>Agent hits genuine ambiguity, at any point before/while building the plan
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>       │
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>       ▼
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>Agent calls propose_options(questions)   (at most once per run)
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>Agent calls ask_user(questions)   (1-5 items; each may carry 2-5 options)
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>       │
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>       ▼
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>Host shows OptionsModal — one RadioSet (2-5 options) per question
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>Question(s) rendered as a &quot;telcontar&quot; turn in the transcript
 <a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>       │
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>   User reviews
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>   ├── Submit choices (one option per question; first option pre-selected)
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>   │       │
-<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>   │       ▼
-<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>   │   Selections fed back to the agent, which follows them before create_plan
-<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>   │
-<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>   └── Skip — best judgement
-<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>           │
-<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>           ▼
-<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>       Agent proceeds using its own judgement
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>       ▼
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>Agent&#39;s tool call blocks on the live-chat message queue
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>       │
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>   You type a reply in the chat box
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>       │
+<a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>       ▼
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>Reply echoed as a &quot;you&quot; turn, returned to the agent as free text;
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>the agent continues — and may call ask_user again later if a new
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>ambiguity comes up
 </code></pre></div>
-<p>A second call to <code>propose_options</code> in the same run is refused — the host tells the agent it already proposed options and to proceed with its own best judgement. Like <code>ask_clarification</code>, the agent is instructed to use this only for real, close judgement calls, not to offload every decision, and never to stall.</p>
+<p>The agent is instructed not to stall or use this to offload every decision — only for real, close judgement calls; otherwise it proceeds with its own best judgement.</p>
 <hr />
 <h2 id="the-approval-gate">The approval gate<a class="headerlink" href="#the-approval-gate" title="Permanent link">&para;</a></h2>
 <p>Before any file is moved or renamed, telcontar shows the full plan to the user and waits for explicit approval. This is the heart of the safety model:</p>
@@ -1599,7 +1636,7 @@
 <p>The gate is controlled by <code>APPROVAL_MODE</code>. See <a href="../approval-modes/">Approval Modes</a>.</p>
 <hr />
 <h2 id="persistence">Persistence<a class="headerlink" href="#persistence" title="Permanent link">&para;</a></h2>
-<p>All state lives under <code>.organizer/</code> in the <strong>project root</strong> (not the target directory):</p>
+<p>All state lives under <code>.organizer/</code> <strong>inside the target directory</strong> you organized — memory is per-directory, so each organized folder keeps its own registry, plans, and journals. (<code>PROFILES_DIR</code> and <code>.organizer/NAMING.md</code> are the exception — they stay project-level, since they're cross-corpus conventions rather than per-run memory.)</p>
 <table>
 <thead>
 <tr>
@@ -1642,11 +1679,62 @@
 <h3 id="undoing-an-operation">Undoing an operation<a class="headerlink" href="#undoing-an-operation" title="Permanent link">&para;</a></h3>
 <p>Undo is a <strong>manual, user-only action</strong> — the agent has no tool to trigger it. In the Organizer screen, press <strong>j</strong> to open the operations-journal viewer, then <strong>u</strong> to revert the most recent journaled operation. This calls <code>server.tools.undo_last</code> directly from the TUI, bypassing the agent entirely.</p>
 <hr />
+<h2 id="chatting-during-and-after-a-run-live-chat-resumable-chat">Chatting during and after a run (live chat + resumable chat)<a class="headerlink" href="#chatting-during-and-after-a-run-live-chat-resumable-chat" title="Permanent link">&para;</a></h2>
+<p>The chat box (<code>#organize-input</code>) at the bottom of the Organizer screen is enabled from the moment you press <strong>Start organizing</strong> — you don't have to wait for the agent to stop before you can type. The same MCP server subprocess stays open for as long as the screen does, whether the agent is actively working or fully idle.</p>
+<h3 id="live-mid-run-chat">Live mid-run chat<a class="headerlink" href="#live-mid-run-chat" title="Permanent link">&para;</a></h3>
+<p>While the agent is still working — even during the pre-pass/analysis stage, before the first chat turn — a message you type is queued and woven into the run at the next opportunity, without waiting for it to finish: right before the run's first LLM call, after every turn's batch of tool calls completes, and — most importantly — at the moment the agent would otherwise stop (its response carries no more tool calls). At that last point, if a message is waiting, the agent takes it as a new instruction and keeps going instead of ending the run. This lets you course-correct an in-progress run, e.g. "actually, group by year instead", without waiting for it to finish first.</p>
+<p>This is the same queue <a href="#the-ask_user-chat-checkpoint">the <code>ask_user</code> chat checkpoint</a> blocks on when the agent has a question for you — an <code>ask_user</code> call is really just a special case of this mechanism, one where the agent is the one waiting on your next message.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>Run in progress (pre-pass / analysis / a turn&#39;s tool calls)
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>       │
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>   You type a message  →  echoed as a &quot;you&quot; turn, queued
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>       │
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>       ▼
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>Host drains the queue at the next opportunity:
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>  • before the first LLM call
+<a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>  • after each turn&#39;s tool-call batch
+<a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>  • when the agent&#39;s response has no tool calls (would otherwise stop)
+<a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>       │
+<a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>       ▼
+<a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>Queued message(s) injected as a new user turn; the agent continues
+<a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>instead of ending the run
+</code></pre></div>
+<h3 id="continuing-after-a-run-resumable-chat">Continuing after a run (resumable chat)<a class="headerlink" href="#continuing-after-a-run-resumable-chat" title="Permanent link">&para;</a></h3>
+<p>A run doesn't have to end the conversation, either. Once it reaches a <strong>terminal state</strong> — it finishes normally, hits an error, or exhausts its turn budget — with nothing left waiting in the queue at that instant, typing a message still works exactly as before:</p>
+<ol>
+<li>Echoes it into the transcript as a <code>you</code> turn</li>
+<li>Resumes the agent loop with the conversation history returned by the previous call, plus your new message appended as a fresh user turn</li>
+<li>Runs with the <strong>same organize-mode toolset</strong> as the initial run — plan, execute, write, and every registry/graph/event read tool (document-content tools such as reading or re-extracting a file stay unavailable, since the corpus was already analyzed) — so a follow-up like "quarantine the drafts too" or "actually group these by workstream" continues the <em>same</em> conversation instead of starting a fresh one; it also stays just as "live" as the initial run, since the chat queue is wired into every continuation call too</li>
+</ol>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>Run reaches a terminal state (done / error / max turns),
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>nothing waiting in the queue
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>       │
+<a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>       ▼
+<a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>&quot;press g or keep chatting&quot; cue shown once
+<a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>       │
+<a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>   You type a message
+<a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>       │
+<a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>       ▼
+<a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>Message echoed as a &quot;you&quot; turn; the agent loop resumes on the SAME
+<a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>session with (history=&lt;previous&gt;, message=&lt;your text&gt;)
+<a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>       │
+<a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>       ▼
+<a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>Agent responds — may call any tool, including execute_plan (a new
+<a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>plan gets a new approval) — the chat box stays enabled throughout,
+<a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a>live for this continuation just like the initial run
+</code></pre></div>
+<p>This is distinct from <strong>query mode</strong> (<code>g</code>): query mode opens a <em>separate</em> screen on a <em>separate</em> MCP session with a strictly read-only toolset — safe for "just asking" without risking a mutation. The chat box instead continues the mutating conversation in place. Query mode becomes available once a run reaches its first terminal state; the chat box is available for the whole run, live or stopped.</p>
+<p>A couple of things carry over differently on a continuation:</p>
+<ul>
+<li>Each chat message gets its <strong>own fresh turn budget</strong>, not a share of the original run's. Since a continuation doesn't re-run the discovery/analysis stage, the adaptive turn-budget calculation (which scales with corpus size) resets to its floor of 50 turns — in practice not a limitation, since a follow-up message is normally a small, targeted ask rather than a fresh full-corpus analysis.</li>
+<li>The desktop notification and the "press g / keep chatting" cue fire only once, on the <em>first</em> terminal state — not again after every subsequent chat turn.</li>
+<li>If a turn raises an unhandled error partway through a batch of tool calls, telcontar no longer crashes the conversation: any tool call left without a result is answered with a synthetic error so the history stays valid, and you can keep typing to try again.</li>
+</ul>
+<hr />
 <h2 id="interactive-query-mode">Interactive query mode<a class="headerlink" href="#interactive-query-mode" title="Permanent link">&para;</a></h2>
-<p>After a corpus has been analyzed (registry exists), telcontar offers a <strong>read-only query mode</strong> where you can ask natural-language questions about it without reorganizing anything.</p>
+<p>After a corpus has been analyzed (its <code>.organizer/</code> memory exists), telcontar offers a <strong>read-only query mode</strong> where you can ask natural-language questions about it without reorganizing anything.</p>
 <h3 id="how-to-start-query-mode">How to start query mode<a class="headerlink" href="#how-to-start-query-mode" title="Permanent link">&para;</a></h3>
 <ul>
-<li>From the <strong>startup screen</strong>, press <strong>Query</strong> (the registry must already exist at <code>REGISTRY_PATH</code>).</li>
+<li>From the <strong>startup screen</strong>, press <strong>Query</strong>. The selected folder — or one of its parent folders — must contain a <code>.organizer/</code> from a previous Organize run; telcontar walks up from the folder you picked until it finds one, so choosing a subfolder of a previously-organized tree still resolves to that tree's memory. If none is found, an error asks you to run Organize first.</li>
 <li>From the <strong>Organizer screen</strong>, press <strong>g</strong> once organizing completes.</li>
 </ul>
 <h3 id="what-happens">What happens<a class="headerlink" href="#what-happens" title="Permanent link">&para;</a></h3>
@@ -1655,12 +1743,13 @@
 <ol>
 <li>The host sends the query-mode system prompt (built from the active profile) plus the user's question to GPT-5.</li>
 <li>GPT-5 calls read-only tools to gather facts:</li>
-<li><code>list_documents</code> / <code>get_registry</code> / <code>get_document</code> — recorded documents and their metadata</li>
+<li><code>list_documents</code> / <code>get_registry</code> / <code>get_document</code> / <code>lookup_documents</code> — recorded documents and their metadata (<code>lookup_documents</code> is the batch form of <code>get_document</code>, one round trip for many checksums)</li>
 <li><code>list_events</code> — the dated project timeline</li>
 <li><code>get_graph</code> / <code>get_actors</code> — the knowledge graph and ranked main actors</li>
 <li><code>find_duplicates</code> / <code>find_modified_documents</code> — duplicate clusters and modified versions</li>
 <li><code>list_archived</code> — documents withdrawn from active memory</li>
 <li><code>list_dir</code> / <code>read_file</code> / <code>extract_text</code> / <code>compare_documents</code> / <code>compute_checksum</code> — for ad-hoc file inspection</li>
+<li><code>read_file_batch</code> / <code>extract_text_batch</code> / <code>compute_checksum_batch</code> — batch forms of the above, for inspecting several files in one round trip</li>
 <li>The model produces an answer citing specifics (titles, dates, actor names, event sentences) drawn only from the tool results.</li>
 <li>The answer appears in the log; the next question can be typed immediately.</li>
 </ol>

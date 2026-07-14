@@ -907,6 +907,39 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#read_file_batch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        read_file_batch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extract_text_batch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        extract_text_batch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#compute_checksum_batch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        compute_checksum_batch
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1207,10 +1240,43 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#record_document_batch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        record_document_batch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#get_document" class="md-nav__link">
     <span class="md-ellipsis">
       
         get_document
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lookup_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        lookup_documents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rehome_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        rehome_documents
       
     </span>
   </a>
@@ -1841,7 +1907,15 @@
 </div>
 <div class="admonition note">
 <p class="admonition-title">Path confinement</p>
-<p>Every tool that takes a <code>path</code> (or <code>path_a</code>/<code>path_b</code>/<code>dest_dir</code>) argument is checked with <code>check_within_root</code> before it runs, and raises <code>PermissionError</code> if the resolved path falls outside both the run's <code>TARGET_DIR</code> and the server's own working directory (where <code>.organizer/</code> and the quarantine dir live). This applies whether the escape attempt is an absolute path or a <code>..</code> traversal. For <code>read_file</code> / <code>extract_text</code> / <code>compare_documents</code>, <code>ALLOWLIST_DIRS</code> is also checked first via <code>Settings.effective_allowlist_dirs()</code> — an explicit, non-empty <code>ALLOWLIST_DIRS</code> is used as-is; otherwise it defaults to <code>[TARGET_DIR]</code> rather than no restriction — and <code>check_within_root</code> then applies as the always-on floor underneath it. See <a href="../../developer/security-model/">Security Model</a>.</p>
+<p>Every tool that takes a <code>path</code> (or <code>path_a</code>/<code>path_b</code>/<code>dest_dir</code>) argument is checked with <code>check_within_root</code> before it runs, and raises <code>PermissionError</code> if the resolved path falls outside both the run's <code>TARGET_DIR</code> and the server's own working directory. This applies whether the escape attempt is an absolute path or a <code>..</code> traversal. As of per-directory memory (P2), <code>.organizer/</code> and the quarantine dir themselves live <em>inside</em> <code>TARGET_DIR</code> for every real run, so that boundary is also where the run's own memory resides. For <code>read_file</code> / <code>extract_text</code> / <code>compare_documents</code> and their batch forms <code>read_file_batch</code> / <code>extract_text_batch</code>, <code>ALLOWLIST_DIRS</code> is also checked first via <code>Settings.effective_allowlist_dirs()</code> — an explicit, non-empty <code>ALLOWLIST_DIRS</code> is used as-is; otherwise it defaults to <code>[TARGET_DIR]</code> rather than no restriction — and <code>check_within_root</code> then applies as the always-on floor underneath it. In the batch forms, both checks run per path <em>before</em> that file is read/extracted, so one disallowed path in a batch surfaces as <code>{"error": ...}</code> for that entry rather than raising and failing the whole call. See <a href="../../developer/security-model/">Security Model</a>.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Pre-analysis cost-approval gate (O8/P6, host-side)</p>
+<p>Gated entirely by the <strong>host</strong>, not the server. As of P6, a fresh organize run first runs a deterministic pre-pass (<code>run_prepass</code>) that walks the whole corpus and checksums every file via <code>compute_checksum_batch</code> — this call is unconditional and never gated, since it's needed just to tell already-known documents from new ones. If that partition finds any new documents, <code>host/agent.py</code> computes a token estimate scoped to ONLY those new documents' sizes and — unless <code>APPROVAL_MODE=never</code> — awaits a one-time user approval (<code>CostEstimateModal</code>) before running the stateless analyzer, which is what actually calls <code>extract_text_batch</code>/<code>read_file_batch</code> (to fetch content) and <code>record_document_batch</code> (to persist results) for the new documents. A rejection skips the analyzer for this run — the new documents are neither fetched nor recorded. The gate fires at most once per run and is skipped entirely (no event, no callback) when there are no new documents. The MCP server itself has no awareness of this gate — see <a href="../../developer/architecture/#pre-analysis-cost-approval-gate-o8p6">Architecture § Pre-analysis cost-approval gate (O8/P6)</a>.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">ORGANIZE-mode tool denylist (P6)</p>
+<p>The corpus is fully analyzed by the pre-pass + analyzer described above BEFORE the ORGANIZE turn loop starts, so the ORGANIZE-phase model's own toolset structurally excludes <code>read_file</code>, <code>extract_text</code>, <code>read_file_batch</code>, <code>extract_text_batch</code>, <code>compute_checksum</code>, <code>compute_checksum_batch</code>, <code>record_document</code>, <code>record_document_batch</code>, <code>compare_documents</code>, <code>lookup_documents</code>, and <code>rehome_documents</code> (<code>ORGANIZE_DENIED_TOOLS</code> in <code>host/agent.py</code>) — content-fetching/recording tools it has no legitimate reason to call again. This is a denylist, not just a prompt instruction: none of these tools are advertised to the model in ORGANIZE mode, and a hallucinated call to one of them is rejected with an explicit error regardless. Query mode is unaffected by this denylist — <code>read_file</code>, <code>extract_text</code>, <code>compare_documents</code>, <code>compute_checksum</code>, and their batch forms remain available there via <code>QUERY_ALLOWED_TOOLS</code>.</p>
 </div>
 <hr />
 <h2 id="read-only-tools">Read-only tools<a class="headerlink" href="#read-only-tools" title="Permanent link">&para;</a></h2>
@@ -1906,6 +1980,7 @@
 <li><code>truncated</code>: <code>false</code> while <code>children</code> is populated; <code>true</code> once <code>max_depth</code> is reached, in which case <code>children</code> is <code>null</code> — call <code>walk_tree</code> again on that subpath to descend further</li>
 </ul>
 <p>Files carry <code>size</code>/<code>mtime</code> like <code>list_dir</code>; unreadable entries are marked <code>type: "unknown"</code> with <code>size</code>/<code>mtime</code> set to <code>null</code>.</p>
+<p>The MCP server wrapper always excludes <code>.organizer</code> and the configured quarantine folder from the results, at every depth (P2) — so the agent never sees, and can never propose moving or quarantining, its own memory. This is discovery-hiding only, not a security guard: <code>list_dir</code> (the single-level tool) is not filtered the same way, and the exclusion doesn't change what <code>check_within_root</code> allows.</p>
 <hr />
 <h3 id="read_file"><code>read_file</code><a class="headerlink" href="#read_file" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">read_file</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">max_chars</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">4000</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span>
@@ -1995,6 +2070,10 @@
 </tbody>
 </table>
 <p><strong>Safety category:</strong> Read-only — no filesystem writes.</p>
+<div class="admonition note">
+<p class="admonition-title">Not available in ORGANIZE mode (P6)</p>
+<p><code>compare_documents</code> is in <code>ORGANIZE_DENIED_TOOLS</code> — the ORGANIZE-phase model cannot call it, since the corpus (including duplicate/version comparison via <code>find_duplicates</code>/<code>find_modified_documents</code>) was already analyzed before the loop starts. It remains available in query mode via <code>QUERY_ALLOWED_TOOLS</code>.</p>
+</div>
 <hr />
 <h3 id="compute_checksum"><code>compute_checksum</code><a class="headerlink" href="#compute_checksum" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">compute_checksum</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
@@ -2002,25 +2081,59 @@
 <p>Compute the sha256 checksum of a file (chunk-streamed, memory-safe). This checksum is used as the document's unique identity in the registry.</p>
 <p><strong>Returns:</strong> <code>{path, checksum}</code> — <code>checksum</code> is a 64-character hex string.</p>
 <hr />
+<h3 id="read_file_batch"><code>read_file_batch</code><a class="headerlink" href="#read_file_batch" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">read_file_batch</span><span class="p">(</span><span class="n">paths</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">max_chars</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">4000</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+</code></pre></div>
+<p>Batch form of <code>read_file</code>: fetch text for many files in one MCP round trip instead of one call per file — the basis for analyzing several documents in a single LLM turn.</p>
+<p><strong>Returns:</strong> <code>{path: content | {"error": message}}</code>, keyed by the exact path strings passed in. A failure reading one file never fails the whole batch — the caller must discriminate a successful entry (a <code>str</code>) from a failed one (a <code>{"error": ...}</code> dict).</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Each path gets the same <code>ALLOWLIST_DIRS</code> (<code>effective_allowlist_dirs()</code>) and <code>check_within_root</code> checks as <code>read_file</code>, applied individually before that file is read; a path that fails either check never reaches <code>read_file</code> and appears in the result as <code>{"error": ...}</code> directly, without failing the other paths in the batch. The effective cap per file is <code>min(max_chars, MAX_SNIPPET_CHARS)</code>, same as <code>read_file</code>.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Second caller (P5/P6)</p>
+<p>As of the stateless per-batch analyzer (P5), this tool also has a second caller: <code>host/agent.py</code>'s <code>_fetch_batch_content</code>, invoked directly by host code (not by the model's own tool-calling decision) for the non-extractable files in a batch of newly-discovered documents. Same tool, same server-side guards and egress logging — just a new, host-orchestrated caller. As of P6, this analyzer is wired into <code>run_agent_loop</code>'s pre-loop analysis stage (after the deterministic pre-pass, before the ORGANIZE turn loop), and <code>ORGANIZE_DENIED_TOOLS</code> excludes <code>read_file_batch</code> from the ORGANIZE-phase model's own toolset — so in a live organize run, this host-orchestrated call is now the <em>only</em> way this tool is ever reached; the model itself can only reach it via query mode (<code>QUERY_ALLOWED_TOOLS</code>).</p>
+</div>
+<hr />
+<h3 id="extract_text_batch"><code>extract_text_batch</code><a class="headerlink" href="#extract_text_batch" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">extract_text_batch</span><span class="p">(</span><span class="n">paths</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">],</span> <span class="n">max_chars</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">4000</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+</code></pre></div>
+<p>Batch form of <code>extract_text</code>: extract text from many PDF/Office/Outlook <code>.msg</code> files in one round trip. Same return shape, per-path guard checks, and error semantics as <code>read_file_batch</code>. Each file's extraction is bounded the same way as the singular <code>extract_text</code> — see "Bounded extraction (S5)" above.</p>
+<p><strong>Returns:</strong> <code>{path: content | {"error": message}}</code>, keyed by the exact path strings passed in.</p>
+<div class="admonition note">
+<p class="admonition-title">Second caller (P5/P6)</p>
+<p>Same as <code>read_file_batch</code> above: <code>_fetch_batch_content</code> (<code>host/agent.py</code>) also calls this directly, host-side, for the extractable files (<code>.pdf</code>/<code>.docx</code>/<code>.xlsx</code>/<code>.pptx</code>/<code>.msg</code>) in a stateless-analyzer batch — a file-type dispatch that used to be left entirely to the model's own judgement during the in-loop ANALYZE phase. As of P6, this analyzer is wired into <code>run_agent_loop</code> and <code>ORGANIZE_DENIED_TOOLS</code> excludes <code>extract_text_batch</code> from the ORGANIZE-phase model's own toolset, so in a live organize run this host-orchestrated call is now the <em>only</em> way this tool is ever reached; the model itself can only reach it via query mode (<code>QUERY_ALLOWED_TOOLS</code>).</p>
+</div>
+<hr />
+<h3 id="compute_checksum_batch"><code>compute_checksum_batch</code><a class="headerlink" href="#compute_checksum_batch" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">compute_checksum_batch</span><span class="p">(</span><span class="n">paths</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+</code></pre></div>
+<p>Batch form of <code>compute_checksum</code>: sha256 for many files in one round trip.</p>
+<p><strong>Returns:</strong> <code>{path: checksum_hex | {"error": message}}</code>, keyed by the exact path strings passed in. Unlike <code>read_file_batch</code>/<code>extract_text_batch</code>, a successful entry is the checksum hex string directly, not a <code>{path, checksum}</code> dict (matching what the singular <code>compute_checksum</code> nests under its <code>checksum</code> field).</p>
+<div class="admonition note">
+<p class="admonition-title">Second caller (P4/P6)</p>
+<p><code>host/agent.py</code>'s <code>run_prepass</code> calls this tool directly, host-side, to checksum the WHOLE discovered corpus (not just new documents) as part of deterministic pre-analysis discovery — this call is unconditional and never subject to the cost-approval gate, since it's needed just to tell already-known documents from new ones. <code>ORGANIZE_DENIED_TOOLS</code> excludes <code>compute_checksum_batch</code> from the ORGANIZE-phase model's own toolset, so in a live organize run this host-orchestrated call is the <em>only</em> way this tool is ever reached; the model itself can only reach it via query mode (<code>QUERY_ALLOWED_TOOLS</code>).</p>
+</div>
+<hr />
 <h2 id="plan-management-tools">Plan management tools<a class="headerlink" href="#plan-management-tools" title="Permanent link">&para;</a></h2>
 <p>Tools that create, inspect, and transition plans without executing file operations.</p>
 <h3 id="create_plan"><code>create_plan</code><a class="headerlink" href="#create_plan" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">create_plan</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">create_plan</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Create a new, empty plan in the <code>pending</code> state. Returns the full plan dict including a fresh <code>plan_id</code> (UUID).</p>
 <hr />
 <h3 id="get_plan"><code>get_plan</code><a class="headerlink" href="#get_plan" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="n">get_plan</span><span class="p">(</span><span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">get_plan</span><span class="p">(</span><span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Load and return a plan by its UUID. Includes all staged ops with their current status.</p>
 <hr />
 <h3 id="list_plans"><code>list_plans</code><a class="headerlink" href="#list_plans" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="n">list_plans</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">list_plans</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span>
 </code></pre></div>
 <p>Return all persisted plans sorted by <code>created_at</code> (oldest first).</p>
 <hr />
 <h3 id="review_plan"><code>review_plan</code><a class="headerlink" href="#review_plan" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="n">review_plan</span><span class="p">(</span><span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">review_plan</span><span class="p">(</span><span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Read-only pre-flight check. Detects:</p>
 <ul>
@@ -2067,12 +2180,12 @@
 <p>Does not modify the plan.</p>
 <hr />
 <h3 id="approve_plan"><code>approve_plan</code><a class="headerlink" href="#approve_plan" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="n">approve_plan</span><span class="p">(</span><span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="n">approve_plan</span><span class="p">(</span><span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Transition a plan from <code>pending</code> → <code>approved</code>. Must be called before <code>execute_plan</code>. The host calls this automatically after the user approves in the modal.</p>
 <hr />
 <h3 id="set_plan_rationale"><code>set_plan_rationale</code><a class="headerlink" href="#set_plan_rationale" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="n">set_plan_rationale</span><span class="p">(</span><span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">rationale</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="n">set_plan_rationale</span><span class="p">(</span><span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">rationale</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Attach the agent's plain-language rationale to a plan — a short paragraph explaining the plan's philosophy (how documents were grouped, renamed, and quarantined, and why). The host's <code>ApprovalModal</code> displays it above the op checklist when the user reviews the plan. The agent is expected to call this after <code>review_plan</code> and before <code>execute_plan</code>.</p>
 <p>Passing an empty or whitespace-only <code>rationale</code> clears it (stored as <code>""</code>). Not itself gated by <code>APPROVAL_MODE</code> — it only mutates plan metadata, no filesystem write.</p>
@@ -2080,7 +2193,7 @@
 <p><strong>Safety category:</strong> Plan-building / plan-mutation — writes to the plan file on disk but performs no filesystem operation outside <code>.organizer/plans/</code>.</p>
 <hr />
 <h3 id="set_plan_folder_notes"><code>set_plan_folder_notes</code><a class="headerlink" href="#set_plan_folder_notes" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">set_plan_folder_notes</span><span class="p">(</span><span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">notes</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="n">set_plan_folder_notes</span><span class="p">(</span><span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">notes</span><span class="p">:</span> <span class="nb">dict</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Attach agent-supplied per-folder purpose notes to a plan. <code>notes</code> maps a target folder path to a short one-line purpose note (e.g. <code>{"01_decisions": "Formal decision records", "_quarantine": "Duplicates and superseded drafts"}</code>). The host's <code>ApprovalModal</code> renders these beside each folder in the plan's target-layout tree preview, between the rationale and the op checklist. The agent is expected to call this after <code>set_plan_rationale</code>, as part of the same organize-phase step.</p>
 <p>Non-string keys/values are coerced to <code>str</code>; folder keys or notes that are blank after stripping are dropped. A target folder with no matching note simply renders as a bare tree node — the tree itself is derived from the plan's <code>move</code>/<code>quarantine</code> op destinations, not from <code>folder_notes</code>.</p>
@@ -2090,47 +2203,47 @@
 <h2 id="plan-building-tools">Plan-building tools<a class="headerlink" href="#plan-building-tools" title="Permanent link">&para;</a></h2>
 <p>Append proposed file operations to an existing <code>pending</code> plan. Each call performs an eager collision check at proposal time — no operation will overwrite an existing file.</p>
 <h3 id="propose_rename"><code>propose_rename</code><a class="headerlink" href="#propose_rename" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="n">propose_rename</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">new_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="n">propose_rename</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">new_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Stage a rename of <code>path</code> to <code>new_name</code> (basename only, not a full path). Raises <code>FileExistsError</code> if <code>{parent}/{new_name}</code> already exists.</p>
 <p><strong>Returns:</strong> <code>{plan_id, op_id, op_type, src, dst, status, ops_count}</code></p>
 <hr />
 <h3 id="propose_move"><code>propose_move</code><a class="headerlink" href="#propose_move" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="n">propose_move</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">dest_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="n">propose_move</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">dest_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
-<p>Stage moving <code>path</code> into <code>dest_dir</code>. Raises <code>FileExistsError</code> if <code>dest_dir/filename</code> already exists. Raises <code>ValueError</code> if <code>dest_dir</code> is not an existing directory <strong>and</strong> no <code>propose_create_dir</code> op for that exact path is already queued earlier in the same pending plan — this lets the agent propose "create a folder, then move a file into it" within a single plan; <code>execute_plan</code> already runs ops in list order, so the <code>create_dir</code> completes before the dependent <code>move</code>.</p>
+<p>Stage moving <code>path</code> into <code>dest_dir</code>. Raises <code>FileExistsError</code> if <code>dest_dir/filename</code> already exists. Raises <code>ValueError</code> if <code>dest_dir</code> is not an existing directory <strong>and</strong> no <code>propose_create_dir</code> op for that exact path is already queued earlier in the same pending plan — this lets the agent propose "create a folder, then move a file into it" within a single plan, regardless of the two ops' relative order: <code>execute_plan</code> runs every <code>create_dir</code> op before any other op type, so the dependent <code>move</code> always finds its destination already created (and self-heals via its own <code>mkdir</code> even if it doesn't).</p>
 <hr />
 <h3 id="propose_quarantine"><code>propose_quarantine</code><a class="headerlink" href="#propose_quarantine" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="n">propose_quarantine</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="n">propose_quarantine</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Stage moving <code>path</code> to <code>QUARANTINE_DIR</code>. Unlike <code>propose_rename</code> and <code>propose_move</code>, collision is handled by <strong>suffixing</strong> the destination name (e.g. <code>report_1.pdf</code>, <code>report_2.pdf</code>) rather than raising — quarantine should never block.</p>
 <hr />
 <h3 id="propose_create_file"><code>propose_create_file</code><a class="headerlink" href="#propose_create_file" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="n">propose_create_file</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">content</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="n">propose_create_file</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">content</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Stage writing a brand-new file at <code>path</code> with <code>content</code>. Raises <code>FileExistsError</code> if <code>path</code> already exists — eagerly at proposal time, and again at execution time in case a file appears in between.</p>
 <p><strong>Returns:</strong> <code>{plan_id, op_id, op_type, src, dst, status, ops_count}</code> — <code>dst</code> is always <code>""</code> (the op has no destination distinct from <code>src</code>); the file content travels in the op's internal <code>params</code>, not in the returned dict.</p>
 <hr />
 <h3 id="propose_update_file"><code>propose_update_file</code><a class="headerlink" href="#propose_update_file" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="n">propose_update_file</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">content</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">overwrite</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="n">propose_update_file</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">content</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">overwrite</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Stage writing <code>content</code> to <code>path</code>, whether or not it already exists. Refuses to replace an existing file unless <code>overwrite=True</code> is passed explicitly — pass it only for a deliberate overwrite; the flag is visible to the user at approval. The same check is re-applied at execution time, so a file that appears between proposal and execution is still caught.</p>
 <p><strong>Returns:</strong> same shape as <code>propose_create_file</code>.</p>
 <hr />
 <h3 id="propose_create_dir"><code>propose_create_dir</code><a class="headerlink" href="#propose_create_dir" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="n">propose_create_dir</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="n">propose_create_dir</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Stage creating a directory (and any missing parents) at <code>path</code>. Idempotent and collision-safe at execution time — creating a directory that already exists is a no-op, not an error. Raises <code>ValueError</code> at proposal time if <code>path</code> already exists as a file.</p>
 <p><strong>Returns:</strong> same shape as <code>propose_create_file</code>.</p>
 <hr />
 <h3 id="propose_archive_document"><code>propose_archive_document</code><a class="headerlink" href="#propose_archive_document" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="n">propose_archive_document</span><span class="p">(</span><span class="n">checksum</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">reason</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="n">propose_archive_document</span><span class="p">(</span><span class="n">checksum</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">reason</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Stage withdrawing a document from active memory ("retirer de la mémoire"). Eagerly validates that <code>checksum</code> is recorded in the registry — raises <code>ValueError</code> if not. At <code>execute_plan</code> time the op reuses the standalone <code>archive_document()</code> logic (see <a href="#archived-documents-journal-tools">Archived-documents journal tools</a>): the document's file, if it still exists, is moved to <code>QUARANTINE_DIR</code> (collision-safe) and the move is recorded in the <strong>undo journal</strong>; the registry record's <code>status</code> is flipped to <code>archived</code>; an entry is appended to the archive log (readable via <code>list_archived</code>). The document is never deleted.</p>
 <p><strong>Returns:</strong> <code>{plan_id, op_id, op_type, src, dst, status, ops_count}</code> — <code>src</code> is the document's currently recorded path; <code>dst</code> is its precomputed quarantine destination, or <code>""</code> if the file is already gone from disk.</p>
 <hr />
 <h3 id="propose_compress_quarantine"><code>propose_compress_quarantine</code><a class="headerlink" href="#propose_compress_quarantine" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="n">propose_compress_quarantine</span><span class="p">(</span><span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">delete_originals</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="n">propose_compress_quarantine</span><span class="p">(</span><span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">delete_originals</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Stage losslessly bundling all loose top-level files in <code>QUARANTINE_DIR</code> into a single timestamped, verified ZIP archive, optionally deleting the originals afterward to reclaim space. A single global op — not tied to one file.</p>
 <p>At <code>execute_plan</code> time the op reuses the standalone <code>compress_quarantine()</code> function:</p>
@@ -2147,7 +2260,7 @@
 <h2 id="gated-execution-tools">Gated execution tools<a class="headerlink" href="#gated-execution-tools" title="Permanent link">&para;</a></h2>
 <p>Execute operations or write output. <code>execute_plan</code> is the sole tool subject to <code>APPROVAL_MODE</code> — it applies every kind of staged op (<code>rename</code>, <code>move</code>, <code>quarantine</code>, <code>create_file</code>, <code>update_file</code>, <code>create_dir</code>, <code>archive_document</code>, <code>compress_quarantine</code>), and is gated in <code>always</code> and <code>destructive_only</code>, auto-approved in <code>never</code>. As of the plan-flow security hardening (M1), <strong>every filesystem-mutating tool is staged via a <code>propose_*</code> call and applied only through <code>execute_plan</code></strong> — there is no tool left that mutates the filesystem directly. <code>write_index</code>, <code>write_summary</code>, and <code>write_folder_readme</code> write output directly and are never gated, in any mode.</p>
 <h3 id="execute_plan"><code>execute_plan</code><a class="headerlink" href="#execute_plan" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="n">execute_plan</span><span class="p">(</span><span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="n">execute_plan</span><span class="p">(</span><span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Apply all operations in an <code>approved</code> plan.</p>
 <ul>
@@ -2157,6 +2270,7 @@
 <li>On success, each op is appended to the undo journal and the registry is path-reconciled</li>
 <li><code>archive_document</code> and <code>compress_quarantine</code> ops reuse the standalone functions of the same name, which self-journal under their own <code>op_type</code> (<code>quarantine</code> and <code>compress</code> respectively) instead of the generic per-op entry <code>execute_plan</code> writes for other op types</li>
 <li>Ops chained within the same run resolve correctly: if an earlier op already relocated a file (e.g. a <code>rename</code> followed by a <code>move</code> on the same original path), the later op is applied to the file's current location, not its original path</li>
+<li>Execution order is not strictly plan order: all <code>create_dir</code> ops run first (each group keeping its authored relative order), then every other op type — so a <code>move</code> into a not-yet-existing folder always finds it created regardless of how the two ops were interleaved when proposed. The <code>move</code> executor also creates its destination directory itself (<code>mkdir(parents=True, exist_ok=True)</code>) before checking for collision, as a second line of defense. Neither the persisted plan file nor the approval-modal display order is affected — only this run's internal iteration order</li>
 </ul>
 <p><strong>Returns:</strong></p>
 <table>
@@ -2203,18 +2317,18 @@
 <p><strong>Safety category:</strong> Gated execution — the host routes this call through the approval callback in <code>always</code> and <code>destructive_only</code>; in <code>never</code> it is auto-approved. This is the only tool ever subject to <code>APPROVAL_MODE</code>.</p>
 <hr />
 <h3 id="write_index"><code>write_index</code><a class="headerlink" href="#write_index" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="n">write_index</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="n">write_index</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Walk the directory at <code>path</code> and emit:</p>
 <ul>
 <li><code>INDEX.md</code> — ASCII tree + changelog from the undo journal</li>
 <li><code>manifest.json</code> — structured file metadata</li>
 </ul>
-<p>Skips <code>INDEX.md</code>, <code>manifest.json</code>, and <code>SUMMARY.md</code> themselves from the tree.</p>
+<p>Skips <code>INDEX.md</code>, <code>manifest.json</code>, <code>SUMMARY.md</code>, and <code>.organizer</code> (the run's own memory, P2) from the tree. The quarantine folder is deliberately <strong>not</strong> skipped — it stays visible in the written <code>INDEX.md</code> so a human reviewing results can see it; only agent-facing discovery (<code>walk_tree</code>) hides it.</p>
 <p><strong>Returns:</strong> <code>{index, manifest}</code> — absolute paths of the two files written.</p>
 <hr />
 <h3 id="write_summary"><code>write_summary</code><a class="headerlink" href="#write_summary" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="n">write_summary</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">content</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="n">write_summary</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">content</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Write <code>content</code> (LLM-composed prose) to the active output sink(s) declared in the profile's <code>[sinks] default</code> list. The agent calls this after composing the summary narrative itself.</p>
 <p>The built-in <code>local_markdown</code> sink persists the content as <code>SUMMARY.md</code> in the directory at <code>path</code>. External sinks are gated behind <code>EGRESS_ALLOW_EXTERNAL_SINKS</code> and are provided as separate MCP integrations — they are not built into this codebase.</p>
@@ -2222,7 +2336,7 @@
 <p><strong>Safety category:</strong> Writes to disk and/or external destinations. Not gated by <code>APPROVAL_MODE</code> — runs immediately in every mode.</p>
 <hr />
 <h3 id="write_folder_readme"><code>write_folder_readme</code><a class="headerlink" href="#write_folder_readme" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="n">write_folder_readme</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">content</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a><span class="n">write_folder_readme</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">content</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Write <code>content</code> (LLM-composed prose) to the active output sink(s) declared in the profile's <code>[sinks] default</code> list. Called once per meaningful folder during the SYNTHESIZE phase — the agent composes one or two paragraphs naming what the folder holds and its role in the organized tree, drawn from the documents recorded there.</p>
 <p>The built-in <code>local_markdown</code> sink writes to <code>README.md</code> inside the folder at <code>path</code>. Behaviour of the local sink:</p>
@@ -2303,39 +2417,87 @@
 <hr />
 <h2 id="document-registry-tools">Document registry tools<a class="headerlink" href="#document-registry-tools" title="Permanent link">&para;</a></h2>
 <h3 id="record_document"><code>record_document</code><a class="headerlink" href="#record_document" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="n">record_document</span><span class="p">(</span>
-<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>    <span class="n">checksum</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-<a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a>    <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-<a id="__codelineno-25-4" name="__codelineno-25-4" href="#__codelineno-25-4"></a>    <span class="n">title</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-<a id="__codelineno-25-5" name="__codelineno-25-5" href="#__codelineno-25-5"></a>    <span class="nb">type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-<a id="__codelineno-25-6" name="__codelineno-25-6" href="#__codelineno-25-6"></a>    <span class="n">summary</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-<a id="__codelineno-25-7" name="__codelineno-25-7" href="#__codelineno-25-7"></a>    <span class="n">provenance</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
-<a id="__codelineno-25-8" name="__codelineno-25-8" href="#__codelineno-25-8"></a>    <span class="n">date</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-25-9" name="__codelineno-25-9" href="#__codelineno-25-9"></a>    <span class="n">entities</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-25-10" name="__codelineno-25-10" href="#__codelineno-25-10"></a>    <span class="n">attributes</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-<a id="__codelineno-25-11" name="__codelineno-25-11" href="#__codelineno-25-11"></a>    <span class="n">status</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;active&quot;</span><span class="p">,</span>
-<a id="__codelineno-25-12" name="__codelineno-25-12" href="#__codelineno-25-12"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a><span class="n">record_document</span><span class="p">(</span>
+<a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>    <span class="n">checksum</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a>    <span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<a id="__codelineno-28-4" name="__codelineno-28-4" href="#__codelineno-28-4"></a>    <span class="n">title</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<a id="__codelineno-28-5" name="__codelineno-28-5" href="#__codelineno-28-5"></a>    <span class="nb">type</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<a id="__codelineno-28-6" name="__codelineno-28-6" href="#__codelineno-28-6"></a>    <span class="n">summary</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<a id="__codelineno-28-7" name="__codelineno-28-7" href="#__codelineno-28-7"></a>    <span class="n">provenance</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span>
+<a id="__codelineno-28-8" name="__codelineno-28-8" href="#__codelineno-28-8"></a>    <span class="n">date</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-28-9" name="__codelineno-28-9" href="#__codelineno-28-9"></a>    <span class="n">entities</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-28-10" name="__codelineno-28-10" href="#__codelineno-28-10"></a>    <span class="n">attributes</span><span class="p">:</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-28-11" name="__codelineno-28-11" href="#__codelineno-28-11"></a>    <span class="n">status</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;active&quot;</span><span class="p">,</span>
+<a id="__codelineno-28-12" name="__codelineno-28-12" href="#__codelineno-28-12"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Upsert an analyzed document into the registry. Validates <code>type</code> against the active profile's document type vocabulary and validates entity <code>role</code> values against the profile's role taxonomy.</p>
 <p><code>entities</code> is a list of <code>{name, role, kind}</code> dicts. <code>role</code> must be one of the profile's <code>role_taxonomy</code> values.</p>
 <hr />
+<h3 id="record_document_batch"><code>record_document_batch</code><a class="headerlink" href="#record_document_batch" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a><span class="n">record_document_batch</span><span class="p">(</span><span class="n">documents</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+</code></pre></div>
+<p>Batch form of <code>record_document</code>: upsert many analyzed documents into the registry in one MCP round trip instead of one call per document. Each item in <code>documents</code> has the same shape as <code>record_document</code>'s parameters (<code>checksum</code>, <code>path</code>, <code>title</code>, <code>type</code>, <code>summary</code>, <code>provenance</code>, <code>date</code>, <code>entities</code>, <code>attributes</code>, <code>status</code>). Validated with the exact same rules and error strings as <code>record_document</code> (shared via an internal <code>_validate_and_build_record</code> helper). One invalid document — bad <code>type</code>, bad entity <code>role</code>, or an entity missing <code>name</code> — never fails the whole batch: its error is collected instead of raised, keyed by its positional <code>index</code> in the input list (a failure may carry a missing or blank checksum/path, so position is the only safe correlation key).</p>
+<p><strong>Returns:</strong> <code>{"recorded": [record_dict, ...], "errors": [{"index", "checksum", "path", "error"}, ...]}</code>.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The registry is loaded once and saved once for the whole batch, not once per document — a deliberate efficiency trade-off; a mid-batch crash persists nothing. This differs from <code>read_file_batch</code>/<code>extract_text_batch</code>/<code>compute_checksum_batch</code>: this is a <strong>mutating</strong> tool, so it is <em>not</em> in <code>QUERY_ALLOWED_TOOLS</code> (query mode is read-only). Its per-document path confinement check also behaves differently from the read-only batch tools: <code>record_document_batch</code> runs <code>check_within_root</code> for every document's <code>path</code> <em>before</em> calling into <code>server.tools</code>, and a <code>PermissionError</code> on any one path raises immediately and aborts the whole call — it does not degrade to a per-item <code>{"error": ...}</code> entry the way a disallowed path does in <code>read_file_batch</code>/<code>extract_text_batch</code>/<code>compute_checksum_batch</code>.</p>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Second caller (P5/P6)</p>
+<p>As of the stateless per-batch analyzer (P5), <code>host/agent.py</code>'s <code>_analyze_new_documents</code> also calls this tool — once per analyzed batch, with the model-derived fields (title/type/summary/provenance/date/entities) rejoined to host-authoritative <code>checksum</code>/<code>path</code> by positional index, never by any identifier the model itself returns. No new registry-write code was added for this; it reuses this same tool. As of P6, this analyzer is wired into <code>run_agent_loop</code>, and <code>ORGANIZE_DENIED_TOOLS</code> excludes <code>record_document_batch</code> from the ORGANIZE-phase model's own toolset — so in a live organize run this host-orchestrated call is now the <em>only</em> way this tool is ever reached (it was never in <code>QUERY_ALLOWED_TOOLS</code> either, being a mutating tool).</p>
+</div>
+<hr />
 <h3 id="get_document"><code>get_document</code><a class="headerlink" href="#get_document" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="n">get_document</span><span class="p">(</span><span class="n">checksum</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a><span class="n">get_document</span><span class="p">(</span><span class="n">checksum</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span> <span class="o">|</span> <span class="kc">None</span>
 </code></pre></div>
 <p>Return a single registry record by checksum, or <code>null</code> if not found.</p>
 <hr />
+<h3 id="lookup_documents"><code>lookup_documents</code><a class="headerlink" href="#lookup_documents" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a><span class="n">lookup_documents</span><span class="p">(</span><span class="n">checksums</span><span class="p">:</span> <span class="nb">list</span><span class="p">[</span><span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+</code></pre></div>
+<p>Batch form of <code>get_document</code>: look up many checksums against the registry in one round trip instead of one <code>get_document</code> call per checksum. Takes no <code>path</code> argument, so it needs no confinement/egress guard — it is a pure registry read, the same trust level as <code>get_document</code>/<code>list_documents</code> (P3).</p>
+<p><strong>Returns:</strong> <code>{checksum: record | null}</code>, keyed by the exact checksum strings passed in — mirrors <code>compute_checksum_batch</code>'s keyed-by-input contract.</p>
+<hr />
+<h3 id="rehome_documents"><code>rehome_documents</code><a class="headerlink" href="#rehome_documents" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a><span class="n">rehome_documents</span><span class="p">(</span><span class="n">paths</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+</code></pre></div>
+<p>Update registry records' recorded <code>path</code> directly by checksum (P4). <code>paths</code> maps <code>checksum -&gt; new_path</code>. Unlike <code>execute_plan</code>'s automatic reconciliation (which matches a record by its file's <em>old</em> path after a <code>rename</code>/<code>move</code>/<code>quarantine</code> op), <code>rehome_documents</code> looks the record up directly by checksum and rewrites it — used by the deterministic host pre-pass (<code>host/agent.py</code>'s <code>run_prepass</code>) to reconcile a document whose on-disk location no longer matches what the registry has recorded (e.g. moved manually between runs), independently of any plan.</p>
+<p><strong>Parameters:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Name</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>paths</code></td>
+<td>dict[str, str]</td>
+<td>Maps a document's checksum to its new on-disk path</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Returns:</strong> <code>{"updated": [checksum, ...], "missing": [checksum, ...]}</code> — <code>updated</code> lists every checksum that had a matching registry record (now rewritten); <code>missing</code> lists any checksum with no record.</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Every value in <code>paths</code> (the new path) is checked with <code>check_within_root</code> before the call proceeds — same confinement floor as every other path-taking tool (see "Path confinement" above).</p>
+</div>
+<p><strong>Safety category:</strong> Registry mutation — a pure metadata update (like <code>record_document</code>/<code>record_document_batch</code>), not a filesystem operation. No plan, no journal entry, and not gated by <code>APPROVAL_MODE</code>: it reconciles bookkeeping data, it never touches a file on disk.</p>
+<hr />
 <h3 id="list_documents"><code>list_documents</code><a class="headerlink" href="#list_documents" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a><span class="n">list_documents</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a><span class="n">list_documents</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span>
 </code></pre></div>
 <p>Return all document records, oldest first (by <code>first_seen</code>).</p>
 <hr />
 <h3 id="get_registry"><code>get_registry</code><a class="headerlink" href="#get_registry" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a><span class="n">get_registry</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a><span class="n">get_registry</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Return the entire registry as <code>{documents: {checksum: record, ...}}</code>. Useful for the agent to reason holistically over all analyzed documents.</p>
 <hr />
 <h3 id="find_duplicates"><code>find_duplicates</code><a class="headerlink" href="#find_duplicates" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a><span class="n">find_duplicates</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a><span class="n">find_duplicates</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]]</span>
 </code></pre></div>
 <p>Return clusters of candidate duplicate documents. Two documents are clustered if:</p>
 <ul>
@@ -2345,14 +2507,14 @@
 <p>Clusters have size &gt; 1. The agent judges which to keep or quarantine — the server provides candidates, not verdicts.</p>
 <hr />
 <h3 id="find_modified_documents"><code>find_modified_documents</code><a class="headerlink" href="#find_modified_documents" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a><span class="n">find_modified_documents</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a><span class="n">find_modified_documents</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]]</span>
 </code></pre></div>
 <p>Return groups of documents sharing a normalized title but with <strong>different checksums</strong> (same content family, different versions). The agent uses this to identify the latest version and quarantine older ones.</p>
 <hr />
 <h2 id="archived-documents-journal-tools">Archived-documents journal tools<a class="headerlink" href="#archived-documents-journal-tools" title="Permanent link">&para;</a></h2>
 <p>Inspect the archive log — the durable record of <em>why a document left active memory</em>, distinct from the undo journal (reversible file ops) and the event journal (project narrative). Withdrawing a document is staged via <a href="#propose_archive_document"><code>propose_archive_document</code></a> (see Plan-building tools above) and only takes effect through <code>execute_plan</code> — <code>archive_document</code> itself is not directly callable by the agent.</p>
 <h3 id="list_archived"><code>list_archived</code><a class="headerlink" href="#list_archived" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a><span class="n">list_archived</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a><span class="n">list_archived</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span>
 </code></pre></div>
 <p>Return all entries from the archive log at <code>ARCHIVE_PATH</code> in chronological (append) order. Returns an empty list if no documents have been archived yet.</p>
 <p><strong>Returns:</strong> list of <code>{checksum, title, reason, src, dst, archived_at}</code> records.</p>
@@ -2365,7 +2527,7 @@
 <h2 id="event-journal-tools">Event journal tools<a class="headerlink" href="#event-journal-tools" title="Permanent link">&para;</a></h2>
 <p>Record and retrieve the project narrative log. Each event is a short, verb-led sentence stamped with the date it occurred. The event journal is distinct from the undo journal: it captures <em>what happened in the project</em>, not reversible file operations.</p>
 <h3 id="create_event"><code>create_event</code><a class="headerlink" href="#create_event" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a><span class="n">create_event</span><span class="p">(</span><span class="n">sentence</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">date</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-38-1" name="__codelineno-38-1" href="#__codelineno-38-1"></a><span class="n">create_event</span><span class="p">(</span><span class="n">sentence</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">date</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Append a verb-led project event to the event journal at <code>EVENTS_PATH</code>. The file is created (including parent dirs) on first write.</p>
 <p><strong>Parameters:</strong></p>
@@ -2397,7 +2559,7 @@
 </ul>
 <hr />
 <h3 id="list_events"><code>list_events</code><a class="headerlink" href="#list_events" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a><span class="n">list_events</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-39-1" name="__codelineno-39-1" href="#__codelineno-39-1"></a><span class="n">list_events</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span>
 </code></pre></div>
 <p>Return all recorded project events from <code>EVENTS_PATH</code> in chronological (append) order. Returns an empty list when no events have been recorded yet.</p>
 <p><strong>Returns:</strong> list of <code>{event_id, sentence, date, created_at}</code> records.</p>
@@ -2459,19 +2621,19 @@
 </tbody>
 </table>
 <h3 id="build_graph"><code>build_graph</code><a class="headerlink" href="#build_graph" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a><span class="n">build_graph</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-40-1" name="__codelineno-40-1" href="#__codelineno-40-1"></a><span class="n">build_graph</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Rebuild the knowledge graph from the current registry and event journal, persist it to <code>GRAPH_PATH</code>, and return the result. Safe to call repeatedly — each call produces a deterministic result and overwrites the previous file.</p>
 <p><strong>Returns:</strong> <code>{nodes, edges}</code> where each node is a dict with at least <code>{id, kind}</code> and each edge is <code>{src, dst, type}</code> (plus <code>weight</code> for <code>co_occurrence</code> edges).</p>
 <hr />
 <h3 id="get_graph"><code>get_graph</code><a class="headerlink" href="#get_graph" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a><span class="n">get_graph</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-41-1" name="__codelineno-41-1" href="#__codelineno-41-1"></a><span class="n">get_graph</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
 <p>Return the most recently persisted graph without rebuilding it. Returns <code>{nodes: [], edges: []}</code> if <code>build_graph</code> has never been called.</p>
 <p><strong>Returns:</strong> <code>{nodes, edges}</code> — same shape as <code>build_graph</code>.</p>
 <hr />
 <h3 id="get_actors"><code>get_actors</code><a class="headerlink" href="#get_actors" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a><span class="n">get_actors</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-42-1" name="__codelineno-42-1" href="#__codelineno-42-1"></a><span class="n">get_actors</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">[</span><span class="nb">dict</span><span class="p">]</span>
 </code></pre></div>
 <p>Return the project's main actors — entity nodes ranked by centrality, capped at the active profile's <code>salient_cap</code>. <code>build_graph</code> must be called first; if no graph has been persisted the list is empty.</p>
 <p><strong>Ranking criteria</strong> (applied in order, all ties break deterministically on lowercased name):</p>

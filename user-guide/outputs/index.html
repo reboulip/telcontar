@@ -1387,7 +1387,7 @@
 
 
 <h1 id="outputs">Outputs<a class="headerlink" href="#outputs" title="Permanent link">&para;</a></h1>
-<p>After organizing a directory, telcontar writes three output files <strong>into the target directory</strong> and maintains its own state under <code>.organizer/</code> in the project root.</p>
+<p>After organizing a directory, telcontar writes three output files <strong>into the target directory</strong> and maintains its own state under <code>.organizer/</code>, also inside the target directory (memory is per-directory — see <a href="../../getting-started/configuration/#persistent-state-locations">Configuration</a>).</p>
 <hr />
 <h2 id="files-written-to-the-target-directory">Files written to the target directory<a class="headerlink" href="#files-written-to-the-target-directory" title="Permanent link">&para;</a></h2>
 <h3 id="indexmd"><code>INDEX.md</code><a class="headerlink" href="#indexmd" title="Permanent link">&para;</a></h3>
@@ -1446,7 +1446,7 @@
 <p>These files are produced by <code>write_folder_readme</code> during the SYNTHESIZE phase. They are overwritten on each run, so re-running telcontar on an already-organized tree produces up-to-date READMEs without leaving stale files behind.</p>
 <hr />
 <h2 id="state-files-in-organizer">State files (in <code>.organizer/</code>)<a class="headerlink" href="#state-files-in-organizer" title="Permanent link">&para;</a></h2>
-<p>These live in the <strong>project root</strong>, not the target directory. They persist across runs.</p>
+<p>These live <strong>inside the target directory</strong> you organized (<code>&lt;target&gt;/.organizer/</code>), one memory per directory — not the telcontar project root. They persist across runs, and Query mode finds them by walking up from the folder you select until it finds a <code>.organizer</code>.</p>
 <h3 id="organizerregistryjson"><code>.organizer/registry.json</code><a class="headerlink" href="#organizerregistryjson" title="Permanent link">&para;</a></h3>
 <p>The <strong>document memory</strong> — a content-addressed store of every document the agent has ever analysed, keyed by sha256 checksum. Because identity is the checksum (not the path), a record survives renames and moves. On subsequent runs, telcontar can detect that a file was already analysed even if it was renamed.</p>
 <p>Each record contains: <code>checksum</code>, <code>path</code>, <code>title</code>, <code>type</code>, <code>summary</code>, <code>provenance</code>, <code>date</code>, <code>entities</code>, <code>attributes</code>, <code>status</code> (<code>active</code> | <code>archived</code> | <code>quarantined</code>), <code>first_seen</code>, <code>last_analyzed</code>.</p>

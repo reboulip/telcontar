@@ -1421,7 +1421,7 @@
 <td><code>TARGET_DIR</code></td>
 <td>no</td>
 <td><em>(unset)</em></td>
-<td>The directory being organized this run. Not meant to be set by hand — the host sets it automatically (as a subprocess env var) whenever it launches an organize or query session, so the MCP server can confine every path-taking tool to it. Every path-taking tool call is checked against <code>TARGET_DIR</code> plus the server's own working directory (where <code>.organizer/</code> and the quarantine dir live) via <code>check_within_root</code>; a path outside both is rejected regardless of <code>ALLOWLIST_DIRS</code>.</td>
+<td>The directory being organized this run. Not meant to be set by hand — the host sets it automatically (as a subprocess env var) whenever it launches an organize or query session, so the MCP server can confine every path-taking tool to it. Every path-taking tool call is checked against <code>TARGET_DIR</code> plus the server's own working directory via <code>check_within_root</code>; a path outside both is rejected regardless of <code>ALLOWLIST_DIRS</code>. As of per-directory memory, <code>TARGET_DIR</code> is also where <code>.organizer/</code> and the quarantine dir physically live for the run (see <a href="#persistent-state-locations">Persistent state locations</a> below) — <code>Settings.for_target(target)</code> rebases all the memory paths below onto it whenever <code>TARGET_DIR</code> is set, which is every real organize/query session.</td>
 </tr>
 <tr>
 <td><code>QUARANTINE_DIR</code></td>
@@ -1433,13 +1433,13 @@
 <td><code>JOURNAL_PATH</code></td>
 <td>no</td>
 <td><code>.organizer/journal.jsonl</code></td>
-<td>Append-only undo journal (file operations, drives <code>undo_last</code>). Relative to the project root.</td>
+<td>Append-only undo journal (file operations, drives <code>undo_last</code>). Relative to the target directory being organized (rebased there per run — an explicit absolute override passes through unchanged).</td>
 </tr>
 <tr>
 <td><code>EVENTS_PATH</code></td>
 <td>no</td>
 <td><code>.organizer/events.jsonl</code></td>
-<td>Append-only project event journal (narrative log, drives <code>create_event</code> / <code>list_events</code>). Relative to the project root.</td>
+<td>Append-only project event journal (narrative log, drives <code>create_event</code> / <code>list_events</code>). Relative to the target directory being organized (same rebasing as <code>JOURNAL_PATH</code>).</td>
 </tr>
 </tbody>
 </table>
@@ -1483,19 +1483,19 @@
 <td><code>REGISTRY_PATH</code></td>
 <td>no</td>
 <td><code>.organizer/registry.json</code></td>
-<td>Path to the persistent document registry (content-addressed, sha256-keyed).</td>
+<td>Path to the persistent document registry (content-addressed, sha256-keyed). Relative to the target directory being organized (same rebasing as <code>JOURNAL_PATH</code>).</td>
 </tr>
 <tr>
 <td><code>GRAPH_PATH</code></td>
 <td>no</td>
 <td><code>.organizer/graph.json</code></td>
-<td>Path where the knowledge graph is persisted. Rebuilt on demand by <code>build_graph</code>; read without rebuilding by <code>get_graph</code>.</td>
+<td>Path where the knowledge graph is persisted. Rebuilt on demand by <code>build_graph</code>; read without rebuilding by <code>get_graph</code>. Relative to the target directory being organized (same rebasing as <code>JOURNAL_PATH</code>).</td>
 </tr>
 <tr>
 <td><code>ARCHIVE_PATH</code></td>
 <td>no</td>
 <td><code>.organizer/archive.jsonl</code></td>
-<td>Append-only archive log: records every document withdrawn from active memory via <code>archive_document</code> (what was archived, why, and where the file moved).</td>
+<td>Append-only archive log: records every document withdrawn from active memory via <code>archive_document</code> (what was archived, why, and where the file moved). Relative to the target directory being organized (same rebasing as <code>JOURNAL_PATH</code>).</td>
 </tr>
 </tbody>
 </table>
@@ -1514,19 +1514,19 @@
 <td><code>MAX_SNIPPET_CHARS</code></td>
 <td>no</td>
 <td><code>4000</code></td>
-<td>Maximum characters returned by <code>read_file</code> and <code>extract_text</code>. Defense-in-depth cap even when full content is allowed.</td>
+<td>Maximum characters returned by <code>read_file</code> and <code>extract_text</code> (and, per file, by their batch forms <code>read_file_batch</code>/<code>extract_text_batch</code>). Defense-in-depth cap even when full content is allowed.</td>
 </tr>
 <tr>
 <td><code>ALLOWLIST_DIRS</code></td>
 <td>no</td>
 <td><code>""</code></td>
-<td>JSON array of absolute directory paths, e.g. <code>["C:/Users/me/docs"]</code>. When set, telcontar can only read content from these paths for <code>read_file</code>/<code>extract_text</code>/<code>compare_documents</code> — a stricter, explicit bound that replaces (not merges with) the default. Leave blank and it now defaults to <code>[TARGET_DIR]</code> rather than "no restriction" — narrower than the always-on <code>TARGET_DIR</code> + server-cwd confinement described above, which still applies independently to every other path-taking tool.</td>
+<td>JSON array of absolute directory paths, e.g. <code>["C:/Users/me/docs"]</code>. When set, telcontar can only read content from these paths for <code>read_file</code>/<code>extract_text</code>/<code>compare_documents</code> and the batch forms <code>read_file_batch</code>/<code>extract_text_batch</code> — a stricter, explicit bound that replaces (not merges with) the default. Leave blank and it now defaults to <code>[TARGET_DIR]</code> rather than "no restriction" — narrower than the always-on <code>TARGET_DIR</code> + server-cwd confinement described above, which still applies independently to every other path-taking tool.</td>
 </tr>
 <tr>
 <td><code>MAX_EXTRACT_FILE_BYTES</code></td>
 <td>no</td>
 <td><code>200000000</code></td>
-<td>Input-size cap (bytes) for <code>extract_text</code>/<code>compare_documents</code>. Files larger than this are rejected before <code>markitdown</code> ever runs, with a <code>ValueError</code>. S5 hardening — see <a href="../../developer/security-model/">Security Model</a>.</td>
+<td>Input-size cap (bytes) for <code>extract_text</code>/<code>compare_documents</code> (and <code>extract_text_batch</code>, per file). Files larger than this are rejected before <code>markitdown</code> ever runs, with a <code>ValueError</code>. S5 hardening — see <a href="../../developer/security-model/">Security Model</a>.</td>
 </tr>
 <tr>
 <td><code>MAX_EXTRACT_TIMEOUT_SECS</code></td>
@@ -1538,7 +1538,7 @@
 <td><code>EGRESS_PATH</code></td>
 <td>no</td>
 <td><code>.organizer/egress.jsonl</code></td>
-<td>Append-only audit log: one entry (path, size in bytes, tool, timestamp) per <code>read_file</code>/<code>extract_text</code>/<code>compare_documents</code> call, recording what content was sent to the LLM endpoint. Not exposed as an MCP tool — open the file directly to audit a run. S8 hardening — see <a href="../../developer/security-model/">Security Model</a>.</td>
+<td>Append-only audit log: one entry (path, size in bytes, tool, timestamp) per <code>read_file</code>/<code>extract_text</code>/<code>compare_documents</code> call — and, per successful file, per <code>read_file_batch</code>/<code>extract_text_batch</code> call — recording what content was sent to the LLM endpoint. Not exposed as an MCP tool — open the file directly to audit a run. Relative to the target directory being organized (same rebasing as <code>JOURNAL_PATH</code>). S8 hardening — see <a href="../../developer/security-model/">Security Model</a>.</td>
 </tr>
 <tr>
 <td><code>EGRESS_ALLOW_EXTERNAL_SINKS</code></td>
@@ -1575,16 +1575,22 @@
 </div>
 <hr />
 <h2 id="persistent-state-locations">Persistent state locations<a class="headerlink" href="#persistent-state-locations" title="Permanent link">&para;</a></h2>
-<p>Telcontar writes its state under <code>.organizer/</code> in the <strong>project root</strong> (not the target directory):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>.organizer/
-<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>├── plans/          # One JSON file per plan
-<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>├── journal.jsonl   # Append-only undo log (file operations)
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>├── events.jsonl    # Append-only project event journal (narrative log)
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>├── archive.jsonl   # Append-only archive log (why a document left active memory)
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>├── registry.json   # Document memory (sha256 → metadata)
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>└── graph.json      # Knowledge graph (derived from registry + events; rebuilt on demand)
+<p>Telcontar's memory is <strong>per-directory</strong>: each run's <code>.organizer/</code> state lives <em>inside the directory being organized</em> (<code>TARGET_DIR</code>), not the project root — so organizing several unrelated folders keeps each one's registry, journal, and plans separate. This is handled by <code>Settings.for_target(target)</code>: whenever <code>TARGET_DIR</code> is set (every real organize/query session), it rebases each of the paths below onto <code>target.resolve()</code>; an explicitly absolute path (a manual override) passes through unchanged instead of being rebased.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>&lt;target directory&gt;/
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>├── .organizer/
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>│   ├── plans/          # One JSON file per plan
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>│   ├── journal.jsonl   # Append-only undo log (file operations)
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>│   ├── events.jsonl    # Append-only project event journal (narrative log)
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>│   ├── archive.jsonl   # Append-only archive log (why a document left active memory)
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>│   ├── egress.jsonl    # Append-only audit log of content sent to the LLM endpoint
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>│   ├── registry.json   # Document memory (sha256 → metadata)
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>│   └── graph.json      # Knowledge graph (derived from registry + events; rebuilt on demand)
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>└── _quarantine/         # Quarantined files (QUARANTINE_DIR)
 </code></pre></div>
-<p>These files are gitignored by default and survive between runs.</p>
+<p>Both <code>.organizer/</code> and the quarantine folder are hidden from the agent's own directory discovery (<code>walk_tree</code>) so it never proposes moving or quarantining its own memory — the quarantine folder is deliberately still shown in the written <code>INDEX.md</code>, since a human reviewing results should be able to see it.</p>
+<p><code>PROFILES_DIR</code> and <code>.organizer/NAMING.md</code> are the exception: they are cross-corpus, project-level conventions rather than per-run memory, and are deliberately <strong>not</strong> rebased — they always resolve relative to telcontar's own project root regardless of which directory you're organizing.</p>
+<p>These files survive between runs. If the target directory is itself a git repository, add your own <code>.organizer/</code> and <code>_quarantine/</code> entries to its <code>.gitignore</code> if you don't want them tracked — telcontar's own <code>.gitignore</code> only covers its project root, not directories you organize. There is no migration path for <code>.organizer</code> folders created at the project root by a pre-per-directory-memory version of telcontar — a fresh run against a new target simply starts that target's memory from scratch.</p>
+<p>Query mode resolves which memory to use by walking up from the folder you select until it finds a <code>.organizer</code> — so picking a subfolder of a previously-organized tree still resolves to that tree's memory.</p>
 
 
 

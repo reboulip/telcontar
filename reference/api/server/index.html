@@ -1032,6 +1032,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#server.tools.compute_checksum_batch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        compute_checksum_batch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#server.tools.create_event" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1069,6 +1080,17 @@
     <span class="md-ellipsis">
       
         extract_text
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server.tools.extract_text_batch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        extract_text_batch
       
     </span>
   </a>
@@ -1208,6 +1230,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#server.tools.lookup_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        lookup_documents
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#server.tools.propose_archive_document" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1307,10 +1340,43 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#server.tools.read_file_batch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        read_file_batch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#server.tools.record_document" class="md-nav__link">
     <span class="md-ellipsis">
       
         record_document
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server.tools.record_document_batch" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        record_document_batch
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server.tools.rehome_documents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        rehome_documents
       
     </span>
   </a>
@@ -1533,6 +1599,17 @@
     <span class="md-ellipsis">
       
         find_modified
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server.registry.Registry.rehome" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        rehome
       
     </span>
   </a>
@@ -2408,6 +2485,24 @@ is verified, and existing archives are never overwritten.</p>
 <div class="doc doc-object doc-function">
 
 
+<h3 id="server.tools.compute_checksum_batch" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">compute_checksum_batch</span><span class="p">(</span><span class="n">paths</span><span class="p">)</span></code>
+
+<a href="#server.tools.compute_checksum_batch" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Batch form of <code>compute_checksum</code>: <code>{path: checksum_hex | {"error": msg}}</code>.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h3 id="server.tools.create_event" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">create_event</span><span class="p">(</span><span class="n">sentence</span><span class="p">,</span> <span class="n">date</span><span class="p">,</span> <span class="n">events_path</span><span class="p">)</span></code>
 
@@ -2484,6 +2579,24 @@ the same <code>op_type</code> strings <code>undo_last</code> already understands
     <div class="doc doc-contents ">
 
         <p>Extract plain text from a PDF, Office, or Outlook email (.msg) file.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="server.tools.extract_text_batch" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">extract_text_batch</span><span class="p">(</span><span class="n">paths</span><span class="p">,</span> <span class="n">max_chars</span><span class="p">,</span> <span class="n">max_file_bytes</span><span class="o">=</span><span class="mi">200000000</span><span class="p">,</span> <span class="n">timeout_secs</span><span class="o">=</span><span class="mf">30.0</span><span class="p">)</span></code>
+
+<a href="#server.tools.extract_text_batch" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Batch form of <code>extract_text</code>: <code>{path: text | {"error": msg}}</code>.</p>
 
 
     </div>
@@ -2710,6 +2823,26 @@ graph, capped at <code>salient_cap</code>. Build the graph first (build_graph).<
 <div class="doc doc-object doc-function">
 
 
+<h3 id="server.tools.lookup_documents" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">lookup_documents</span><span class="p">(</span><span class="n">checksums</span><span class="p">,</span> <span class="n">registry_path</span><span class="p">)</span></code>
+
+<a href="#server.tools.lookup_documents" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Batch form of <code>get_document</code>: <code>{checksum: record | None}</code> (P3).</p>
+<p>Lets the host pre-pass partition a corpus into known/new documents with a
+single call instead of one <code>get_document</code> round trip per checksum.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h3 id="server.tools.propose_archive_document" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">propose_archive_document</span><span class="p">(</span><span class="n">checksum</span><span class="p">,</span> <span class="n">reason</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">,</span> <span class="n">plans_dir</span><span class="p">,</span> <span class="n">registry_path</span><span class="p">,</span> <span class="n">quarantine_dir</span><span class="p">)</span></code>
 
@@ -2875,6 +3008,24 @@ between proposal and execution is still caught (M3).</p>
 <div class="doc doc-object doc-function">
 
 
+<h3 id="server.tools.read_file_batch" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">read_file_batch</span><span class="p">(</span><span class="n">paths</span><span class="p">,</span> <span class="n">max_chars</span><span class="p">)</span></code>
+
+<a href="#server.tools.read_file_batch" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Batch form of <code>read_file</code>: <code>{path: text | {"error": msg}}</code>.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h3 id="server.tools.record_document" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">record_document</span><span class="p">(</span><span class="n">checksum</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">title</span><span class="p">,</span> <span class="nb">type</span><span class="p">,</span> <span class="n">summary</span><span class="p">,</span> <span class="n">provenance</span><span class="p">,</span> <span class="n">date</span><span class="p">,</span> <span class="n">entities</span><span class="p">,</span> <span class="n">attributes</span><span class="p">,</span> <span class="n">status</span><span class="p">,</span> <span class="n">registry_path</span><span class="p">,</span> <span class="n">profile</span><span class="p">)</span></code>
 
@@ -2888,6 +3039,56 @@ between proposal and execution is still caught (M3).</p>
 values, when present, must belong to the profile's role taxonomy. The author
 guardrail (only include people explicitly named, never inferred) is a prompt
 instruction, not enforced here.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="server.tools.record_document_batch" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">record_document_batch</span><span class="p">(</span><span class="n">documents</span><span class="p">,</span> <span class="n">registry_path</span><span class="p">,</span> <span class="n">profile</span><span class="p">)</span></code>
+
+<a href="#server.tools.record_document_batch" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Upsert many analyzed documents into the registry in one call.</p>
+<p>Each item in <code>documents</code> has the same shape as <code>record_document</code>'s
+parameters. One invalid document never fails the whole batch — its
+validation error is collected in <code>errors</code> instead, keyed by its
+positional <code>index</code> in the input list (a failure may carry a missing or
+blank checksum/path, so position is the only safe correlation key).
+Returns <code>{"recorded": [record_dict, ...], "errors": [{"index", "checksum",
+"path", "error"}, ...]}</code>. The registry is loaded once and saved once at
+the end (a mid-batch crash persists nothing — an accepted trade-off for
+the round-trip savings over one load/save per document).</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="server.tools.rehome_documents" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">rehome_documents</span><span class="p">(</span><span class="n">paths</span><span class="p">,</span> <span class="n">registry_path</span><span class="p">)</span></code>
+
+<a href="#server.tools.rehome_documents" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Update registry records' recorded path directly by checksum (P4).</p>
+<p><code>paths</code> maps checksum -&gt; new on-disk path. Pure registry mutation — no
+plan, no journal entry, no approval gate — used by the deterministic host
+pre-pass to reconcile records whose on-disk location changed outside a
+plan-tracked op (e.g. moved manually between runs). Returns
+<code>{"updated": [checksum, ...], "missing": [checksum, ...]}</code>.</p>
 
 
     </div>
@@ -2978,7 +3179,7 @@ surfaced above the raw op list in the approval modal (F8).</p>
 
 
 <h3 id="server.tools.walk_tree" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">walk_tree</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">max_depth</span><span class="o">=</span><span class="mi">3</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">walk_tree</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">max_depth</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">hidden_names</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#server.tools.walk_tree" class="headerlink" title="Permanent link">&para;</a></h3>
 
@@ -2994,6 +3195,9 @@ depth 1. Each directory entry carries a nested <code>children</code> list until
 <code>children: null</code> and <code>truncated: true</code> so the agent knows more lies below
 (and can call <code>walk_tree</code> again on that subpath). Files carry <code>size</code> and
 <code>mtime</code> like <code>list_dir</code>; unreadable entries are marked <code>type: "unknown"</code>.</p>
+<p><code>hidden_names</code> (P2) excludes entries by basename at every level — used to
+keep a run's own <code>.organizer</code> memory and quarantine folder out of discovery,
+now that both live inside the target directory.</p>
 
 
     </div>
@@ -3332,6 +3536,28 @@ size &gt; 1; the host decides "même information / susceptible d'être remplacé
         <p>Groups sharing a normalized title — same title, different content.</p>
 <p>Records are keyed by checksum, so any same-title group inherently has
 differing checksums: the "modifié récemment (même titre, checksum ≠)" case.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="server.registry.Registry.rehome" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">rehome</span><span class="p">(</span><span class="n">checksum</span><span class="p">,</span> <span class="n">new_path</span><span class="p">)</span></code>
+
+<a href="#server.registry.Registry.rehome" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Update a record's path directly by checksum (P4), unlike
+<code>update_path</code> which matches by the file's OLD path. Used by the
+deterministic host pre-pass to reconcile records whose on-disk location
+no longer matches what the registry has recorded. Returns None if no
+record exists for <code>checksum</code>.</p>
 
 
     </div>

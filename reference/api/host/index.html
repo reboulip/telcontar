@@ -994,10 +994,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#host.agent.ClarificationResult" class="md-nav__link">
+  <a href="#host.agent.AskUserResult" class="md-nav__link">
     <span class="md-ellipsis">
       
-        ClarificationResult
+        AskUserResult
       
     </span>
   </a>
@@ -1005,10 +1005,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#host.agent.OptionsResult" class="md-nav__link">
+  <a href="#host.agent.PrepassResult" class="md-nav__link">
     <span class="md-ellipsis">
       
-        OptionsResult
+        PrepassResult
       
     </span>
   </a>
@@ -1042,6 +1042,17 @@
     <span class="md-ellipsis">
       
         run_agent_loop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#host.agent.run_prepass" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        run_prepass
       
     </span>
   </a>
@@ -1132,10 +1143,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#host.app.ClarificationModal" class="md-nav__link">
+  <a href="#host.app.ConfigScreen" class="md-nav__link">
     <span class="md-ellipsis">
       
-        ClarificationModal
+        ConfigScreen
       
     </span>
   </a>
@@ -1143,10 +1154,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#host.app.ConfigScreen" class="md-nav__link">
+  <a href="#host.app.CostEstimateModal" class="md-nav__link">
     <span class="md-ellipsis">
       
-        ConfigScreen
+        CostEstimateModal
       
     </span>
   </a>
@@ -1165,17 +1176,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#host.app.OptionsModal" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        OptionsModal
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#host.app.OrganizerApp" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1183,6 +1183,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="OrganizerApp">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#host.app.OrganizerApp.action_open_settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        action_open_settings
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
         
@@ -1620,23 +1637,26 @@ approval so this module can be exercised in plain pytest tests.</p>
 
 
 
-<h3 id="host.agent.ClarificationResult" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">ClarificationResult</span><span class="p">(</span><span class="n">answers</span><span class="o">=</span><span class="nb">dict</span><span class="p">(),</span> <span class="n">provided</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
+<h3 id="host.agent.AskUserResult" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">AskUserResult</span><span class="p">(</span><span class="n">reply</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">,</span> <span class="n">provided</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
   </span>
 
-<a href="#host.agent.ClarificationResult" class="headerlink" title="Permanent link">&para;</a></h3>
+<a href="#host.agent.AskUserResult" class="headerlink" title="Permanent link">&para;</a></h3>
 
 
     <div class="doc doc-contents ">
 
 
 
-        <p>Answers from the post-analysis clarification checkpoint.</p>
-<p><code>provided</code> is False when the user skipped / had nothing to add, in which case
-the agent proceeds with its own best judgement.</p>
+        <p>The user's chat reply to an <code>ask_user</code> checkpoint (P8).</p>
+<p>Merges the old modal-based clarification (K1) and multiple-option (L7)
+checkpoints into one chat-based ask: <code>reply</code> is the user's raw free-text
+message, however many questions/options were asked. <code>provided</code> is False
+when no reply was captured (degenerate/no-callback case), in which case the
+agent proceeds with its own best judgement.</p>
 
 
 
@@ -1671,24 +1691,23 @@ the agent proceeds with its own best judgement.</p>
 
 
 
-<h3 id="host.agent.OptionsResult" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">OptionsResult</span><span class="p">(</span><span class="n">selections</span><span class="o">=</span><span class="nb">dict</span><span class="p">(),</span> <span class="n">provided</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span></code>
+<h3 id="host.agent.PrepassResult" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">PrepassResult</span><span class="p">(</span><span class="n">new</span><span class="o">=</span><span class="nb">list</span><span class="p">(),</span> <span class="n">known</span><span class="o">=</span><span class="nb">list</span><span class="p">(),</span> <span class="n">rehomed</span><span class="o">=</span><span class="nb">list</span><span class="p">(),</span> <span class="n">errors</span><span class="o">=</span><span class="nb">list</span><span class="p">(),</span> <span class="n">total_files</span><span class="o">=</span><span class="mi">0</span><span class="p">,</span> <span class="n">sizes</span><span class="o">=</span><span class="nb">dict</span><span class="p">())</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
   </span>
 
-<a href="#host.agent.OptionsResult" class="headerlink" title="Permanent link">&para;</a></h3>
+<a href="#host.agent.PrepassResult" class="headerlink" title="Permanent link">&para;</a></h3>
 
 
     <div class="doc doc-contents ">
 
 
 
-        <p>The user's picks from the multiple-option checkpoint (L7).</p>
-<p><code>selections</code> maps each question to the option the user chose. <code>provided</code> is
-False when the user skipped, in which case the agent proceeds with its own best
-judgement.</p>
+        <p>Outcome of <code>run_prepass</code> (P4): the corpus partitioned into documents the
+registry already knows about vs. genuinely new ones, ready for P5's
+stateless analyzer to process only the latter.</p>
 
 
 
@@ -1751,7 +1770,7 @@ within this run's target directory.</p>
 
 
 <h3 id="host.agent.run_agent" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">run_agent</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="n">settings</span><span class="p">,</span> <span class="n">llm</span><span class="p">,</span> <span class="n">on_event</span><span class="p">,</span> <span class="n">on_approval_needed</span><span class="p">,</span> <span class="n">on_questions_needed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">on_options_needed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">instructions</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">run_agent</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="n">settings</span><span class="p">,</span> <span class="n">llm</span><span class="p">,</span> <span class="n">on_event</span><span class="p">,</span> <span class="n">on_approval_needed</span><span class="p">,</span> <span class="n">on_ask_user_needed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">on_cost_approval_needed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">instructions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">history</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">message</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -1762,11 +1781,18 @@ within this run's target directory.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Launch the MCP server and run the agent loop. Returns final summary text.</p>
+        <p>Launch the MCP server and run the agent loop. Returns (final_text, history).</p>
 <p><code>instructions</code> carries the user's optional pre-analysis steering text (L3);
 it is appended to the agent's first user turn so the run follows the user's
-intent instead of auto-organizing blind. <code>on_options_needed</code> wires the L7
-multiple-option checkpoint.</p>
+intent instead of auto-organizing blind. <code>on_ask_user_needed</code> wires the P8
+chat checkpoint (clarifying questions and/or multiple-choice options,
+unlimited per run). <code>on_cost_approval_needed</code> wires the O8
+pre-ANALYZE token-estimate approval gate. <code>history</code>/<code>message</code> mirror
+<code>run_query_loop</code>'s shape (O7): pass the history returned by a previous call
+back in, with a new free-text <code>message</code>, to continue the same conversation
+with a new chat turn instead of starting a fresh run. For a multi-turn chat,
+keep a single session open and call <code>run_agent_loop</code> directly instead (one
+server subprocess for the whole conversation).</p>
 
 
     </div>
@@ -1777,7 +1803,7 @@ multiple-option checkpoint.</p>
 
 
 <h3 id="host.agent.run_agent_loop" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">run_agent_loop</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="n">settings</span><span class="p">,</span> <span class="n">llm</span><span class="p">,</span> <span class="n">session</span><span class="p">,</span> <span class="n">on_event</span><span class="p">,</span> <span class="n">on_approval_needed</span><span class="p">,</span> <span class="n">on_questions_needed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">on_options_needed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">project_root</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">instructions</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">run_agent_loop</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="n">settings</span><span class="p">,</span> <span class="n">llm</span><span class="p">,</span> <span class="n">session</span><span class="p">,</span> <span class="n">on_event</span><span class="p">,</span> <span class="n">on_approval_needed</span><span class="p">,</span> <span class="n">on_ask_user_needed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">on_cost_approval_needed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">project_root</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">instructions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">history</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">message</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">message_queue</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -1791,8 +1817,78 @@ multiple-option checkpoint.</p>
         <p>Run the GPT-5 tool-calling loop against an already-connected MCP session.</p>
 <p>Separated from run_agent so tests can inject a mock session directly.
 <code>instructions</code> is the user's optional pre-analysis steering text (L3),
-appended to the seed user message when present. <code>on_options_needed</code> wires the
-L7 multiple-option checkpoint.</p>
+appended to the seed user message when present. <code>on_ask_user_needed</code> wires
+the P8 chat checkpoint (clarifying questions and/or multiple-choice options,
+unlimited per run — the agent's reply arrives as a normal chat message via
+<code>message_queue</code>). <code>on_cost_approval_needed</code> wires the O8
+pre-analysis token-estimate approval gate, now scoped to NEW documents only
+(P5/P6) — when None, or when <code>settings.approval_mode == "never"</code>, the gate
+auto-approves (still emits the "cost_estimate" event for observability, just
+never blocks on it). Skipped entirely (no event, no callback) when there are
+no new documents to analyze.</p>
+<p><code>history</code>/<code>message</code> (O7): when <code>history</code> is None (the default), a fresh
+run first runs the deterministic pre-pass (P4: <code>run_prepass</code>) and the
+stateless analyzer (P5: <code>_analyze_new_documents</code>) over any newly-discovered
+documents — this is the ONLY point in a run's lifetime document content is
+ever sent to the LLM — then seeds the conversation with a compact digest of
+what's now in the registry before the ORGANIZE-only turn loop begins (P6).
+ORGANIZE mode's own tool list structurally excludes content-fetching/
+recording tools (<code>ORGANIZE_DENIED_TOOLS</code>) — the corpus was already
+analyzed, so there is no legitimate reason for this loop to read or record
+document content again. When <code>history</code> is given (the list returned by a
+previous call), none of this pre-pass/analysis work repeats — the existing
+history (already carrying the digest from the original fresh run) is reused
+as-is and <code>message</code> — a new free-text user turn — is appended before
+resuming. Returns <code>(final_text, updated_history)</code>.</p>
+<p>A per-call turn budget is used even on a continuation (each chat message gets
+its own fresh allowance, not a shared budget) — note this also means the O4
+adaptive-budget formula sees a fresh, empty progress tracker on a continuation
+call (no new pre-pass happens), so a continuation's budget floors at
+<code>_MAX_TURNS</code> rather than reflecting the full corpus size from the initial
+pass — acceptable since a follow-up chat turn is typically a small, targeted
+ask, not a fresh full-corpus analysis.</p>
+<p>An unhandled exception during the loop never propagates: it's caught, any
+tool call left without a matching tool-result message is answered with a
+synthetic error response (so <code>messages</code> stays valid for a follow-up call),
+and <code>(error_text, messages)</code> is returned instead.</p>
+<p><code>message_queue</code> (P7): when given, chat messages typed while this call is
+still running are drained non-blockingly and injected as user turns between
+agent turns — including one drain right before the loop's first LLM call
+(for anything typed during pre-pass/analysis) and one after every turn's
+tool dispatch completes. A turn that would otherwise end the run (the LLM
+responds with no tool calls) instead continues if a message was waiting,
+so a live chat message can redirect an in-progress run instead of only
+being picked up after it stops. This is independent of <code>history</code>/
+<code>message</code> (O7's separate-invocation resume path for a run that already
+ended, where no live queue exists) — both can be used together or alone.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="host.agent.run_prepass" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">run_prepass</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">session</span><span class="p">,</span> <span class="n">settings</span><span class="p">,</span> <span class="n">target</span><span class="p">,</span> <span class="n">on_event</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
+<a href="#host.agent.run_prepass" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Deterministic, LLM-free corpus discovery (P4): walk <code>target</code> to
+exhaustion (re-walking every <code>truncated</code> subdirectory), checksum every
+discovered file, partition into known/new via the registry, and re-home
+known records whose on-disk path has changed since they were last seen.</p>
+<p>Runs entirely through MCP tool calls (no local file I/O) so it works the
+same whether the host and server share a filesystem or not. Emits one
+<code>progress</code> event once discovery + partitioning is complete.</p>
 
 
     </div>
@@ -1883,8 +1979,11 @@ ConfigScreen    — edit settings at any time
 OrganizerScreen — file tree + chat-transcript conversation pane + status
 QueryScreen     — interactive NL Q&amp;A over an analyzed corpus</p>
 <h4 id="host.app--modals">Modals<a class="headerlink" href="#host.app--modals" title="Permanent link">&para;</a></h4>
-<p>ApprovalModal      — plan review with per-op checkboxes (inline removal)
-ClarificationModal — post-analysis clarifying questions with free-text answers</p>
+<p>ApprovalModal     — plan review with per-op checkboxes (inline removal)
+CostEstimateModal — one-time pre-analysis cost-approval gate</p>
+<p>ask_user's clarifying-question/multiple-option checkpoint (P8) has no modal of
+its own — it renders as a normal chat turn and awaits the next chat message,
+same as any other live chat exchange.</p>
 
 
 
@@ -1922,60 +2021,6 @@ ClarificationModal — post-analysis clarifying questions with free-text answers
 
 
         <p>Present plan ops to the user as a checklist; return an ApprovalResult.</p>
-
-
-
-
-
-
-
-
-
-
-
-<div class="doc doc-children">
-
-
-
-
-
-
-
-
-
-
-
-
-  </div>
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-class">
-
-
-
-<h3 id="host.app.ClarificationModal" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">ClarificationModal</span><span class="p">(</span><span class="n">questions</span><span class="p">)</span></code>
-
-<a href="#host.app.ClarificationModal" class="headerlink" title="Permanent link">&para;</a></h3>
-
-
-    <div class="doc doc-contents ">
-            <p class="doc doc-class-bases">
-              Bases: <code><span title="textual.screen.ModalScreen">ModalScreen</span>[<a class="autorefs autorefs-internal" title="ClarificationResult(answers=dict(), provided=False)
-
-  
-      dataclass
-   (host.agent.ClarificationResult)" href="#host.agent.ClarificationResult">ClarificationResult</a>]</code></p>
-
-
-
-        <p>Present the agent's clarifying questions as free-text inputs (K1).</p>
-<p>Shown at most once per run, after the analysis pass. The user may answer any
-subset and Submit, or Skip entirely — an empty result tells the agent to
-proceed with its own best judgement.</p>
 
 
 
@@ -2057,24 +2102,24 @@ proceed with its own best judgement.</p>
 
 
 
-<h3 id="host.app.JournalScreen" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">JournalScreen</span><span class="p">(</span><span class="n">project_root</span><span class="p">)</span></code>
+<h3 id="host.app.CostEstimateModal" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">CostEstimateModal</span><span class="p">(</span><span class="n">new_documents</span><span class="p">,</span> <span class="n">already_analyzed</span><span class="p">,</span> <span class="n">estimated_tokens</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span></code>
 
-<a href="#host.app.JournalScreen" class="headerlink" title="Permanent link">&para;</a></h3>
+<a href="#host.app.CostEstimateModal" class="headerlink" title="Permanent link">&para;</a></h3>
 
 
     <div class="doc doc-contents ">
             <p class="doc doc-class-bases">
-              Bases: <code><span title="textual.screen.ModalScreen">ModalScreen</span>[None]</code></p>
+              Bases: <code><span title="textual.screen.ModalScreen">ModalScreen</span>[<span title="host.agent.CostApprovalResult">CostApprovalResult</span>]</code></p>
 
 
 
-        <p>Read-only view of the full undo journal, newest entries last — and the
-one place <code>undo_last</code> can be triggered from (S1).</p>
-<p>Reads <code>.organizer/journal.jsonl</code> directly from disk and calls
-<code>server.tools.undo_last</code> directly (local file/function, same machine)
-rather than through an MCP tool — undo is deliberately an explicit user
-action here, never something the agent can call itself.</p>
+        <p>One-time pre-analysis approval: show the estimated cost, let the user
+proceed or cancel (O8/P6/P8).</p>
+<p>Shown at most once per run, before the P5 analyzer processes any newly-
+discovered documents — scoped to NEW documents only, since already-known
+ones are never re-analyzed. Unlike ApprovalModal there is no op list or
+refinement — just a rough estimate and a yes/no.</p>
 
 
 
@@ -2109,26 +2154,24 @@ action here, never something the agent can call itself.</p>
 
 
 
-<h3 id="host.app.OptionsModal" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">OptionsModal</span><span class="p">(</span><span class="n">questions</span><span class="p">)</span></code>
+<h3 id="host.app.JournalScreen" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">JournalScreen</span><span class="p">(</span><span class="n">target</span><span class="p">)</span></code>
 
-<a href="#host.app.OptionsModal" class="headerlink" title="Permanent link">&para;</a></h3>
+<a href="#host.app.JournalScreen" class="headerlink" title="Permanent link">&para;</a></h3>
 
 
     <div class="doc doc-contents ">
             <p class="doc doc-class-bases">
-              Bases: <code><span title="textual.screen.ModalScreen">ModalScreen</span>[<a class="autorefs autorefs-internal" title="OptionsResult(selections=dict(), provided=False)
-
-  
-      dataclass
-   (host.agent.OptionsResult)" href="#host.agent.OptionsResult">OptionsResult</a>]</code></p>
+              Bases: <code><span title="textual.screen.ModalScreen">ModalScreen</span>[None]</code></p>
 
 
 
-        <p>Present the agent's competing options as single-choice selections (L7).</p>
-<p>Shown at most once per run. Each question renders as a RadioSet of its options;
-Submit returns the chosen option per question, Skip returns an empty result so
-the agent proceeds with its own best judgement.</p>
+        <p>Read-only view of the full undo journal, newest entries last — and the
+one place <code>undo_last</code> can be triggered from (S1).</p>
+<p>Reads <code>.organizer/journal.jsonl</code> directly from disk and calls
+<code>server.tools.undo_last</code> directly (local file/function, same machine)
+rather than through an MCP tool — undo is deliberately an explicit user
+action here, never something the agent can call itself.</p>
 
 
 
@@ -2198,6 +2241,28 @@ the agent proceeds with its own best judgement.</p>
 
 
 
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="host.app.OrganizerApp.action_open_settings" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">action_open_settings</span><span class="p">()</span></code>
+
+<a href="#host.app.OrganizerApp.action_open_settings" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Open settings from any screen (P9), guarded against double-push and
+against bypassing the first-run wizard. Allowed while a modal
+(ApprovalModal/CostEstimateModal) is on top — it stacks and pops back
+cleanly; settings changed mid-run don't affect the already-running
+agent loop, since settings are captured once at worker start.</p>
+
+
+    </div>
+
+</div>
 
 
 
