@@ -260,7 +260,7 @@ files on re-runs, keep the chat input live for the whole run (clarifications and
 option picks become normal chat turns), and stop create-dir/move ordering from
 hard-stopping plan execution.
 
-- [ ] P1 · Two-sub-phase plan execution — `execute_plan` runs all `create_dir` ops
+- [x] P1 · Two-sub-phase plan execution — `execute_plan` runs all `create_dir` ops
       first, then file ops, preserving relative order within each group; the `move`
       executor creates missing destination parents so a deselected or failed
       `create_dir` can no longer cascade into a hard stop.

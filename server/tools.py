@@ -605,7 +605,15 @@ def execute_plan(
     # keyed by the op's original src, so chained ops (rename then move) resolve (F7).
     moved: dict[str, str] = {}
 
-    for op in p.ops:
+    # Run all create_dir ops before any other op (each group keeping its relative
+    # order), so a deselected/failed create_dir can't cascade into a hard stop for
+    # a move that targets it — the move executor also self-heals via mkdir, but
+    # running create_dir first keeps directory creation itself in the journal.
+    ordered = [op for op in p.ops if op.op_type == "create_dir"] + [
+        op for op in p.ops if op.op_type != "create_dir"
+    ]
+
+    for op in ordered:
         if op.status != "pending":
             continue
 
@@ -760,6 +768,7 @@ def _apply_op(op: "_plan.PlanOp", src_path: str) -> str:
     elif op.op_type == "move":
         dst_dir = Path(op.dst)
         dest = dst_dir / src.name
+        dst_dir.mkdir(parents=True, exist_ok=True)
         check_no_overwrite(dest)
         try:
             shutil.move(str(src), str(dest))

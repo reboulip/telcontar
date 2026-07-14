@@ -301,7 +301,7 @@ Stage a rename of `path` to `new_name` (basename only, not a full path). Raises 
 propose_move(path: str, dest_dir: str, plan_id: str) -> dict
 ```
 
-Stage moving `path` into `dest_dir`. Raises `FileExistsError` if `dest_dir/filename` already exists. Raises `ValueError` if `dest_dir` is not an existing directory **and** no `propose_create_dir` op for that exact path is already queued earlier in the same pending plan — this lets the agent propose "create a folder, then move a file into it" within a single plan; `execute_plan` already runs ops in list order, so the `create_dir` completes before the dependent `move`.
+Stage moving `path` into `dest_dir`. Raises `FileExistsError` if `dest_dir/filename` already exists. Raises `ValueError` if `dest_dir` is not an existing directory **and** no `propose_create_dir` op for that exact path is already queued earlier in the same pending plan — this lets the agent propose "create a folder, then move a file into it" within a single plan, regardless of the two ops' relative order: `execute_plan` runs every `create_dir` op before any other op type, so the dependent `move` always finds its destination already created (and self-heals via its own `mkdir` even if it doesn't).
 
 ---
 
@@ -403,6 +403,7 @@ Apply all operations in an `approved` plan.
 - On success, each op is appended to the undo journal and the registry is path-reconciled
 - `archive_document` and `compress_quarantine` ops reuse the standalone functions of the same name, which self-journal under their own `op_type` (`quarantine` and `compress` respectively) instead of the generic per-op entry `execute_plan` writes for other op types
 - Ops chained within the same run resolve correctly: if an earlier op already relocated a file (e.g. a `rename` followed by a `move` on the same original path), the later op is applied to the file's current location, not its original path
+- Execution order is not strictly plan order: all `create_dir` ops run first (each group keeping its authored relative order), then every other op type — so a `move` into a not-yet-existing folder always finds it created regardless of how the two ops were interleaved when proposed. The `move` executor also creates its destination directory itself (`mkdir(parents=True, exist_ok=True)`) before checking for collision, as a second line of defense. Neither the persisted plan file nor the approval-modal display order is affected — only this run's internal iteration order
 
 **Returns:**
 
