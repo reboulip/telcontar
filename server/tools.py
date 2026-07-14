@@ -1320,6 +1320,29 @@ def lookup_documents(checksums: list[str], registry_path: Path) -> dict[str, dic
     return result
 
 
+def rehome_documents(paths: dict[str, str], registry_path: Path) -> dict:
+    """Update registry records' recorded path directly by checksum (P4).
+
+    ``paths`` maps checksum -> new on-disk path. Pure registry mutation — no
+    plan, no journal entry, no approval gate — used by the deterministic host
+    pre-pass to reconcile records whose on-disk location changed outside a
+    plan-tracked op (e.g. moved manually between runs). Returns
+    ``{"updated": [checksum, ...], "missing": [checksum, ...]}``.
+    """
+    reg = _registry.load(registry_path)
+    updated: list[str] = []
+    missing: list[str] = []
+    for checksum, new_path in paths.items():
+        rec = reg.rehome(checksum, new_path)
+        if rec is not None:
+            updated.append(checksum)
+        else:
+            missing.append(checksum)
+    if updated:
+        _registry.save(reg, registry_path)
+    return {"updated": updated, "missing": missing}
+
+
 def find_duplicates(registry_path: Path) -> list[list[dict]]:
     """Return fuzzy candidate-duplicate clusters for the host to judge."""
     reg = _registry.load(registry_path)

@@ -568,6 +568,29 @@ Batch form of `get_document`: look up many checksums against the registry in one
 
 ---
 
+### `rehome_documents`
+
+```python
+rehome_documents(paths: dict[str, str]) -> dict
+```
+
+Update registry records' recorded `path` directly by checksum (P4). `paths` maps `checksum -> new_path`. Unlike `execute_plan`'s automatic reconciliation (which matches a record by its file's *old* path after a `rename`/`move`/`quarantine` op), `rehome_documents` looks the record up directly by checksum and rewrites it — used by the deterministic host pre-pass (`host/agent.py`'s `run_prepass`) to reconcile a document whose on-disk location no longer matches what the registry has recorded (e.g. moved manually between runs), independently of any plan.
+
+**Parameters:**
+
+| Name | Type | Description |
+|---|---|---|
+| `paths` | dict[str, str] | Maps a document's checksum to its new on-disk path |
+
+**Returns:** `{"updated": [checksum, ...], "missing": [checksum, ...]}` — `updated` lists every checksum that had a matching registry record (now rewritten); `missing` lists any checksum with no record.
+
+!!! note
+    Every value in `paths` (the new path) is checked with `check_within_root` before the call proceeds — same confinement floor as every other path-taking tool (see "Path confinement" above).
+
+**Safety category:** Registry mutation — a pure metadata update (like `record_document`/`record_document_batch`), not a filesystem operation. No plan, no journal entry, and not gated by `APPROVAL_MODE`: it reconciles bookkeeping data, it never touches a file on disk.
+
+---
+
 ### `list_documents`
 
 ```python

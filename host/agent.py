@@ -703,6 +703,163 @@ class _ProgressTracker:
         return doc_count, tokens
 
 
+# ── Deterministic pre-pass (P4) ──────────────────────────────────────────────
+
+# Round-trip size for compute_checksum_batch / lookup_documents calls — bounds
+# per-call memory/latency on a large corpus without needing many small calls.
+_PREPASS_CHUNK_SIZE = 300
+
+
+def _collect_truncated_dirs(walk_result: Any) -> list[str]:
+    """Collect the paths of every directory a `walk_tree` result marked
+    ``truncated`` (its `children` is `None`, depth limit reached) — each one
+    needs its own `walk_tree` call to be fully discovered."""
+    if not isinstance(walk_result, dict):
+        return []
+    out: list[str] = []
+
+    def _walk(entries: Any) -> None:
+        if not isinstance(entries, list):
+            return
+        for entry in entries:
+            if not isinstance(entry, dict) or entry.get("type") != "dir":
+                continue
+            if entry.get("truncated"):
+                path = entry.get("path")
+                if path:
+                    out.append(path)
+            else:
+                _walk(entry.get("children"))
+
+    _walk(walk_result.get("entries"))
+    return out
+
+
+@dataclass
+class PrepassResult:
+    """Outcome of `run_prepass` (P4): the corpus partitioned into documents the
+    registry already knows about vs. genuinely new ones, ready for P5's
+    stateless analyzer to process only the latter.
+    """
+
+    new: list[dict[str, str]] = field(default_factory=list)
+    known: list[dict[str, Any]] = field(default_factory=list)
+    rehomed: list[str] = field(default_factory=list)
+    errors: list[dict[str, str]] = field(default_factory=list)
+    total_files: int = 0
+
+
+async def run_prepass(
+    *,
+    session: ClientSession,
+    settings: Settings,
+    target: Path,
+    on_event: EventCallback,
+) -> PrepassResult:
+    """Deterministic, LLM-free corpus discovery (P4): walk `target` to
+    exhaustion (re-walking every `truncated` subdirectory), checksum every
+    discovered file, partition into known/new via the registry, and re-home
+    known records whose on-disk path has changed since they were last seen.
+
+    Runs entirely through MCP tool calls (no local file I/O) so it works the
+    same whether the host and server share a filesystem or not. Emits one
+    `progress` event once discovery + partitioning is complete.
+    """
+    entries: list[tuple[str, int | None]] = []
+    errors: list[dict[str, str]] = []
+
+    queue: list[str] = [str(target)]
+    seen_dirs: set[str] = set()
+    while queue:
+        dir_path = queue.pop(0)
+        normalized = _normalize_path(dir_path)
+        if normalized in seen_dirs:
+            continue
+        seen_dirs.add(normalized)
+        raw = await session.call_tool("walk_tree", {"path": dir_path, "max_depth": 3})
+        result = _extract_content(raw)
+        if not isinstance(result, dict):
+            errors.append({"path": dir_path, "error": str(result)})
+            continue
+        entries.extend(_extract_discovered_entries(result, settings))
+        queue.extend(_collect_truncated_dirs(result))
+
+    total_files = len(entries)
+
+    checksums: dict[str, str] = {}
+    paths = [path for path, _ in entries]
+    for i in range(0, len(paths), _PREPASS_CHUNK_SIZE):
+        chunk = paths[i : i + _PREPASS_CHUNK_SIZE]
+        raw = await session.call_tool("compute_checksum_batch", {"paths": chunk})
+        result = _extract_content(raw)
+        if not isinstance(result, dict):
+            errors.append({"path": ", ".join(chunk), "error": str(result)})
+            continue
+        for path, value in result.items():
+            if isinstance(value, str):
+                checksums[path] = value
+            else:
+                errors.append({"path": path, "error": str(value)})
+
+    # Dedupe by checksum — identical-content files collapse to one representative
+    # path, since the registry (and P5's analysis) is keyed by checksum, not path.
+    checksum_to_path: dict[str, str] = {}
+    for path, checksum in checksums.items():
+        checksum_to_path.setdefault(checksum, path)
+
+    unique_checksums = list(checksum_to_path.keys())
+    lookup: dict[str, Any] = {}
+    for i in range(0, len(unique_checksums), _PREPASS_CHUNK_SIZE):
+        chunk = unique_checksums[i : i + _PREPASS_CHUNK_SIZE]
+        raw = await session.call_tool("lookup_documents", {"checksums": chunk})
+        result = _extract_content(raw)
+        if isinstance(result, dict):
+            lookup.update(result)
+        else:
+            errors.append({"path": ", ".join(chunk), "error": str(result)})
+
+    new: list[dict[str, str]] = []
+    known: list[dict[str, Any]] = []
+    rehome_map: dict[str, str] = {}
+    for checksum, path in checksum_to_path.items():
+        record = lookup.get(checksum)
+        if record is None:
+            new.append({"path": path, "checksum": checksum})
+            continue
+        known.append({"path": path, "checksum": checksum, "record": record})
+        recorded_path = record.get("path") if isinstance(record, dict) else None
+        if recorded_path and _normalize_path(recorded_path) != _normalize_path(path):
+            rehome_map[checksum] = path
+
+    rehomed: list[str] = []
+    if rehome_map:
+        raw = await session.call_tool("rehome_documents", {"paths": rehome_map})
+        result = _extract_content(raw)
+        if isinstance(result, dict):
+            rehomed = result.get("updated", [])
+            for checksum in result.get("missing", []):
+                errors.append(
+                    {
+                        "path": rehome_map.get(checksum, ""),
+                        "error": "rehome: checksum missing from registry",
+                    }
+                )
+        else:
+            errors.append({"path": "rehome_documents", "error": str(result)})
+
+    on_event(
+        AgentEvent(
+            "progress",
+            f"Analyzed {len(known)} / {len(checksum_to_path)} documents",
+            data={"analyzed": len(known), "total": len(checksum_to_path)},
+        )
+    )
+
+    return PrepassResult(
+        new=new, known=known, rehomed=rehomed, errors=errors, total_files=total_files
+    )
+
+
 # ── Public entry points ───────────────────────────────────────────────────────
 
 

@@ -37,7 +37,7 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 
 **Entrypoint:** `main()` calls `mcp.run(transport="stdio")`.
 
-**Design note:** This module is deliberately thin — it delegates all logic to `server/tools.py`. Tool parameters injected from config (e.g. `plans_dir`, `journal_path`) are resolved here and passed into the tool functions. `_confinement_roots(cfg)` and `_check_within_root(path, cfg)` (M2) wrap `server/guards.py`'s `check_within_root` and are called at the top of every path-taking tool handler to confine it to `[cfg.target_dir, Path.cwd()]`. The batch tools (O1) apply this — plus `check_allowlist` for the two content tools — per path, before delegating to `server/tools.py`, so a rejected path becomes that entry's `{"error": ...}` instead of aborting the whole call. The `walk_tree` handler additionally passes `hidden_names={".organizer", cfg.quarantine_dir.name}` (P2) into `tools.walk_tree`, so the agent's own memory folder and the quarantine folder are excluded from every discovery result at every depth — now that both live inside `target_dir` (see `config/settings.py`'s `for_target` above).
+**Design note:** This module is deliberately thin — it delegates all logic to `server/tools.py`. Tool parameters injected from config (e.g. `plans_dir`, `journal_path`) are resolved here and passed into the tool functions. `_confinement_roots(cfg)` and `_check_within_root(path, cfg)` (M2) wrap `server/guards.py`'s `check_within_root` and are called at the top of every path-taking tool handler to confine it to `[cfg.target_dir, Path.cwd()]`. The batch tools (O1) apply this — plus `check_allowlist` for the two content tools — per path, before delegating to `server/tools.py`, so a rejected path becomes that entry's `{"error": ...}` instead of aborting the whole call. The `walk_tree` handler additionally passes `hidden_names={".organizer", cfg.quarantine_dir.name}` (P2) into `tools.walk_tree`, so the agent's own memory folder and the quarantine folder are excluded from every discovery result at every depth — now that both live inside `target_dir` (see `config/settings.py`'s `for_target` above). `rehome_documents` (P4) applies `_check_within_root` to every value (new path) in its `paths: dict[str, str]` argument before delegating — same per-path confinement pattern as `record_document_batch`.
 
 ---
 
@@ -54,7 +54,7 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 | Plan-building | `propose_rename`, `propose_move`, `propose_quarantine`, `propose_create_file`, `propose_update_file`, `propose_create_dir`, `propose_archive_document`, `propose_compress_quarantine` |
 | Gated execution | `execute_plan`, `write_index`, `write_summary` |
 | Recovery (not MCP tools) | `undo_last` — no longer registered as an MCP tool (M1); called directly by the TUI's `JournalScreen` |
-| Registry | `record_document`, `get_document`, `lookup_documents`, `list_documents`, `get_registry`, `find_duplicates`, `find_modified_documents` |
+| Registry | `record_document`, `get_document`, `lookup_documents`, `rehome_documents`, `list_documents`, `get_registry`, `find_duplicates`, `find_modified_documents` |
 | Event journal | `create_event`, `list_events` |
 | Knowledge graph | `build_graph`, `get_graph`, `get_actors` |
 | Archive | `archive_document` (no longer an MCP tool; called by `execute_plan` for `archive_document` ops), `list_archived` |
@@ -82,15 +82,17 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 
 ---
 
-### `server/registry.py` (~243 lines)
+### `server/registry.py`
 
 **Role:** The engine's persistent document memory. Content-addressed (sha256 → `DocumentRecord`). Profile-agnostic — type validation lives in `tools.py`.
 
 **Key types:**
 - `DocumentRecord` — one analyzed document. Fields: `checksum`, `path`, `title`, `type`, `summary`, `provenance`, `date`, `entities`, `attributes`, `status`, `first_seen`, `last_analyzed`.
-- `Registry` — in-memory view, keyed by checksum. Methods: `upsert`, `get`, `records`, `update_path`, `find_duplicates`, `find_modified`.
+- `Registry` — in-memory view, keyed by checksum. Methods: `upsert`, `get`, `records`, `update_path`, `rehome`, `find_duplicates`, `find_modified`.
 
-**`update_path`:** Called by `execute_plan` after each successful op to reconcile the record's stored path with the file's new location. Matches by normalized path comparison (`os.path.normcase`/`normpath`) for Windows compatibility.
+**`update_path`:** Called by `execute_plan` after each successful op to reconcile the record's stored path with the file's new location. Matches the record whose *current* `path` equals the op's old path (an O(n) scan), then rewrites it. Normalized path comparison (`os.path.normcase`/`normpath`) for Windows compatibility.
+
+**`rehome`** (P4): `rehome(checksum, new_path)` looks a record up directly by checksum (O(1)) and rewrites its `path` — the counterpart `update_path` can't serve, since that method matches by the file's *old* path rather than its identity. Backs the `rehome_documents` MCP tool, used by the deterministic host pre-pass (`host/agent.py`'s `run_prepass`) to reconcile records whose on-disk location no longer matches the registry, independently of any plan/`execute_plan` run. Returns `None` if no record exists for `checksum`.
 
 **`find_duplicates`:** Union-find clustering by title-token Jaccard similarity (threshold 0.6) within the same type, or exact normalized-title match across types.
 
@@ -220,6 +222,7 @@ The MCP host package. Drives the GPT-5 agent loop and presents the Textual TUI.
 - `ClarificationResult` — `{answers: dict[str, str], provided: bool}`; answers from the post-analysis clarification checkpoint. `provided` is `False` when the user skipped / had nothing to add, in which case the agent proceeds with its own best judgement
 - `OptionsResult` — `{selections: dict[str, str], provided: bool}`; the user's picks from the multiple-option checkpoint (L7), one selected option per question. `provided` is `False` when the user skipped, in which case the agent proceeds with its own best judgement
 - `CostApprovalResult` — `{approved: bool}`; the user's yes/no on the pre-ANALYZE cost-estimate gate (O8)
+- `PrepassResult` — `{new: list[dict], known: list[dict], rehomed: list[str], errors: list[dict], total_files: int}`; the outcome of `run_prepass` (P4) — `new` is `{path, checksum}` per undiscovered document, `known` is `{path, checksum, record}` per already-registered document, `rehomed` lists checksums whose registry path was corrected
 - `EventCallback` — `Callable[[AgentEvent], None]`
 - `ApprovalCallback` — `Callable[[str, dict], Awaitable[ApprovalResult]]`
 - `QuestionsCallback` — `Callable[[list[str]], Awaitable[ClarificationResult]]`
@@ -231,6 +234,7 @@ The MCP host package. Drives the GPT-5 agent loop and presents the Textual TUI.
 - `_CLARIFY_TOOL_NAME` / `_CLARIFY_TOOL_SPEC` — the host-side synthetic tool `ask_clarification`. Never registered with or forwarded to the MCP server; appended to the OpenAI tool list only when a `QuestionsCallback` is wired in
 - `_OPTIONS_TOOL_NAME` / `_OPTIONS_TOOL_SPEC` — the host-side synthetic tool `propose_options` (L7), mirroring `ask_clarification`. Never registered with or forwarded to the MCP server; appended to the OpenAI tool list only when an `OptionsCallback` is wired in. Each question requires 2-5 mutually-exclusive options
 - `_COST_GATED_BATCH_TOOLS` — `frozenset` naming the four O1/O2 batch document tools (`extract_text_batch`, `read_file_batch`, `compute_checksum_batch`, `record_document_batch`) whose first call in a run triggers the O8 cost-approval gate; their singular counterparts are not gated
+- `_PREPASS_CHUNK_SIZE = 300` — round-trip size for `run_prepass`'s `compute_checksum_batch`/`lookup_documents` calls (P4), bounding per-call memory/latency on a large corpus
 
 **Key functions:**
 - `run_agent(target, settings, llm, on_event, on_approval_needed, on_questions_needed=None, on_options_needed=None, on_cost_approval_needed=None, instructions=None, history=None, message=None) -> tuple[str, list[dict]]` — top-level organize entry; launches the MCP server subprocess via `mcp_session()`, then calls `run_agent_loop`, returning `(final_text, updated_history)`. `mcp_session(project_root, target=None)` sets `TARGET_DIR` on the server subprocess's env whenever `target` is given, so the server can confine path-taking tools to it (M2). `history`/`message` (O7) mirror `run_query_loop`'s shape — see `run_agent_loop` below; for a multi-turn chat, callers should instead keep a single session open and call `run_agent_loop` directly (`run_agent` launches a fresh subprocess per call)
@@ -247,6 +251,8 @@ The MCP host package. Drives the GPT-5 agent loop and presents the Textual TUI.
 - `_handle_cost_approval(tracker, settings, on_event, on_cost_approval_needed)` — intercepts the first call to any `_COST_GATED_BATCH_TOOLS` tool (O8); computes `tracker.cost_estimate(settings.max_snippet_chars)`, emits a `"cost_estimate"` `AgentEvent`, and — unless `approval_mode == "never"` or no callback is wired — awaits `on_cost_approval_needed`. Returns `(error_or_None, shown=True)`; rejecting yields an error dict telling the agent to stop and report back instead of the tool result
 - `_accumulate_tokens(response, totals, on_event)` — reads `response.usage.prompt_tokens` / `completion_tokens` after each LLM call (both organize and query loops), adds them to the run's running total, and emits a `"tokens"` `AgentEvent` whose text is the compact rendering from `_fmt_tokens` (e.g. `"42.3K in / 5.1K out"`) and whose `data` carries the raw `{in, out}` totals; a no-op when the endpoint's response omits `usage`
 - `_fmt_tokens(n)` — compact human-readable token count: `512`, `12K`, `12.3K`, `3.5M`
+- `run_prepass(*, session, settings, target, on_event) -> PrepassResult` (P4) — deterministic, LLM-free corpus discovery. Walks `target` to exhaustion (re-walking every `truncated` subdirectory via `_collect_truncated_dirs`), checksums every discovered file in `_PREPASS_CHUNK_SIZE`-sized `compute_checksum_batch` chunks, dedupes by checksum, partitions into known/new by chunked `lookup_documents` calls (P3), and batches a single `rehome_documents` call for any `known` document whose registry path drifted from where it was actually found. Emits exactly one `"progress"` `AgentEvent` once discovery + partitioning finishes. Runs entirely through MCP tool calls, no local file I/O. Standalone and independently tested — **not yet called from `run_agent_loop`**, a later item wires it into the main loop
+- `_collect_truncated_dirs(walk_result)` — recursively collects the paths of every directory a `walk_tree` result marked `truncated` (`children` is `None`, depth limit reached); each needs its own `walk_tree` call to be fully discovered. Used by `run_prepass`'s exhaustive-walk loop
 
 **Turn limit:** `run_query_loop` raises an error event if the model has not produced a final (no-tool-call) response within `_MAX_TURNS = 50` turns. `run_agent_loop` (organize mode) instead uses an adaptive budget, `_analysis_turn_budget(total_discovered)` — `max(_MAX_TURNS, min(_MAX_TURN_BUDGET, _TURN_BUDGET_BASE + _TURN_BUDGET_PER_DOCUMENT * total_discovered))`, i.e. floor 50, ceiling `_MAX_TURN_BUDGET = 2000`, `_TURN_BUDGET_BASE = 30` plus `_TURN_BUDGET_PER_DOCUMENT = 3` turns per document discovered so far — recomputed each iteration as the O5 progress tracker's discovered count grows. It's a backstop against a runaway/looping agent, not the primary cost control — that's the O8 pre-ANALYZE cost-approval gate (`_handle_cost_approval`, above), which gates the first real batch-tool call of the run.
 

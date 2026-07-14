@@ -188,6 +188,19 @@ class TestGuardedHandlers:
                 ]
             )
 
+    def test_rehome_documents_raises_when_new_path_is_outside_target(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        target = tmp_path / "target"
+        target.mkdir()
+        outside = tmp_path / "elsewhere" / "doc.txt"
+        outside.parent.mkdir()
+        outside.write_text("x")
+        monkeypatch.setattr(server_main, "_get_settings", lambda: Settings(target_dir=target))
+
+        with pytest.raises(PermissionError):
+            server_main.rehome_documents({"c1": str(outside)})
+
     def test_propose_move_raises_when_source_outside_target(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

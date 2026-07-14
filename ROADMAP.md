@@ -272,7 +272,7 @@ hard-stopping plan execution.
       `write_index` and the starter-pane overview. No migration (beta).
 - [x] P3 · `lookup_documents(checksums)` read-only tool — batch registry lookup
       `{checksum: record | null}`; add to `QUERY_ALLOWED_TOOLS`. (requires: P2)
-- [ ] P4 · Deterministic host pre-pass — host code (no LLM) walks the tree to
+- [x] P4 · Deterministic host pre-pass — host code (no LLM) walks the tree to
       exhaustion (re-walking `truncated` dirs), checksums via
       `compute_checksum_batch`, partitions known/new via `lookup_documents`,
       re-homes known records whose path changed, emits `progress` events.

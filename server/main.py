@@ -509,6 +509,19 @@ def lookup_documents(checksums: list[str]) -> dict:
 
 
 @mcp.tool()
+def rehome_documents(paths: dict[str, str]) -> dict:
+    """Update registry records' recorded path by checksum: {checksum: new_path}.
+
+    Registry-only mutation (no plan, no approval gate) used by the
+    deterministic host pre-pass to reconcile records whose on-disk location
+    changed outside a plan-tracked op."""
+    cfg = _get_settings()
+    for new_path in paths.values():
+        _check_within_root(new_path, cfg)
+    return tools.rehome_documents(paths, cfg.registry_path)
+
+
+@mcp.tool()
 def list_documents() -> list:
     """Return all recorded documents with their metadata, oldest first."""
     cfg = _get_settings()

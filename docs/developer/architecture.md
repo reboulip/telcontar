@@ -75,6 +75,7 @@ Documents are identified by their sha256 checksum, not their path. This means:
 - Renaming or moving a file does not lose its analysis metadata
 - `execute_plan` reconciles paths in the registry as files move
 - Duplicate detection is checksum-exact (same content) + title-token fuzzy (similar content)
+- `rehome_documents` (P4) offers a second, plan-independent reconciliation path: given `{checksum: new_path}`, it looks a record up directly by checksum and rewrites its path — used by the deterministic host pre-pass (below) to fix up a record whose on-disk location drifted outside any `execute_plan` run
 
 ### Plan state machine
 
@@ -110,7 +111,7 @@ where empty means unrestricted). `server/main.py` calls it — via the
 `walk_tree`, `read_file`, `extract_text`, `compute_checksum`, `compare_documents`,
 `read_file_batch`, `extract_text_batch`, `compute_checksum_batch`, every `propose_*`
 tool, `write_index`, `write_summary`, `write_folder_readme`, `record_document`,
-`record_document_batch`).
+`record_document_batch`, `rehome_documents`).
 The batch tools apply the check per path, before that path is read/extracted, so
 one disallowed path in a batch surfaces as `{"error": ...}` for that entry rather
 than failing the whole call. `_confinement_roots(cfg)` builds the allowed roots as
@@ -265,6 +266,21 @@ Also between the ANALYZE and ORGANIZE phases, after re-examining its intended ap
 The only built-in sink is `local_markdown` (`external=False`) — it delegates directly to `tools.write_summary` / `tools.write_folder_readme` and writes Markdown files to the local filesystem. It is always allowed regardless of `egress_allow_external_sinks`.
 
 Any sink name not in the built-in registry is treated as an external sink. If `egress_allow_external_sinks` is `False`, `resolve_sinks` raises `PermissionError` immediately (nothing leaves the machine without an explicit opt-in). If the flag is `True`, it raises `NotImplementedError` — external sinks (e.g. a MediaWiki wiki) are shipped as separate MCP integrations, not implemented in this codebase.
+
+### Deterministic host pre-pass (P4)
+
+`host/agent.py`'s `run_prepass(*, session, settings, target, on_event) -> PrepassResult` is a standalone, LLM-free corpus-discovery pass: given an already-open MCP session and a target directory, it walks the tree to exhaustion, checksums every file, and partitions the corpus into documents the registry already knows about versus genuinely new ones — laying the groundwork for a future stateless analyzer that only needs to process the `new` set. It is **not yet called from `run_agent_loop`**; this item ships it as an independently-tested function, wired into the main loop by a later item in the same area.
+
+Runs entirely through MCP tool calls, never local file I/O, so it behaves the same whether host and server share a filesystem or not:
+
+1. **Discovery:** starting from `target`, calls `walk_tree(path, max_depth=3)` and collects every discovered file entry (skipping the same noise `_extract_discovered_entries`/O5 already skips). Any directory the result marks `truncated` (`_collect_truncated_dirs`) is queued and re-walked, repeating until no truncated directory remains anywhere in the tree.
+2. **Checksumming:** calls `compute_checksum_batch` in chunks of `_PREPASS_CHUNK_SIZE = 300` paths per call, bounding round-trip size/latency on a large corpus. Per-path failures are collected into `PrepassResult.errors` rather than aborting the pass.
+3. **Dedup by checksum:** identical-content files collapse to one representative path (`checksum_to_path`), since the registry — and any future analyzer — is keyed by checksum, not path.
+4. **Known/new partition:** looks up every unique checksum against the registry in the same chunk size via `lookup_documents` (P3). A checksum with no registry record becomes a `new` entry (`{path, checksum}`); one with a record becomes a `known` entry (`{path, checksum, record}`).
+5. **Re-homing:** for each `known` document whose registry-recorded path no longer matches where it was actually found on disk, batches a single `rehome_documents` call (`{checksum: new_path}`) to fix the drift. A checksum the server reports as `missing` (removed from the registry between the lookup and the rehome call) is recorded in `errors` rather than silently dropped.
+6. **Progress:** emits exactly one `"progress"` `AgentEvent` (`data={"analyzed": len(known), "total": len(unique_checksums)}`) once discovery and partitioning are complete — a single snapshot, not the incremental per-tool-call updates `_ProgressTracker`/O5 produces during the LLM-driven loop.
+
+Returns a `PrepassResult` dataclass: `new` (list of new-document dicts), `known` (list of known-document dicts, each carrying its current registry `record`), `rehomed` (checksums whose path was actually updated), `errors` (list of `{path, error}`), and `total_files` (raw discovered-file count before dedup).
 
 ---
 

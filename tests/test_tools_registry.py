@@ -16,6 +16,7 @@ from server.tools import (
     lookup_documents,
     record_document,
     record_document_batch,
+    rehome_documents,
 )
 
 _BUNDLED_PROFILES_DIR = Path(__file__).resolve().parents[1] / "profiles"
@@ -201,6 +202,35 @@ def test_lookup_documents_empty_input_returns_empty_dict(
 ) -> None:
     _record(reg_path, profile, checksum="c1")
     assert lookup_documents([], reg_path) == {}
+
+
+def test_rehome_documents_updates_path_by_checksum(reg_path: Path, profile: Profile) -> None:
+    _record(reg_path, profile, checksum="c1", path="/old/a.txt")
+
+    result = rehome_documents({"c1": "/new/a.txt"}, reg_path)
+
+    assert result == {"updated": ["c1"], "missing": []}
+    assert get_document("c1", reg_path)["path"] == "/new/a.txt"
+
+
+def test_rehome_documents_reports_missing_checksum(reg_path: Path, profile: Profile) -> None:
+    _record(reg_path, profile, checksum="c1", path="/a.txt")
+
+    result = rehome_documents({"nope": "/new/a.txt"}, reg_path)
+
+    assert result == {"updated": [], "missing": ["nope"]}
+    assert get_document("c1", reg_path)["path"] == "/a.txt"
+
+
+def test_rehome_documents_preserves_last_analyzed_bump(reg_path: Path, profile: Profile) -> None:
+    out = _record(reg_path, profile, checksum="c1", path="/a.txt")
+    first_seen = out["first_seen"]
+
+    rehome_documents({"c1": "/b.txt"}, reg_path)
+
+    rec = get_document("c1", reg_path)
+    assert rec["first_seen"] == first_seen
+    assert rec["path"] == "/b.txt"
 
 
 def test_get_registry_shape(reg_path: Path, profile: Profile) -> None:

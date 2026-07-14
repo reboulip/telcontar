@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, call
 
 
 from host.agent import (
@@ -14,8 +14,11 @@ from host.agent import (
     ClarificationResult,
     CostApprovalResult,
     OptionsResult,
+    PrepassResult,
+    _collect_truncated_dirs,
     _extract_content,
     run_agent_loop,
+    run_prepass,
     run_query_loop,
 )
 
@@ -1838,3 +1841,268 @@ async def test_run_agent_loop_continuation_gets_a_fresh_turn_budget(tmp_path: Pa
     )
 
     assert text2 == "Second done."
+
+
+# ── Deterministic pre-pass (P4) ────────────────────────────────────────────────
+
+
+def _file_entry(path: str, size: int = 1) -> dict:
+    return {"name": Path(path).name, "path": path, "type": "file", "size": size, "mtime": 0.0}
+
+
+def _dir_entry(path: str, children: list[dict] | None, truncated: bool) -> dict:
+    return {
+        "name": Path(path).name,
+        "path": path,
+        "type": "dir",
+        "size": None,
+        "mtime": 0.0,
+        "children": children,
+        "truncated": truncated,
+    }
+
+
+def _prepass_session(
+    *,
+    walk_results: dict[str, dict],
+    checksums: dict[str, str],
+    records: dict[str, dict | None],
+    rehome_result: dict | None = None,
+) -> AsyncMock:
+    """Fake MCP session for run_prepass — dispatches on tool name + args, unlike
+    `_session`'s flat name-only mapping, since run_prepass calls walk_tree and
+    the batch tools more than once with different arguments."""
+    s = AsyncMock()
+
+    async def _call(name: str, args: dict | None = None) -> MagicMock:
+        args = args or {}
+        if name == "walk_tree":
+            return _mcp_result(walk_results[args["path"]])
+        if name == "compute_checksum_batch":
+            return _mcp_result({p: checksums[p] for p in args["paths"]})
+        if name == "lookup_documents":
+            return _mcp_result({c: records.get(c) for c in args["checksums"]})
+        if name == "rehome_documents":
+            return _mcp_result(
+                rehome_result or {"updated": list(args["paths"].keys()), "missing": []}
+            )
+        raise AssertionError(f"unexpected tool call in prepass test: {name}({args})")
+
+    s.call_tool.side_effect = _call
+    return s
+
+
+def test_collect_truncated_dirs_finds_nested_truncated() -> None:
+    walk_result = {
+        "path": "/root",
+        "max_depth": 2,
+        "entries": [
+            _dir_entry("/root/shallow", [_file_entry("/root/shallow/a.txt")], truncated=False),
+            _dir_entry("/root/deep", None, truncated=True),
+            _file_entry("/root/top.txt"),
+        ],
+    }
+
+    assert _collect_truncated_dirs(walk_result) == ["/root/deep"]
+
+
+def test_collect_truncated_dirs_recurses_into_non_truncated_children() -> None:
+    walk_result = {
+        "path": "/root",
+        "max_depth": 3,
+        "entries": [
+            _dir_entry(
+                "/root/mid",
+                [_dir_entry("/root/mid/deep", None, truncated=True)],
+                truncated=False,
+            ),
+        ],
+    }
+
+    assert _collect_truncated_dirs(walk_result) == ["/root/mid/deep"]
+
+
+async def test_run_prepass_partitions_known_and_new(tmp_path: Path) -> None:
+    a, b = str(tmp_path / "a.txt"), str(tmp_path / "b.txt")
+    session = _prepass_session(
+        walk_results={
+            str(tmp_path): {
+                "path": str(tmp_path),
+                "max_depth": 3,
+                "entries": [_file_entry(a), _file_entry(b)],
+            }
+        },
+        checksums={a: "c-known", b: "c-new"},
+        records={"c-known": {"path": a, "title": "Known doc"}, "c-new": None},
+    )
+
+    result = await run_prepass(
+        session=session, settings=_settings(tmp_path), target=tmp_path, on_event=lambda _: None
+    )
+
+    assert result.new == [{"path": b, "checksum": "c-new"}]
+    assert len(result.known) == 1
+    assert result.known[0]["checksum"] == "c-known"
+    assert result.known[0]["record"]["title"] == "Known doc"
+    assert result.total_files == 2
+    assert result.errors == []
+
+
+async def test_run_prepass_walks_truncated_dirs_to_exhaustion(tmp_path: Path) -> None:
+    sub = str(tmp_path / "sub")
+    leaf = str(tmp_path / "sub" / "leaf.txt")
+    session = _prepass_session(
+        walk_results={
+            str(tmp_path): {
+                "path": str(tmp_path),
+                "max_depth": 3,
+                "entries": [_dir_entry(sub, None, truncated=True)],
+            },
+            sub: {
+                "path": sub,
+                "max_depth": 3,
+                "entries": [_file_entry(leaf)],
+            },
+        },
+        checksums={leaf: "c1"},
+        records={"c1": None},
+    )
+
+    result = await run_prepass(
+        session=session, settings=_settings(tmp_path), target=tmp_path, on_event=lambda _: None
+    )
+
+    assert result.new == [{"path": leaf, "checksum": "c1"}]
+    # walk_tree x2 (root + re-walked truncated subdir) + compute_checksum_batch + lookup_documents
+    assert session.call_tool.await_count == 4
+    walked_paths = [
+        c.args[1]["path"] for c in session.call_tool.await_args_list if c.args[0] == "walk_tree"
+    ]
+    assert walked_paths == [str(tmp_path), sub]
+
+
+async def test_run_prepass_dedupes_new_docs_by_checksum(tmp_path: Path) -> None:
+    a, b = str(tmp_path / "a.txt"), str(tmp_path / "copy_of_a.txt")
+    session = _prepass_session(
+        walk_results={
+            str(tmp_path): {
+                "path": str(tmp_path),
+                "max_depth": 3,
+                "entries": [_file_entry(a), _file_entry(b)],
+            }
+        },
+        checksums={a: "same-checksum", b: "same-checksum"},
+        records={"same-checksum": None},
+    )
+
+    result = await run_prepass(
+        session=session, settings=_settings(tmp_path), target=tmp_path, on_event=lambda _: None
+    )
+
+    assert len(result.new) == 1
+    assert result.total_files == 2
+
+
+async def test_run_prepass_rehomes_known_doc_with_changed_path(tmp_path: Path) -> None:
+    old_path = str(tmp_path / "old_name.txt")
+    new_path = str(tmp_path / "new_name.txt")
+    session = _prepass_session(
+        walk_results={
+            str(tmp_path): {
+                "path": str(tmp_path),
+                "max_depth": 3,
+                "entries": [_file_entry(new_path)],
+            }
+        },
+        checksums={new_path: "c1"},
+        records={"c1": {"path": old_path, "title": "Moved doc"}},
+        rehome_result={"updated": ["c1"], "missing": []},
+    )
+
+    result = await run_prepass(
+        session=session, settings=_settings(tmp_path), target=tmp_path, on_event=lambda _: None
+    )
+
+    assert result.rehomed == ["c1"]
+    rehome_calls = [
+        c for c in session.call_tool.await_args_list if c.args[0] == "rehome_documents"
+    ]
+    assert rehome_calls == [call("rehome_documents", {"paths": {"c1": new_path}})]
+
+
+async def test_run_prepass_no_rehome_call_when_paths_unchanged(tmp_path: Path) -> None:
+    a = str(tmp_path / "a.txt")
+    session = _prepass_session(
+        walk_results={
+            str(tmp_path): {
+                "path": str(tmp_path),
+                "max_depth": 3,
+                "entries": [_file_entry(a)],
+            }
+        },
+        checksums={a: "c1"},
+        records={"c1": {"path": a, "title": "Unmoved"}},
+    )
+
+    result = await run_prepass(
+        session=session, settings=_settings(tmp_path), target=tmp_path, on_event=lambda _: None
+    )
+
+    assert result.rehomed == []
+    called_tools = [c.args[0] for c in session.call_tool.await_args_list]
+    assert "rehome_documents" not in called_tools
+
+
+async def test_run_prepass_emits_single_progress_event(tmp_path: Path) -> None:
+    a, b = str(tmp_path / "a.txt"), str(tmp_path / "b.txt")
+    session = _prepass_session(
+        walk_results={
+            str(tmp_path): {
+                "path": str(tmp_path),
+                "max_depth": 3,
+                "entries": [_file_entry(a), _file_entry(b)],
+            }
+        },
+        checksums={a: "c-known", b: "c-new"},
+        records={"c-known": {"path": a}, "c-new": None},
+    )
+    events: list[AgentEvent] = []
+
+    await run_prepass(
+        session=session, settings=_settings(tmp_path), target=tmp_path, on_event=events.append
+    )
+
+    progress = [e for e in events if e.kind == "progress"]
+    assert len(progress) == 1
+    assert progress[0].data == {"analyzed": 1, "total": 2}
+
+
+async def test_run_prepass_collects_checksum_errors_without_aborting(tmp_path: Path) -> None:
+    a, b = str(tmp_path / "a.txt"), str(tmp_path / "b.txt")
+    session = _prepass_session(
+        walk_results={
+            str(tmp_path): {
+                "path": str(tmp_path),
+                "max_depth": 3,
+                "entries": [_file_entry(a), _file_entry(b)],
+            }
+        },
+        checksums={a: {"error": "permission denied"}, b: "c-good"},
+        records={"c-good": None},
+    )
+
+    result = await run_prepass(
+        session=session, settings=_settings(tmp_path), target=tmp_path, on_event=lambda _: None
+    )
+
+    assert result.new == [{"path": b, "checksum": "c-good"}]
+    assert result.errors == [{"path": a, "error": "{'error': 'permission denied'}"}]
+
+
+def test_prepass_result_defaults_are_empty() -> None:
+    result = PrepassResult()
+    assert result.new == []
+    assert result.known == []
+    assert result.rehomed == []
+    assert result.errors == []
+    assert result.total_files == 0
