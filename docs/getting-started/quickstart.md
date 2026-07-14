@@ -79,7 +79,7 @@ The **startup screen** shows a browsable folder tree, rooted at your home direct
 Browse the tree and click the folder you want to organize — the "Selected:" label updates to show your choice (it points at your home directory by default). Then press **Organize** to open the organizer screen.
 
 !!! tip
-    **Query** opens a read-only chat over an already-analyzed corpus (registry must exist). Use it after a previous Organize run to ask natural-language questions without touching the files.
+    **Query** opens a read-only chat over an already-analyzed corpus — the selected folder, or a parent of it, must contain a `.organizer/` from a previous Organize run. Use it after a previous Organize run to ask natural-language questions without touching the files.
 
 ---
 

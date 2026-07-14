@@ -118,6 +118,31 @@ class TestWalkTree:
         assert result["entries"] == []
         assert result["max_depth"] == 3
 
+    def test_hidden_names_excluded_at_every_level(self, tmp_path: Path) -> None:
+        (tmp_path / ".organizer").mkdir()
+        (tmp_path / ".organizer" / "registry.json").write_text("{}")
+        (tmp_path / "_quarantine").mkdir()
+        (tmp_path / "_quarantine" / "junk.txt").write_text("x")
+        (tmp_path / "sub").mkdir()
+        (tmp_path / "sub" / ".organizer").mkdir()
+        (tmp_path / "keep.txt").write_text("k")
+
+        result = walk_tree(str(tmp_path), hidden_names=frozenset({".organizer", "_quarantine"}))
+
+        names = {e["name"] for e in result["entries"]}
+        assert names == {"sub", "keep.txt"}
+        sub = next(e for e in result["entries"] if e["name"] == "sub")
+        assert sub["children"] == []
+
+    def test_no_hidden_names_shows_everything(self, tmp_path: Path) -> None:
+        (tmp_path / ".organizer").mkdir()
+        (tmp_path / "keep.txt").write_text("k")
+
+        result = walk_tree(str(tmp_path))
+
+        names = {e["name"] for e in result["entries"]}
+        assert names == {".organizer", "keep.txt"}
+
     def test_raises_for_file(self, tmp_path: Path) -> None:
         f = tmp_path / "f.txt"
         f.write_text("x")

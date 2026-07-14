@@ -1034,22 +1034,31 @@ class ConfigScreen(Screen):
 # ── Journal screen ────────────────────────────────────────────────────────────
 
 
-def _resolve_journal_path(project_root: Path) -> Path:
+def _find_organizer_root(start: Path) -> Path | None:
+    """Find the nearest directory at or above ``start`` containing `.organizer`
+    (P2 Query-mode resolution): per-directory memory means a folder the user
+    picks for Query may be a subfolder of what was actually organized, so this
+    walks up from ``start`` until it finds a `.organizer`, or hits the
+    filesystem root without finding one."""
+    current = start.resolve()
+    while True:
+        if (current / ".organizer").is_dir():
+            return current
+        if current.parent == current:
+            return None
+        current = current.parent
+
+
+def _resolve_journal_path(target: Path) -> Path:
     from config.settings import Settings
 
-    journal_path = Settings().journal_path
-    if not journal_path.is_absolute():
-        journal_path = project_root / journal_path
-    return journal_path
+    return Settings().for_target(target).journal_path
 
 
-def _resolve_plans_dir(project_root: Path) -> Path:
+def _resolve_plans_dir(target: Path) -> Path:
     from config.settings import Settings
 
-    plans_dir = Settings().plans_dir
-    if not plans_dir.is_absolute():
-        plans_dir = project_root / plans_dir
-    return plans_dir
+    return Settings().for_target(target).plans_dir
 
 
 def _fmt_journal_entry(entry: dict) -> str:
@@ -1112,15 +1121,15 @@ class JournalScreen(ModalScreen[None]):
         ("u", "undo", "Undo last"),
     ]
 
-    def __init__(self, project_root: Path) -> None:
+    def __init__(self, target: Path) -> None:
         super().__init__()
-        self._project_root = project_root
+        self._target = target
         self._status = ""
 
     def compose(self) -> ComposeResult:
         from server.journal import all_entries
 
-        journal_path = _resolve_journal_path(self._project_root)
+        journal_path = _resolve_journal_path(self._target)
         entries = all_entries(journal_path) if journal_path.is_file() else []
 
         with Container(id="journal-dialog"):
@@ -1145,8 +1154,8 @@ class JournalScreen(ModalScreen[None]):
     async def action_undo(self) -> None:
         from server.tools import undo_last
 
-        journal_path = _resolve_journal_path(self._project_root)
-        plans_dir = _resolve_plans_dir(self._project_root)
+        journal_path = _resolve_journal_path(self._target)
+        plans_dir = _resolve_plans_dir(self._target)
         result = undo_last(journal_path, plans_dir)
         if result.get("undone") is not None:
             self._status = "[green]Undone the last operation.[/green]"
@@ -1158,6 +1167,20 @@ class JournalScreen(ModalScreen[None]):
 # ── Organizer screen ──────────────────────────────────────────────────────────
 
 
+def _quarantine_basename() -> str:
+    """Basename of the configured quarantine dir, for discovery-hiding (P2).
+
+    Falls back to the default name on any settings error — this only feeds a
+    display nicety (the starter-pane overview), never a safety guard.
+    """
+    from config.settings import Settings
+
+    try:
+        return Settings().quarantine_dir.name
+    except Exception:
+        return "_quarantine"
+
+
 def _directory_overview(target: Path, max_entries: int = 5000) -> str:
     """Code-generated, deterministic one-glance summary of a directory (L3).
 
@@ -1167,11 +1190,13 @@ def _directory_overview(target: Path, max_entries: int = 5000) -> str:
     ``N+``). Shown as the opening telcontar turn before ANALYZE so the user can
     steer the run instead of it auto-organizing.
     """
+    hidden_names = {".organizer", _quarantine_basename()}
     file_count = 0
     dir_count = 0
     ext_counts: dict[str, int] = {}
     truncated = False
     for _root, dirs, files in os.walk(target):
+        dirs[:] = [d for d in dirs if d not in hidden_names]
         dir_count += len(dirs)
         for name in files:
             if file_count >= max_entries:
@@ -1538,7 +1563,7 @@ class OrganizerScreen(Screen):
             return
         log.clear()
         try:
-            journal_path = _resolve_journal_path(_PROJECT_ROOT)
+            journal_path = _resolve_journal_path(self._target)
             entries = all_entries(journal_path) if journal_path.is_file() else []
         except Exception:
             # A config/read error must never break the screen — just show nothing.
@@ -1563,8 +1588,7 @@ class OrganizerScreen(Screen):
             self._add_turn("telcontar", f"[dim italic]{phrase}[/dim italic]")
 
     def action_view_journal(self) -> None:
-        project_root = Path(__file__).resolve().parent.parent
-        self.app.push_screen(JournalScreen(project_root))
+        self.app.push_screen(JournalScreen(self._target))
 
     async def _agent_worker(self, instructions: str | None = None) -> None:
         from config.settings import load as load_settings
@@ -1572,7 +1596,7 @@ class OrganizerScreen(Screen):
         from host.llm import make_client
 
         try:
-            settings = load_settings()
+            settings = load_settings().for_target(self._target)
         except Exception as exc:
             self._add_turn("telcontar", f"[bold red]Config error:[/bold red] {_fmt_exc(exc)}")
             self._set_status("Error — check settings")
@@ -1992,24 +2016,24 @@ class StartupScreen(Screen):
 
     @on(Button.Pressed, "#query-btn")
     def _query(self) -> None:
-        # Query mode runs over the project-scoped registry (resolved from
-        # settings, relative paths are anchored at the project root). The target
-        # directory is optional here and used only as a display label.
-        from config.settings import load as load_settings
+        # Query mode runs over per-directory memory (P2): the selected folder
+        # must have a `.organizer` at its root, or in a parent folder (a
+        # subfolder of a previously-organized tree still resolves to that
+        # tree's memory).
+        target = self._get_target()
+        if target is None or not target.is_dir():
+            self._show_error("Please choose a folder to query.")
+            return
 
-        try:
-            settings = load_settings()
-        except Exception as exc:
-            self._show_error(f"Config error: {_fmt_exc(exc)}")
+        organizer_root = _find_organizer_root(target)
+        if organizer_root is None:
+            self._show_error(
+                f"No analyzed corpus found in {target} or any parent folder. "
+                "Run Organize first."
+            )
             return
-        registry = settings.registry_path
-        if not registry.is_absolute():
-            registry = _PROJECT_ROOT / registry
-        if not registry.is_file():
-            self._show_error(f"No analyzed corpus yet (missing {registry}). Run Organize first.")
-            return
-        target = self._get_target() or _PROJECT_ROOT
-        self.app.push_screen(QueryScreen(target))
+
+        self.app.push_screen(QueryScreen(organizer_root))
 
 
 # ── App ───────────────────────────────────────────────────────────────────────

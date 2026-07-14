@@ -71,8 +71,11 @@ file in the batch, under their own tool name (`read_file_batch`/`extract_text_ba
 **Key point for reviewers:** **[Partially remediated — 2026-07-07, see P0 #2]** the
 target directory is now a real egress boundary in the normal case: `check_within_root`
 confines `read_file`/`extract_text`/`compare_documents` (and every other path-taking
-tool) to `target_dir` plus the server's own `.organizer`/quarantine working directory,
-even when `ALLOWLIST_DIRS` is unset. This holds whenever a `target_dir` is actually
+tool) to `target_dir` plus the server's own working directory, even when
+`ALLOWLIST_DIRS` is unset. As of per-directory memory (P2), `target_dir` is also
+where the run's own `.organizer`/quarantine folders physically live, so this
+boundary and the run's memory now coincide rather than the memory sitting at a
+separate, always-in-bounds server working directory. This holds whenever a `target_dir` is actually
 set — which is every real organize or query session the TUI launches (`mcp_session`
 always passes one through). There is no ordinary code path where `target_dir` is
 `None` and the guard silently opens up; the fallback (roots = server cwd only) is
@@ -197,8 +200,9 @@ the agent:
   `propose_create_file`/`propose_update_file`/`propose_create_dir` are also
   `check_within_root`-checked, so "anywhere" is no longer literal — a target like the
   Windows Startup folder is now rejected outright unless it happens to fall inside
-  `target_dir` or the server's own working directory (where `.organizer/journal.jsonl`,
-  `registry.json`, and the plan files legitimately live, and so remain in-bounds). The
+  `target_dir` — where, as of per-directory memory (P2), `.organizer/journal.jsonl`,
+  `registry.json`, and the plan files themselves now legitimately live per run — or
+  the server's own working directory, so both remain in-bounds. The
   residual risk is that a compromised agent can still get an in-bounds plan *approved*
   by pairing it with a misleading rationale — see the next bullet and S4.
 - **Exfiltrate other files** — read a secret, then smuggle it into a new filename, a

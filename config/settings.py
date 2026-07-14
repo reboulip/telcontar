@@ -85,6 +85,34 @@ class Settings(BaseSettings):
             return [self.target_dir]
         return []
 
+    def for_target(self, target: Path) -> "Settings":
+        """Rebase this run's memory paths onto ``target`` (P2, per-directory
+        memory): each `.organizer`/quarantine path becomes absolute, anchored at
+        the target directory, so a run's journal/registry/plans/etc. live inside
+        the directory being organized rather than the project root. Absolute
+        paths (an explicit override) pass through unchanged. `profiles_dir` (a
+        cross-corpus, project-level convention, not per-run memory) is
+        deliberately left untouched.
+        """
+        resolved = target.resolve()
+
+        def _rebase(p: Path) -> Path:
+            return p if p.is_absolute() else resolved / p
+
+        return self.model_copy(
+            update={
+                "target_dir": resolved,
+                "quarantine_dir": _rebase(self.quarantine_dir),
+                "journal_path": _rebase(self.journal_path),
+                "events_path": _rebase(self.events_path),
+                "plans_dir": _rebase(self.plans_dir),
+                "registry_path": _rebase(self.registry_path),
+                "graph_path": _rebase(self.graph_path),
+                "archive_path": _rebase(self.archive_path),
+                "egress_path": _rebase(self.egress_path),
+            }
+        )
+
 
 # ── Public helpers ─────────────────────────────────────────────────────────────
 
@@ -103,6 +131,9 @@ def load() -> Settings:
         raise ValueError(
             "LLM endpoint not configured. Launch telcontar and complete the setup wizard."
         )
+
+    if settings.target_dir is not None:
+        settings = settings.for_target(settings.target_dir)
 
     return settings
 

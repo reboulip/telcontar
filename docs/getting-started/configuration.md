@@ -22,10 +22,10 @@ The reference below is for **advanced or developer use**: env vars and a project
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `APPROVAL_MODE` | no | `always` | When to require user approval. See [Approval Modes](../user-guide/approval-modes.md). |
-| `TARGET_DIR` | no | *(unset)* | The directory being organized this run. Not meant to be set by hand — the host sets it automatically (as a subprocess env var) whenever it launches an organize or query session, so the MCP server can confine every path-taking tool to it. Every path-taking tool call is checked against `TARGET_DIR` plus the server's own working directory (where `.organizer/` and the quarantine dir live) via `check_within_root`; a path outside both is rejected regardless of `ALLOWLIST_DIRS`. |
+| `TARGET_DIR` | no | *(unset)* | The directory being organized this run. Not meant to be set by hand — the host sets it automatically (as a subprocess env var) whenever it launches an organize or query session, so the MCP server can confine every path-taking tool to it. Every path-taking tool call is checked against `TARGET_DIR` plus the server's own working directory via `check_within_root`; a path outside both is rejected regardless of `ALLOWLIST_DIRS`. As of per-directory memory, `TARGET_DIR` is also where `.organizer/` and the quarantine dir physically live for the run (see [Persistent state locations](#persistent-state-locations) below) — `Settings.for_target(target)` rebases all the memory paths below onto it whenever `TARGET_DIR` is set, which is every real organize/query session. |
 | `QUARANTINE_DIR` | no | `_quarantine` | Relative path (from the target directory) where clutter files are moved. Never deleted. |
-| `JOURNAL_PATH` | no | `.organizer/journal.jsonl` | Append-only undo journal (file operations, drives `undo_last`). Relative to the project root. |
-| `EVENTS_PATH` | no | `.organizer/events.jsonl` | Append-only project event journal (narrative log, drives `create_event` / `list_events`). Relative to the project root. |
+| `JOURNAL_PATH` | no | `.organizer/journal.jsonl` | Append-only undo journal (file operations, drives `undo_last`). Relative to the target directory being organized (rebased there per run — an explicit absolute override passes through unchanged). |
+| `EVENTS_PATH` | no | `.organizer/events.jsonl` | Append-only project event journal (narrative log, drives `create_event` / `list_events`). Relative to the target directory being organized (same rebasing as `JOURNAL_PATH`). |
 
 ### Domain profile
 
@@ -38,9 +38,9 @@ The reference below is for **advanced or developer use**: env vars and a project
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `REGISTRY_PATH` | no | `.organizer/registry.json` | Path to the persistent document registry (content-addressed, sha256-keyed). |
-| `GRAPH_PATH` | no | `.organizer/graph.json` | Path where the knowledge graph is persisted. Rebuilt on demand by `build_graph`; read without rebuilding by `get_graph`. |
-| `ARCHIVE_PATH` | no | `.organizer/archive.jsonl` | Append-only archive log: records every document withdrawn from active memory via `archive_document` (what was archived, why, and where the file moved). |
+| `REGISTRY_PATH` | no | `.organizer/registry.json` | Path to the persistent document registry (content-addressed, sha256-keyed). Relative to the target directory being organized (same rebasing as `JOURNAL_PATH`). |
+| `GRAPH_PATH` | no | `.organizer/graph.json` | Path where the knowledge graph is persisted. Rebuilt on demand by `build_graph`; read without rebuilding by `get_graph`. Relative to the target directory being organized (same rebasing as `JOURNAL_PATH`). |
+| `ARCHIVE_PATH` | no | `.organizer/archive.jsonl` | Append-only archive log: records every document withdrawn from active memory via `archive_document` (what was archived, why, and where the file moved). Relative to the target directory being organized (same rebasing as `JOURNAL_PATH`). |
 
 ### Egress / extraction
 
@@ -50,7 +50,7 @@ The reference below is for **advanced or developer use**: env vars and a project
 | `ALLOWLIST_DIRS` | no | `""` | JSON array of absolute directory paths, e.g. `["C:/Users/me/docs"]`. When set, telcontar can only read content from these paths for `read_file`/`extract_text`/`compare_documents` and the batch forms `read_file_batch`/`extract_text_batch` — a stricter, explicit bound that replaces (not merges with) the default. Leave blank and it now defaults to `[TARGET_DIR]` rather than "no restriction" — narrower than the always-on `TARGET_DIR` + server-cwd confinement described above, which still applies independently to every other path-taking tool. |
 | `MAX_EXTRACT_FILE_BYTES` | no | `200000000` | Input-size cap (bytes) for `extract_text`/`compare_documents` (and `extract_text_batch`, per file). Files larger than this are rejected before `markitdown` ever runs, with a `ValueError`. S5 hardening — see [Security Model](../developer/security-model.md). |
 | `MAX_EXTRACT_TIMEOUT_SECS` | no | `30` | Wall-clock timeout (seconds) for the `markitdown` parse itself, run in a worker thread so it works cross-platform (including Windows). A parse that exceeds this raises `TimeoutError`. |
-| `EGRESS_PATH` | no | `.organizer/egress.jsonl` | Append-only audit log: one entry (path, size in bytes, tool, timestamp) per `read_file`/`extract_text`/`compare_documents` call — and, per successful file, per `read_file_batch`/`extract_text_batch` call — recording what content was sent to the LLM endpoint. Not exposed as an MCP tool — open the file directly to audit a run. S8 hardening — see [Security Model](../developer/security-model.md). |
+| `EGRESS_PATH` | no | `.organizer/egress.jsonl` | Append-only audit log: one entry (path, size in bytes, tool, timestamp) per `read_file`/`extract_text`/`compare_documents` call — and, per successful file, per `read_file_batch`/`extract_text_batch` call — recording what content was sent to the LLM endpoint. Not exposed as an MCP tool — open the file directly to audit a run. Relative to the target directory being organized (same rebasing as `JOURNAL_PATH`). S8 hardening — see [Security Model](../developer/security-model.md). |
 | `EGRESS_ALLOW_EXTERNAL_SINKS` | no | `false` | Allow non-local output sinks (e.g. a MediaWiki MCP integration). The built-in `local_markdown` sink is always allowed regardless of this flag. Set to `true` only when you have connected a separate MCP sink integration and want its name listed in the profile's `[sinks] default`. |
 
 ---
@@ -82,16 +82,25 @@ Telcontar uses the same code path for Azure and Mammouth — only the `base_url`
 
 ## Persistent state locations
 
-Telcontar writes its state under `.organizer/` in the **project root** (not the target directory):
+Telcontar's memory is **per-directory**: each run's `.organizer/` state lives *inside the directory being organized* (`TARGET_DIR`), not the project root — so organizing several unrelated folders keeps each one's registry, journal, and plans separate. This is handled by `Settings.for_target(target)`: whenever `TARGET_DIR` is set (every real organize/query session), it rebases each of the paths below onto `target.resolve()`; an explicitly absolute path (a manual override) passes through unchanged instead of being rebased.
 
 ```
-.organizer/
-├── plans/          # One JSON file per plan
-├── journal.jsonl   # Append-only undo log (file operations)
-├── events.jsonl    # Append-only project event journal (narrative log)
-├── archive.jsonl   # Append-only archive log (why a document left active memory)
-├── registry.json   # Document memory (sha256 → metadata)
-└── graph.json      # Knowledge graph (derived from registry + events; rebuilt on demand)
+<target directory>/
+├── .organizer/
+│   ├── plans/          # One JSON file per plan
+│   ├── journal.jsonl   # Append-only undo log (file operations)
+│   ├── events.jsonl    # Append-only project event journal (narrative log)
+│   ├── archive.jsonl   # Append-only archive log (why a document left active memory)
+│   ├── egress.jsonl    # Append-only audit log of content sent to the LLM endpoint
+│   ├── registry.json   # Document memory (sha256 → metadata)
+│   └── graph.json      # Knowledge graph (derived from registry + events; rebuilt on demand)
+└── _quarantine/         # Quarantined files (QUARANTINE_DIR)
 ```
 
-These files are gitignored by default and survive between runs.
+Both `.organizer/` and the quarantine folder are hidden from the agent's own directory discovery (`walk_tree`) so it never proposes moving or quarantining its own memory — the quarantine folder is deliberately still shown in the written `INDEX.md`, since a human reviewing results should be able to see it.
+
+`PROFILES_DIR` and `.organizer/NAMING.md` are the exception: they are cross-corpus, project-level conventions rather than per-run memory, and are deliberately **not** rebased — they always resolve relative to telcontar's own project root regardless of which directory you're organizing.
+
+These files survive between runs. If the target directory is itself a git repository, add your own `.organizer/` and `_quarantine/` entries to its `.gitignore` if you don't want them tracked — telcontar's own `.gitignore` only covers its project root, not directories you organize. There is no migration path for `.organizer` folders created at the project root by a pre-per-directory-memory version of telcontar — a fresh run against a new target simply starts that target's memory from scratch.
+
+Query mode resolves which memory to use by walking up from the folder you select until it finds a `.organizer` — so picking a subfolder of a previously-organized tree still resolves to that tree's memory.

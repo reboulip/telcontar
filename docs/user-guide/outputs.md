@@ -1,6 +1,6 @@
 # Outputs
 
-After organizing a directory, telcontar writes three output files **into the target directory** and maintains its own state under `.organizer/` in the project root.
+After organizing a directory, telcontar writes three output files **into the target directory** and maintains its own state under `.organizer/`, also inside the target directory (memory is per-directory — see [Configuration](../getting-started/configuration.md#persistent-state-locations)).
 
 ---
 
@@ -75,7 +75,7 @@ These files are produced by `write_folder_readme` during the SYNTHESIZE phase. T
 
 ## State files (in `.organizer/`)
 
-These live in the **project root**, not the target directory. They persist across runs.
+These live **inside the target directory** you organized (`<target>/.organizer/`), one memory per directory — not the telcontar project root. They persist across runs, and Query mode finds them by walking up from the folder you select until it finds a `.organizer`.
 
 ### `.organizer/registry.json`
 

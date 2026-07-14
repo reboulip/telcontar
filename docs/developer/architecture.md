@@ -117,10 +117,12 @@ than failing the whole call. `_confinement_roots(cfg)` builds the allowed roots 
 `[settings.target_dir, Path.cwd()]` (target_dir omitted when unset). `target_dir`
 is populated from a `TARGET_DIR` env var that `host/agent.py`'s `mcp_session` sets
 on the server subprocess whenever a `target` is passed in — i.e. on every real
-organize (`run_agent`) or query (`run_query`) session — and `Path.cwd()` is
-included because the server always runs with its cwd set to the project root,
-where `.organizer/*` and the quarantine dir live regardless of which directory is
-being organized. Both `.resolve()`-normalize the candidate path first, so an
+organize (`run_agent`) or query (`run_query`) session — and `Path.cwd()` remains
+in the root list as a floor for the case `target_dir` is unset. As of P2 (below),
+`.organizer/*` and the quarantine dir themselves live *inside* `target_dir` for
+every real run, so `target_dir` is where the confinement boundary and the run's
+own memory now coincide; `Path.cwd()` no longer plays a special role in housing
+them. Both `.resolve()`-normalize the candidate path first, so an
 absolute escape and a `..` traversal are rejected identically. For the tools
 that already run `check_allowlist` (`read_file`, `extract_text`,
 `compare_documents`, and the batch forms `read_file_batch`/`extract_text_batch`),
@@ -161,6 +163,20 @@ as the singular `compute_checksum` — a checksum is not untrusted content.
 `walk_tree(path, max_depth=3)` complements `list_dir` (a single level): it returns a bounded recursive directory listing, where each directory entry carries a nested `children` list until `max_depth` is reached — deeper directories come back with `children: null` and `truncated: true`, signalling the agent to call `walk_tree` again on that subpath to descend further. Files carry `size`/`mtime` like `list_dir`; unreadable entries are marked `type: "unknown"`.
 
 The ANALYZE phase's system prompt instructs the agent to survey the whole tree with `walk_tree` first, rather than stopping at the top level, so documents nested in subfolders are discovered in one pass. As of O3, the prompt makes the re-walk of a `truncated` subpath mandatory ("you MUST call walk_tree again... repeat until no truncated directory remains") rather than conditional, and states explicitly that full coverage is required — the agent must never sample a subset of the discovered documents. The ORGANIZE phase's prompt correspondingly permits the agent to redesign the *existing* nested layout entirely, not just reorganize what already sits at the root.
+
+`server/tools.py`'s `walk_tree` implementation takes an optional `hidden_names: frozenset[str] | None` (P2) that excludes entries by basename at every level; the `server/main.py` MCP wrapper always passes `{".organizer", cfg.quarantine_dir.name}`, so now that both live inside the target directory (see "Per-directory memory (P2)" below), the agent never sees or proposes moving/quarantining its own memory. `list_dir` (the single-level tool) is unaffected — it has no `hidden_names` parameter.
+
+### Per-directory memory (P2)
+
+Each run's memory — the undo journal, event journal, plans, document registry, knowledge graph, archive log, egress log, and the quarantine folder — lives inside the directory being organized (`<target>/.organizer/...`, `<target>/_quarantine`) rather than at telcontar's own project root. `Settings.for_target(target)` (`config/settings.py`) is the one place this rebasing happens: it anchors each of `quarantine_dir`, `journal_path`, `events_path`, `plans_dir`, `registry_path`, `graph_path`, `archive_path`, and `egress_path` at `target.resolve()` when the path is relative, and leaves an already-absolute path (an explicit operator override) untouched. `profiles_dir` and `.organizer/NAMING.md` are deliberately *not* rebased — they are cross-corpus, project-level conventions rather than per-run memory.
+
+- **Server:** `config.settings.load()` calls `for_target(settings.target_dir)` whenever `target_dir` is set — which it always is for a real run, since `TARGET_DIR` is set on the server subprocess by `mcp_session` (see [Path confinement](#path-confinement-on-every-path-taking-tool-m2)). The server's own working directory is unchanged (still telcontar's project root); only the settings paths become absolute and target-anchored.
+- **Host:** `host/app.py` re-derives its own settings the same way before starting a run (`load_settings().for_target(self._target)` in `_agent_worker`), and the Journal screen / ops-journal panel / undo action resolve `journal_path`/`plans_dir` against the run's target directory via `_resolve_journal_path`/`_resolve_plans_dir`, both thin wrappers around `Settings().for_target(target)`.
+- **Query mode:** since a `.organizer` no longer has one fixed project-root location, `StartupScreen._query` resolves it by calling `_find_organizer_root(target)`, which walks up from the selected folder through its parent directories until it finds one containing a `.organizer`, or reaches the filesystem root without finding one (in which case the user is asked to run Organize first). This means picking a subfolder of a previously-organized tree still resolves to that tree's memory.
+- **Discovery hiding:** because `.organizer`/quarantine now live physically inside the organized tree, they must be hidden from the agent so it doesn't propose moving or quarantining its own memory — see `walk_tree`'s `hidden_names` above. `write_index`'s output-file skip set (`_SKIP` in `server/tools.py`) also now excludes `.organizer`, so it never appears in the written `INDEX.md`; the quarantine folder deliberately stays *visible* there, since a human reviewing results should be able to see it — only agent-facing discovery hides it. `host/app.py`'s starter-pane `_directory_overview` applies the same two-name hide to its own local `os.walk`.
+- **No migration:** there is no migration path for a pre-existing project-root `.organizer` folder from before this change — a fresh run against a new target simply starts that target's memory from scratch.
+
+This does not change the security model — `target_dir` was already the confinement boundary enforced by `check_within_root` (M2); this only changes where `.organizer`/quarantine physically resolve to *within* that already-covered boundary. See [Security Model](security-model.md) for the confinement mechanism itself.
 
 ### Batch document-content tools (O1)
 
@@ -221,6 +237,8 @@ Telcontar maintains three append-only JSONL logs — each with a different purpo
 | **Archive log** | `ARCHIVE_PATH` (`.organizer/archive.jsonl`) | Documents withdrawn from active memory: why and where the file went | `list_archived` |
 
 `archive_document` writes to both the undo journal (the file move, so it stays reversible) and the archive log (the reason a document left memory). These two writes serve different purposes and are never merged.
+
+The paths above are relative defaults; as of P2, `Settings.for_target` anchors them at the run's target directory rather than telcontar's project root — see [Per-directory memory (P2)](#per-directory-memory-p2) above.
 
 ### Post-analysis clarification checkpoint
 
@@ -353,7 +371,7 @@ config/settings.py  (Pydantic Settings)
                          target_dir)
 ```
 
-Both host and server load `Settings` independently at startup — there is no shared singleton across the process boundary. The server's `_get_settings()` is lazy-initialized and cached per process. `target_dir` differs from the other server-side settings in one way: it isn't read from `.env` in practice, it's set per-run by `host/agent.py`'s `mcp_session`, which passes it to the server subprocess as a `TARGET_DIR` environment variable (see [Path confinement](#path-confinement-on-every-path-taking-tool-m2) above).
+Both host and server load `Settings` independently at startup — there is no shared singleton across the process boundary. The server's `_get_settings()` is lazy-initialized and cached per process. `target_dir` differs from the other server-side settings in one way: it isn't read from `.env` in practice, it's set per-run by `host/agent.py`'s `mcp_session`, which passes it to the server subprocess as a `TARGET_DIR` environment variable (see [Path confinement](#path-confinement-on-every-path-taking-tool-m2) above). As of P2, `config.settings.load()` also calls `Settings.for_target(target_dir)` whenever `target_dir` is set, rebasing `plans_dir`/`journal_path`/`events_path`/`registry_path`/`graph_path`/`archive_path`/`egress_path`/`quarantine_dir` onto it — see [Per-directory memory (P2)](#per-directory-memory-p2) above.
 
 ---
 

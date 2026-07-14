@@ -51,7 +51,9 @@ def list_dir(path: str) -> dict:
     return {"path": str(p), "entries": entries}
 
 
-def walk_tree(path: str, max_depth: int = 3) -> dict:
+def walk_tree(
+    path: str, max_depth: int = 3, hidden_names: frozenset[str] | None = None
+) -> dict:
     """Recursively enumerate a directory tree up to ``max_depth`` levels deep.
 
     Complements ``list_dir`` (a single level) for the ANALYZE pass: the agent can
@@ -62,12 +64,18 @@ def walk_tree(path: str, max_depth: int = 3) -> dict:
     ``children: null`` and ``truncated: true`` so the agent knows more lies below
     (and can call ``walk_tree`` again on that subpath). Files carry ``size`` and
     ``mtime`` like ``list_dir``; unreadable entries are marked ``type: "unknown"``.
+
+    ``hidden_names`` (P2) excludes entries by basename at every level — used to
+    keep a run's own `.organizer` memory and quarantine folder out of discovery,
+    now that both live inside the target directory.
     """
     p = Path(path)
     if not p.is_dir():
         raise ValueError(f"Not a directory: {path}")
     if max_depth < 1:
         raise ValueError(f"max_depth must be >= 1, got {max_depth}")
+
+    hidden = hidden_names or frozenset()
 
     def _walk(directory: Path, depth: int) -> list[dict]:
         try:
@@ -76,6 +84,8 @@ def walk_tree(path: str, max_depth: int = 3) -> dict:
             return []
         entries: list[dict] = []
         for entry in children:
+            if entry.name in hidden:
+                continue
             try:
                 st = entry.stat()
                 if entry.is_dir():
@@ -832,8 +842,10 @@ def write_index(target_dir: str, journal_path: Path) -> dict:
     now = datetime.now(timezone.utc)
     generated = now.isoformat(timespec="seconds")
 
-    # Skip output files we're about to write
-    _SKIP = {"INDEX.md", "manifest.json", "SUMMARY.md"}
+    # Skip output files we're about to write, and the run's own memory folder
+    # (P2) — the quarantine folder stays visible here, it's meaningful to a
+    # human reviewing results, just hidden from agent discovery (walk_tree).
+    _SKIP = {"INDEX.md", "manifest.json", "SUMMARY.md", ".organizer"}
 
     files: list[dict] = []
     dirs: list[str] = []

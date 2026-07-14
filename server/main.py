@@ -99,7 +99,8 @@ def walk_tree(path: str, max_depth: int = 3) -> dict:
     again on that subpath to go deeper)."""
     cfg = _get_settings()
     _check_within_root(path, cfg)
-    return tools.walk_tree(path, max_depth)
+    hidden = frozenset({".organizer", cfg.quarantine_dir.name})
+    return tools.walk_tree(path, max_depth, hidden_names=hidden)
 
 
 @mcp.tool()

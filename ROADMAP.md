@@ -264,7 +264,7 @@ hard-stopping plan execution.
       first, then file ops, preserving relative order within each group; the `move`
       executor creates missing destination parents so a deselected or failed
       `create_dir` can no longer cascade into a hard stop.
-- [ ] P2 · Per-directory `.organizer` memory — `Settings.for_target(target)` rebases
+- [x] P2 · Per-directory `.organizer` memory — `Settings.for_target(target)` rebases
       every relative memory path (journal, events, plans, registry, graph, archive,
       egress, `_quarantine`) onto the target dir; applied in `config.settings.load()`
       when `TARGET_DIR` is set (server) and explicitly in the host worker/screens;

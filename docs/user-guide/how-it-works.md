@@ -206,7 +206,7 @@ The gate is controlled by `APPROVAL_MODE`. See [Approval Modes](approval-modes.m
 
 ## Persistence
 
-All state lives under `.organizer/` in the **project root** (not the target directory):
+All state lives under `.organizer/` **inside the target directory** you organized — memory is per-directory, so each organized folder keeps its own registry, plans, and journals. (`PROFILES_DIR` and `.organizer/NAMING.md` are the exception — they stay project-level, since they're cross-corpus conventions rather than per-run memory.)
 
 | File | What it stores |
 |---|---|
@@ -266,11 +266,11 @@ A couple of things carry over differently on a continuation:
 
 ## Interactive query mode
 
-After a corpus has been analyzed (registry exists), telcontar offers a **read-only query mode** where you can ask natural-language questions about it without reorganizing anything.
+After a corpus has been analyzed (its `.organizer/` memory exists), telcontar offers a **read-only query mode** where you can ask natural-language questions about it without reorganizing anything.
 
 ### How to start query mode
 
-- From the **startup screen**, press **Query** (the registry must already exist at `REGISTRY_PATH`).
+- From the **startup screen**, press **Query**. The selected folder — or one of its parent folders — must contain a `.organizer/` from a previous Organize run; telcontar walks up from the folder you picked until it finds one, so choosing a subfolder of a previously-organized tree still resolves to that tree's memory. If none is found, an error asks you to run Organize first.
 - From the **Organizer screen**, press **g** once organizing completes.
 
 ### What happens

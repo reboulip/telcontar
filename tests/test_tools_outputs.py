@@ -59,6 +59,16 @@ class TestWriteIndex:
         assert "manifest.json" not in tree_section
         assert "SUMMARY.md" not in tree_section
 
+    def test_index_md_excludes_organizer_memory_folder(self, tmp_path: Path) -> None:
+        _make_tree(tmp_path)
+        (tmp_path / ".organizer").mkdir()
+        (tmp_path / ".organizer" / "registry.json").write_text("{}")
+        journal_path = tmp_path / ".organizer" / "journal.jsonl"
+        write_index(str(tmp_path), journal_path)
+        content = (tmp_path / "INDEX.md").read_text(encoding="utf-8")
+        tree_section = content.split("## Changes")[0]
+        assert ".organizer" not in tree_section
+
     def test_manifest_json_is_valid_and_has_files(self, tmp_path: Path) -> None:
         _make_tree(tmp_path)
         journal_path = tmp_path / ".organizer" / "journal.jsonl"

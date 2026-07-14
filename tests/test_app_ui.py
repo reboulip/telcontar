@@ -475,6 +475,82 @@ async def test_startup_screen_escape_quits(monkeypatch: pytest.MonkeyPatch, tmp_
         assert app._exit is True
 
 
+# ── P2: per-directory memory — Query mode target resolution ───────────────────
+
+
+def test_find_organizer_root_finds_organizer_at_start(tmp_path: Path) -> None:
+    from host.app import _find_organizer_root
+
+    (tmp_path / ".organizer").mkdir()
+
+    assert _find_organizer_root(tmp_path) == tmp_path.resolve()
+
+
+def test_find_organizer_root_walks_up_to_parent(tmp_path: Path) -> None:
+    from host.app import _find_organizer_root
+
+    (tmp_path / ".organizer").mkdir()
+    sub = tmp_path / "docs" / "2024"
+    sub.mkdir(parents=True)
+
+    assert _find_organizer_root(sub) == tmp_path.resolve()
+
+
+def test_find_organizer_root_returns_none_when_absent(tmp_path: Path) -> None:
+    from host.app import _find_organizer_root
+
+    sub = tmp_path / "docs"
+    sub.mkdir()
+
+    assert _find_organizer_root(sub) is None
+
+
+async def test_query_button_shows_error_when_no_organizer_found(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setattr("config.settings.is_configured", lambda: True)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(StartupScreen())
+        await pilot.pause()
+        screen = app.screen
+        screen._on_dir_selected(SimpleNamespace(path=tmp_path))
+        await pilot.click("#query-btn")
+        await pilot.pause()
+        assert isinstance(app.screen, StartupScreen)
+        assert "No analyzed corpus found" in str(
+            screen.query_one("#error-label", Label).content
+        )
+
+
+async def test_query_button_resolves_organizer_root_from_parent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setattr("config.settings.is_configured", lambda: True)
+
+    (tmp_path / ".organizer").mkdir()
+    sub = tmp_path / "docs"
+    sub.mkdir()
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(StartupScreen())
+        await pilot.pause()
+        screen = app.screen
+        # Select a subfolder of the previously-organized tree — the ancestor's
+        # `.organizer` should still be found and used as the query target.
+        screen._on_dir_selected(SimpleNamespace(path=sub))
+        await pilot.click("#query-btn")
+        await pilot.pause()
+        assert isinstance(app.screen, QueryScreen)
+        assert app.screen._target == tmp_path.resolve()
+
+
 async def test_query_screen_routes_tool_events_to_timeline(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
