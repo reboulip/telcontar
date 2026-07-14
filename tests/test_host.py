@@ -2364,7 +2364,7 @@ async def test_analyze_new_documents_rejoins_by_index_not_by_model_value(tmp_pat
         )
     )
 
-    result = await _analyze_new_documents(
+    await _analyze_new_documents(
         session=session,
         llm=llm,
         settings=_settings(tmp_path),
