@@ -232,7 +232,21 @@ Each call gets its own fresh per-call turn budget — a continuation does not sh
 
 The whole per-call turn loop is now wrapped in `try`/`except`: an unhandled exception no longer propagates out of `run_agent_loop`. It is caught, and any tool call belonging to the most recent assistant message that is still missing a matching tool-result message (e.g. an earlier call in the same batch already succeeded and appended its tool message before a later one raised) is answered with a synthesized `{"error": ...}` tool-response message, so `messages` stays a valid, resumable conversation for a follow-up call. An `"error"` `AgentEvent` fires and `(error_text, messages)` is returned instead of the exception propagating.
 
-`host/app.py`'s `OrganizerScreen` was restructured off the one-shot `run_agent` convenience call onto `mcp_session(...)` + `run_agent_loop(...)` directly (mirroring `QueryScreen._query_worker`'s established pattern), so **one MCP session stays open across the initial automated run and all follow-up chat turns** instead of being torn down after the first run. `self._history` carries the conversation across calls; a bottom-docked `#organize-input` `Input` (disabled until the run reaches its first terminal state, re-enabled after every subsequent chat turn, disabled again while a turn is actively running) feeds an `asyncio.Queue[str]` that the worker's loop pulls from, calling `run_agent_loop(..., history=self._history, message=message)` again for each submitted message. `_note_terminal_state()` fires the "press g / keep chatting" cue and the desktop notification only on the *first* terminal state (`self._done`), not on every chat-turn completion. The `g` keybinding (opens the read-only `QueryScreen`, on its own separate MCP session) is unchanged and still gated on `self._done` — it coexists alongside the in-place chat box: `g` for a clean read-only Q&A session, `#organize-input` for mutating continuations of the same conversation.
+`host/app.py`'s `OrganizerScreen` was restructured off the one-shot `run_agent` convenience call onto `mcp_session(...)` + `run_agent_loop(...)` directly (mirroring `QueryScreen._query_worker`'s established pattern), so **one MCP session stays open across the initial automated run and all follow-up chat turns** instead of being torn down after the first run. `self._history` carries the conversation across calls; a bottom-docked `#organize-input` `Input` feeds an `asyncio.Queue[str]` (`self._messages`) that a submitted message is pushed onto. As of P7 (below), the input is enabled for the entire run rather than only after a terminal state, so this queue is now drained continuously by `run_agent_loop` itself rather than sitting inert until the worker's own resumption loop picks it up; that outer `while True` loop — `await self._messages.get()` then `run_agent_loop(..., history=self._history, message=message, message_queue=self._messages)` — still exists and still runs, but now only ever fires for a message that arrives strictly *after* a `run_agent_loop` call has already returned (i.e. the agent is fully idle and no live call is running to drain the queue itself). `_note_terminal_state()` fires the "press g / keep chatting" cue and the desktop notification only on the *first* terminal state (`self._done`), not on every chat-turn completion. The `g` keybinding (opens the read-only `QueryScreen`, on its own separate MCP session) is unchanged and still gated on `self._done` — it coexists alongside the in-place chat box: `g` for a clean read-only Q&A session, `#organize-input` for mutating continuations of the same conversation.
+
+### Live mid-run chat (P7)
+
+O7 above only let a chat message reach the agent once a `run_agent_loop` call had fully returned — a message typed while the agent was still actively working sat inert in `self._messages` until the whole run stopped. P7 makes the chat box live for the *entire* run instead: `run_agent_loop` gains a trailing `message_queue: asyncio.Queue[str] | None = None` parameter, and a new helper, `_drain_message_queue(message_queue) -> list[str]`, does a non-blocking drain (`queue.get_nowait()` in a loop until `asyncio.QueueEmpty`) — it never blocks the turn loop, and returns `[]` immediately when `message_queue` is `None` (the default, making this fully additive: existing callers that don't pass it get byte-for-byte the old behaviour).
+
+The queue is drained at three points in `run_agent_loop`:
+
+1. **Before the loop's first LLM call**, on a fresh run — catches anything typed during the pre-pass/analyzer phase, which can take a while on a large corpus.
+2. **After every turn's tool-call batch completes**, before the next LLM call — catches a message typed mid-turn.
+3. **When the LLM's response carries no tool calls** — the point that would normally end the run (see the "done" path in the data-flow section below). If the queue is empty here, the run ends exactly as before. If a message is waiting, it's appended as a new user turn and the loop `continue`s instead of returning — so a live chat message can redirect an in-progress run instead of only being picked up after it stops.
+
+Drained messages are appended to `messages` as ordinary `{"role": "user", ...}` turns, the same shape as O7's `message` parameter — the LLM sees no difference between a message injected this way and one appended via a fresh `run_agent_loop(..., message=...)` call.
+
+This mechanism is **independent of and additive to** O7's history/message resume contract: O7 handles a message that arrives after a call has already returned (no live queue exists to drain at that point — the agent is idle), while P7 handles a message that arrives while a call is still running. `host/app.py` wires `message_queue=self._messages` into *both* the initial `run_agent_loop` call and every O7 continuation call, so a continuation stays just as live as the original run — and enables `#organize-input` right at the start of `_agent_worker`, before the first call, rather than only after a terminal state.
 
 ### Knowledge graph
 
@@ -350,6 +364,10 @@ This is the item that wires P4 and P5 into `run_agent_loop` for real, completing
    ORGANIZE-phase user message in place of blank "please organize" instructions;
    the OrganizerScreen starter pane's optional steering instructions, if the user
    typed any, are appended to this same seed message
+5b. Host drains any chat message queued via message_queue since the run started
+    (P7) — catches anything typed during steps 2-4 above — and appends each as
+    a user turn before the first LLM call. The #organize-input chat box is
+    enabled from the very start of the run, not just after it stops
 6. Host calls session.list_tools(denied=ORGANIZE_DENIED_TOOLS) → discovers the
    ORGANIZE-phase toolset, structurally excluding the content-fetching/recording
    tools already used in steps 2-4 (P6); if the caller wired in an
@@ -371,9 +389,11 @@ This is the item that wires P4 and P5 into `run_agent_loop` for real, completing
     tool result still carries (e.g. compare_documents's diff field, in query
     mode only — ORGANIZE mode no longer exposes it) is wrapped in the
     untrusted-content delimiter first (M10)
-12. Steps 8-11 repeat (up to the adaptive turn budget — see above, effectively
-    static for a fresh run since the O5 progress tracker no longer grows once
-    the ORGANIZE loop starts)
+12. Host drains message_queue again (P7) — catches anything typed during this
+    turn's tool calls (step 9-11) — appending each queued message as a user
+    turn; steps 8-11 then repeat (up to the adaptive turn budget — see above,
+    effectively static for a fresh run since the O5 progress tracker no longer
+    grows once the ORGANIZE loop starts)
 13. Once analysis is far enough along, the agent MAY call ask_clarification once with a
     short batch of questions; the host emits a "question" AgentEvent, shows
     ClarificationModal, and feeds the user's answers (or a "proceed with best judgement"
@@ -404,9 +424,9 @@ This is the item that wires P4 and P5 into `run_agent_loop` for real, completing
     calls write_index + write_summary to persist INDEX.md, manifest.json, SUMMARY.md
 18. Agent calls write_folder_readme(path=<folder>, content=<markdown>) once per
     meaningful folder of the organized tree; empty/trivial folders are skipped
-19. Agent sends final text (no tool calls) → loop ends. This is one of three ways the loop can reach a terminal state — the others being an unhandled exception (caught and returned as an error, O7) or the turn budget running out
+19. Agent sends final text (no tool calls) → normally the loop would end here, UNLESS a chat message is waiting in message_queue at this exact instant (P7): if so, the queued message(s) are appended as a user turn and the loop continues from step 8 instead of ending — letting a live chat message redirect an in-progress run. Otherwise, this is one of three ways the loop can reach a terminal state — the others being an unhandled exception (caught and returned as an error, O7) or the turn budget running out
 20. Desktop notification fires and the "press g / keep chatting" cue is shown — but only on this first terminal state (O7)
-21. The MCP session from step 1 stays open. The host's worker loop waits on the `#organize-input` chat box; each message you type resumes run_agent_loop on the SAME session with (history=<returned from the previous call>, message=<your text>) — back to step 8 directly (steps 2-7 do NOT repeat; no new pre-pass or analysis happens on a continuation), with the same ORGANIZE-only toolset and its own fresh turn budget. An unhandled exception during any of these turns is caught rather than propagating: any tool call left without a matching result is answered with a synthesized {"error": ...} entry, an "error" AgentEvent fires, and the conversation history stays valid for the next chat message
+21. The MCP session from step 1 stays open, and the #organize-input chat box (live since the start of the run, P7) stays enabled. The host's worker loop waits on `#organize-input` for any message that arrives strictly AFTER run_agent_loop has already returned (i.e. the agent is fully idle and no live call remains to drain the queue itself) — each such message resumes run_agent_loop on the SAME session with (history=<returned from the previous call>, message=<your text>, message_queue=<the same queue>) — back to step 8 directly (steps 2-7 do NOT repeat; no new pre-pass or analysis happens on a continuation), with the same ORGANIZE-only toolset, its own fresh turn budget, and the same live-chat draining (step 5b/12/19) as the initial run. An unhandled exception during any of these turns is caught rather than propagating: any tool call left without a matching result is answered with a synthesized {"error": ...} entry, an "error" AgentEvent fires, and the conversation history stays valid for the next chat message
 ```
 
 ---

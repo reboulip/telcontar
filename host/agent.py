@@ -6,6 +6,7 @@ approval so this module can be exercised in plain pytest tests.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sys
@@ -1236,6 +1237,26 @@ def _build_digest(prepass_result: PrepassResult, analysis_result: dict[str, Any]
     return "\n".join(lines)
 
 
+# ── Live mid-run chat (P7) ─────────────────────────────────────────────────────
+
+
+def _drain_message_queue(message_queue: "asyncio.Queue[str] | None") -> list[str]:
+    """Non-blocking drain of chat messages queued since the last check (P7).
+
+    Returns them in arrival order, or `[]` immediately if no queue is wired in
+    or nothing is waiting right now — never blocks the turn loop.
+    """
+    if message_queue is None:
+        return []
+    drained: list[str] = []
+    while True:
+        try:
+            drained.append(message_queue.get_nowait())
+        except asyncio.QueueEmpty:
+            break
+    return drained
+
+
 # ── Public entry points ───────────────────────────────────────────────────────
 
 
@@ -1298,6 +1319,7 @@ async def run_agent_loop(
     instructions: str | None = None,
     history: list[dict[str, Any]] | None = None,
     message: str | None = None,
+    message_queue: "asyncio.Queue[str] | None" = None,
 ) -> tuple[str, list[dict[str, Any]]]:
     """Run the GPT-5 tool-calling loop against an already-connected MCP session.
 
@@ -1338,6 +1360,17 @@ async def run_agent_loop(
     tool call left without a matching tool-result message is answered with a
     synthetic error response (so ``messages`` stays valid for a follow-up call),
     and ``(error_text, messages)`` is returned instead.
+
+    ``message_queue`` (P7): when given, chat messages typed while this call is
+    still running are drained non-blockingly and injected as user turns between
+    agent turns — including one drain right before the loop's first LLM call
+    (for anything typed during pre-pass/analysis) and one after every turn's
+    tool dispatch completes. A turn that would otherwise end the run (the LLM
+    responds with no tool calls) instead continues if a message was waiting,
+    so a live chat message can redirect an in-progress run instead of only
+    being picked up after it stops. This is independent of ``history``/
+    ``message`` (O7's separate-invocation resume path for a run that already
+    ended, where no live queue exists) — both can be used together or alone.
     """
     if project_root is None:
         project_root = Path(__file__).resolve().parent.parent
@@ -1427,6 +1460,11 @@ async def run_agent_loop(
             messages.append({"role": "user", "content": message.strip()})
         on_event(AgentEvent("thinking", f"Continuing agent for {target}"))
 
+    # Pick up anything typed while pre-pass/analysis was running, before the
+    # loop's first LLM call (P7).
+    for queued_text in _drain_message_queue(message_queue):
+        messages.append({"role": "user", "content": queued_text})
+
     turn = 0
     try:
         while turn < _analysis_turn_budget(tracker.counts()[1]):
@@ -1443,8 +1481,16 @@ async def run_agent_loop(
             choice = response.choices[0]
             messages.append(choice.message.model_dump(exclude_none=True))
 
-            # No tool calls → agent is finished
+            # No tool calls → agent would be finished, unless a chat message
+            # arrived meanwhile (P7) — inject it and keep going instead of
+            # stopping, so a live message can redirect an in-progress run.
             if not choice.message.tool_calls:
+                queued = _drain_message_queue(message_queue)
+                if queued:
+                    for queued_text in queued:
+                        messages.append({"role": "user", "content": queued_text})
+                    turn += 1
+                    continue
                 final_text = choice.message.content or "Done."
                 on_event(AgentEvent("done", final_text))
                 return final_text, messages
@@ -1499,6 +1545,11 @@ async def run_agent_loop(
                         "content": json.dumps(_wrap_untrusted_content(result, name)),
                     }
                 )
+
+            # Pick up any chat message that arrived while this turn's tool
+            # calls were running, before the next LLM call (P7).
+            for queued_text in _drain_message_queue(message_queue):
+                messages.append({"role": "user", "content": queued_text})
 
             turn += 1
     except Exception as exc:

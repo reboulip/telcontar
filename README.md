@@ -32,7 +32,7 @@ The Textual TUI opens. On first run the **setup wizard** appears; returning user
 - **Query** — open an interactive read-only chat over the already-analyzed corpus (requires the selected folder, or one of its parent folders, to contain a `.organizer/` from a previous Organize run — memory is per-directory, stored inside the organized tree itself).
 - **⚙ Settings** — edit URL, API key, profile, and approval mode at any time (also accessible by pressing `s`).
 
-Once the run reaches a stopping point (done, error, or max-turns), a chat box appears at the bottom of the Organizer screen — type a follow-up message (e.g. "quarantine the drafts too") to resume the same conversation, on the same MCP session, with the same organize toolset (document content stays unavailable, since the corpus was already analyzed). Press **g** instead to jump into a separate read-only query mode over the just-analyzed corpus.
+A chat box at the bottom of the Organizer screen is live for the whole run, not just once it stops — type a message at any point (e.g. "actually, group by year instead") and it's woven into the agent's in-progress work as soon as it's between turns, without waiting for the run to finish first. After the run reaches a stopping point (done, error, or max-turns), the same box keeps working — a follow-up message (e.g. "quarantine the drafts too") resumes the same conversation, on the same MCP session, with the same organize toolset (document content stays unavailable, since the corpus was already analyzed). Press **g** instead to jump into a separate read-only query mode over the just-analyzed corpus.
 
 ## Development
 

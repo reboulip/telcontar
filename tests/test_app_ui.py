@@ -398,6 +398,7 @@ async def test_organizer_screen_groups_tool_events_into_steps(
         instructions=None,
         history=None,
         message=None,
+        message_queue=None,
     ):
         on_event(AgentEvent("tool_call", "list_dir(path='.')"))
         on_event(AgentEvent("tool_result", "{'entries': []}"))
@@ -521,9 +522,7 @@ async def test_query_button_shows_error_when_no_organizer_found(
         await pilot.click("#query-btn")
         await pilot.pause()
         assert isinstance(app.screen, StartupScreen)
-        assert "No analyzed corpus found" in str(
-            screen.query_one("#error-label", Label).content
-        )
+        assert "No analyzed corpus found" in str(screen.query_one("#error-label", Label).content)
 
 
 async def test_query_button_resolves_organizer_root_from_parent(
@@ -1119,6 +1118,7 @@ async def test_organizer_status_bar_shows_token_usage(
         instructions=None,
         history=None,
         message=None,
+        message_queue=None,
     ):
         on_event(AgentEvent("tokens", "12.3K in / 1.0K out", data={"in": 12300, "out": 1000}))
         on_event(AgentEvent("done", "done"))
@@ -1166,6 +1166,7 @@ async def test_organizer_progress_row_hidden_until_first_progress_event(
         instructions=None,
         history=None,
         message=None,
+        message_queue=None,
     ):
         return "done", []
 
@@ -1209,6 +1210,7 @@ async def test_organizer_progress_row_shows_and_updates_on_progress_event(
         instructions=None,
         history=None,
         message=None,
+        message_queue=None,
     ):
         on_event(
             AgentEvent("progress", "Analyzed 3 / 10 documents", data={"analyzed": 3, "total": 10})
@@ -1255,6 +1257,7 @@ async def test_organizer_progress_row_hides_on_done(
         instructions=None,
         history=None,
         message=None,
+        message_queue=None,
     ):
         on_event(
             AgentEvent("progress", "Analyzed 3 / 10 documents", data={"analyzed": 3, "total": 10})
@@ -1300,6 +1303,7 @@ async def test_organizer_progress_row_hides_on_error(
         instructions=None,
         history=None,
         message=None,
+        message_queue=None,
     ):
         on_event(
             AgentEvent("progress", "Analyzed 3 / 10 documents", data={"analyzed": 3, "total": 10})
@@ -1348,6 +1352,7 @@ async def test_organizer_narrates_macro_tasks_in_transcript(
         instructions=None,
         history=None,
         message=None,
+        message_queue=None,
     ):
         on_event(AgentEvent("tool_call", "read_file(path='a')", data={"tool": "read_file"}))
         # Same macro-task → must collapse to one narration turn.
@@ -1420,6 +1425,7 @@ async def test_organizer_narrates_new_propose_tools_as_planning_changes(
         instructions=None,
         history=None,
         message=None,
+        message_queue=None,
     ):
         for tool in new_propose_tools:
             on_event(AgentEvent("tool_call", f"{tool}(...)", data={"tool": tool}))
@@ -1701,9 +1707,14 @@ async def test_ops_journal_empty_then_updates_as_operations_execute(
 # ── O7: resumable chat after a stop ───────────────────────────────────────────
 
 
-async def test_organize_input_disabled_until_first_terminal_state(
+async def test_organize_input_enabled_from_run_start_not_just_terminal_state(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """P7: chat is live for the whole run, not just after it stops — the input
+    must already be enabled while the agent is still working, not only once
+    run_agent_loop returns."""
+    import asyncio
+
     from config.settings import Settings
 
     monkeypatch.setattr(
@@ -1712,7 +1723,12 @@ async def test_organize_input_disabled_until_first_terminal_state(
     )
     monkeypatch.setattr("host.app._send_notification", lambda target: None)
 
+    started = asyncio.Event()
+    release = asyncio.Event()
+
     async def fake_run_agent_loop(**kwargs: object) -> tuple[str, list]:
+        started.set()
+        await release.wait()
         return "done", []
 
     _patch_run_agent_loop(monkeypatch, fake_run_agent_loop)
@@ -1723,6 +1739,11 @@ async def test_organize_input_disabled_until_first_terminal_state(
         await pilot.pause()
         assert app.screen.query_one("#organize-input", Input).disabled is True
         await pilot.click("#proceed-btn")
+        await asyncio.wait_for(started.wait(), timeout=2)
+        await pilot.pause()
+        # Still mid-run (the fake hasn't returned yet) — input is already live.
+        assert app.screen.query_one("#organize-input", Input).disabled is False
+        release.set()
         await pilot.pause()
         await pilot.pause(0.1)
         assert app.screen.query_one("#organize-input", Input).disabled is False

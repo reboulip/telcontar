@@ -289,7 +289,7 @@ hard-stopping plan execution.
       rewrites system-prompt section A ("corpus already analyzed"), removes the
       in-loop `_COST_GATED_BATCH_TOOLS` gate, feeds pre-pass corpus size into the
       turn budget. (requires: P5)
-- [ ] P7 · Live mid-run chat — `run_agent_loop` gains `message_queue`; queued user
+- [x] P7 · Live mid-run chat — `run_agent_loop` gains `message_queue`; queued user
       messages injected as user turns between agent turns; `#organize-input`
       enabled for the whole run. (requires: P6)
 - [ ] P8 · `ask_user` chat checkpoint — merge `ask_clarification`/`propose_options`

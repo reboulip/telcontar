@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
@@ -1689,6 +1690,142 @@ def test_progress_tracker_cost_estimate_uses_max_snippet_chars_cap() -> None:
     assert doc_count == 2
     # small.txt: 400 // 4 = 100; big.txt capped at 4000 // 4 = 1000
     assert tokens == 1100
+
+
+# ── Live mid-run chat (P7) ──────────────────────────────────────────────────────
+
+
+def test_drain_message_queue_returns_none_as_empty_list() -> None:
+    from host.agent import _drain_message_queue
+
+    assert _drain_message_queue(None) == []
+
+
+async def test_drain_message_queue_returns_messages_in_arrival_order() -> None:
+    from host.agent import _drain_message_queue
+
+    queue: asyncio.Queue[str] = asyncio.Queue()
+    await queue.put("first")
+    await queue.put("second")
+
+    assert _drain_message_queue(queue) == ["first", "second"]
+    assert _drain_message_queue(queue) == []
+
+
+async def test_message_queue_drained_before_first_llm_call(tmp_path: Path) -> None:
+    """A message queued before the run even starts (e.g. typed during
+    pre-pass/analysis) is injected before the loop's first LLM call."""
+    queue: asyncio.Queue[str] = asyncio.Queue()
+    await queue.put("please hurry")
+    captured_msgs: list[list[dict]] = []
+    llm = AsyncMock()
+    responses = [_text_response("Done.")]
+
+    async def _create(**kwargs: Any) -> Any:
+        captured_msgs.append(list(kwargs.get("messages", [])))
+        return responses.pop(0)
+
+    llm.chat.completions.create.side_effect = _create
+
+    await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=llm,
+        session=_session([], {}),
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+        message_queue=queue,
+    )
+
+    first_call_msgs = captured_msgs[0]
+    assert any(
+        m.get("role") == "user" and m.get("content") == "please hurry" for m in first_call_msgs
+    )
+
+
+async def test_message_queue_injects_between_turns_not_just_at_start(tmp_path: Path) -> None:
+    """A message that arrives WHILE a turn's tool calls are running is picked
+    up before the NEXT LLM call, not the one already in flight."""
+    queue: asyncio.Queue[str] = asyncio.Queue()
+    captured_msgs: list[list[dict]] = []
+    llm = AsyncMock()
+    responses = [
+        _tool_response("list_dir", {"path": str(tmp_path)}, call_id="tc1"),
+        _text_response("Done."),
+    ]
+
+    async def _create(**kwargs: Any) -> Any:
+        captured_msgs.append(list(kwargs.get("messages", [])))
+        if len(captured_msgs) == 1:
+            # Simulate the user typing while the first turn's tool call runs.
+            await queue.put("actually, group by year")
+        return responses.pop(0)
+
+    llm.chat.completions.create.side_effect = _create
+
+    await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=llm,
+        session=_session(["list_dir"], {"list_dir": {"entries": []}}),
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+        message_queue=queue,
+    )
+
+    first_call_msgs, second_call_msgs = captured_msgs[0], captured_msgs[1]
+    assert not any(m.get("content") == "actually, group by year" for m in first_call_msgs)
+    assert any(
+        m.get("role") == "user" and m.get("content") == "actually, group by year"
+        for m in second_call_msgs
+    )
+
+
+async def test_message_queue_continues_run_when_message_pending_at_finish(
+    tmp_path: Path,
+) -> None:
+    """A message that arrives just as the agent would otherwise stop keeps the
+    run going instead of ending it — the whole point of live mid-run chat."""
+    queue: asyncio.Queue[str] = asyncio.Queue()
+    llm = AsyncMock()
+    responses = [_text_response("First done."), _text_response("Second done.")]
+    call_count = 0
+
+    async def _create(**kwargs: Any) -> Any:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            await queue.put("wait, one more thing")
+        return responses.pop(0)
+
+    llm.chat.completions.create.side_effect = _create
+
+    text, _ = await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=llm,
+        session=_session([], {}),
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+        message_queue=queue,
+    )
+
+    assert text == "Second done."
+    assert call_count == 2
+
+
+async def test_run_agent_loop_without_message_queue_stops_normally(tmp_path: Path) -> None:
+    """message_queue=None (the default) behaves exactly as before P7."""
+    text, _ = await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=_llm(_text_response("Done.")),
+        session=_session([], {}),
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+    )
+
+    assert text == "Done."
 
 
 # ── Resumable chat (O7) ───────────────────────────────────────────────────────

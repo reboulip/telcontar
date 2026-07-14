@@ -226,21 +226,44 @@ Undo is a **manual, user-only action** — the agent has no tool to trigger it. 
 
 ---
 
-## Continuing after a run (resumable chat)
+## Chatting during and after a run (live chat + resumable chat)
 
-A run doesn't have to end the conversation. Once it reaches a **terminal state** — it finishes normally, hits an error, or exhausts its turn budget — a chat box (`#organize-input`) appears at the bottom of the Organizer screen, and the same MCP server subprocess stays open for as long as the screen does.
+The chat box (`#organize-input`) at the bottom of the Organizer screen is enabled from the moment you press **Start organizing** — you don't have to wait for the agent to stop before you can type. The same MCP server subprocess stays open for as long as the screen does, whether the agent is actively working or fully idle.
 
-Typing a message there:
+### Live mid-run chat
+
+While the agent is still working — even during the pre-pass/analysis stage, before the first chat turn — a message you type is queued and woven into the run at the next opportunity, without waiting for it to finish: right before the run's first LLM call, after every turn's batch of tool calls completes, and — most importantly — at the moment the agent would otherwise stop (its response carries no more tool calls). At that last point, if a message is waiting, the agent takes it as a new instruction and keeps going instead of ending the run. This lets you course-correct an in-progress run, e.g. "actually, group by year instead", without waiting for it to finish first.
+
+```
+Run in progress (pre-pass / analysis / a turn's tool calls)
+       │
+   You type a message  →  echoed as a "you" turn, queued
+       │
+       ▼
+Host drains the queue at the next opportunity:
+  • before the first LLM call
+  • after each turn's tool-call batch
+  • when the agent's response has no tool calls (would otherwise stop)
+       │
+       ▼
+Queued message(s) injected as a new user turn; the agent continues
+instead of ending the run
+```
+
+### Continuing after a run (resumable chat)
+
+A run doesn't have to end the conversation, either. Once it reaches a **terminal state** — it finishes normally, hits an error, or exhausts its turn budget — with nothing left waiting in the queue at that instant, typing a message still works exactly as before:
 
 1. Echoes it into the transcript as a `you` turn
 2. Resumes the agent loop with the conversation history returned by the previous call, plus your new message appended as a fresh user turn
-3. Runs with the **same organize-mode toolset** as the initial run — plan, execute, write, and every registry/graph/event read tool (document-content tools such as reading or re-extracting a file stay unavailable, since the corpus was already analyzed) — so a follow-up like "quarantine the drafts too" or "actually group these by workstream" continues the *same* conversation instead of starting a fresh one
+3. Runs with the **same organize-mode toolset** as the initial run — plan, execute, write, and every registry/graph/event read tool (document-content tools such as reading or re-extracting a file stay unavailable, since the corpus was already analyzed) — so a follow-up like "quarantine the drafts too" or "actually group these by workstream" continues the *same* conversation instead of starting a fresh one; it also stays just as "live" as the initial run, since the chat queue is wired into every continuation call too
 
 ```
-Run reaches a terminal state (done / error / max turns)
+Run reaches a terminal state (done / error / max turns),
+nothing waiting in the queue
        │
        ▼
-Chat box becomes enabled; "press g or keep chatting" cue shown once
+"press g or keep chatting" cue shown once
        │
    You type a message
        │
@@ -250,11 +273,11 @@ session with (history=<previous>, message=<your text>)
        │
        ▼
 Agent responds — may call any tool, including execute_plan (a new
-plan gets a new approval) — chat box disables while the turn runs,
-then re-enables once it reaches a terminal state again
+plan gets a new approval) — the chat box stays enabled throughout,
+live for this continuation just like the initial run
 ```
 
-This is distinct from **query mode** (`g`): query mode opens a *separate* screen on a *separate* MCP session with a strictly read-only toolset — safe for "just asking" without risking a mutation. The chat box instead continues the mutating conversation in place. Both become available once a run reaches its first terminal state, and either can be used depending on what you need next.
+This is distinct from **query mode** (`g`): query mode opens a *separate* screen on a *separate* MCP session with a strictly read-only toolset — safe for "just asking" without risking a mutation. The chat box instead continues the mutating conversation in place. Query mode becomes available once a run reaches its first terminal state; the chat box is available for the whole run, live or stopped.
 
 A couple of things carry over differently on a continuation:
 

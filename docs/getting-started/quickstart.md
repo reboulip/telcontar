@@ -183,7 +183,7 @@ messy/
     └── copy_of_rapport_final_v3.docx
 ```
 
-A desktop notification fires when the agent is done. At this point a chat box appears at the bottom of the screen — type a follow-up message (e.g. "quarantine the drafts too") to keep going on the same conversation, with the same mutating toolset, without restarting the run. Press **g** instead to open a separate read-only query mode and ask questions about the corpus, **j** to view the operations journal (and **u** there to undo the most recent operation), or **q** to quit the TUI.
+A desktop notification fires when the agent is done. The chat box at the bottom of the screen has actually been live the whole time — you can type a message at any point during the run (e.g. "actually, group by year instead") and it gets woven in as soon as the agent is between turns, instead of waiting for the run to finish. Now that the run is done, it works the same way to continue the conversation — type a follow-up message (e.g. "quarantine the drafts too") to keep going with the same mutating toolset, without restarting the run. Press **g** instead to open a separate read-only query mode and ask questions about the corpus, **j** to view the operations journal (and **u** there to undo the most recent operation), or **q** to quit the TUI.
 
 ---
 

@@ -1392,10 +1392,11 @@ class OrganizerScreen(Screen):
             yield Label("", id="progress-label")
             yield ProgressBar(total=None, show_eta=False, id="progress-bar")
         yield Static(self._status, id="status-bar")
-        # Resumable-chat input (O7): disabled until the run reaches a terminal
-        # state, then re-enabled after every subsequent chat turn too.
+        # Live mid-run chat (P7): disabled only until the worker starts, then
+        # stays enabled for the whole run — messages typed while the agent is
+        # still working are injected between its turns, not just after it stops.
         yield Input(
-            placeholder='Once done, keep chatting to refine (e.g. "quarantine the drafts too")…',
+            placeholder='Chat anytime — e.g. "quarantine the drafts too"…',
             id="organize-input",
             disabled=True,
         )
@@ -1715,6 +1716,12 @@ class OrganizerScreen(Screen):
         project_root = Path(__file__).resolve().parent.parent
         try:
             async with mcp_session(project_root, target=self._target) as session:
+                # Live mid-run chat (P7): the chat input stays enabled for the
+                # whole run, not just after a terminal state — a message typed
+                # while the agent is still working is drained and injected
+                # between its turns via `message_queue`, instead of sitting
+                # inert until the run stops.
+                self.query_one("#organize-input", Input).disabled = False
                 _summary, self._history = await run_agent_loop(
                     target=self._target,
                     settings=settings,
@@ -1727,13 +1734,17 @@ class OrganizerScreen(Screen):
                     on_cost_approval_needed=on_cost_approval_needed,
                     project_root=project_root,
                     instructions=instructions,
+                    message_queue=self._messages,
                 )
 
-                organize_input = self.query_one("#organize-input", Input)
+                # A run_agent_loop call only returns once the agent has fully
+                # finished AND no chat message was waiting at that instant
+                # (see run_agent_loop's docstring) — any message that arrives
+                # after that point resumes the same session via O7's history/
+                # message contract, still with the queue wired in so a later
+                # continuation stays just as live.
                 while True:
-                    organize_input.disabled = False
                     message = await self._messages.get()
-                    organize_input.disabled = True
                     _summary, self._history = await run_agent_loop(
                         target=self._target,
                         settings=settings,
@@ -1747,6 +1758,7 @@ class OrganizerScreen(Screen):
                         project_root=project_root,
                         history=self._history,
                         message=message,
+                        message_queue=self._messages,
                     )
         except Exception as exc:
             self._add_turn(
@@ -2029,8 +2041,7 @@ class StartupScreen(Screen):
         organizer_root = _find_organizer_root(target)
         if organizer_root is None:
             self._show_error(
-                f"No analyzed corpus found in {target} or any parent folder. "
-                "Run Organize first."
+                f"No analyzed corpus found in {target} or any parent folder. Run Organize first."
             )
             return
 
