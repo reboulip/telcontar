@@ -15,8 +15,10 @@ from host.agent import (
     CostApprovalResult,
     OptionsResult,
     PrepassResult,
+    _analyze_new_documents,
     _collect_truncated_dirs,
     _extract_content,
+    _new_docs_cost_estimate,
     run_agent_loop,
     run_prepass,
     run_query_loop,
@@ -2024,9 +2026,7 @@ async def test_run_prepass_rehomes_known_doc_with_changed_path(tmp_path: Path) -
     )
 
     assert result.rehomed == ["c1"]
-    rehome_calls = [
-        c for c in session.call_tool.await_args_list if c.args[0] == "rehome_documents"
-    ]
+    rehome_calls = [c for c in session.call_tool.await_args_list if c.args[0] == "rehome_documents"]
     assert rehome_calls == [call("rehome_documents", {"paths": {"c1": new_path}})]
 
 
@@ -2106,3 +2106,271 @@ def test_prepass_result_defaults_are_empty() -> None:
     assert result.rehomed == []
     assert result.errors == []
     assert result.total_files == 0
+    assert result.sizes == {}
+
+
+async def test_run_prepass_collects_discovered_file_sizes(tmp_path: Path) -> None:
+    a, b = str(tmp_path / "a.txt"), str(tmp_path / "b.txt")
+    session = _prepass_session(
+        walk_results={
+            str(tmp_path): {
+                "path": str(tmp_path),
+                "max_depth": 3,
+                "entries": [_file_entry(a, size=42), _file_entry(b, size=7)],
+            }
+        },
+        checksums={a: "c-a", b: "c-b"},
+        records={"c-a": None, "c-b": None},
+    )
+
+    result = await run_prepass(
+        session=session, settings=_settings(tmp_path), target=tmp_path, on_event=lambda _: None
+    )
+
+    assert result.sizes == {a: 42, b: 7}
+
+
+# ── Stateless analyzer (P5) ────────────────────────────────────────────────────
+
+
+def _analyzer_session(
+    *,
+    extract_result: dict | None = None,
+    read_result: dict | None = None,
+    record_result: dict | None = None,
+) -> AsyncMock:
+    s = AsyncMock()
+
+    async def _call(name: str, args: dict | None = None) -> MagicMock:
+        args = args or {}
+        if name == "extract_text_batch":
+            return _mcp_result(extract_result if extract_result is not None else {})
+        if name == "read_file_batch":
+            return _mcp_result(read_result if read_result is not None else {})
+        if name == "record_document_batch":
+            return _mcp_result(
+                record_result
+                if record_result is not None
+                else {
+                    "recorded": [
+                        {"checksum": d["checksum"], "path": d["path"]} for d in args["documents"]
+                    ],
+                    "errors": [],
+                }
+            )
+        raise AssertionError(f"unexpected tool call in analyzer test: {name}({args})")
+
+    s.call_tool.side_effect = _call
+    return s
+
+
+def _submit_records_response(records: list[dict], call_id: str = "tc1") -> MagicMock:
+    return _tool_response("submit_document_records", {"records": records}, call_id=call_id)
+
+
+async def test_analyze_batch_dispatches_by_extension(tmp_path: Path) -> None:
+    pdf = str(tmp_path / "a.pdf")
+    txt = str(tmp_path / "b.txt")
+    session = _analyzer_session(
+        extract_result={pdf: "pdf content"}, read_result={txt: "txt content"}
+    )
+    llm = _llm(
+        _submit_records_response(
+            [
+                {"title": "A", "type": "notes", "summary": "s", "provenance": "p"},
+                {"title": "B", "type": "notes", "summary": "s", "provenance": "p"},
+            ]
+        )
+    )
+
+    result = await _analyze_new_documents(
+        session=session,
+        llm=llm,
+        settings=_settings(tmp_path),
+        profile=None,
+        new_docs=[{"path": pdf, "checksum": "c1"}, {"path": txt, "checksum": "c2"}],
+        token_totals={"in": 0, "out": 0},
+        on_event=lambda _: None,
+    )
+
+    called_tools = {c.args[0] for c in session.call_tool.await_args_list}
+    assert "extract_text_batch" in called_tools
+    assert "read_file_batch" in called_tools
+    assert [r["checksum"] for r in result["recorded"]] == ["c1", "c2"]
+
+
+async def test_analyze_new_documents_rejoins_by_index_not_by_model_value(tmp_path: Path) -> None:
+    a, b = str(tmp_path / "a.txt"), str(tmp_path / "b.txt")
+    session = _analyzer_session(read_result={a: "content a", b: "content b"})
+    llm = _llm(
+        _submit_records_response(
+            [
+                {"title": "Title A", "type": "notes", "summary": "sa", "provenance": "pa"},
+                {"title": "Title B", "type": "notes", "summary": "sb", "provenance": "pb"},
+            ]
+        )
+    )
+
+    result = await _analyze_new_documents(
+        session=session,
+        llm=llm,
+        settings=_settings(tmp_path),
+        profile=None,
+        new_docs=[{"path": a, "checksum": "c-a"}, {"path": b, "checksum": "c-b"}],
+        token_totals={"in": 0, "out": 0},
+        on_event=lambda _: None,
+    )
+
+    recorded_call = next(
+        c for c in session.call_tool.await_args_list if c.args[0] == "record_document_batch"
+    )
+    documents = recorded_call.args[1]["documents"]
+    assert documents[0]["checksum"] == "c-a"
+    assert documents[0]["path"] == a
+    assert documents[0]["title"] == "Title A"
+    assert documents[1]["checksum"] == "c-b"
+    assert documents[1]["title"] == "Title B"
+
+
+async def test_analyze_new_documents_batches_at_ten(tmp_path: Path) -> None:
+    docs = [{"path": str(tmp_path / f"{i}.txt"), "checksum": f"c{i}"} for i in range(15)]
+    session = _analyzer_session(
+        read_result={d["path"]: "content" for d in docs},
+    )
+    records_batch = [
+        {"title": f"T{i}", "type": "notes", "summary": "s", "provenance": "p"} for i in range(10)
+    ]
+    llm = _llm(
+        _submit_records_response(records_batch, call_id="tc1"),
+        _submit_records_response(records_batch[:5], call_id="tc2"),
+    )
+
+    result = await _analyze_new_documents(
+        session=session,
+        llm=llm,
+        settings=_settings(tmp_path),
+        profile=None,
+        new_docs=docs,
+        token_totals={"in": 0, "out": 0},
+        on_event=lambda _: None,
+    )
+
+    llm_calls = llm.chat.completions.create.call_args_list
+    assert len(llm_calls) == 2
+    assert len(result["recorded"]) == 15
+
+
+async def test_analyze_batch_reports_error_for_unmatched_tail(tmp_path: Path) -> None:
+    a, b = str(tmp_path / "a.txt"), str(tmp_path / "b.txt")
+    session = _analyzer_session(read_result={a: "content a", b: "content b"})
+    # Model returns only one record for two documents.
+    llm = _llm(
+        _submit_records_response(
+            [{"title": "Title A", "type": "notes", "summary": "sa", "provenance": "pa"}]
+        )
+    )
+
+    result = await _analyze_new_documents(
+        session=session,
+        llm=llm,
+        settings=_settings(tmp_path),
+        profile=None,
+        new_docs=[{"path": a, "checksum": "c-a"}, {"path": b, "checksum": "c-b"}],
+        token_totals={"in": 0, "out": 0},
+        on_event=lambda _: None,
+    )
+
+    assert len(result["recorded"]) == 1
+    assert result["errors"] == [
+        {
+            "path": b,
+            "checksum": "c-b",
+            "error": "No analysis record returned for this document",
+        }
+    ]
+
+
+async def test_analyze_batch_retries_once_then_skips_on_failure(tmp_path: Path) -> None:
+    a = str(tmp_path / "a.txt")
+    session = _analyzer_session(read_result={a: "content"})
+    llm = AsyncMock()
+    llm.chat.completions.create.side_effect = [RuntimeError("boom"), RuntimeError("boom again")]
+    events: list[AgentEvent] = []
+
+    result = await _analyze_new_documents(
+        session=session,
+        llm=llm,
+        settings=_settings(tmp_path),
+        profile=None,
+        new_docs=[{"path": a, "checksum": "c-a"}],
+        token_totals={"in": 0, "out": 0},
+        on_event=events.append,
+    )
+
+    assert llm.chat.completions.create.await_count == 2
+    assert result["recorded"] == []
+    assert result["errors"] == [{"path": a, "checksum": "c-a", "error": "boom again"}]
+    assert any(e.kind == "error" for e in events)
+    # A failed batch is skipped, never retried a second time (record_document_batch
+    # is never reached).
+    called_tools = {c.args[0] for c in session.call_tool.await_args_list}
+    assert "record_document_batch" not in called_tools
+
+
+async def test_analyze_new_documents_accumulates_tokens(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    a = str(tmp_path / "a.txt")
+    session = _analyzer_session(read_result={a: "content"})
+    response = _submit_records_response(
+        [{"title": "T", "type": "notes", "summary": "s", "provenance": "p"}]
+    )
+    response.usage = SimpleNamespace(prompt_tokens=100, completion_tokens=20)
+    llm = _llm(response)
+    totals = {"in": 0, "out": 0}
+
+    await _analyze_new_documents(
+        session=session,
+        llm=llm,
+        settings=_settings(tmp_path),
+        profile=None,
+        new_docs=[{"path": a, "checksum": "c-a"}],
+        token_totals=totals,
+        on_event=lambda _: None,
+    )
+
+    assert totals == {"in": 100, "out": 20}
+
+
+async def test_analyze_new_documents_skips_llm_call_when_no_new_docs(tmp_path: Path) -> None:
+    session = _analyzer_session()
+    llm = AsyncMock()
+
+    result = await _analyze_new_documents(
+        session=session,
+        llm=llm,
+        settings=_settings(tmp_path),
+        profile=None,
+        new_docs=[],
+        token_totals={"in": 0, "out": 0},
+        on_event=lambda _: None,
+    )
+
+    assert result == {"recorded": [], "errors": []}
+    llm.chat.completions.create.assert_not_awaited()
+    session.call_tool.assert_not_awaited()
+
+
+def test_new_docs_cost_estimate_counts_only_new_docs() -> None:
+    new_docs = [{"path": "/a.txt", "checksum": "c1"}, {"path": "/b.txt", "checksum": "c2"}]
+    sizes = {"/a.txt": 4000, "/b.txt": 8000, "/known.txt": 100_000}
+
+    doc_count, tokens = _new_docs_cost_estimate(new_docs, sizes, max_snippet_chars=4000)
+
+    assert doc_count == 2
+    # a.txt capped at 4000 (== max_snippet_chars), b.txt capped at 4000 too.
+    assert tokens == (4000 // 4) + (4000 // 4)
+
+
+def test_new_docs_cost_estimate_empty_new_docs_is_zero() -> None:
+    assert _new_docs_cost_estimate([], {}, max_snippet_chars=4000) == (0, 0)

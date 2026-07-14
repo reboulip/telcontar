@@ -747,6 +747,10 @@ class PrepassResult:
     rehomed: list[str] = field(default_factory=list)
     errors: list[dict[str, str]] = field(default_factory=list)
     total_files: int = 0
+    # path -> size (bytes, from walk_tree) for every discovered file — feeds
+    # P5's new-docs-only cost estimate the same way _ProgressTracker.sizes
+    # feeds the old whole-corpus one.
+    sizes: dict[str, int] = field(default_factory=dict)
 
 
 async def run_prepass(
@@ -785,6 +789,7 @@ async def run_prepass(
         queue.extend(_collect_truncated_dirs(result))
 
     total_files = len(entries)
+    sizes = {path: size for path, size in entries if size is not None}
 
     checksums: dict[str, str] = {}
     paths = [path for path, _ in entries]
@@ -856,8 +861,311 @@ async def run_prepass(
     )
 
     return PrepassResult(
-        new=new, known=known, rehomed=rehomed, errors=errors, total_files=total_files
+        new=new, known=known, rehomed=rehomed, errors=errors, total_files=total_files, sizes=sizes
     )
+
+
+# ── Stateless analyzer (P5) ───────────────────────────────────────────────────
+
+# Mirrors the file-type split the ANALYZE system-prompt instructions used to leave
+# to the model's judgement (extract_text_batch for PDF/Office/email, read_file_batch
+# for plain text) — the pre-pass/analyzer flow makes this a host-side decision
+# instead, since there is no per-document agent turn to reason it out anymore.
+_ANALYZER_EXTRACT_EXTENSIONS = frozenset({".pdf", ".docx", ".xlsx", ".pptx", ".msg"})
+
+# Isolated analysis is one LLM call per batch of at most this many NEW documents —
+# matches the batch size the old in-loop ANALYZE instructions used.
+_ANALYZER_BATCH_SIZE = 10
+
+_SUBMIT_RECORDS_TOOL_NAME = "submit_document_records"
+# Host-side-only synthetic tool (like ask_clarification/propose_options): never
+# forwarded to the MCP server. Forced via tool_choice on every analyzer call, so
+# the model has no path except returning structured records. Deliberately carries
+# only model-derived fields — no path/checksum, which are host-authoritative and
+# rejoined by position, never trusted from the model's own output (P5).
+_SUBMIT_RECORDS_TOOL_SPEC: dict[str, Any] = {
+    "type": "function",
+    "function": {
+        "name": _SUBMIT_RECORDS_TOOL_NAME,
+        "description": (
+            "Submit extracted metadata for this batch of documents. Call this "
+            "exactly once with exactly one record per document, in the SAME ORDER "
+            "the documents were given to you — never fewer, never more, never "
+            "reordered."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "records": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "type": {"type": "string"},
+                            "summary": {"type": "string"},
+                            "provenance": {"type": "string"},
+                            "date": {"type": ["string", "null"]},
+                            "entities": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {"type": "string"},
+                                        "role": {"type": "string"},
+                                        "kind": {"type": "string"},
+                                    },
+                                    "required": ["name", "role"],
+                                },
+                            },
+                        },
+                        "required": ["title", "type", "summary", "provenance"],
+                    },
+                }
+            },
+            "required": ["records"],
+        },
+    },
+}
+
+_ANALYZER_SYSTEM_PROMPT_TEMPLATE = """\
+You are telcontar's document analyzer, working on the "{profile_name}" domain
+profile. You will be given the content of {count} document(s) below, each
+numbered and delimited. For EACH document, in order, extract:
+{extraction_rules}
+
+{types_section}Call {tool_name} exactly once with exactly one record per document, \
+in the SAME ORDER the documents were given to you.
+"""
+
+
+def _new_docs_cost_estimate(
+    new_docs: list[dict[str, str]], sizes: dict[str, int], max_snippet_chars: int
+) -> tuple[int, int]:
+    """(new_doc_count, estimated_input_tokens) for the new-docs-only cost gate (P5).
+
+    Mirrors `_ProgressTracker.cost_estimate`'s chars-per-token heuristic, but
+    scoped to `new_docs` only — a re-run where most of the corpus is already
+    known should never estimate cost for the whole tree.
+    """
+    tokens = sum(min(sizes.get(doc["path"], 0), max_snippet_chars) // 4 for doc in new_docs)
+    return len(new_docs), tokens
+
+
+async def _fetch_batch_content(
+    session: ClientSession, settings: Settings, batch: list[dict[str, str]], on_event: EventCallback
+) -> dict[str, Any]:
+    """Fetch content for one analyzer batch, dispatched by extension (P5)."""
+    extract_paths = [
+        doc["path"]
+        for doc in batch
+        if Path(doc["path"]).suffix.lower() in _ANALYZER_EXTRACT_EXTENSIONS
+    ]
+    read_paths = [
+        doc["path"]
+        for doc in batch
+        if Path(doc["path"]).suffix.lower() not in _ANALYZER_EXTRACT_EXTENSIONS
+    ]
+
+    content: dict[str, Any] = {}
+    if extract_paths:
+        on_event(
+            AgentEvent(
+                "tool_call",
+                f"extract_text_batch({len(extract_paths)} files)",
+                data={"tool": "extract_text_batch"},
+            )
+        )
+        raw = await session.call_tool(
+            "extract_text_batch", {"paths": extract_paths, "max_chars": settings.max_snippet_chars}
+        )
+        result = _extract_content(raw)
+        on_event(AgentEvent("tool_result", _fmt_result(result)))
+        if isinstance(result, dict):
+            content.update(result)
+    if read_paths:
+        on_event(
+            AgentEvent(
+                "tool_call",
+                f"read_file_batch({len(read_paths)} files)",
+                data={"tool": "read_file_batch"},
+            )
+        )
+        raw = await session.call_tool(
+            "read_file_batch", {"paths": read_paths, "max_chars": settings.max_snippet_chars}
+        )
+        result = _extract_content(raw)
+        on_event(AgentEvent("tool_result", _fmt_result(result)))
+        if isinstance(result, dict):
+            content.update(result)
+    return content
+
+
+async def _analyze_batch(
+    *,
+    session: ClientSession,
+    llm: AsyncOpenAI,
+    settings: Settings,
+    profile: Profile | None,
+    batch: list[dict[str, str]],
+    token_totals: dict[str, int],
+    on_event: EventCallback,
+) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+    """Analyze one batch (<=10 NEW docs) with a single isolated, forced-tool LLM
+    call. Returns (documents, errors) — `documents` are ready for
+    `record_document_batch` (checksum/path host-supplied by index, the rest from
+    the model); `errors` cover both a failed batch call and any document the
+    model didn't return a matching record for.
+    """
+    content = await _fetch_batch_content(session, settings, batch, on_event)
+
+    doc_sections = []
+    for i, doc in enumerate(batch):
+        text = content.get(doc["path"])
+        if isinstance(text, dict):
+            text = f"[Could not read this document: {text.get('error', 'unknown error')}]"
+        elif not isinstance(text, str):
+            text = "[No content returned for this document]"
+        doc_sections.append(f"### Document {i + 1}\n{_wrap_untrusted(text)}")
+
+    messages = [
+        {
+            "role": "system",
+            "content": _ANALYZER_SYSTEM_PROMPT_TEMPLATE.format(
+                profile_name=profile.name if profile is not None else "default",
+                count=len(batch),
+                extraction_rules=_build_extraction_rules(profile),
+                types_section=_build_types_section(profile),
+                tool_name=_SUBMIT_RECORDS_TOOL_NAME,
+            ),
+        },
+        {"role": "user", "content": "\n\n".join(doc_sections)},
+    ]
+
+    on_event(AgentEvent("thinking", f"Analyzing {len(batch)} document(s)…"))
+    response: Any = None
+    last_error: Exception | None = None
+    for _attempt in range(2):  # one retry on a transient failure
+        try:
+            response = await llm.chat.completions.create(
+                model=settings.llm_model,
+                messages=messages,  # type: ignore[arg-type]
+                tools=[_SUBMIT_RECORDS_TOOL_SPEC],
+                tool_choice={
+                    "type": "function",
+                    "function": {"name": _SUBMIT_RECORDS_TOOL_NAME},
+                },
+            )
+            break
+        except Exception as exc:  # noqa: BLE001 - deliberately broad, retried then skipped
+            last_error = exc
+            response = None
+
+    if response is None:
+        on_event(AgentEvent("error", f"Analysis batch failed, skipping: {last_error}"))
+        return [], [
+            {"path": doc["path"], "checksum": doc["checksum"], "error": str(last_error)}
+            for doc in batch
+        ]
+
+    _accumulate_tokens(response, token_totals, on_event)
+
+    records: list[dict[str, Any]] = []
+    for tool_call in response.choices[0].message.tool_calls or []:
+        if tool_call.function.name != _SUBMIT_RECORDS_TOOL_NAME:
+            continue
+        try:
+            parsed = json.loads(tool_call.function.arguments or "{}")
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed.get("records"), list):
+            records.extend(parsed["records"])
+
+    documents: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+    matched = min(len(batch), len(records))
+    for i in range(matched):
+        doc, record = batch[i], records[i]
+        documents.append(
+            {
+                "checksum": doc["checksum"],
+                "path": doc["path"],
+                "title": record.get("title", ""),
+                "type": record.get("type", ""),
+                "summary": record.get("summary", ""),
+                "provenance": record.get("provenance", ""),
+                "date": record.get("date"),
+                "entities": record.get("entities"),
+            }
+        )
+    for doc in batch[matched:]:
+        errors.append(
+            {
+                "path": doc["path"],
+                "checksum": doc["checksum"],
+                "error": "No analysis record returned for this document",
+            }
+        )
+
+    return documents, errors
+
+
+async def _analyze_new_documents(
+    *,
+    session: ClientSession,
+    llm: AsyncOpenAI,
+    settings: Settings,
+    profile: Profile | None,
+    new_docs: list[dict[str, str]],
+    token_totals: dict[str, int],
+    on_event: EventCallback,
+) -> dict[str, Any]:
+    """Stateless per-batch analysis of NEW documents only (P5).
+
+    Each batch of at most `_ANALYZER_BATCH_SIZE` docs is one isolated LLM call —
+    the analyzer's messages list is throwaway per batch, never threaded into the
+    main ORGANIZE conversation — with a FORCED `submit_document_records` tool
+    call. Returned records are rejoined to host-authoritative path/checksum BY
+    INDEX (never by any value the model returns) and persisted via
+    `record_document_batch`. A batch whose LLM call fails is retried once, then
+    skipped — its documents surface in `errors`, never silently dropped.
+
+    Returns `{"recorded": [record_dict, ...], "errors": [...]}`, matching
+    `record_document_batch`'s own shape across all batches combined.
+    """
+    recorded: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+
+    for i in range(0, len(new_docs), _ANALYZER_BATCH_SIZE):
+        batch = new_docs[i : i + _ANALYZER_BATCH_SIZE]
+        documents, batch_errors = await _analyze_batch(
+            session=session,
+            llm=llm,
+            settings=settings,
+            profile=profile,
+            batch=batch,
+            token_totals=token_totals,
+            on_event=on_event,
+        )
+        errors.extend(batch_errors)
+        if not documents:
+            continue
+
+        on_event(
+            AgentEvent(
+                "tool_call",
+                f"record_document_batch({len(documents)} docs)",
+                data={"tool": "record_document_batch"},
+            )
+        )
+        raw = await session.call_tool("record_document_batch", {"documents": documents})
+        result = _extract_content(raw)
+        on_event(AgentEvent("tool_result", _fmt_result(result)))
+        if isinstance(result, dict):
+            recorded.extend(r for r in result.get("recorded", []) if isinstance(r, dict))
+            errors.extend(e for e in result.get("errors", []) if isinstance(e, dict))
+
+    return {"recorded": recorded, "errors": errors}
 
 
 # ── Public entry points ───────────────────────────────────────────────────────

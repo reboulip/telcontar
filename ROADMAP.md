@@ -277,7 +277,7 @@ hard-stopping plan execution.
       `compute_checksum_batch`, partitions known/new via `lookup_documents`,
       re-homes known records whose path changed, emits `progress` events.
       (requires: P2, P3)
-- [ ] P5 · Stateless analyzer with accurate cost gate — per batch of ≤10 NEW docs,
+- [x] P5 · Stateless analyzer with accurate cost gate — per batch of ≤10 NEW docs,
       fetch via `extract_text_batch`/`read_file_batch` (egress/confinement/bounds
       unchanged), one isolated LLM call with profile extraction rules + untrusted
       delimiters, forced `submit_document_records` tool call, records rejoined to

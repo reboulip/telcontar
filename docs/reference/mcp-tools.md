@@ -154,6 +154,9 @@ Batch form of `read_file`: fetch text for many files in one MCP round trip inste
 !!! note
     Each path gets the same `ALLOWLIST_DIRS` (`effective_allowlist_dirs()`) and `check_within_root` checks as `read_file`, applied individually before that file is read; a path that fails either check never reaches `read_file` and appears in the result as `{"error": ...}` directly, without failing the other paths in the batch. The effective cap per file is `min(max_chars, MAX_SNIPPET_CHARS)`, same as `read_file`.
 
+!!! note "Second caller (P5)"
+    As of the stateless per-batch analyzer (P5), this tool also has a second caller: `host/agent.py`'s `_fetch_batch_content`, invoked directly by host code (not by the model's own tool-calling decision) for the non-extractable files in a batch of newly-discovered documents. Same tool, same server-side guards and egress logging — just a new, host-orchestrated caller. That analyzer is not yet wired into `run_agent_loop`, so in a live organize run this tool is still only ever called by the model, as described above.
+
 ---
 
 ### `extract_text_batch`
@@ -165,6 +168,9 @@ extract_text_batch(paths: list[str], max_chars: int = 4000) -> dict
 Batch form of `extract_text`: extract text from many PDF/Office/Outlook `.msg` files in one round trip. Same return shape, per-path guard checks, and error semantics as `read_file_batch`. Each file's extraction is bounded the same way as the singular `extract_text` — see "Bounded extraction (S5)" above.
 
 **Returns:** `{path: content | {"error": message}}`, keyed by the exact path strings passed in.
+
+!!! note "Second caller (P5)"
+    Same as `read_file_batch` above: `_fetch_batch_content` (`host/agent.py`) also calls this directly, host-side, for the extractable files (`.pdf`/`.docx`/`.xlsx`/`.pptx`/`.msg`) in a stateless-analyzer batch — a file-type dispatch that used to be left entirely to the model's own judgement during the in-loop ANALYZE phase. Not yet reachable from a live organize run (P5's analyzer isn't wired into `run_agent_loop` yet).
 
 ---
 
@@ -543,6 +549,9 @@ Batch form of `record_document`: upsert many analyzed documents into the registr
 
 !!! note
     The registry is loaded once and saved once for the whole batch, not once per document — a deliberate efficiency trade-off; a mid-batch crash persists nothing. This differs from `read_file_batch`/`extract_text_batch`/`compute_checksum_batch`: this is a **mutating** tool, so it is *not* in `QUERY_ALLOWED_TOOLS` (query mode is read-only). Its per-document path confinement check also behaves differently from the read-only batch tools: `record_document_batch` runs `check_within_root` for every document's `path` *before* calling into `server.tools`, and a `PermissionError` on any one path raises immediately and aborts the whole call — it does not degrade to a per-item `{"error": ...}` entry the way a disallowed path does in `read_file_batch`/`extract_text_batch`/`compute_checksum_batch`.
+
+!!! note "Second caller (P5)"
+    As of the stateless per-batch analyzer (P5), `host/agent.py`'s `_analyze_new_documents` also calls this tool — once per analyzed batch, with the model-derived fields (title/type/summary/provenance/date/entities) rejoined to host-authoritative `checksum`/`path` by positional index, never by any identifier the model itself returns. No new registry-write code was added for this; it reuses this same tool. Not yet reachable from a live organize run (P5's analyzer isn't wired into `run_agent_loop` yet).
 
 ---
 
