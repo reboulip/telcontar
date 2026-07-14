@@ -51,9 +51,7 @@ def list_dir(path: str) -> dict:
     return {"path": str(p), "entries": entries}
 
 
-def walk_tree(
-    path: str, max_depth: int = 3, hidden_names: frozenset[str] | None = None
-) -> dict:
+def walk_tree(path: str, max_depth: int = 3, hidden_names: frozenset[str] | None = None) -> dict:
     """Recursively enumerate a directory tree up to ``max_depth`` levels deep.
 
     Complements ``list_dir`` (a single level) for the ANALYZE pass: the agent can

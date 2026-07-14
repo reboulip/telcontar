@@ -197,9 +197,7 @@ def test_lookup_documents_returns_hits_and_misses_keyed_by_input(
     assert result["missing"] is None
 
 
-def test_lookup_documents_empty_input_returns_empty_dict(
-    reg_path: Path, profile: Profile
-) -> None:
+def test_lookup_documents_empty_input_returns_empty_dict(reg_path: Path, profile: Profile) -> None:
     _record(reg_path, profile, checksum="c1")
     assert lookup_documents([], reg_path) == {}
 
