@@ -23,6 +23,7 @@ When you run `telcontar`, the app checks whether a minimum configuration (AI ser
 
 - **First run** — the **setup wizard** (`SetupScreen`) appears automatically. It guides you through choosing an AI provider, entering the service URL and API key, and selecting a document profile. The key is stored in the OS credential store (Windows Credential Manager / macOS Keychain); other settings go to `~/.telcontar/config.env`.
 - **Returning user** — the **startup screen** (`StartupScreen`) appears directly. It offers three actions: **Organize**, **Query**, and **⚙ Settings**. Press `s` or click **⚙ Settings** at any time to open the settings panel (`ConfigScreen`), where you can change the URL, API key, profile, and approval mode.
+- **From anywhere** — press `Ctrl+S` at any point in the app, on any screen, to open the same settings panel — not just from the startup screen. It even works while a modal (plan approval, cost estimate) is on screen; the settings panel stacks on top and pops back cleanly. It's a no-op if settings are already open, or during the first-run setup wizard (to avoid persisting a half-configured state that skips the wizard's guided keyring/plaintext-fallback flow).
 
 ---
 
@@ -34,39 +35,37 @@ Pressing **Organize** does not launch the agent immediately. The `OrganizerScree
 - An optional **steering instructions** field for free text, e.g. "group by workstream", "keep the 2024 invoices together", or "don't quarantine drafts".
 - A **Start organizing** button (pressing Enter in the instructions field works too).
 
-Only once you proceed does the chat transcript appear and the agent loop start. Any instructions you typed are shown as a `you` turn in the transcript and passed to `run_agent(..., instructions=...)`, which appends them to the agent's first user message so the run follows your intent instead of organizing blind.
+Only once you proceed does the chat transcript appear and the agent loop start. Any instructions you typed are shown as a `you` turn in the transcript and passed to `run_agent_loop(..., instructions=...)`, which appends them to the agent's first user message so the run follows your intent instead of organizing blind.
 
 ---
 
 ## The agent loop
 
-Once you proceed past the starter pane, the **host** launches the **server** as a subprocess and begins a GPT-5 tool-calling loop. The agent follows a fixed three-phase workflow:
+Once you proceed past the starter pane, the **host** launches the **server** as a subprocess. Before any chat turn happens, telcontar analyzes the corpus deterministically; only once that finishes does the GPT-5 tool-calling loop begin, and it follows a fixed two-phase workflow.
 
-### Phase A — Analyse
+### Analysis — before the chat loop starts
 
-The agent first surveys the **whole directory tree** with `walk_tree` (recursive, up to `max_depth=3` levels; it calls `walk_tree` again on any subpath that comes back marked `truncated` to go deeper) so it discovers documents nested in subfolders, not just those sitting at the top level.
+This step is **not** the model reasoning turn-by-turn — it is host-orchestrated code, in two stages, so that each document's content is sent to the model **at most once, ever**:
 
-Then, for each document found anywhere in the tree, the agent:
+1. **Deterministic discovery (no LLM call).** The host recursively walks the **whole directory tree** (re-walking any subpath the server marks `truncated`, repeating until none remain anywhere — full coverage is mandatory), computes a sha256 checksum for every discovered file, and looks each checksum up against the registry to split the corpus into documents already known from a previous run and genuinely new ones. A known document whose on-disk location has drifted since it was last seen is silently corrected in the registry.
+2. **Isolated, per-batch analysis of the NEW documents only.** If there are new documents, telcontar pauses once to show a rough cost estimate scoped to just those new documents — see [The cost-estimate approval gate](#the-cost-estimate-approval-gate) below. On approval, the new documents are processed in **batches of 10** (smaller only for unusually large individual files): each batch's content is fetched (`read_file_batch` or `extract_text_batch` for PDF/Office) and sent to the model in a single, isolated call that must return one structured record — title, type, summary, date, entities — per document in the batch, in order; that call never joins the chat conversation you see afterward. The results are upserted into the **registry** via `record_document_batch`.
 
-1. Calls `read_file` or `extract_text` (for PDF/Office) to get the content
-2. Calls `compute_checksum` to obtain the file's sha256 content ID
-3. Calls `record_document` to upsert title, type, summary, date, and entities into the **registry**
-4. Calls `find_duplicates` and `find_modified_documents` to identify candidates for quarantine
+The registry is **content-addressed**: if you rename a file, telcontar still recognises it by checksum on the next run, so a re-run only ever analyzes documents it hasn't seen before — previously-known documents are reused from the registry without being re-read or re-sent to the model at all.
 
-The registry is **content-addressed**: if you rename a file, telcontar still recognises it by checksum on the next run. Analysis results accumulate across sessions.
+Once analysis finishes, the host builds a compact **corpus digest** — every document's title, type, and path, plus totals — and hands it to the agent as the first message of the chat loop, in place of a blank "please organize" instruction. From here on, the chat-loop agent works from the digest and the read-only registry tools (`list_documents`, `get_registry`, `find_duplicates`, `find_modified_documents`, …) — it can no longer read raw file content, checksum a file, or record a document itself; those tools simply aren't offered to it.
 
-Between Phase A and Phase B, the agent has two optional, at-most-once checkpoints: it may pause to ask the user a short batch of clarifying questions if it hit genuine ambiguity — see [The clarification checkpoint](#the-clarification-checkpoint) below — and, after re-examining its intended approach from a second angle, it may also surface a few competing options for the user to choose between — see [The multiple-option checkpoint](#the-multiple-option-checkpoint) below.
+### Phase A — Organize
 
-### Phase B — Organize
-
-1. The agent designs a **relevant target taxonomy** — a small, shallow, readable folder tree derived from the document types and themes actually found in the corpus (e.g. grouped by document type, workstream, or phase). It may redesign the **existing nested layout entirely** — documents already sitting in subfolders are reorganized too, not just those at the top level. Folders are only created for categories the corpus actually contains.
+1. The agent designs a **relevant target taxonomy** — a small, shallow, readable folder tree derived from the document types and themes already recorded (e.g. grouped by document type, workstream, or phase). It may redesign the **existing nested layout entirely** — documents already sitting in subfolders are reorganized too, not just those at the top level; it can call `walk_tree` to check the current on-disk layout first. Folders are only created for categories the corpus actually contains.
 2. The agent calls `create_plan` to open a new plan
 3. It stages operations with `propose_create_dir` for each new folder (idempotent and collision-safe), `propose_rename`, `propose_move` (filing each document into the taxonomy), `propose_quarantine` for duplicates or clutter, `propose_create_file`/`propose_update_file` for any new or updated files, and `propose_archive_document` to withdraw a document from active memory when appropriate — **every filesystem mutation is staged this way; there is no tool that writes to disk directly**
 4. It calls `review_plan` for a deduplication pre-flight check
 5. It calls `set_plan_rationale` with a short plain-language paragraph explaining the plan's philosophy — how it grouped, renamed, and quarantined documents and why — and `set_plan_folder_notes` with a one-line purpose note for each target folder. The host shows the rationale above the op list in the approval modal, followed by a target-layout tree with the folder notes beside each folder
 6. It calls `execute_plan` — at this point the **approval gate** fires
 
-### Phase C — Synthesize
+At any point before or while building the plan, the agent may pause to check in with the user — genuine clarifying questions, competing options to choose between, or a mix — see [The ask_user chat checkpoint](#the-ask_user-chat-checkpoint) below.
+
+### Phase B — Synthesize
 
 1. Throughout the run, the agent records key project milestones with `create_event` — one short, verb-led, dated sentence per decision or delivery
 2. The agent calls `build_graph` to project the registry and events into the knowledge graph, then `get_actors` for the ranked main actors and `list_events` for the timeline
@@ -76,65 +75,64 @@ Between Phase A and Phase B, the agent has two optional, at-most-once checkpoint
 
 ---
 
-## The clarification checkpoint
+## The cost-estimate approval gate
 
-After Phase A (Analyse) and before Phase B (Organize) begins, the agent **may** pause once to ask the user a short batch of clarifying questions — but only when it hits genuine ambiguity (unclear document type, competing taxonomy groupings, ambiguous naming). If there is no real ambiguity, the agent skips this and moves straight into Phase B with its own best judgement.
+After deterministic discovery finds the corpus's **new** (previously-unanalyzed) documents but before any of their content is actually fetched, telcontar pauses once to show a rough cost estimate scoped to just those new documents, and lets you decide whether to proceed. This is the run's **primary cost control** — a single upfront checkpoint before the model can trigger real analysis spend, distinct from the adaptive turn budget that only acts as a backstop against a runaway or looping agent.
 
-This is a **host-side** capability, not an MCP server tool: `ask_clarification` is a synthetic tool the host injects into the model's tool list, and it is never forwarded to the MCP server.
+Because the estimate only ever covers new documents, re-running Organize on a folder that's mostly already analyzed shows a small estimate (or none at all — the gate is skipped entirely when there is nothing new to analyze), not a recalculation of the whole corpus. The estimate itself is a rough, local calculation from the file sizes discovery already found (no extraction and no LLM call needed to produce it), shown as e.g. "~42 new document(s) (10 already analyzed, skipped), ~18,500 input tokens estimated, batched in groups of 10 — proceed?".
 
 ```
-Agent finishes Phase A (Analyse)
+Discovery finishes; N new (previously-unanalyzed) documents found
        │
        ▼
-Agent calls ask_clarification(questions)   (at most once per run)
-       │
-       ▼
-Host shows ClarificationModal — one free-text input per question
+Host computes a size-based estimate scoped to just those N documents,
+shows CostEstimateModal
        │
    User reviews
-   ├── Submit answers (any subset, blanks are skipped)
+   ├── Proceed
    │       │
    │       ▼
-   │   Answers fed back to the agent to refine its decisions before create_plan
+   │   The new documents are analyzed, then the chat loop begins
    │
-   └── Skip — best judgement
+   └── Cancel
            │
            ▼
-       Agent proceeds using its own judgement
+       Analysis is skipped for this run — the new documents stay
+       unrecorded; the chat loop begins with only the already-known
+       documents in the digest
 ```
 
-A second call to `ask_clarification` in the same run is refused — the host tells the agent it already asked and to proceed with its own best judgement. The agent is instructed not to stall waiting for answers.
+In `APPROVAL_MODE=never`, this gate is skipped automatically (the estimate is still emitted for observability, it just never blocks). In `always` and `destructive_only`, it shows once per run whenever there are new documents to analyze.
 
 ---
 
-## The multiple-option checkpoint
+## The ask_user chat checkpoint
 
-Also between Phase A and Phase B, the agent **may** pause once more — after re-examining its intended approach from a second angle — to let the user choose between competing courses of action, when there are genuinely several valid ways to classify or handle the corpus (e.g. group COPIL decks by date vs. by workstream vs. one flat folder). If one approach is clearly best, the agent skips this and moves straight into Phase B.
+At any point before or while building the plan, the agent **may** call `ask_user` with a short batch of items — plain clarifying questions, multiple-choice options for the user to pick from, or a mix in the same call — when it hits genuine ambiguity (unclear document type, competing taxonomy groupings, ambiguous naming) or there are genuinely several valid ways to classify or handle the corpus (e.g. group COPIL decks by date vs. by workstream vs. one flat folder). If there is no real ambiguity, the agent skips this and proceeds with its own best judgement.
 
-Like the clarification checkpoint, this is a **host-side** capability, not an MCP server tool: `propose_options` is a synthetic tool the host injects into the model's tool list, and it is never forwarded to the MCP server.
+This is a **host-side** capability, not an MCP server tool: `ask_user` is a synthetic tool the host injects into the model's tool list, and it is never forwarded to the MCP server. Unlike the modal-based checkpoints it replaces, it has no dialog of its own — it renders as a normal `telcontar` turn in the chat transcript and blocks on the exact same live-chat message queue described in [Chatting during and after a run](#chatting-during-and-after-a-run-live-chat-resumable-chat) below, so your next chat message is read as the reply. There is no once-per-run cap: because it's a normal chat exchange rather than an interruptive modal, the agent can check in as many times as it genuinely needs to.
 
 ```
-Agent finishes Phase A, re-examines its approach from a second angle
+Agent hits genuine ambiguity, at any point before/while building the plan
        │
        ▼
-Agent calls propose_options(questions)   (at most once per run)
+Agent calls ask_user(questions)   (1-5 items; each may carry 2-5 options)
        │
        ▼
-Host shows OptionsModal — one RadioSet (2-5 options) per question
+Question(s) rendered as a "telcontar" turn in the transcript
        │
-   User reviews
-   ├── Submit choices (one option per question; first option pre-selected)
-   │       │
-   │       ▼
-   │   Selections fed back to the agent, which follows them before create_plan
-   │
-   └── Skip — best judgement
-           │
-           ▼
-       Agent proceeds using its own judgement
+       ▼
+Agent's tool call blocks on the live-chat message queue
+       │
+   You type a reply in the chat box
+       │
+       ▼
+Reply echoed as a "you" turn, returned to the agent as free text;
+the agent continues — and may call ask_user again later if a new
+ambiguity comes up
 ```
 
-A second call to `propose_options` in the same run is refused — the host tells the agent it already proposed options and to proceed with its own best judgement. Like `ask_clarification`, the agent is instructed to use this only for real, close judgement calls, not to offload every decision, and never to stall.
+The agent is instructed not to stall or use this to offload every decision — only for real, close judgement calls; otherwise it proceeds with its own best judgement.
 
 ---
 
@@ -177,7 +175,7 @@ The gate is controlled by `APPROVAL_MODE`. See [Approval Modes](approval-modes.m
 
 ## Persistence
 
-All state lives under `.organizer/` in the **project root** (not the target directory):
+All state lives under `.organizer/` **inside the target directory** you organized — memory is per-directory, so each organized folder keeps its own registry, plans, and journals. (`PROFILES_DIR` and `.organizer/NAMING.md` are the exception — they stay project-level, since they're cross-corpus conventions rather than per-run memory.)
 
 | File | What it stores |
 |---|---|
@@ -197,13 +195,76 @@ Undo is a **manual, user-only action** — the agent has no tool to trigger it. 
 
 ---
 
+## Chatting during and after a run (live chat + resumable chat)
+
+The chat box (`#organize-input`) at the bottom of the Organizer screen is enabled from the moment you press **Start organizing** — you don't have to wait for the agent to stop before you can type. The same MCP server subprocess stays open for as long as the screen does, whether the agent is actively working or fully idle.
+
+### Live mid-run chat
+
+While the agent is still working — even during the pre-pass/analysis stage, before the first chat turn — a message you type is queued and woven into the run at the next opportunity, without waiting for it to finish: right before the run's first LLM call, after every turn's batch of tool calls completes, and — most importantly — at the moment the agent would otherwise stop (its response carries no more tool calls). At that last point, if a message is waiting, the agent takes it as a new instruction and keeps going instead of ending the run. This lets you course-correct an in-progress run, e.g. "actually, group by year instead", without waiting for it to finish first.
+
+This is the same queue [the `ask_user` chat checkpoint](#the-ask_user-chat-checkpoint) blocks on when the agent has a question for you — an `ask_user` call is really just a special case of this mechanism, one where the agent is the one waiting on your next message.
+
+```
+Run in progress (pre-pass / analysis / a turn's tool calls)
+       │
+   You type a message  →  echoed as a "you" turn, queued
+       │
+       ▼
+Host drains the queue at the next opportunity:
+  • before the first LLM call
+  • after each turn's tool-call batch
+  • when the agent's response has no tool calls (would otherwise stop)
+       │
+       ▼
+Queued message(s) injected as a new user turn; the agent continues
+instead of ending the run
+```
+
+### Continuing after a run (resumable chat)
+
+A run doesn't have to end the conversation, either. Once it reaches a **terminal state** — it finishes normally, hits an error, or exhausts its turn budget — with nothing left waiting in the queue at that instant, typing a message still works exactly as before:
+
+1. Echoes it into the transcript as a `you` turn
+2. Resumes the agent loop with the conversation history returned by the previous call, plus your new message appended as a fresh user turn
+3. Runs with the **same organize-mode toolset** as the initial run — plan, execute, write, and every registry/graph/event read tool (document-content tools such as reading or re-extracting a file stay unavailable, since the corpus was already analyzed) — so a follow-up like "quarantine the drafts too" or "actually group these by workstream" continues the *same* conversation instead of starting a fresh one; it also stays just as "live" as the initial run, since the chat queue is wired into every continuation call too
+
+```
+Run reaches a terminal state (done / error / max turns),
+nothing waiting in the queue
+       │
+       ▼
+"press g or keep chatting" cue shown once
+       │
+   You type a message
+       │
+       ▼
+Message echoed as a "you" turn; the agent loop resumes on the SAME
+session with (history=<previous>, message=<your text>)
+       │
+       ▼
+Agent responds — may call any tool, including execute_plan (a new
+plan gets a new approval) — the chat box stays enabled throughout,
+live for this continuation just like the initial run
+```
+
+This is distinct from **query mode** (`g`): query mode opens a *separate* screen on a *separate* MCP session with a strictly read-only toolset — safe for "just asking" without risking a mutation. The chat box instead continues the mutating conversation in place. Query mode becomes available once a run reaches its first terminal state; the chat box is available for the whole run, live or stopped.
+
+A couple of things carry over differently on a continuation:
+
+- Each chat message gets its **own fresh turn budget**, not a share of the original run's. Since a continuation doesn't re-run the discovery/analysis stage, the adaptive turn-budget calculation (which scales with corpus size) resets to its floor of 50 turns — in practice not a limitation, since a follow-up message is normally a small, targeted ask rather than a fresh full-corpus analysis.
+- The desktop notification and the "press g / keep chatting" cue fire only once, on the *first* terminal state — not again after every subsequent chat turn.
+- If a turn raises an unhandled error partway through a batch of tool calls, telcontar no longer crashes the conversation: any tool call left without a result is answered with a synthetic error so the history stays valid, and you can keep typing to try again.
+
+---
+
 ## Interactive query mode
 
-After a corpus has been analyzed (registry exists), telcontar offers a **read-only query mode** where you can ask natural-language questions about it without reorganizing anything.
+After a corpus has been analyzed (its `.organizer/` memory exists), telcontar offers a **read-only query mode** where you can ask natural-language questions about it without reorganizing anything.
 
 ### How to start query mode
 
-- From the **startup screen**, press **Query** (the registry must already exist at `REGISTRY_PATH`).
+- From the **startup screen**, press **Query**. The selected folder — or one of its parent folders — must contain a `.organizer/` from a previous Organize run; telcontar walks up from the folder you picked until it finds one, so choosing a subfolder of a previously-organized tree still resolves to that tree's memory. If none is found, an error asks you to run Organize first.
 - From the **Organizer screen**, press **g** once organizing completes.
 
 ### What happens
@@ -214,12 +275,13 @@ For each question:
 
 1. The host sends the query-mode system prompt (built from the active profile) plus the user's question to GPT-5.
 2. GPT-5 calls read-only tools to gather facts:
-   - `list_documents` / `get_registry` / `get_document` — recorded documents and their metadata
+   - `list_documents` / `get_registry` / `get_document` / `lookup_documents` — recorded documents and their metadata (`lookup_documents` is the batch form of `get_document`, one round trip for many checksums)
    - `list_events` — the dated project timeline
    - `get_graph` / `get_actors` — the knowledge graph and ranked main actors
    - `find_duplicates` / `find_modified_documents` — duplicate clusters and modified versions
    - `list_archived` — documents withdrawn from active memory
    - `list_dir` / `read_file` / `extract_text` / `compare_documents` / `compute_checksum` — for ad-hoc file inspection
+   - `read_file_batch` / `extract_text_batch` / `compute_checksum_batch` — batch forms of the above, for inspecting several files in one round trip
 3. The model produces an answer citing specifics (titles, dates, actor names, event sentences) drawn only from the tool results.
 4. The answer appears in the log; the next question can be typed immediately.
 

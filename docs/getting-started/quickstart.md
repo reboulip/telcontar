@@ -79,7 +79,7 @@ The **startup screen** shows a browsable folder tree, rooted at your home direct
 Browse the tree and click the folder you want to organize — the "Selected:" label updates to show your choice (it points at your home directory by default). Then press **Organize** to open the organizer screen.
 
 !!! tip
-    **Query** opens a read-only chat over an already-analyzed corpus (registry must exist). Use it after a previous Organize run to ask natural-language questions without touching the files.
+    **Query** opens a read-only chat over an already-analyzed corpus — the selected folder, or a parent of it, must contain a `.organizer/` from a previous Organize run. Use it after a previous Organize run to ask natural-language questions without touching the files.
 
 ---
 
@@ -111,16 +111,12 @@ Type any steering instructions you want the agent to follow, or leave the field 
 
 ## 5. Watch the agent work
 
-The main screen shows a sidebar file tree on the left and a single chat transcript on the right, with a compact **operations journal** strip docked along the bottom (above the status bar) — a horizontally-scrollable, one-line-per-entry view of the file operations recorded so far. `telcontar` narrates its progress in plain language, one turn per macro-task; the raw tool calls behind each turn collect into a click-to-expand **internal steps** group:
+The main screen shows a sidebar file tree on the left and a single chat transcript on the right, with a compact **operations journal** strip docked along the bottom (above the status bar) — a horizontally-scrollable, one-line-per-entry view of the file operations recorded so far.
+
+Before any chat turn appears, telcontar deterministically discovers and checksums the whole directory tree, silently — no LLM call, and no transcript turn for this step, just a **progress bar** (e.g. "12 / 47 documents analyzed") above the status bar. If it finds documents it hasn't seen before, it pauses once to show a cost estimate scoped to just those new documents (see [How It Works](../user-guide/how-it-works.md#the-cost-estimate-approval-gate)) before reading and analyzing them. `telcontar` narrates the steps that follow in plain language, one turn per macro-task; the raw tool calls behind each turn collect into a click-to-expand **internal steps** group:
 
 ```
-telcontar  Scanning the directory…
-▸ internal steps
-
 telcontar  Reading documents…
-▸ internal steps
-
-telcontar  Computing checksums…
 ▸ internal steps
 
 telcontar  Recording documents in memory…
@@ -133,17 +129,13 @@ telcontar  Checking for duplicates…
 Expand an **internal steps** group to see the raw calls and results behind it, e.g.:
 
 ```
-▶ walk_tree(path='C:/Users/me/Documents/messy', max_depth=3)
-  {"path": "...", "max_depth": 3, "entries": [...]}
-▶ extract_text(path='.../rapport final v3.docx', max_chars=4000)
-  "Rapport trimestriel Q1 2024..."
-▶ compute_checksum(path='.../rapport final v3.docx')
-  {"checksum": "a3f9..."}
-▶ record_document(checksum='a3f9...', title='Rapport Q1 2024', ...)
-  {"checksum": "a3f9...", "status": "active"}
+▶ extract_text_batch(paths=['.../rapport final v3.docx', ...])
+  {".../rapport final v3.docx": "Rapport trimestriel Q1 2024...", ...}
+▶ record_document_batch(documents=[{"checksum": "a3f9...", "title": "Rapport Q1 2024", ...}, ...])
+  {"recorded": [{"checksum": "a3f9...", "status": "active"}, ...], "errors": []}
 ```
 
-The agent reads, checksums, and records each document in the registry, then uses `find_duplicates` to spot the copy.
+New documents are analyzed in isolated batches of 10 — read/extract, then one forced-tool LLM call returning a structured record per document, then recorded into the registry in one `record_document_batch` call per batch. Only once every new document is recorded does the chat loop begin; the agent (now working from a digest of the whole corpus, not raw file content) calls `find_duplicates` while planning to spot the copy.
 
 ---
 
@@ -191,7 +183,7 @@ messy/
     └── copy_of_rapport_final_v3.docx
 ```
 
-A desktop notification fires when the agent is done. Press **g** to open query mode and ask questions about the corpus, **j** to view the operations journal (and **u** there to undo the most recent operation), or **q** to quit the TUI.
+A desktop notification fires when the agent is done. The chat box at the bottom of the screen has actually been live the whole time — you can type a message at any point during the run (e.g. "actually, group by year instead") and it gets woven in as soon as the agent is between turns, instead of waiting for the run to finish. Now that the run is done, it works the same way to continue the conversation — type a follow-up message (e.g. "quarantine the drafts too") to keep going with the same mutating toolset, without restarting the run. Press **g** instead to open a separate read-only query mode and ask questions about the corpus, **j** to view the operations journal (and **u** there to undo the most recent operation), or **q** to quit the TUI.
 
 ---
 

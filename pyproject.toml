@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "telcontar"
-version = "0.1.0b4"
+version = "0.1.0b5"
 description = "MCP-based local directory organizer driven by GPT-5"
 readme = "README.md"
 requires-python = ">=3.12"

@@ -198,3 +198,106 @@ explicit decision — already marked skipped in the security doc, not tracked he
 - [x] N2 · Add native `.msg` (Outlook email) extraction support — new extraction path in `server/extract.py` (e.g. via `extract-msg`) preserving sender/recipients/date/subject metadata rather than lossy conversion to another format [#21]
 
 ---
+
+## Phase 14 — Exhaustive batch analysis, progress & resumable chat
+
+Full-corpus coverage and cost control for the ANALYZE pass, plus letting the user keep
+working in chat after a stop instead of being pushed to the read-only journal/query views.
+
+- [x] O1 · Batch document-content tools — `extract_text_batch(paths, max_chars)`,
+      `read_file_batch(paths, max_chars)`, `compute_checksum_batch(paths)` in
+      `server/tools.py` + `server/main.py`, mirroring the existing singular tools' guards
+      (`check_allowlist`, `check_within_root`) and returning `{path: result_or_error}` so
+      one bad file doesn't fail the batch; wire egress logging per file and extend
+      `_wrap_untrusted_content` in `host/agent.py` to delimit each file's content
+      individually.
+- [x] O2 · `record_document_batch` tool — accepts a list of document dicts (same shape as
+      `record_document`'s params) and upserts each into the registry in one call,
+      collecting per-document validation errors instead of failing the whole batch
+      (requires: O1).
+- [x] O3 · Rewrite the ANALYZE prompt for batching + full coverage — update step A of
+      `_SYSTEM_PROMPT_TEMPLATE` in `host/agent.py` to have the agent work through
+      documents in batches via the new tools (factoring the prompt instead of one document
+      per LLM turn), and explicitly require every document discovered by `walk_tree` to be
+      analyzed before moving to ORGANIZE — never sample a subset (requires: O1, O2).
+- [x] O4 · Adaptive turn budget — replace the fixed `_MAX_TURNS = 50` in `host/agent.py`
+      with a budget that scales with the number of documents discovered, so a large corpus
+      doesn't hit an artificial ceiling mid-analysis; keep a sane hard ceiling as a safety
+      valve against runaway loops.
+- [x] O5 · Analysis progress tracking — track documents discovered (accumulated from
+      `walk_tree` results) vs. documents analyzed (from `record_document`/
+      `record_document_batch` calls) inside `run_agent_loop`, and emit a new `"progress"`
+      `AgentEvent` on each change.
+- [x] O6 · Progress bar in the TUI — add a Textual `ProgressBar` to `OrganizerScreen`,
+      wired to the `"progress"` event, showing analyzed/total document counts during the
+      run (requires: O5).
+- [x] O7 · Resumable chat after a stop — refactor `run_agent_loop` to take/return
+      conversation history (mirroring `run_query_loop`'s `history` in/out shape) so a run
+      that finished, errored, or hit the turn ceiling can be continued with a new free-text
+      user message using the same mutating toolset, instead of only offering the journal
+      viewer or read-only query mode. Add a chat `Input` to `OrganizerScreen` (mirroring
+      `QueryScreen`'s pattern) enabled once the run reaches a terminal state, keeping the
+      MCP session open across turns.
+- [x] O8 · Pre-ANALYZE token-estimate approval gate — before the first
+      `extract_text_batch`/`read_file_batch`/`compute_checksum_batch`/`record_document_batch`
+      call in a run, the host computes a rough total input-token estimate for the whole
+      ANALYZE pass from the documents discovered so far via `walk_tree` (e.g.
+      `min(file_size, max_snippet_chars) / 4` per file, summed) and gates those batch
+      tool calls behind a one-time user approval — mirroring `execute_plan`'s
+      `on_approval_needed`/`APPROVAL_MODE` gating pattern in `host/agent.py`'s
+      `_dispatch` — showing something like "~N documents, ~M input tokens estimated,
+      batched in groups of 10 — proceed?". This is a single approval for the whole
+      ANALYZE pass, not one per batch. Add a matching `CostEstimateModal` in
+      `host/app.py` (mirrors `ApprovalModal`) (requires: O1, O2, O5).
+
+---
+
+## Phase 15 — Stateless analysis, per-directory memory & live chat
+
+Kill the quadratic ANALYZE token cost (content sent to the API at most once, ever),
+make `.organizer` live inside the organized directory and skip already-analyzed
+files on re-runs, keep the chat input live for the whole run (clarifications and
+option picks become normal chat turns), and stop create-dir/move ordering from
+hard-stopping plan execution.
+
+- [x] P1 · Two-sub-phase plan execution — `execute_plan` runs all `create_dir` ops
+      first, then file ops, preserving relative order within each group; the `move`
+      executor creates missing destination parents so a deselected or failed
+      `create_dir` can no longer cascade into a hard stop.
+- [x] P2 · Per-directory `.organizer` memory — `Settings.for_target(target)` rebases
+      every relative memory path (journal, events, plans, registry, graph, archive,
+      egress, `_quarantine`) onto the target dir; applied in `config.settings.load()`
+      when `TARGET_DIR` is set (server) and explicitly in the host worker/screens;
+      server CWD stays at project root. Hide `.organizer` from `walk_tree`,
+      `write_index` and the starter-pane overview. No migration (beta).
+- [x] P3 · `lookup_documents(checksums)` read-only tool — batch registry lookup
+      `{checksum: record | null}`; add to `QUERY_ALLOWED_TOOLS`. (requires: P2)
+- [x] P4 · Deterministic host pre-pass — host code (no LLM) walks the tree to
+      exhaustion (re-walking `truncated` dirs), checksums via
+      `compute_checksum_batch`, partitions known/new via `lookup_documents`,
+      re-homes known records whose path changed, emits `progress` events.
+      (requires: P2, P3)
+- [x] P5 · Stateless analyzer with accurate cost gate — per batch of ≤10 NEW docs,
+      fetch via `extract_text_batch`/`read_file_batch` (egress/confinement/bounds
+      unchanged), one isolated LLM call with profile extraction rules + untrusted
+      delimiters, forced `submit_document_records` tool call, records rejoined to
+      host-authoritative path/checksum by index, persisted via
+      `record_document_batch`. Cost gate fires once, counts only new docs, skipped
+      when nothing is new. (requires: P4)
+- [x] P6 · ORGANIZE-only agent loop + digest — `run_agent_loop` runs pre-pass +
+      analyzer internally on a fresh run, seeds the conversation with the digest,
+      rewrites system-prompt section A ("corpus already analyzed"), removes the
+      in-loop `_COST_GATED_BATCH_TOOLS` gate, feeds pre-pass corpus size into the
+      turn budget. (requires: P5)
+- [x] P7 · Live mid-run chat — `run_agent_loop` gains `message_queue`; queued user
+      messages injected as user turns between agent turns; `#organize-input`
+      enabled for the whole run. (requires: P6)
+- [x] P8 · `ask_user` chat checkpoint — merge `ask_clarification`/`propose_options`
+      into one synthetic `ask_user` tool that renders in the transcript and awaits
+      the next chat message; delete `ClarificationModal`/`OptionsModal`.
+      `CostEstimateModal` reworded to "N new documents (M already analyzed,
+      skipped)". (requires: P7)
+- [x] P9 · Settings from anywhere — app-level `ctrl+s` binding opening
+      `ConfigScreen` from any screen, guarded against double-push.
+
+---

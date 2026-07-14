@@ -133,6 +133,19 @@ class Registry:
                 return rec
         return None
 
+    def rehome(self, checksum: str, new_path: str) -> DocumentRecord | None:
+        """Update a record's path directly by checksum (P4), unlike
+        ``update_path`` which matches by the file's OLD path. Used by the
+        deterministic host pre-pass to reconcile records whose on-disk location
+        no longer matches what the registry has recorded. Returns None if no
+        record exists for ``checksum``."""
+        rec = self.documents.get(checksum)
+        if rec is None:
+            return None
+        rec.path = new_path
+        rec.last_analyzed = _now()
+        return rec
+
     # --- queries -----------------------------------------------------------
 
     def get(self, checksum: str) -> DocumentRecord | None:

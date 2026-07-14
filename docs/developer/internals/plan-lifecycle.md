@@ -222,9 +222,9 @@ Apply all operations in an approved plan. Must be in approved state. `quarantine
 1. Load the plan file.
 2. Check state is approved; raise if not.
 3. Transition plan state to executing and write to disk.
-4. For each operation in the plan (in order):
+4. Execute operations in two sub-phases, not strict plan order: all `create_dir` ops run first (each group keeping its original relative order), then every other op type, also in its original relative order. This guarantees a `create_dir` an op like `move` depends on has already run, regardless of how the two were interleaved when authored. The persisted `Plan.ops` order and the approval-view display order are untouched — only the in-memory iteration order for this run is reshuffled. For each operation in that iteration order:
    a. Resolve the op's source: if an earlier op in this same run already relocated the file (see below), use its current path; otherwise use the op's original `src`.
-   b. Attempt to execute it against the resolved source: `rename`/`move`/`quarantine`/`create_file`/`update_file`/`create_dir` are applied directly; `archive_document`/`compress_quarantine` are delegated to the pre-existing standalone functions of the same name (they self-journal and are skipped by step c's generic journal append).
+   b. Attempt to execute it against the resolved source: `rename`/`move`/`quarantine`/`create_file`/`update_file`/`create_dir` are applied directly; `archive_document`/`compress_quarantine` are delegated to the pre-existing standalone functions of the same name (they self-journal and are skipped by step c's generic journal append). `move`, like `quarantine`, creates its destination directory (`mkdir(parents=True, exist_ok=True)`) before checking for collision — a second line of defense if the op's own `create_dir` was deselected, failed, or never proposed, so a move targeting a missing destination self-heals instead of hard-stopping.
    c. On success: update operation status to completed, append a journal entry for non-self-journaling op types (recording the resolved source, not necessarily the original `src`), record the file's new location for later ops, update plan file.
    d. On failure: retry — 3 attempts total. After the 3rd failed attempt, mark operation status as failed and continue.
 5. After all operations:

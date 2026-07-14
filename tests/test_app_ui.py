@@ -96,6 +96,26 @@ def _steps_text(screen) -> str:
     return "\n".join(str(w.content) for w in screen.query(".steps-log"))
 
 
+def _patch_run_agent_loop(monkeypatch: pytest.MonkeyPatch, fake_run_agent_loop) -> None:
+    """Patch OrganizerScreen's agent-loop entry points for a test double (O7).
+
+    O7 restructured `OrganizerScreen._agent_worker` off the one-shot `run_agent`
+    convenience call onto `mcp_session(...) + run_agent_loop(...)` directly (so the
+    MCP session stays open across the initial run and any follow-up chat turns) —
+    mirroring `QueryScreen._query_worker`'s pattern. Test doubles patch at this
+    same seam: a no-op `mcp_session` context manager plus a `fake_run_agent_loop`
+    matching `run_agent_loop`'s signature, returning `(text, history)`.
+    """
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def fake_mcp_session(project_root, target=None):
+        yield object()
+
+    monkeypatch.setattr("host.agent.mcp_session", fake_mcp_session)
+    monkeypatch.setattr("host.agent.run_agent_loop", fake_run_agent_loop)
+
+
 async def test_setup_wizard_welcome_step_wraps_instead_of_truncating(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -368,18 +388,23 @@ async def test_organizer_screen_groups_tool_events_into_steps(
         target,
         settings,
         llm,
+        session=None,
         on_event,
         on_approval_needed,
-        on_questions_needed=None,
-        on_options_needed=None,
+        on_ask_user_needed=None,
+        on_cost_approval_needed=None,
+        project_root=None,
         instructions=None,
+        history=None,
+        message=None,
+        message_queue=None,
     ):
         on_event(AgentEvent("tool_call", "list_dir(path='.')"))
         on_event(AgentEvent("tool_result", "{'entries': []}"))
         on_event(AgentEvent("done", "All done."))
-        return "All done."
+        return "All done.", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
@@ -415,10 +440,10 @@ async def test_organizer_screen_q_shortcut_quits(
     monkeypatch.setattr("config.settings.is_configured", lambda: True)
     monkeypatch.setattr("host.app._send_notification", lambda target: None)
 
-    async def fake_run_agent(**kwargs: object) -> str:
-        return "done"
+    async def fake_run_agent(**kwargs: object) -> tuple[str, list]:
+        return "done", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
@@ -448,6 +473,80 @@ async def test_startup_screen_escape_quits(monkeypatch: pytest.MonkeyPatch, tmp_
         await pilot.press("escape")
         await pilot.pause()
         assert app._exit is True
+
+
+# ── P2: per-directory memory — Query mode target resolution ───────────────────
+
+
+def test_find_organizer_root_finds_organizer_at_start(tmp_path: Path) -> None:
+    from host.app import _find_organizer_root
+
+    (tmp_path / ".organizer").mkdir()
+
+    assert _find_organizer_root(tmp_path) == tmp_path.resolve()
+
+
+def test_find_organizer_root_walks_up_to_parent(tmp_path: Path) -> None:
+    from host.app import _find_organizer_root
+
+    (tmp_path / ".organizer").mkdir()
+    sub = tmp_path / "docs" / "2024"
+    sub.mkdir(parents=True)
+
+    assert _find_organizer_root(sub) == tmp_path.resolve()
+
+
+def test_find_organizer_root_returns_none_when_absent(tmp_path: Path) -> None:
+    from host.app import _find_organizer_root
+
+    sub = tmp_path / "docs"
+    sub.mkdir()
+
+    assert _find_organizer_root(sub) is None
+
+
+async def test_query_button_shows_error_when_no_organizer_found(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setattr("config.settings.is_configured", lambda: True)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(StartupScreen())
+        await pilot.pause()
+        screen = app.screen
+        screen._on_dir_selected(SimpleNamespace(path=tmp_path))
+        await pilot.click("#query-btn")
+        await pilot.pause()
+        assert isinstance(app.screen, StartupScreen)
+        assert "No analyzed corpus found" in str(screen.query_one("#error-label", Label).content)
+
+
+async def test_query_button_resolves_organizer_root_from_parent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setattr("config.settings.is_configured", lambda: True)
+
+    (tmp_path / ".organizer").mkdir()
+    sub = tmp_path / "docs"
+    sub.mkdir()
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(StartupScreen())
+        await pilot.pause()
+        screen = app.screen
+        # Select a subfolder of the previously-organized tree — the ancestor's
+        # `.organizer` should still be found and used as the query target.
+        screen._on_dir_selected(SimpleNamespace(path=sub))
+        await pilot.click("#query-btn")
+        await pilot.pause()
+        assert isinstance(app.screen, QueryScreen)
+        assert app.screen._target == tmp_path.resolve()
 
 
 async def test_query_screen_routes_tool_events_to_timeline(
@@ -891,50 +990,106 @@ async def test_approval_modal_shows_ops_json_path(tmp_path: Path) -> None:
         assert "plan_ops.json" in label
 
 
-# ── L7: multiple-option proposals ─────────────────────────────────────────────
+# ── P8: ask_user chat checkpoint ────────────────────────────────────────────
 
 
-async def test_options_modal_submit_returns_selection(tmp_path: Path) -> None:
-    from textual.widgets import RadioButton, RadioSet
+async def test_ask_user_renders_question_and_resolves_from_chat_reply(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """P8: ask_user has no modal — it renders as a transcript turn and blocks
+    on the same live-chat queue #organize-input already feeds (P7)."""
+    from config.settings import Settings
 
-    from host.app import OptionsModal
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
 
-    questions = [
-        {
-            "question": "How should COPIL decks be grouped?",
-            "options": ["by date", "by workstream", "flat"],
-        }
-    ]
+    captured: dict = {}
+
+    async def fake_run_agent_loop(*, on_ask_user_needed=None, **kwargs: object) -> tuple[str, list]:
+        result = await on_ask_user_needed(
+            [{"text": "Group by?", "options": ["by date", "by workstream"]}]
+        )
+        captured["result"] = result
+        return "done", []
+
+    _patch_run_agent_loop(monkeypatch, fake_run_agent_loop)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        await pilot.click("#proceed-btn")
+        await pilot.pause(0.2)
+
+        transcript = _transcript_text(app.screen)
+        assert "I have a question for you" in transcript
+        assert "Group by?" in transcript
+
+        organize_input = app.screen.query_one("#organize-input", Input)
+        organize_input.focus()
+        await pilot.pause()
+        organize_input.value = "by workstream"
+        await pilot.press("enter")
+        await pilot.pause(0.2)
+
+    assert captured["result"].reply == "by workstream"
+    assert captured["result"].provided is True
+
+
+# ── O8: pre-ANALYZE cost-estimate modal ───────────────────────────────────────
+
+
+async def test_cost_estimate_modal_shows_summary(tmp_path: Path) -> None:
+    from textual.widgets import Static
+
+    from host.app import CostEstimateModal
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(
+            CostEstimateModal(new_documents=42, already_analyzed=7, estimated_tokens=12345)
+        )
+        await pilot.pause()
+        summary = app.screen.query_one("#cost-summary", Static)
+        assert "42 new document(s)" in str(summary.content)
+        assert "7 already analyzed, skipped" in str(summary.content)
+        assert "12345 input tokens" in str(summary.content)
+        assert "groups of 10" in str(summary.content)
+
+
+async def test_cost_estimate_modal_proceed_approves(tmp_path: Path) -> None:
+    from host.app import CostEstimateModal
+
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
         captured: dict = {}
-        app.push_screen(OptionsModal(questions), lambda res: captured.update(res=res))
+        app.push_screen(
+            CostEstimateModal(new_documents=1, already_analyzed=0, estimated_tokens=100),
+            lambda res: captured.update(res=res),
+        )
         await pilot.pause()
-        radio_set = app.screen.query_one("#options-set-0", RadioSet)
-        buttons = list(radio_set.query(RadioButton))
-        buttons[1].value = True  # choose "by workstream"
+        await pilot.click("#cost-proceed-btn")
         await pilot.pause()
-        await pilot.click("#options-submit")
-        await pilot.pause()
-        res = captured["res"]
-        assert res.provided is True
-        assert res.selections == {"How should COPIL decks be grouped?": "by workstream"}
+        assert captured["res"].approved is True
 
 
-async def test_options_modal_skip_returns_empty(tmp_path: Path) -> None:
-    from host.app import OptionsModal
+async def test_cost_estimate_modal_cancel_rejects(tmp_path: Path) -> None:
+    from host.app import CostEstimateModal
 
-    questions = [{"question": "Q?", "options": ["a", "b"]}]
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
         captured: dict = {}
-        app.push_screen(OptionsModal(questions), lambda res: captured.update(res=res))
+        app.push_screen(
+            CostEstimateModal(new_documents=1, already_analyzed=0, estimated_tokens=100),
+            lambda res: captured.update(res=res),
+        )
         await pilot.pause()
-        await pilot.click("#options-skip")
+        await pilot.click("#cost-cancel-btn")
         await pilot.pause()
-        res = captured["res"]
-        assert res.provided is False
-        assert res.selections == {}
+        assert captured["res"].approved is False
 
 
 # ── F9: the status bar surfaces running token usage ──────────────────────────
@@ -958,17 +1113,22 @@ async def test_organizer_status_bar_shows_token_usage(
         target,
         settings,
         llm,
+        session=None,
         on_event,
         on_approval_needed,
-        on_questions_needed=None,
-        on_options_needed=None,
+        on_ask_user_needed=None,
+        on_cost_approval_needed=None,
+        project_root=None,
         instructions=None,
+        history=None,
+        message=None,
+        message_queue=None,
     ):
         on_event(AgentEvent("tokens", "12.3K in / 1.0K out", data={"in": 12300, "out": 1000}))
         on_event(AgentEvent("done", "done"))
-        return "done"
+        return "done", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
@@ -979,6 +1139,188 @@ async def test_organizer_status_bar_shows_token_usage(
         await pilot.pause(0.2)
         status = str(app.screen.query_one("#status-bar", Static).content)
         assert "12.3K in" in status
+
+
+# ── O6: ANALYZE progress bar ──────────────────────────────────────────────────
+
+
+async def test_organizer_progress_row_hidden_until_first_progress_event(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    async def fake_run_agent(
+        *,
+        target,
+        settings,
+        llm,
+        session=None,
+        on_event,
+        on_approval_needed,
+        on_ask_user_needed=None,
+        on_cost_approval_needed=None,
+        project_root=None,
+        instructions=None,
+        history=None,
+        message=None,
+        message_queue=None,
+    ):
+        return "done", []
+
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        assert app.screen.query_one("#progress-row").display is False
+        await pilot.click("#proceed-btn")
+        await pilot.pause()
+        assert app.screen.query_one("#progress-row").display is False
+
+
+async def test_organizer_progress_row_shows_and_updates_on_progress_event(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from textual.widgets import Label
+
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    async def fake_run_agent(
+        *,
+        target,
+        settings,
+        llm,
+        session=None,
+        on_event,
+        on_approval_needed,
+        on_ask_user_needed=None,
+        on_cost_approval_needed=None,
+        project_root=None,
+        instructions=None,
+        history=None,
+        message=None,
+        message_queue=None,
+    ):
+        on_event(
+            AgentEvent("progress", "Analyzed 3 / 10 documents", data={"analyzed": 3, "total": 10})
+        )
+        return "in progress", []
+
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        await pilot.click("#proceed-btn")
+        await pilot.pause()
+        await pilot.pause(0.1)
+        assert app.screen.query_one("#progress-row").display is True
+        label = str(app.screen.query_one("#progress-label", Label).content)
+        assert "3 / 10 documents" in label
+
+
+async def test_organizer_progress_row_hides_on_done(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    async def fake_run_agent(
+        *,
+        target,
+        settings,
+        llm,
+        session=None,
+        on_event,
+        on_approval_needed,
+        on_ask_user_needed=None,
+        on_cost_approval_needed=None,
+        project_root=None,
+        instructions=None,
+        history=None,
+        message=None,
+        message_queue=None,
+    ):
+        on_event(
+            AgentEvent("progress", "Analyzed 3 / 10 documents", data={"analyzed": 3, "total": 10})
+        )
+        on_event(AgentEvent("done", "done"))
+        return "done", []
+
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        await pilot.click("#proceed-btn")
+        await pilot.pause()
+        await pilot.pause(0.1)
+        assert app.screen.query_one("#progress-row").display is False
+
+
+async def test_organizer_progress_row_hides_on_error(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    async def fake_run_agent(
+        *,
+        target,
+        settings,
+        llm,
+        session=None,
+        on_event,
+        on_approval_needed,
+        on_ask_user_needed=None,
+        on_cost_approval_needed=None,
+        project_root=None,
+        instructions=None,
+        history=None,
+        message=None,
+        message_queue=None,
+    ):
+        on_event(
+            AgentEvent("progress", "Analyzed 3 / 10 documents", data={"analyzed": 3, "total": 10})
+        )
+        on_event(AgentEvent("error", "Reached maximum turns (50); stopping."))
+        return "Stopped: maximum turns (50) reached.", []
+
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        await pilot.click("#proceed-btn")
+        await pilot.pause()
+        await pilot.pause(0.1)
+        assert app.screen.query_one("#progress-row").display is False
 
 
 # ── F10: macro-task narration in the conversation pane ───────────────────────
@@ -1000,11 +1342,16 @@ async def test_organizer_narrates_macro_tasks_in_transcript(
         target,
         settings,
         llm,
+        session=None,
         on_event,
         on_approval_needed,
-        on_questions_needed=None,
-        on_options_needed=None,
+        on_ask_user_needed=None,
+        on_cost_approval_needed=None,
+        project_root=None,
         instructions=None,
+        history=None,
+        message=None,
+        message_queue=None,
     ):
         on_event(AgentEvent("tool_call", "read_file(path='a')", data={"tool": "read_file"}))
         # Same macro-task → must collapse to one narration turn.
@@ -1013,9 +1360,9 @@ async def test_organizer_narrates_macro_tasks_in_transcript(
             AgentEvent("tool_call", "compute_checksum(path='a')", data={"tool": "compute_checksum"})
         )
         on_event(AgentEvent("done", "done"))
-        return "done"
+        return "done", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
@@ -1067,18 +1414,23 @@ async def test_organizer_narrates_new_propose_tools_as_planning_changes(
         target,
         settings,
         llm,
+        session=None,
         on_event,
         on_approval_needed,
-        on_questions_needed=None,
-        on_options_needed=None,
+        on_ask_user_needed=None,
+        on_cost_approval_needed=None,
+        project_root=None,
         instructions=None,
+        history=None,
+        message=None,
+        message_queue=None,
     ):
         for tool in new_propose_tools:
             on_event(AgentEvent("tool_call", f"{tool}(...)", data={"tool": tool}))
         on_event(AgentEvent("done", "done"))
-        return "done"
+        return "done", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
@@ -1134,11 +1486,18 @@ async def test_startup_picker_selection_drives_organize(
     monkeypatch.setattr("host.app._send_notification", lambda target: None)
 
     async def fake_run_agent(
-        *, target, settings, llm, on_event, on_approval_needed, on_questions_needed=None
+        *,
+        target,
+        settings,
+        llm,
+        on_event,
+        on_approval_needed,
+        on_ask_user_needed=None,
+        **kwargs: object,
     ):
-        return "done"
+        return "done", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
@@ -1154,6 +1513,88 @@ async def test_startup_picker_selection_drives_organize(
         await pilot.pause()
         assert isinstance(app.screen, OrganizerScreen)
         assert app.screen._target == tmp_path
+
+
+# ── P9: settings from anywhere (ctrl+s) ───────────────────────────────────────
+
+
+async def test_ctrl_s_opens_settings_from_startup_screen(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("config.settings.is_configured", lambda: True)
+    monkeypatch.setattr(
+        "config.settings.read_user_config",
+        lambda: {"llm_base_url": "https://example.com/v1", "llm_model": "claude-sonnet-5"},
+    )
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(StartupScreen())
+        await pilot.pause()
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert isinstance(app.screen, ConfigScreen)
+
+
+async def test_ctrl_s_is_noop_when_config_screen_already_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("config.settings.is_configured", lambda: True)
+    monkeypatch.setattr(
+        "config.settings.read_user_config",
+        lambda: {"llm_base_url": "https://example.com/v1", "llm_model": "claude-sonnet-5"},
+    )
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(StartupScreen())
+        await pilot.pause()
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert isinstance(app.screen, ConfigScreen)
+        stack_len = len(app.screen_stack)
+
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert len(app.screen_stack) == stack_len
+        assert isinstance(app.screen, ConfigScreen)
+
+
+async def test_ctrl_s_is_noop_during_setup_screen() -> None:
+    """Don't let ctrl+s bypass the first-run wizard — ConfigScreen can persist
+    a half-configured state (e.g. an empty key) that skips SetupScreen's
+    guided keyring/plaintext-fallback flow."""
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(SetupScreen())
+        await pilot.pause()
+        stack_len = len(app.screen_stack)
+
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert len(app.screen_stack) == stack_len
+        assert isinstance(app.screen, SetupScreen)
+
+
+async def test_ctrl_s_opens_settings_over_a_modal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Settings stay reachable even mid-modal (e.g. while a cost estimate is
+    awaiting approval) — it stacks on top and pops back cleanly."""
+    from host.app import CostEstimateModal
+
+    monkeypatch.setattr("config.settings.is_configured", lambda: True)
+    monkeypatch.setattr(
+        "config.settings.read_user_config",
+        lambda: {"llm_base_url": "https://example.com/v1", "llm_model": "claude-sonnet-5"},
+    )
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(StartupScreen())
+        await pilot.pause()
+        app.push_screen(
+            CostEstimateModal(new_documents=1, already_analyzed=0, estimated_tokens=100)
+        )
+        await pilot.pause()
+        assert isinstance(app.screen, CostEstimateModal)
+
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert isinstance(app.screen, ConfigScreen)
 
 
 # ── L3: prior-instructions conversation starter ───────────────────────────────
@@ -1202,11 +1643,11 @@ async def test_organizer_proceed_reveals_transcript_and_starts_agent(
 
     started = {"count": 0}
 
-    async def fake_run_agent(**kwargs: object) -> str:
+    async def fake_run_agent(**kwargs: object) -> tuple[str, list]:
         started["count"] += 1
-        return "done"
+        return "done", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
@@ -1236,11 +1677,11 @@ async def test_organizer_passes_steering_instructions_to_agent(
 
     captured: dict = {}
 
-    async def fake_run_agent(*, instructions=None, **kwargs: object) -> str:
+    async def fake_run_agent(*, instructions=None, **kwargs: object) -> tuple[str, list]:
         captured["instructions"] = instructions
-        return "done"
+        return "done", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
@@ -1305,7 +1746,7 @@ async def test_ops_journal_empty_then_updates_as_operations_execute(
     journal_path = tmp_path / "journal.jsonl"  # does not exist yet
     monkeypatch.setattr("host.app._resolve_journal_path", lambda root: journal_path)
 
-    async def fake_run_agent(*, on_event, instructions=None, **kwargs: object) -> str:
+    async def fake_run_agent(*, on_event, instructions=None, **kwargs: object) -> tuple[str, list]:
         # A move operation lands in the undo journal mid-run…
         journal_path.write_text(
             json.dumps(
@@ -1324,9 +1765,9 @@ async def test_ops_journal_empty_then_updates_as_operations_execute(
         )
         on_event(AgentEvent("tool_result", "{'ops_completed': 1}"))
         on_event(AgentEvent("done", "done"))
-        return "done"
+        return "done", []
 
-    monkeypatch.setattr("host.agent.run_agent", fake_run_agent)
+    _patch_run_agent_loop(monkeypatch, fake_run_agent)
 
     app = OrganizerApp()
     async with app.run_test(size=(120, 40)) as pilot:
@@ -1341,3 +1782,193 @@ async def test_ops_journal_empty_then_updates_as_operations_execute(
         journal_log = _richlog_text(app.screen.query_one("#ops-journal", RichLog))
         assert "report.pdf" in journal_log
         assert "move" in journal_log
+
+
+# ── O7: resumable chat after a stop ───────────────────────────────────────────
+
+
+async def test_organize_input_enabled_from_run_start_not_just_terminal_state(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """P7: chat is live for the whole run, not just after it stops — the input
+    must already be enabled while the agent is still working, not only once
+    run_agent_loop returns."""
+    import asyncio
+
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def fake_run_agent_loop(**kwargs: object) -> tuple[str, list]:
+        started.set()
+        await release.wait()
+        return "done", []
+
+    _patch_run_agent_loop(monkeypatch, fake_run_agent_loop)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        assert app.screen.query_one("#organize-input", Input).disabled is True
+        await pilot.click("#proceed-btn")
+        await asyncio.wait_for(started.wait(), timeout=2)
+        await pilot.pause()
+        # Still mid-run (the fake hasn't returned yet) — input is already live.
+        assert app.screen.query_one("#organize-input", Input).disabled is False
+        release.set()
+        await pilot.pause()
+        await pilot.pause(0.1)
+        assert app.screen.query_one("#organize-input", Input).disabled is False
+
+
+async def test_organize_input_submit_continues_the_conversation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    calls: list[dict] = []
+
+    async def fake_run_agent_loop(
+        *, on_event, history=None, message=None, **kwargs: object
+    ) -> tuple[str, list]:
+        calls.append({"history": history, "message": message})
+        if history is None:
+            on_event(AgentEvent("done", "Initial done."))
+            return "Initial done.", [{"role": "system"}, {"role": "user"}, {"role": "assistant"}]
+        on_event(AgentEvent("done", "Follow-up done."))
+        return "Follow-up done.", [
+            *history,
+            {"role": "user", "content": message},
+            {"role": "assistant"},
+        ]
+
+    _patch_run_agent_loop(monkeypatch, fake_run_agent_loop)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        await pilot.click("#proceed-btn")
+        await pilot.pause()
+        await pilot.pause(0.1)
+        assert len(calls) == 1
+        assert calls[0]["history"] is None
+
+        organize_input = app.screen.query_one("#organize-input", Input)
+        organize_input.focus()
+        await pilot.pause()
+        organize_input.value = "also quarantine the drafts"
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause(0.1)
+
+        assert len(calls) == 2
+        assert calls[1]["message"] == "also quarantine the drafts"
+        assert calls[1]["history"] is not None
+        transcript = _transcript_text(app.screen)
+        assert "also quarantine the drafts" in transcript
+        assert "Follow-up done." in transcript
+        # Input clears after submit and re-enables once the follow-up turn finishes.
+        assert organize_input.value == ""
+        assert organize_input.disabled is False
+
+
+async def test_organize_input_blank_submit_is_noop(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
+
+    calls: list[dict] = []
+
+    async def fake_run_agent_loop(
+        *, history=None, message=None, **kwargs: object
+    ) -> tuple[str, list]:
+        calls.append({"history": history, "message": message})
+        return "done", []
+
+    _patch_run_agent_loop(monkeypatch, fake_run_agent_loop)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        await pilot.click("#proceed-btn")
+        await pilot.pause()
+        await pilot.pause(0.1)
+        assert len(calls) == 1
+
+        organize_input = app.screen.query_one("#organize-input", Input)
+        organize_input.value = "   "
+        await pilot.press("enter")
+        await pilot.pause()
+
+        # A blank submit never queues a second call.
+        assert len(calls) == 1
+
+
+async def test_organizer_notification_and_g_keybinding_fire_once_across_continuations(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    notifications: list[Path] = []
+    monkeypatch.setattr("host.app._send_notification", lambda target: notifications.append(target))
+
+    async def fake_run_agent_loop(
+        *, on_event, history=None, message=None, **kwargs: object
+    ) -> tuple[str, list]:
+        if history is None:
+            on_event(AgentEvent("done", "Initial done."))
+            return "Initial done.", [{"role": "system"}, {"role": "user"}, {"role": "assistant"}]
+        on_event(AgentEvent("done", "Follow-up done."))
+        return "Follow-up done.", [
+            *history,
+            {"role": "user", "content": message},
+            {"role": "assistant"},
+        ]
+
+    _patch_run_agent_loop(monkeypatch, fake_run_agent_loop)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(OrganizerScreen(tmp_path))
+        await pilot.pause()
+        await pilot.click("#proceed-btn")
+        await pilot.pause()
+        await pilot.pause(0.1)
+        assert len(notifications) == 1
+
+        organize_input = app.screen.query_one("#organize-input", Input)
+        organize_input.focus()
+        await pilot.pause()
+        organize_input.value = "one more thing"
+        await pilot.press("enter")
+        await pilot.pause()
+        await pilot.pause(0.1)
+
+        # The follow-up turn's own "done" event must not repeat the notification.
+        assert len(notifications) == 1

@@ -99,7 +99,8 @@ def walk_tree(path: str, max_depth: int = 3) -> dict:
     again on that subpath to go deeper)."""
     cfg = _get_settings()
     _check_within_root(path, cfg)
-    return tools.walk_tree(path, max_depth)
+    hidden = frozenset({".organizer", cfg.quarantine_dir.name})
+    return tools.walk_tree(path, max_depth, hidden_names=hidden)
 
 
 @mcp.tool()
@@ -139,6 +140,86 @@ def compute_checksum(path: str) -> dict:
     cfg = _get_settings()
     _check_within_root(path, cfg)
     return tools.compute_checksum(path)
+
+
+# ── Batch document-content tools (O1) ─────────────────────────────────────────
+
+
+@mcp.tool()
+def read_file_batch(paths: list[str], max_chars: int = 4000) -> dict:
+    """Batch form of read_file: fetch text for many files in one round trip.
+
+    Returns `{path: content | {"error": message}}` keyed by the exact path
+    strings passed in — one bad path never fails the whole batch."""
+    cfg = _get_settings()
+    from server.guards import check_allowlist
+
+    allowed = cfg.effective_allowlist_dirs()
+    results: dict[str, str | dict] = {}
+    ok_paths: list[str] = []
+    for path in paths:
+        try:
+            check_allowlist(Path(path), allowed)
+            _check_within_root(path, cfg)
+            ok_paths.append(path)
+        except Exception as exc:
+            results[path] = {"error": str(exc)}
+    batch = tools.read_file_batch(ok_paths, min(max_chars, cfg.max_snippet_chars))
+    for path, value in batch.items():
+        results[path] = value
+        if isinstance(value, str):
+            _log_egress(path, value, "read_file_batch", cfg)
+    return results
+
+
+@mcp.tool()
+def extract_text_batch(paths: list[str], max_chars: int = 4000) -> dict:
+    """Batch form of extract_text: extract text from many PDF/Office/.msg files
+    in one round trip. Returns `{path: content | {"error": message}}` keyed by
+    the exact path strings passed in — one bad path never fails the whole batch."""
+    cfg = _get_settings()
+    from server.guards import check_allowlist
+
+    allowed = cfg.effective_allowlist_dirs()
+    results: dict[str, str | dict] = {}
+    ok_paths: list[str] = []
+    for path in paths:
+        try:
+            check_allowlist(Path(path), allowed)
+            _check_within_root(path, cfg)
+            ok_paths.append(path)
+        except Exception as exc:
+            results[path] = {"error": str(exc)}
+    batch = tools.extract_text_batch(
+        ok_paths,
+        min(max_chars, cfg.max_snippet_chars),
+        cfg.max_extract_file_bytes,
+        cfg.max_extract_timeout_secs,
+    )
+    for path, value in batch.items():
+        results[path] = value
+        if isinstance(value, str):
+            _log_egress(path, value, "extract_text_batch", cfg)
+    return results
+
+
+@mcp.tool()
+def compute_checksum_batch(paths: list[str]) -> dict:
+    """Batch form of compute_checksum: sha256 for many files in one round trip.
+
+    Returns `{path: checksum_hex | {"error": message}}` keyed by the exact
+    path strings passed in — one bad path never fails the whole batch."""
+    cfg = _get_settings()
+    results: dict[str, str | dict] = {}
+    ok_paths: list[str] = []
+    for path in paths:
+        try:
+            _check_within_root(path, cfg)
+            ok_paths.append(path)
+        except Exception as exc:
+            results[path] = {"error": str(exc)}
+    results.update(tools.compute_checksum_batch(ok_paths))
+    return results
 
 
 @mcp.tool()
@@ -394,10 +475,50 @@ def record_document(
 
 
 @mcp.tool()
+def record_document_batch(documents: list[dict]) -> dict:
+    """Record (upsert) many analyzed documents in the registry in one call.
+
+    Each item in `documents` has the same shape as `record_document`'s
+    parameters (checksum, path, title, type, summary, provenance, date,
+    entities, attributes, status). One invalid document never fails the whole
+    batch — its validation error is collected instead. Returns
+    `{"recorded": [record, ...], "errors": [{"index", "checksum", "path",
+    "error"}, ...]}`.
+    """
+    cfg = _get_settings()
+    for doc in documents:
+        path = doc.get("path")
+        if path:
+            _check_within_root(path, cfg)
+    return tools.record_document_batch(documents, cfg.registry_path, _get_profile())
+
+
+@mcp.tool()
 def get_document(checksum: str) -> dict | None:
     """Return a single registry record by checksum, or null if not recorded."""
     cfg = _get_settings()
     return tools.get_document(checksum, cfg.registry_path)
+
+
+@mcp.tool()
+def lookup_documents(checksums: list[str]) -> dict:
+    """Batch registry lookup: {checksum: record | null}. Efficient known/new
+    partitioning for a corpus without one get_document call per checksum."""
+    cfg = _get_settings()
+    return tools.lookup_documents(checksums, cfg.registry_path)
+
+
+@mcp.tool()
+def rehome_documents(paths: dict[str, str]) -> dict:
+    """Update registry records' recorded path by checksum: {checksum: new_path}.
+
+    Registry-only mutation (no plan, no approval gate) used by the
+    deterministic host pre-pass to reconcile records whose on-disk location
+    changed outside a plan-tracked op."""
+    cfg = _get_settings()
+    for new_path in paths.values():
+        _check_within_root(new_path, cfg)
+    return tools.rehome_documents(paths, cfg.registry_path)
 
 
 @mcp.tool()

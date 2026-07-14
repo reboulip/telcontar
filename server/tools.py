@@ -51,7 +51,7 @@ def list_dir(path: str) -> dict:
     return {"path": str(p), "entries": entries}
 
 
-def walk_tree(path: str, max_depth: int = 3) -> dict:
+def walk_tree(path: str, max_depth: int = 3, hidden_names: frozenset[str] | None = None) -> dict:
     """Recursively enumerate a directory tree up to ``max_depth`` levels deep.
 
     Complements ``list_dir`` (a single level) for the ANALYZE pass: the agent can
@@ -62,12 +62,18 @@ def walk_tree(path: str, max_depth: int = 3) -> dict:
     ``children: null`` and ``truncated: true`` so the agent knows more lies below
     (and can call ``walk_tree`` again on that subpath). Files carry ``size`` and
     ``mtime`` like ``list_dir``; unreadable entries are marked ``type: "unknown"``.
+
+    ``hidden_names`` (P2) excludes entries by basename at every level — used to
+    keep a run's own `.organizer` memory and quarantine folder out of discovery,
+    now that both live inside the target directory.
     """
     p = Path(path)
     if not p.is_dir():
         raise ValueError(f"Not a directory: {path}")
     if max_depth < 1:
         raise ValueError(f"max_depth must be >= 1, got {max_depth}")
+
+    hidden = hidden_names or frozenset()
 
     def _walk(directory: Path, depth: int) -> list[dict]:
         try:
@@ -76,6 +82,8 @@ def walk_tree(path: str, max_depth: int = 3) -> dict:
             return []
         entries: list[dict] = []
         for entry in children:
+            if entry.name in hidden:
+                continue
             try:
                 st = entry.stat()
                 if entry.is_dir():
@@ -199,6 +207,55 @@ def compute_checksum(path: str) -> dict:
     except OSError as exc:
         raise OSError(format_io_error("read", p, exc)) from exc
     return {"path": str(p), "checksum": h.hexdigest()}
+
+
+# ── Batch document-content tools (O1) ─────────────────────────────────────────
+# Fetch content/checksums for many files in one round trip so the host can
+# factor several documents into one LLM turn instead of one-doc-per-turn.
+# Each result is keyed by the exact path string passed in (no normalization,
+# so the caller can correlate results back to its input list). A per-file
+# failure never fails the whole batch: the value for that key is
+# ``{"error": message}`` instead of raising, so callers must discriminate
+# success (a plain str) from failure (a dict) — this contract is relied on by
+# host/agent.py's `_wrap_untrusted_content`.
+
+
+def read_file_batch(paths: list[str], max_chars: int) -> dict[str, str | dict]:
+    """Batch form of `read_file`: `{path: text | {"error": msg}}`."""
+    results: dict[str, str | dict] = {}
+    for path in paths:
+        try:
+            results[path] = read_file(path, max_chars)
+        except Exception as exc:
+            results[path] = {"error": str(exc)}
+    return results
+
+
+def extract_text_batch(
+    paths: list[str],
+    max_chars: int,
+    max_file_bytes: int = 200_000_000,
+    timeout_secs: float = 30.0,
+) -> dict[str, str | dict]:
+    """Batch form of `extract_text`: `{path: text | {"error": msg}}`."""
+    results: dict[str, str | dict] = {}
+    for path in paths:
+        try:
+            results[path] = extract_text(path, max_chars, max_file_bytes, timeout_secs)
+        except Exception as exc:
+            results[path] = {"error": str(exc)}
+    return results
+
+
+def compute_checksum_batch(paths: list[str]) -> dict[str, str | dict]:
+    """Batch form of `compute_checksum`: `{path: checksum_hex | {"error": msg}}`."""
+    results: dict[str, str | dict] = {}
+    for path in paths:
+        try:
+            results[path] = compute_checksum(path)["checksum"]
+        except Exception as exc:
+            results[path] = {"error": str(exc)}
+    return results
 
 
 # ── Plan management ──────────────────────────────────────────────────────────
@@ -556,7 +613,15 @@ def execute_plan(
     # keyed by the op's original src, so chained ops (rename then move) resolve (F7).
     moved: dict[str, str] = {}
 
-    for op in p.ops:
+    # Run all create_dir ops before any other op (each group keeping its relative
+    # order), so a deselected/failed create_dir can't cascade into a hard stop for
+    # a move that targets it — the move executor also self-heals via mkdir, but
+    # running create_dir first keeps directory creation itself in the journal.
+    ordered = [op for op in p.ops if op.op_type == "create_dir"] + [
+        op for op in p.ops if op.op_type != "create_dir"
+    ]
+
+    for op in ordered:
         if op.status != "pending":
             continue
 
@@ -711,6 +776,7 @@ def _apply_op(op: "_plan.PlanOp", src_path: str) -> str:
     elif op.op_type == "move":
         dst_dir = Path(op.dst)
         dest = dst_dir / src.name
+        dst_dir.mkdir(parents=True, exist_ok=True)
         check_no_overwrite(dest)
         try:
             shutil.move(str(src), str(dest))
@@ -774,8 +840,10 @@ def write_index(target_dir: str, journal_path: Path) -> dict:
     now = datetime.now(timezone.utc)
     generated = now.isoformat(timespec="seconds")
 
-    # Skip output files we're about to write
-    _SKIP = {"INDEX.md", "manifest.json", "SUMMARY.md"}
+    # Skip output files we're about to write, and the run's own memory folder
+    # (P2) — the quarantine folder stays visible here, it's meaningful to a
+    # human reviewing results, just hidden from agent discovery (walk_tree).
+    _SKIP = {"INDEX.md", "manifest.json", "SUMMARY.md", ".organizer"}
 
     files: list[dict] = []
     dirs: list[str] = []
@@ -1097,6 +1165,48 @@ def _undo_compress(entry: dict, journal_path: Path) -> dict:
 # ── Document registry ─────────────────────────────────────────────────────────
 
 
+def _validate_and_build_record(doc: dict, profile: _Profile) -> _registry.DocumentRecord:
+    """Validate one document dict against the profile and build its `DocumentRecord`.
+
+    Shared by `record_document` and `record_document_batch` so both enforce the
+    exact same rules with the exact same error strings. Raises `ValueError` on
+    any validation failure — callers decide whether that aborts the whole call
+    (singular) or is caught and collected per-item (batch).
+    """
+    type_ = doc.get("type", "")
+    valid_types = profile.document_type_ids()
+    if type_ not in valid_types:
+        raise ValueError(
+            f"Invalid document type {type_!r}; profile {profile.name!r} allows: {valid_types}"
+        )
+    valid_roles = set(profile.entity_roles())
+    norm_entities: list[dict] = []
+    for e in doc.get("entities") or []:
+        name = e.get("name")
+        if not name:
+            raise ValueError(f"Entity missing 'name': {e!r}")
+        role = e.get("role", "")
+        if role and valid_roles and role not in valid_roles:
+            raise ValueError(
+                f"Invalid entity role {role!r}; profile {profile.name!r} allows: "
+                f"{sorted(valid_roles)}"
+            )
+        norm_entities.append({"name": name, "role": role, "kind": e.get("kind", "person")})
+
+    return _registry.DocumentRecord.new(
+        checksum=doc.get("checksum", ""),
+        path=doc.get("path", ""),
+        title=doc.get("title", ""),
+        type=type_,
+        summary=doc.get("summary", ""),
+        provenance=doc.get("provenance", ""),
+        date=doc.get("date"),
+        entities=norm_entities,
+        attributes=doc.get("attributes") or {},
+        status=doc.get("status") or "active",
+    )
+
+
 def record_document(
     checksum: str,
     path: str,
@@ -1118,41 +1228,64 @@ def record_document(
     guardrail (only include people explicitly named, never inferred) is a prompt
     instruction, not enforced here.
     """
-    valid_types = profile.document_type_ids()
-    if type not in valid_types:
-        raise ValueError(
-            f"Invalid document type {type!r}; profile {profile.name!r} allows: {valid_types}"
-        )
-    valid_roles = set(profile.entity_roles())
-    norm_entities: list[dict] = []
-    for e in entities or []:
-        name = e.get("name")
-        if not name:
-            raise ValueError(f"Entity missing 'name': {e!r}")
-        role = e.get("role", "")
-        if role and valid_roles and role not in valid_roles:
-            raise ValueError(
-                f"Invalid entity role {role!r}; profile {profile.name!r} allows: "
-                f"{sorted(valid_roles)}"
-            )
-        norm_entities.append({"name": name, "role": role, "kind": e.get("kind", "person")})
-
-    reg = _registry.load(registry_path)
-    rec = _registry.DocumentRecord.new(
-        checksum=checksum,
-        path=path,
-        title=title,
-        type=type,
-        summary=summary,
-        provenance=provenance,
-        date=date,
-        entities=norm_entities,
-        attributes=attributes or {},
-        status=status or "active",  # type: ignore[arg-type]
+    rec = _validate_and_build_record(
+        {
+            "checksum": checksum,
+            "path": path,
+            "title": title,
+            "type": type,
+            "summary": summary,
+            "provenance": provenance,
+            "date": date,
+            "entities": entities,
+            "attributes": attributes,
+            "status": status,
+        },
+        profile,
     )
+    reg = _registry.load(registry_path)
     reg.upsert(rec)
     _registry.save(reg, registry_path)
     return rec.to_dict()
+
+
+def record_document_batch(
+    documents: list[dict],
+    registry_path: Path,
+    profile: _Profile,
+) -> dict:
+    """Upsert many analyzed documents into the registry in one call.
+
+    Each item in ``documents`` has the same shape as `record_document`'s
+    parameters. One invalid document never fails the whole batch — its
+    validation error is collected in ``errors`` instead, keyed by its
+    positional ``index`` in the input list (a failure may carry a missing or
+    blank checksum/path, so position is the only safe correlation key).
+    Returns ``{"recorded": [record_dict, ...], "errors": [{"index", "checksum",
+    "path", "error"}, ...]}``. The registry is loaded once and saved once at
+    the end (a mid-batch crash persists nothing — an accepted trade-off for
+    the round-trip savings over one load/save per document).
+    """
+    reg = _registry.load(registry_path)
+    recorded: list[dict] = []
+    errors: list[dict] = []
+    for index, doc in enumerate(documents):
+        try:
+            rec = _validate_and_build_record(doc, profile)
+        except ValueError as exc:
+            errors.append(
+                {
+                    "index": index,
+                    "checksum": doc.get("checksum", ""),
+                    "path": doc.get("path", ""),
+                    "error": str(exc),
+                }
+            )
+            continue
+        reg.upsert(rec)
+        recorded.append(rec.to_dict())
+    _registry.save(reg, registry_path)
+    return {"recorded": recorded, "errors": errors}
 
 
 def get_registry(registry_path: Path) -> dict:
@@ -1169,6 +1302,43 @@ def get_document(checksum: str, registry_path: Path) -> dict | None:
     """Return a single document record by checksum, or None if absent."""
     rec = _registry.load(registry_path).get(checksum)
     return rec.to_dict() if rec is not None else None
+
+
+def lookup_documents(checksums: list[str], registry_path: Path) -> dict[str, dict | None]:
+    """Batch form of `get_document`: `{checksum: record | None}` (P3).
+
+    Lets the host pre-pass partition a corpus into known/new documents with a
+    single call instead of one `get_document` round trip per checksum.
+    """
+    reg = _registry.load(registry_path)
+    result: dict[str, dict | None] = {}
+    for checksum in checksums:
+        rec = reg.get(checksum)
+        result[checksum] = rec.to_dict() if rec is not None else None
+    return result
+
+
+def rehome_documents(paths: dict[str, str], registry_path: Path) -> dict:
+    """Update registry records' recorded path directly by checksum (P4).
+
+    ``paths`` maps checksum -> new on-disk path. Pure registry mutation — no
+    plan, no journal entry, no approval gate — used by the deterministic host
+    pre-pass to reconcile records whose on-disk location changed outside a
+    plan-tracked op (e.g. moved manually between runs). Returns
+    ``{"updated": [checksum, ...], "missing": [checksum, ...]}``.
+    """
+    reg = _registry.load(registry_path)
+    updated: list[str] = []
+    missing: list[str] = []
+    for checksum, new_path in paths.items():
+        rec = reg.rehome(checksum, new_path)
+        if rec is not None:
+            updated.append(checksum)
+        else:
+            missing.append(checksum)
+    if updated:
+        _registry.save(reg, registry_path)
+    return {"updated": updated, "missing": missing}
 
 
 def find_duplicates(registry_path: Path) -> list[list[dict]]:

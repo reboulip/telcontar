@@ -10,8 +10,12 @@ QueryScreen     — interactive NL Q&A over an analyzed corpus
 
 Modals
 ------
-ApprovalModal      — plan review with per-op checkboxes (inline removal)
-ClarificationModal — post-analysis clarifying questions with free-text answers
+ApprovalModal     — plan review with per-op checkboxes (inline removal)
+CostEstimateModal — one-time pre-analysis cost-approval gate
+
+ask_user's clarifying-question/multiple-option checkpoint (P8) has no modal of
+its own — it renders as a normal chat turn and awaits the next chat message,
+same as any other live chat exchange.
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ from pathlib import Path
 
 from textual import on
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Container, Horizontal, ScrollableContainer, VerticalScroll
 from textual.css.query import NoMatches
 from textual.screen import ModalScreen, Screen
@@ -35,15 +40,19 @@ from textual.widgets import (
     Header,
     Input,
     Label,
-    RadioButton,
-    RadioSet,
+    ProgressBar,
     RichLog,
     Rule,
     Select,
     Static,
 )
 
-from host.agent import AgentEvent, ApprovalResult, ClarificationResult, OptionsResult
+from host.agent import (
+    AgentEvent,
+    ApprovalResult,
+    AskUserResult,
+    CostApprovalResult,
+)
 
 # Package root: host/app.py → host/ → project root (or site-packages/).
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -56,8 +65,13 @@ _TOOL_NARRATION: dict[str, str] = {
     "walk_tree": "Exploring nested folders…",
     "read_file": "Reading documents…",
     "extract_text": "Reading documents…",
+    "read_file_batch": "Reading documents…",
+    "extract_text_batch": "Reading documents…",
     "compute_checksum": "Computing checksums…",
+    "compute_checksum_batch": "Computing checksums…",
+    "lookup_documents": "Looking up documents in memory…",
     "record_document": "Recording documents in memory…",
+    "record_document_batch": "Recording documents in memory…",
     "find_duplicates": "Checking for duplicates…",
     "find_modified_documents": "Checking for newer versions…",
     "compare_documents": "Comparing documents…",
@@ -82,8 +96,7 @@ _TOOL_NARRATION: dict[str, str] = {
     "write_index": "Writing the index…",
     "write_summary": "Writing the summary…",
     "write_folder_readme": "Describing folders…",
-    "ask_clarification": "Asking you for clarification…",
-    "propose_options": "Reviewing options with you…",
+    "ask_user": "Asking you a question…",
 }
 
 
@@ -279,179 +292,92 @@ class ApprovalModal(ModalScreen[ApprovalResult]):
         self.dismiss(ApprovalResult(approved=False))
 
 
-# ── Clarification modal (K1) ─────────────────────────────────────────────────
+# ── Cost-estimate modal (O8) ──────────────────────────────────────────────────
 
 
-class ClarificationModal(ModalScreen[ClarificationResult]):
-    """Present the agent's clarifying questions as free-text inputs (K1).
+class CostEstimateModal(ModalScreen[CostApprovalResult]):
+    """One-time pre-analysis approval: show the estimated cost, let the user
+    proceed or cancel (O8/P6/P8).
 
-    Shown at most once per run, after the analysis pass. The user may answer any
-    subset and Submit, or Skip entirely — an empty result tells the agent to
-    proceed with its own best judgement.
+    Shown at most once per run, before the P5 analyzer processes any newly-
+    discovered documents — scoped to NEW documents only, since already-known
+    ones are never re-analyzed. Unlike ApprovalModal there is no op list or
+    refinement — just a rough estimate and a yes/no.
     """
 
     DEFAULT_CSS = """
-    ClarificationModal {
+    CostEstimateModal {
         align: center middle;
     }
-    #clarify-dialog {
-        width: 70%;
-        max-height: 80%;
+    #cost-dialog {
+        width: 60%;
         border: round $accent;
         background: $surface;
         padding: 1 2;
     }
-    #clarify-title {
+    #cost-title {
         text-style: bold;
         padding-bottom: 1;
         color: $accent;
     }
-    #clarify-scroll {
-        max-height: 20;
-    }
-    .clarify-q {
-        text-style: bold;
-        padding-top: 1;
-    }
-    .clarify-input {
-        margin-bottom: 1;
-    }
-    #clarify-buttons {
-        align: center middle;
-        padding-top: 1;
-        height: 3;
-    }
-    #clarify-buttons Button {
-        margin: 0 2;
-    }
-    """
-
-    BINDINGS = [("escape", "skip", "Skip")]
-
-    def __init__(self, questions: list[str]) -> None:
-        super().__init__()
-        self._questions = questions
-
-    def compose(self) -> ComposeResult:
-        with Container(id="clarify-dialog"):
-            yield Label(
-                f"The agent has {len(self._questions)} clarifying question(s)",
-                id="clarify-title",
-            )
-            yield Rule()
-            with ScrollableContainer(id="clarify-scroll"):
-                for i, question in enumerate(self._questions):
-                    yield Label(question, classes="clarify-q")
-                    yield Input(
-                        placeholder="Your answer (leave blank to skip this one)",
-                        id=f"clarify-input-{i}",
-                        classes="clarify-input",
-                    )
-            yield Rule()
-            with Horizontal(id="clarify-buttons"):
-                yield Button("Submit answers", variant="success", id="clarify-submit")
-                yield Button("Skip — best judgement", id="clarify-skip")
-
-    @on(Button.Pressed, "#clarify-submit")
-    def _submit(self) -> None:
-        answers: dict[str, str] = {}
-        for i, question in enumerate(self._questions):
-            value = self.query_one(f"#clarify-input-{i}", Input).value.strip()
-            if value:
-                answers[question] = value
-        self.dismiss(ClarificationResult(answers=answers, provided=bool(answers)))
-
-    @on(Button.Pressed, "#clarify-skip")
-    def action_skip(self) -> None:
-        self.dismiss(ClarificationResult(answers={}, provided=False))
-
-
-# ── Options modal (L7) ────────────────────────────────────────────────────────
-
-
-class OptionsModal(ModalScreen[OptionsResult]):
-    """Present the agent's competing options as single-choice selections (L7).
-
-    Shown at most once per run. Each question renders as a RadioSet of its options;
-    Submit returns the chosen option per question, Skip returns an empty result so
-    the agent proceeds with its own best judgement.
-    """
-
-    DEFAULT_CSS = """
-    OptionsModal {
-        align: center middle;
-    }
-    #options-dialog {
-        width: 70%;
-        max-height: 80%;
-        border: round $accent;
-        background: $surface;
-        padding: 1 2;
-    }
-    #options-title {
-        text-style: bold;
+    #cost-summary {
         padding-bottom: 1;
-        color: $accent;
     }
-    #options-scroll {
-        max-height: 20;
+    #cost-disclaimer {
+        color: $text-muted;
+        padding-bottom: 1;
     }
-    .options-q {
-        text-style: bold;
-        padding-top: 1;
-    }
-    .options-set {
-        margin-bottom: 1;
-    }
-    #options-buttons {
+    #cost-buttons {
         align: center middle;
         padding-top: 1;
         height: 3;
     }
-    #options-buttons Button {
+    #cost-buttons Button {
         margin: 0 2;
     }
     """
 
-    BINDINGS = [("escape", "skip", "Skip")]
+    BINDINGS = [("escape", "cancel", "Cancel")]
 
-    def __init__(self, questions: list[dict]) -> None:
+    def __init__(
+        self,
+        new_documents: int,
+        already_analyzed: int,
+        estimated_tokens: int,
+        batch_size: int = 10,
+    ) -> None:
         super().__init__()
-        # Each item: {"question": str, "options": [str, ...]}.
-        self._questions = questions
+        self._new_documents = new_documents
+        self._already_analyzed = already_analyzed
+        self._estimated_tokens = estimated_tokens
+        self._batch_size = batch_size
 
     def compose(self) -> ComposeResult:
-        with Container(id="options-dialog"):
-            yield Label(
-                f"The agent proposes options for {len(self._questions)} question(s)",
-                id="options-title",
+        with Container(id="cost-dialog"):
+            yield Label("Analyze this corpus?", id="cost-title")
+            yield Static(
+                f"{self._new_documents} new document(s) "
+                f"({self._already_analyzed} already analyzed, skipped), "
+                f"~{self._estimated_tokens} input tokens estimated, "
+                f"batched in groups of {self._batch_size}.",
+                id="cost-summary",
             )
-            yield Rule()
-            with ScrollableContainer(id="options-scroll"):
-                for i, item in enumerate(self._questions):
-                    yield Label(item.get("question", ""), classes="options-q")
-                    with RadioSet(id=f"options-set-{i}", classes="options-set"):
-                        for j, option in enumerate(item.get("options", [])):
-                            # First option pre-selected so a plain Submit is valid.
-                            yield RadioButton(option, value=(j == 0))
-            yield Rule()
-            with Horizontal(id="options-buttons"):
-                yield Button("Submit choices", variant="success", id="options-submit")
-                yield Button("Skip — best judgement", id="options-skip")
+            yield Label(
+                "[dim]A rough estimate from file sizes, not a real tokenization.[/dim]",
+                id="cost-disclaimer",
+                markup=True,
+            )
+            with Horizontal(id="cost-buttons"):
+                yield Button("Proceed", variant="success", id="cost-proceed-btn")
+                yield Button("Cancel", variant="error", id="cost-cancel-btn")
 
-    @on(Button.Pressed, "#options-submit")
-    def _submit(self) -> None:
-        selections: dict[str, str] = {}
-        for i, item in enumerate(self._questions):
-            radio_set = self.query_one(f"#options-set-{i}", RadioSet)
-            pressed = radio_set.pressed_button
-            if pressed is not None:
-                selections[item.get("question", "")] = str(pressed.label)
-        self.dismiss(OptionsResult(selections=selections, provided=bool(selections)))
+    @on(Button.Pressed, "#cost-proceed-btn")
+    def _proceed(self) -> None:
+        self.dismiss(CostApprovalResult(approved=True))
 
-    @on(Button.Pressed, "#options-skip")
-    def action_skip(self) -> None:
-        self.dismiss(OptionsResult(selections={}, provided=False))
+    @on(Button.Pressed, "#cost-cancel-btn")
+    def action_cancel(self) -> None:
+        self.dismiss(CostApprovalResult(approved=False))
 
 
 # ── Setup screen (first-run wizard) ──────────────────────────────────────────
@@ -946,22 +872,31 @@ class ConfigScreen(Screen):
 # ── Journal screen ────────────────────────────────────────────────────────────
 
 
-def _resolve_journal_path(project_root: Path) -> Path:
+def _find_organizer_root(start: Path) -> Path | None:
+    """Find the nearest directory at or above ``start`` containing `.organizer`
+    (P2 Query-mode resolution): per-directory memory means a folder the user
+    picks for Query may be a subfolder of what was actually organized, so this
+    walks up from ``start`` until it finds a `.organizer`, or hits the
+    filesystem root without finding one."""
+    current = start.resolve()
+    while True:
+        if (current / ".organizer").is_dir():
+            return current
+        if current.parent == current:
+            return None
+        current = current.parent
+
+
+def _resolve_journal_path(target: Path) -> Path:
     from config.settings import Settings
 
-    journal_path = Settings().journal_path
-    if not journal_path.is_absolute():
-        journal_path = project_root / journal_path
-    return journal_path
+    return Settings().for_target(target).journal_path
 
 
-def _resolve_plans_dir(project_root: Path) -> Path:
+def _resolve_plans_dir(target: Path) -> Path:
     from config.settings import Settings
 
-    plans_dir = Settings().plans_dir
-    if not plans_dir.is_absolute():
-        plans_dir = project_root / plans_dir
-    return plans_dir
+    return Settings().for_target(target).plans_dir
 
 
 def _fmt_journal_entry(entry: dict) -> str:
@@ -1024,15 +959,15 @@ class JournalScreen(ModalScreen[None]):
         ("u", "undo", "Undo last"),
     ]
 
-    def __init__(self, project_root: Path) -> None:
+    def __init__(self, target: Path) -> None:
         super().__init__()
-        self._project_root = project_root
+        self._target = target
         self._status = ""
 
     def compose(self) -> ComposeResult:
         from server.journal import all_entries
 
-        journal_path = _resolve_journal_path(self._project_root)
+        journal_path = _resolve_journal_path(self._target)
         entries = all_entries(journal_path) if journal_path.is_file() else []
 
         with Container(id="journal-dialog"):
@@ -1057,8 +992,8 @@ class JournalScreen(ModalScreen[None]):
     async def action_undo(self) -> None:
         from server.tools import undo_last
 
-        journal_path = _resolve_journal_path(self._project_root)
-        plans_dir = _resolve_plans_dir(self._project_root)
+        journal_path = _resolve_journal_path(self._target)
+        plans_dir = _resolve_plans_dir(self._target)
         result = undo_last(journal_path, plans_dir)
         if result.get("undone") is not None:
             self._status = "[green]Undone the last operation.[/green]"
@@ -1070,6 +1005,20 @@ class JournalScreen(ModalScreen[None]):
 # ── Organizer screen ──────────────────────────────────────────────────────────
 
 
+def _quarantine_basename() -> str:
+    """Basename of the configured quarantine dir, for discovery-hiding (P2).
+
+    Falls back to the default name on any settings error — this only feeds a
+    display nicety (the starter-pane overview), never a safety guard.
+    """
+    from config.settings import Settings
+
+    try:
+        return Settings().quarantine_dir.name
+    except Exception:
+        return "_quarantine"
+
+
 def _directory_overview(target: Path, max_entries: int = 5000) -> str:
     """Code-generated, deterministic one-glance summary of a directory (L3).
 
@@ -1079,11 +1028,13 @@ def _directory_overview(target: Path, max_entries: int = 5000) -> str:
     ``N+``). Shown as the opening telcontar turn before ANALYZE so the user can
     steer the run instead of it auto-organizing.
     """
+    hidden_names = {".organizer", _quarantine_basename()}
     file_count = 0
     dir_count = 0
     ext_counts: dict[str, int] = {}
     truncated = False
     for _root, dirs, files in os.walk(target):
+        dirs[:] = [d for d in dirs if d not in hidden_names]
         dir_count += len(dirs)
         for name in files:
             if file_count >= max_entries:
@@ -1186,11 +1137,28 @@ class OrganizerScreen(Screen):
         padding: 0 1;
         scrollbar-size-horizontal: 1;
     }
+    #progress-row {
+        height: 1;
+        background: $panel;
+        padding: 0 1;
+    }
+    #progress-label {
+        width: auto;
+        color: $text-muted;
+        padding-right: 1;
+    }
+    #progress-bar {
+        width: 1fr;
+    }
     #status-bar {
         height: 1;
         background: $panel;
         color: $text-muted;
         padding: 0 1;
+    }
+    #organize-input {
+        dock: bottom;
+        margin: 0 1 1 1;
     }
     """
 
@@ -1223,6 +1191,13 @@ class OrganizerScreen(Screen):
         # closes the group so the next tool call opens a fresh Collapsible).
         self._steps_widget: Static | None = None
         self._steps_lines: list[str] = []
+        # Resumable chat (O7): the conversation history returned by the last
+        # run_agent_loop call, threaded into the next one so a follow-up chat
+        # message continues the same conversation on the same MCP session.
+        # Free-text messages typed into #organize-input once a run reaches a
+        # terminal state (done/error/max-turns).
+        self._history: list[dict] | None = None
+        self._messages: asyncio.Queue[str] = asyncio.Queue()
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -1248,15 +1223,38 @@ class OrganizerScreen(Screen):
         # Operations journal (L4): a compact bottom strip of the file operations
         # recorded in the undo journal, one line per entry, horizontally scrollable.
         yield RichLog(id="ops-journal", markup=True, highlight=False, wrap=False)
+        # ANALYZE progress bar (O6): hidden until the first "progress" event with
+        # a known total arrives, hidden again once the run reaches a terminal state.
+        with Horizontal(id="progress-row"):
+            yield Label("", id="progress-label")
+            yield ProgressBar(total=None, show_eta=False, id="progress-bar")
         yield Static(self._status, id="status-bar")
+        # Live mid-run chat (P7): disabled only until the worker starts, then
+        # stays enabled for the whole run — messages typed while the agent is
+        # still working are injected between its turns, not just after it stops.
+        yield Input(
+            placeholder='Chat anytime — e.g. "quarantine the drafts too"…',
+            id="organize-input",
+            disabled=True,
+        )
         yield Footer()
 
     def on_mount(self) -> None:
         # Show the starter pane first; the transcript/agent starts on "proceed".
         self.query_one("#main-split").display = False
+        self.query_one("#progress-row").display = False
         self._set_status("Review the overview, add any instructions, then Start organizing.")
         self._refresh_ops_journal()
         self.query_one("#instructions-input", Input).focus()
+
+    @on(Input.Submitted, "#organize-input")
+    def _organize_submit(self, event: Input.Submitted) -> None:
+        message = event.value.strip()
+        if not message:
+            return
+        self.query_one("#organize-input", Input).value = ""
+        self._add_turn("user", message)
+        self._messages.put_nowait(message)
 
     @on(Button.Pressed, "#proceed-btn")
     def _proceed_button(self) -> None:
@@ -1334,6 +1332,45 @@ class OrganizerScreen(Screen):
         self._steps_widget.update("\n".join(self._steps_lines))
         self._scroll_end()
 
+    def _update_progress(self, data: dict) -> None:
+        """Reveal/update the ANALYZE progress bar from a "progress" AgentEvent (O6).
+
+        Never mounted with an unknown total (Textual's indeterminate spinner mode
+        would be misleading) — only revealed once a real ``total > 0`` arrives.
+        """
+        total = data.get("total", 0)
+        if not total:
+            return
+        analyzed = data.get("analyzed", 0)
+        self.query_one("#progress-row").display = True
+        self.query_one("#progress-label", Label).update(f"{analyzed} / {total} documents analyzed")
+        self.query_one("#progress-bar", ProgressBar).update(total=total, progress=analyzed)
+
+    def _hide_progress(self) -> None:
+        """Hide the progress row once ANALYZE finishes — never snap to 100% first."""
+        try:
+            self.query_one("#progress-row").display = False
+        except NoMatches:
+            pass
+
+    def _note_terminal_state(self) -> None:
+        """Fire the one-time "you can chat/query now" cue (O7).
+
+        Called from every "done"/"error" event, but the notification and 'g'
+        keybinding unlock only happen on the FIRST terminal state — subsequent
+        chat-turn completions re-enable the chat input (handled by the worker's
+        queue loop) without repeating the notification.
+        """
+        if self._done:
+            return
+        self._done = True
+        self._add_turn(
+            "telcontar",
+            "[bold]Press [cyan]g[/cyan] to ask questions about this corpus, or keep "
+            "chatting below to refine. [cyan]q[/cyan] to quit.[/bold]",
+        )
+        _send_notification(self._target)
+
     def _set_status(self, text: str) -> None:
         self._status = text
         self._refresh_status_bar()
@@ -1365,7 +1402,7 @@ class OrganizerScreen(Screen):
             return
         log.clear()
         try:
-            journal_path = _resolve_journal_path(_PROJECT_ROOT)
+            journal_path = _resolve_journal_path(self._target)
             entries = all_entries(journal_path) if journal_path.is_file() else []
         except Exception:
             # A config/read error must never break the screen — just show nothing.
@@ -1390,16 +1427,15 @@ class OrganizerScreen(Screen):
             self._add_turn("telcontar", f"[dim italic]{phrase}[/dim italic]")
 
     def action_view_journal(self) -> None:
-        project_root = Path(__file__).resolve().parent.parent
-        self.app.push_screen(JournalScreen(project_root))
+        self.app.push_screen(JournalScreen(self._target))
 
     async def _agent_worker(self, instructions: str | None = None) -> None:
         from config.settings import load as load_settings
-        from host.agent import run_agent
+        from host.agent import mcp_session, run_agent_loop
         from host.llm import make_client
 
         try:
-            settings = load_settings()
+            settings = load_settings().for_target(self._target)
         except Exception as exc:
             self._add_turn("telcontar", f"[bold red]Config error:[/bold red] {_fmt_exc(exc)}")
             self._set_status("Error — check settings")
@@ -1425,16 +1461,20 @@ class OrganizerScreen(Screen):
                     self._current_tool = ""
                 case "plan_ready":
                     self._set_status("Waiting for plan approval…")
-                case "question":
-                    self._set_status("Awaiting your answers…")
-                case "options":
-                    self._set_status("Awaiting your choice…")
+                case "ask_user":
+                    self._set_status("Awaiting your reply…")
+                case "cost_estimate":
+                    self._set_status("Awaiting cost approval…")
+                case "progress":
+                    self._update_progress(event.data or {})
                 case "tokens":
                     self._set_tokens(event.text)
                 case "done":
                     self._add_turn("telcontar", f"[bold green]✓ Done[/bold green]\n{event.text}")
                     self._refresh_ops_journal()
                     self._set_status("Done")
+                    self._hide_progress()
+                    self._note_terminal_state()
                 case "error":
                     self._add_turn(
                         "telcontar",
@@ -1442,6 +1482,8 @@ class OrganizerScreen(Screen):
                         "[dim]Press j to view the operation journal for details.[/dim]",
                     )
                     self._set_status("Error")
+                    self._hide_progress()
+                    self._note_terminal_state()
 
         async def on_approval_needed(plan_id: str, plan_data: dict) -> ApprovalResult:
             self._add_turn(
@@ -1464,45 +1506,88 @@ class OrganizerScreen(Screen):
                 self._add_turn("user", "[red]Rejected[/red] — sending feedback to agent")
             return result
 
-        async def on_questions_needed(questions: list[str]) -> ClarificationResult:
+        async def on_ask_user_needed(questions: list[dict]) -> AskUserResult:
+            """Render the agent's question(s)/option(s) as a chat turn and
+            await the next chat message (P8) — no modal, unlimited per run,
+            reusing the same live-chat queue P7 already wired up."""
+            lines = []
+            for q in questions:
+                line = f"• {q['text']}"
+                options = q.get("options")
+                if options:
+                    line += "  [dim](" + " / ".join(options) + ")[/dim]"
+                lines.append(line)
             self._add_turn(
                 "telcontar",
-                f"[bold cyan]The agent has {len(questions)} clarifying question(s)[/bold cyan] "
-                "— awaiting your input…",
+                "[bold cyan]I have a question for you[/bold cyan]\n" + "\n".join(lines),
             )
-            answer: ClarificationResult = await self.app.push_screen_wait(
-                ClarificationModal(questions)
-            )
-            if answer.provided:
-                self._add_turn("user", f"[green]Answered {len(answer.answers)} question(s)[/green]")
-            else:
-                self._add_turn("user", "[dim]Skipped — the agent will use its best judgement[/dim]")
-            return answer
+            reply = await self._messages.get()
+            self._add_turn("user", reply)
+            return AskUserResult(reply=reply, provided=True)
 
-        async def on_options_needed(questions: list[dict]) -> OptionsResult:
+        async def on_cost_approval_needed(summary: str, data: dict) -> CostApprovalResult:
             self._add_turn(
                 "telcontar",
-                f"[bold cyan]The agent proposes options for {len(questions)} "
-                "question(s)[/bold cyan] — awaiting your choice…",
+                f"[bold cyan]Cost estimate:[/bold cyan] {summary}",
             )
-            choice: OptionsResult = await self.app.push_screen_wait(OptionsModal(questions))
-            if choice.provided:
-                self._add_turn("user", f"[green]Chose {len(choice.selections)} option(s)[/green]")
-            else:
-                self._add_turn("user", "[dim]Skipped — the agent will use its best judgement[/dim]")
-            return choice
+            result: CostApprovalResult = await self.app.push_screen_wait(
+                CostEstimateModal(
+                    data.get("new", 0),
+                    data.get("already_analyzed", 0),
+                    data.get("estimated_tokens", 0),
+                )
+            )
+            self._add_turn(
+                "user",
+                "[green]Proceed[/green]" if result.approved else "[red]Cancelled[/red]",
+            )
+            return result
 
+        project_root = Path(__file__).resolve().parent.parent
         try:
-            await run_agent(
-                target=self._target,
-                settings=settings,
-                llm=llm,
-                on_event=on_event,
-                on_approval_needed=on_approval_needed,
-                on_questions_needed=on_questions_needed,
-                on_options_needed=on_options_needed,
-                instructions=instructions,
-            )
+            async with mcp_session(project_root, target=self._target) as session:
+                # Live mid-run chat (P7): the chat input stays enabled for the
+                # whole run, not just after a terminal state — a message typed
+                # while the agent is still working is drained and injected
+                # between its turns via `message_queue`, instead of sitting
+                # inert until the run stops.
+                self.query_one("#organize-input", Input).disabled = False
+                _summary, self._history = await run_agent_loop(
+                    target=self._target,
+                    settings=settings,
+                    llm=llm,
+                    session=session,
+                    on_event=on_event,
+                    on_approval_needed=on_approval_needed,
+                    on_ask_user_needed=on_ask_user_needed,
+                    on_cost_approval_needed=on_cost_approval_needed,
+                    project_root=project_root,
+                    instructions=instructions,
+                    message_queue=self._messages,
+                )
+
+                # A run_agent_loop call only returns once the agent has fully
+                # finished AND no chat message was waiting at that instant
+                # (see run_agent_loop's docstring) — any message that arrives
+                # after that point resumes the same session via O7's history/
+                # message contract, still with the queue wired in so a later
+                # continuation stays just as live.
+                while True:
+                    message = await self._messages.get()
+                    _summary, self._history = await run_agent_loop(
+                        target=self._target,
+                        settings=settings,
+                        llm=llm,
+                        session=session,
+                        on_event=on_event,
+                        on_approval_needed=on_approval_needed,
+                        on_ask_user_needed=on_ask_user_needed,
+                        on_cost_approval_needed=on_cost_approval_needed,
+                        project_root=project_root,
+                        history=self._history,
+                        message=message,
+                        message_queue=self._messages,
+                    )
         except Exception as exc:
             self._add_turn(
                 "telcontar",
@@ -1510,15 +1595,6 @@ class OrganizerScreen(Screen):
                 "[dim]Press j to view the operation journal for details.[/dim]",
             )
             self._set_status("Error")
-            return
-
-        self._done = True
-        self._add_turn(
-            "telcontar",
-            "[bold]Press [cyan]g[/cyan] to ask questions about this corpus, "
-            "or [cyan]q[/cyan] to quit.[/bold]",
-        )
-        _send_notification(self._target)
 
     def action_query_corpus(self) -> None:
         """Switch into interactive query mode over the just-organized corpus."""
@@ -1781,24 +1857,23 @@ class StartupScreen(Screen):
 
     @on(Button.Pressed, "#query-btn")
     def _query(self) -> None:
-        # Query mode runs over the project-scoped registry (resolved from
-        # settings, relative paths are anchored at the project root). The target
-        # directory is optional here and used only as a display label.
-        from config.settings import load as load_settings
+        # Query mode runs over per-directory memory (P2): the selected folder
+        # must have a `.organizer` at its root, or in a parent folder (a
+        # subfolder of a previously-organized tree still resolves to that
+        # tree's memory).
+        target = self._get_target()
+        if target is None or not target.is_dir():
+            self._show_error("Please choose a folder to query.")
+            return
 
-        try:
-            settings = load_settings()
-        except Exception as exc:
-            self._show_error(f"Config error: {_fmt_exc(exc)}")
+        organizer_root = _find_organizer_root(target)
+        if organizer_root is None:
+            self._show_error(
+                f"No analyzed corpus found in {target} or any parent folder. Run Organize first."
+            )
             return
-        registry = settings.registry_path
-        if not registry.is_absolute():
-            registry = _PROJECT_ROOT / registry
-        if not registry.is_file():
-            self._show_error(f"No analyzed corpus yet (missing {registry}). Run Organize first.")
-            return
-        target = self._get_target() or _PROJECT_ROOT
-        self.app.push_screen(QueryScreen(target))
+
+        self.app.push_screen(QueryScreen(organizer_root))
 
 
 # ── App ───────────────────────────────────────────────────────────────────────
@@ -1810,6 +1885,12 @@ class OrganizerApp(App):
     TITLE = "Directory Organizer"
     SUB_TITLE = "Powered by GPT-5 + MCP"
 
+    # priority=True (P9): Textual's non-priority binding chain stops at the
+    # first modal screen it finds (ModalScreen.is_modal), deliberately hiding
+    # app-level bindings while a modal is open — settings must stay reachable
+    # even while ApprovalModal/CostEstimateModal is up, so this needs priority.
+    BINDINGS = [Binding("ctrl+s", "open_settings", "Settings", priority=True)]
+
     def on_mount(self) -> None:
         from config.settings import is_configured
 
@@ -1818,12 +1899,31 @@ class OrganizerApp(App):
         else:
             self.push_screen(SetupScreen())
 
+    def action_open_settings(self) -> None:
+        """Open settings from any screen (P9), guarded against double-push and
+        against bypassing the first-run wizard. Allowed while a modal
+        (ApprovalModal/CostEstimateModal) is on top — it stacks and pops back
+        cleanly; settings changed mid-run don't affect the already-running
+        agent loop, since settings are captured once at worker start.
+        """
+        if isinstance(self.screen, (ConfigScreen, SetupScreen)):
+            return
+        self.push_screen(ConfigScreen())
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _fmt_exc(exc: Exception) -> str:
-    """Format an exception with its type so errors are actionable, not just a message."""
+def _fmt_exc(exc: BaseException) -> str:
+    """Format an exception with its type so errors are actionable, not just a message.
+
+    anyio/asyncio TaskGroups (the MCP session, the LLM HTTP client) wrap any child
+    failure in an ExceptionGroup whose own message is just "unhandled errors in a
+    TaskGroup (N sub-exception(s))" — useless on its own. Drill into `.exceptions`
+    (recursively, since groups can nest) to surface the real leaf error(s) instead.
+    """
+    if isinstance(exc, BaseExceptionGroup):
+        return "; ".join(_fmt_exc(sub) for sub in exc.exceptions)
     return f"{type(exc).__name__}: {exc}"
 
 

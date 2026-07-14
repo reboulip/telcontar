@@ -104,6 +104,59 @@ class TestHandlersLogEgress:
         assert {e["path"] for e in entries} == {str(doc_a), str(doc_b)}
         assert all(e["tool"] == "compare_documents" for e in entries)
 
+    def test_read_file_batch_logs_egress_per_file_under_batch_tool_name(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        target = tmp_path / "target"
+        target.mkdir()
+        a = target / "a.txt"
+        b = target / "b.txt"
+        a.write_text("hello")
+        b.write_text("world")
+        egress_path = tmp_path / "egress.jsonl"
+        cfg = Settings(target_dir=target, egress_path=egress_path)
+        monkeypatch.setattr(server_main, "_get_settings", lambda: cfg)
+
+        server_main.read_file_batch([str(a), str(b)])
+
+        entries = all_entries(egress_path)
+        assert {e["path"] for e in entries} == {str(a), str(b)}
+        assert all(e["tool"] == "read_file_batch" for e in entries)
+
+    def test_extract_text_batch_logs_egress_per_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        target = tmp_path / "target"
+        target.mkdir()
+        doc = target / "doc.txt"
+        doc.write_text("some content")
+        egress_path = tmp_path / "egress.jsonl"
+        cfg = Settings(target_dir=target, egress_path=egress_path)
+        monkeypatch.setattr(server_main, "_get_settings", lambda: cfg)
+
+        server_main.extract_text_batch([str(doc)])
+
+        entries = all_entries(egress_path)
+        assert len(entries) == 1
+        assert entries[0]["tool"] == "extract_text_batch"
+
+    def test_batch_error_entries_are_not_logged_as_egress(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        target = tmp_path / "target"
+        target.mkdir()
+        good = target / "good.txt"
+        good.write_text("ok")
+        egress_path = tmp_path / "egress.jsonl"
+        cfg = Settings(target_dir=target, egress_path=egress_path)
+        monkeypatch.setattr(server_main, "_get_settings", lambda: cfg)
+
+        server_main.read_file_batch([str(good), str(target / "missing.txt")])
+
+        entries = all_entries(egress_path)
+        assert len(entries) == 1
+        assert entries[0]["path"] == str(good)
+
     def test_failed_read_does_not_log_egress(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:

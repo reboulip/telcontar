@@ -588,6 +588,71 @@ class TestExecutePlanNewOpTypes:
         assert result["state"] == "done"
         assert dest.is_dir()
 
+    def test_move_into_nonexistent_dir_creates_parent(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        src = tmp_path / "file.txt"
+        src.write_text("x")
+        dst_dir = tmp_path / "newdir"
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("move", str(src), str(dst_dir)))
+        save(p, plans_dir)
+
+        result = execute_plan(p.plan_id, plans_dir, journal_path)
+
+        assert result["state"] == "done"
+        assert (dst_dir / "file.txt").exists()
+        assert not src.exists()
+
+    def test_create_dir_runs_before_move_that_targets_it(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        src = tmp_path / "file.txt"
+        src.write_text("x")
+        dst_dir = tmp_path / "newdir"
+        p = Plan.new()
+        p.transition("approved")
+        # Authored out of order: the move is listed before the create_dir op
+        # that must run first for it to succeed.
+        p.ops.append(PlanOp.new("move", str(src), str(dst_dir)))
+        p.ops.append(PlanOp.new("create_dir", str(dst_dir), ""))
+        save(p, plans_dir)
+
+        result = execute_plan(p.plan_id, plans_dir, journal_path)
+
+        assert result["state"] == "done"
+        assert dst_dir.is_dir()
+        assert (dst_dir / "file.txt").exists()
+
+    def test_create_dir_runs_before_file_ops_even_when_listed_last(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        a = tmp_path / "a.txt"
+        a.write_text("a")
+        b = tmp_path / "b.txt"
+        b.write_text("b")
+        dst_dir = tmp_path / "subdir"
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("move", str(a), str(dst_dir)))
+        p.ops.append(PlanOp.new("move", str(b), str(dst_dir)))
+        p.ops.append(PlanOp.new("create_dir", str(dst_dir), ""))
+        save(p, plans_dir)
+
+        result = execute_plan(p.plan_id, plans_dir, journal_path)
+
+        assert result["state"] == "done"
+        assert result["ops_completed"] == 3
+        assert (dst_dir / "a.txt").exists()
+        assert (dst_dir / "b.txt").exists()
+        # The create_dir op is journaled first even though it was authored last.
+        entries = [json.loads(line) for line in journal_path.read_text().splitlines()]
+        create_dir_entries = [e for e in entries if e["op_type"] == "create_dir"]
+        move_entries = [e for e in entries if e["op_type"] == "move"]
+        assert create_dir_entries and move_entries
+        assert entries.index(create_dir_entries[0]) < entries.index(move_entries[0])
+
     def test_archive_document_op_flips_status_and_quarantines(
         self, tmp_path: Path, plans_dir: Path, journal_path: Path
     ) -> None:

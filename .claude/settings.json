@@ -16,6 +16,18 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run python .claude/hooks/check_py_syntax.py",
+            "timeout": 15
+          }
+        ]
+      }
     ]
   }
 }
