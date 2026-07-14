@@ -159,11 +159,22 @@ file's content in a batch carries the same delimiter as a singular `read_file`/
 `extract_text` call would. `compute_checksum_batch` is deliberately excluded, same
 as the singular `compute_checksum` — a checksum is not untrusted content.
 
+The stateless analyzer (P5/P6, `_analyze_batch`) also wraps each document's fetched
+text with the same `_wrap_untrusted` helper directly, since its per-batch messages
+list is a throwaway construction outside the two tool-result-append sites above.
+Until P6, its system prompt (`_ANALYZER_SYSTEM_PROMPT_TEMPLATE`) wrapped content in
+the delimiter but never explained to the model what the delimiter *means* or that
+content inside it must never be treated as an instruction — that explanation lived
+only in the old ORGANIZE-phase system prompt, which the analyzer's throwaway
+messages list never saw. `_ANALYZER_SYSTEM_PROMPT_TEMPLATE` now includes that
+explanation directly, closing the gap between the analyzer's mitigation and the
+organize/query loops' — see `docs/developer/security-model.md` (S2).
+
 ### Recursive tree exploration
 
 `walk_tree(path, max_depth=3)` complements `list_dir` (a single level): it returns a bounded recursive directory listing, where each directory entry carries a nested `children` list until `max_depth` is reached — deeper directories come back with `children: null` and `truncated: true`, signalling the agent to call `walk_tree` again on that subpath to descend further. Files carry `size`/`mtime` like `list_dir`; unreadable entries are marked `type: "unknown"`.
 
-The ANALYZE phase's system prompt instructs the agent to survey the whole tree with `walk_tree` first, rather than stopping at the top level, so documents nested in subfolders are discovered in one pass. As of O3, the prompt makes the re-walk of a `truncated` subpath mandatory ("you MUST call walk_tree again... repeat until no truncated directory remains") rather than conditional, and states explicitly that full coverage is required — the agent must never sample a subset of the discovered documents. The ORGANIZE phase's prompt correspondingly permits the agent to redesign the *existing* nested layout entirely, not just reorganize what already sits at the root.
+Full-coverage document discovery now happens host-side, in `run_prepass` (P4/P6, above), which re-walks every `truncated` subdirectory to exhaustion before the ORGANIZE-phase model ever runs — this used to be a system-prompt instruction to the model ("you MUST call `walk_tree` again... repeat until no truncated directory remains", O3) for the old in-loop ANALYZE phase, which no longer exists. The ORGANIZE-phase prompt still exposes `walk_tree` (it is not in `ORGANIZE_DENIED_TOOLS`) but now only for the agent to check the *current on-disk layout* while designing its target taxonomy — "call walk_tree if you need to see the current on-disk layout" — and still permits the agent to redesign the existing nested layout entirely, not just what sits at the root.
 
 `server/tools.py`'s `walk_tree` implementation takes an optional `hidden_names: frozenset[str] | None` (P2) that excludes entries by basename at every level; the `server/main.py` MCP wrapper always passes `{".organizer", cfg.quarantine_dir.name}`, so now that both live inside the target directory (see "Per-directory memory (P2)" below), the agent never sees or proposes moving/quarantining its own memory. `list_dir` (the single-level tool) is unaffected — it has no `hidden_names` parameter.
 
@@ -183,7 +194,7 @@ This does not change the security model — `target_dir` was already the confine
 
 `read_file_batch`, `extract_text_batch`, and `compute_checksum_batch` in `server/tools.py` are batch counterparts of `read_file`/`extract_text`/`compute_checksum`: each takes a `paths: list[str]` instead of a single `path` and returns one dict keyed by the exact input path string, `{path: content_or_checksum | {"error": message}}`. A failure on one path (guard rejection, missing file, extraction error) never fails the whole batch — it just becomes that path's `{"error": ...}` entry, so the caller (host or agent) must discriminate a successful entry from a failed one by type (`str` vs `dict`). The `server/main.py` wrappers apply the same per-path guard sequence as their singular counterparts (allowlist + `check_within_root` for the two content tools, `check_within_root` alone for the checksum tool) before delegating to `server.tools`, and log egress per successful file the same way `read_file`/`extract_text` do.
 
-These tools exist to cut MCP round trips: fetching N files one at a time costs N request/response cycles (and N LLM turns, if the agent reasons between each), while a batch call fetches them all in one. They are read-only and available in both organize mode (full toolset, no filter) and query mode (added to `QUERY_ALLOWED_TOOLS`). As of O3, the ANALYZE-phase prompt directs the agent to use these batch forms (plus `record_document_batch`, O2) over the singular ones, working through discovered documents in batches of 10 (a smaller batch only for an unusually large individual file) rather than one document per turn.
+These tools exist to cut MCP round trips: fetching N files one at a time costs N request/response cycles (and N LLM turns, if the agent reasons between each), while a batch call fetches them all in one. They are read-only and available in query mode (added to `QUERY_ALLOWED_TOOLS`). As of O3, the (now-removed) in-loop ANALYZE-phase prompt directed the agent to use these batch forms (plus `record_document_batch`, O2) itself, working through discovered documents in batches of 10 rather than one document per turn — as of P6, that batching still happens in exactly those group sizes, but is driven host-side by the stateless analyzer's `_fetch_batch_content` (`_ANALYZER_BATCH_SIZE = 10`) rather than by the model's own tool calls; `ORGANIZE_DENIED_TOOLS` excludes `read_file_batch`/`extract_text_batch`/`compute_checksum_batch` from the ORGANIZE-phase model's own toolset entirely (see "ORGANIZE-only agent loop + corpus digest (P6)" below).
 
 ### Batch document-registry tool (O2)
 
@@ -191,25 +202,27 @@ These tools exist to cut MCP round trips: fetching N files one at a time costs N
 
 Because it mutates the registry, it is *not* added to `QUERY_ALLOWED_TOOLS` (query mode stays strictly read-only). Its path-confinement behaviour also diverges from the O1 read-only batch tools: the `server/main.py` wrapper runs `_check_within_root` on every document's `path` before delegating to `server.tools`, and — unlike `read_file_batch`/`extract_text_batch`/`compute_checksum_batch`, which turn a disallowed path into that entry's `{"error": ...}` — a `PermissionError` here propagates and aborts the whole call, since registry validation errors and confinement errors are handled at different layers (`server.tools` vs. the `server.main` wrapper).
 
-### Document-analysis progress tracking (O5)
+### Document-analysis progress tracking (O5, updated by P6)
 
-`host/agent.py`'s `run_agent_loop` tracks how many documents have been discovered versus analyzed over a run and emits a `"progress"` `AgentEvent` (text `"Analyzed {analyzed} / {total} documents"`, `data={"analyzed": int, "total": int}`) whenever those counts change. A `_ProgressTracker` dataclass accumulates two path sets: `discovered`, populated by recursively walking every `walk_tree` tool result (`_extract_discovered_paths`, skipping telcontar's own output artifacts, dotfiles, OS junk, `.organizer`, and the configured quarantine directory — mirroring the `_SKIP` precedent in `server/tools.py`'s `write_index`); and `analyzed`, populated from `record_document` and `record_document_batch` tool results. `total` is the union of both sets rather than `discovered` alone, so a document recorded without ever surfacing via `walk_tree` still counts, and the total only grows monotonically.
+`host/agent.py`'s `run_agent_loop` tracks how many documents have been discovered versus analyzed over a run and emits a `"progress"` `AgentEvent` (text `"Analyzed {analyzed} / {total} documents"`, `data={"analyzed": int, "total": int}`) whenever those counts change. A `_ProgressTracker` dataclass accumulates two path sets, `discovered` and `analyzed` (`total` is their union, so a document recorded without ever surfacing via `walk_tree` still counts, and the total only grows monotonically).
+
+As of P6, both sets are populated **before the ORGANIZE turn loop starts**, from the pre-pass + analyzer results, rather than incrementally from live tool calls during the loop: `discovered` from every file `run_prepass` found (skipping telcontar's own output artifacts, dotfiles, OS junk, `.organizer`, and the configured quarantine directory — mirroring the `_SKIP` precedent in `server/tools.py`'s `write_index`), `analyzed` from `PrepassResult.known` plus whichever new documents the analyzer successfully recorded. Progress therefore fires **at most twice per fresh run**, never more: once from `run_prepass` itself (a pre-analysis snapshot of `known`/`total-so-far`), and once more from `run_agent_loop` only if the analyzer's results actually moved the counts (never an identical duplicate event). Since the ORGANIZE-phase model's toolset structurally excludes `record_document`/`record_document_batch` (`ORGANIZE_DENIED_TOOLS`, see "ORGANIZE-only agent loop + corpus digest (P6)" below), the ORGANIZE turn loop itself no longer drives progress incrementally the way it used to.
 
 This is purely additive to the event stream — no MCP tool signature or tool list changed. As of O6, `host/app.py`'s `OrganizerScreen` consumes the `"progress"` event: a `#progress-row` (a numeric `#progress-label` plus a Textual `ProgressBar`) sits between `#ops-journal` and the status bar, hidden until the first progress event carrying a known `total > 0` arrives (an unknown/`None` total is never shown, since that would trigger Textual's indeterminate spinning-bar mode), and hidden again — without snapping to 100% first — once the run reaches `"done"` or `"error"`.
 
 ### Adaptive turn budget (O4)
 
-`run_agent_loop`'s turn ceiling scales with corpus size instead of a flat cap, so a large directory doesn't hit an artificial wall mid-analysis. `_analysis_turn_budget(total_discovered)` returns `max(_MAX_TURNS, min(_MAX_TURN_BUDGET, _TURN_BUDGET_BASE + _TURN_BUDGET_PER_DOCUMENT * total_discovered))` — floor `_MAX_TURNS = 50`, ceiling `_MAX_TURN_BUDGET = 2000`, `_TURN_BUDGET_BASE = 30` plus `_TURN_BUDGET_PER_DOCUMENT = 3` turns per document discovered so far (the O5 `_ProgressTracker`'s `total` count). The loop recomputes the budget every iteration as more documents surface via `walk_tree`/`record_document`, and the "reached maximum turns" error event/return string reports the actual computed budget rather than a hard-coded number.
+`run_agent_loop`'s turn ceiling scales with corpus size instead of a flat cap, so a large directory doesn't hit an artificial wall mid-analysis. `_analysis_turn_budget(total_discovered)` returns `max(_MAX_TURNS, min(_MAX_TURN_BUDGET, _TURN_BUDGET_BASE + _TURN_BUDGET_PER_DOCUMENT * total_discovered))` — floor `_MAX_TURNS = 50`, ceiling `_MAX_TURN_BUDGET = 2000`, `_TURN_BUDGET_BASE = 30` plus `_TURN_BUDGET_PER_DOCUMENT = 3` turns per document discovered so far (the O5 `_ProgressTracker`'s `total` count). The loop recomputes the budget every iteration, though as of P6 the tracker's `total` is populated upfront by the pre-pass + analyzer and no longer grows during the ORGANIZE loop itself (which no longer calls `walk_tree`/`record_document` — see O5 above), so in practice the same ceiling — computed once, from the pre-loop pre-pass/analysis totals — holds for the whole ORGANIZE loop of a fresh run. The "reached maximum turns" error event/return string reports the actual computed budget rather than a hard-coded number.
 
-This is a backstop against a misbehaving or looping agent, not the primary cost control — that role belongs to the pre-ANALYZE cost-approval gate (O8), described next. `run_query_loop` (query/chat mode) is untouched and still uses the fixed `_MAX_TURNS = 50` ceiling — see the query data-flow section below.
+This is a backstop against a misbehaving or looping agent, not the primary cost control — that role belongs to the pre-analysis cost-approval gate (O8/P6), described next. `run_query_loop` (query/chat mode) is untouched and still uses the fixed `_MAX_TURNS = 50` ceiling — see the query data-flow section below.
 
-### Pre-ANALYZE cost-approval gate (O8)
+### Pre-analysis cost-approval gate (O8/P6)
 
-This is the **primary** cost control for an organize run — the adaptive turn budget above is a secondary runaway-loop backstop, not the primary lever. The first call, in a given run, to any of the four O1/O2 batch document tools — `extract_text_batch`, `read_file_batch`, `compute_checksum_batch`, `record_document_batch` (`_COST_GATED_BATCH_TOOLS` in `host/agent.py`) — is intercepted by `_handle_cost_approval` before it is forwarded to the MCP server. Their singular counterparts (`read_file`, `extract_text`, `compute_checksum`, `record_document`) are deliberately not gated, since the ANALYZE-phase prompt (O3) already steers the agent toward the batch workflow as the one representing meaningful spend.
+This is the **primary** cost control for an organize run — the adaptive turn budget above is a secondary runaway-loop backstop, not the primary lever. As of P6, the gate is no longer an interception of the first live batch-tool call inside the turn loop (`_COST_GATED_BATCH_TOOLS` was deleted); it fires once, host-side, **before the ORGANIZE turn loop even starts** — between the deterministic pre-pass (`run_prepass`, P4) and the stateless analyzer (`_analyze_new_documents`, P5). `run_prepass` itself always runs unconditionally and is never gated — it walks the whole tree and checksums every file via `compute_checksum_batch`, which is needed just to tell already-known documents from new ones before any cost decision can even be made. The gate decides only whether the analyzer is then allowed to fetch and record the resulting `new` set.
 
-The estimate is purely local — no extraction, no LLM call: `_ProgressTracker.cost_estimate(max_snippet_chars)` returns `(document_count, estimated_input_tokens)` from the file sizes already gathered while processing `walk_tree` results (`sizes: dict[str, int]`, populated by an updated `add_discovered(path, size)`), using the rough heuristic `sum(min(size, max_snippet_chars) // 4 for size in sizes.values())` (4 chars/token). `_handle_cost_approval` emits a `"cost_estimate"` `AgentEvent` with this estimate, then — unless `settings.approval_mode == "never"` or no `on_cost_approval_needed` callback is wired — awaits the host's `CostApprovalCallback` (`Callable[[str, dict], Awaitable[CostApprovalResult]]`). Rejection returns `{"error": ...}` in place of the tool call, telling the agent to stop and report back instead of proceeding; approval lets the call dispatch normally. Like the clarification/options checkpoints, the gate fires **at most once per run** (`cost_approval_shown`).
+The estimate is scoped to **new documents only**: `_new_docs_cost_estimate(new_docs, sizes, max_snippet_chars) -> (doc_count, estimated_tokens)` (P5) mirrors `_ProgressTracker.cost_estimate`'s chars-per-token heuristic (`sum(min(size, max_snippet_chars) // 4 for size in sizes.values())`, 4 chars/token) but sums only over `PrepassResult.new`'s sizes — a re-run where most of the corpus is already known no longer estimates cost for the whole tree the way the pre-P6 gate did. `_handle_cost_approval` emits a `"cost_estimate"` `AgentEvent` with this estimate, then — unless `settings.approval_mode == "never"` or no `on_cost_approval_needed` callback is wired — awaits the host's `CostApprovalCallback` (`Callable[[str, dict], Awaitable[CostApprovalResult]]`). Rejection skips `_analyze_new_documents` entirely for this run — the new documents are neither fetched nor recorded, and surface in the corpus digest's error/unanalyzed count rather than as recorded documents; approval runs the analyzer normally. The gate fires **at most once per run**, and is skipped entirely — no event, no callback — when `run_prepass` finds no new documents at all.
 
-`host/app.py` wires the callback to `CostEstimateModal` — simpler than `ApprovalModal`: no op list, no refinement, just the estimate and Proceed/Cancel — and narrates the estimate and the user's choice into the transcript. The status bar shows "Awaiting cost approval…" while the modal is open.
+`host/app.py` wires the callback to `CostEstimateModal` — unchanged from O8's original design: no op list, no refinement, just the estimate and Proceed/Cancel — and narrates the estimate and the user's choice into the transcript. The status bar shows "Awaiting cost approval…" while the modal is open.
 
 ### Resumable chat after a stop (O7)
 
@@ -269,7 +282,7 @@ Any sink name not in the built-in registry is treated as an external sink. If `e
 
 ### Deterministic host pre-pass (P4)
 
-`host/agent.py`'s `run_prepass(*, session, settings, target, on_event) -> PrepassResult` is a standalone, LLM-free corpus-discovery pass: given an already-open MCP session and a target directory, it walks the tree to exhaustion, checksums every file, and partitions the corpus into documents the registry already knows about versus genuinely new ones — laying the groundwork for the stateless analyzer (P5, below) that only needs to process the `new` set. It is **not yet called from `run_agent_loop`**; this item ships it as an independently-tested function, wired into the main loop by a later item in the same area.
+`host/agent.py`'s `run_prepass(*, session, settings, target, on_event) -> PrepassResult` is a standalone, LLM-free corpus-discovery pass: given an already-open MCP session and a target directory, it walks the tree to exhaustion, checksums every file, and partitions the corpus into documents the registry already knows about versus genuinely new ones — laying the groundwork for the stateless analyzer (P5, below) that only needs to process the `new` set. As of P6, `run_agent_loop` calls this as the very first step of every fresh run (`history is None`), before the cost-approval gate, the analyzer, or the ORGANIZE turn loop.
 
 Runs entirely through MCP tool calls, never local file I/O, so it behaves the same whether host and server share a filesystem or not:
 
@@ -284,7 +297,7 @@ Returns a `PrepassResult` dataclass: `new` (list of new-document dicts), `known`
 
 ### Stateless per-batch analyzer (P5)
 
-`host/agent.py`'s `_analyze_new_documents(*, session, llm, settings, profile, new_docs, token_totals, on_event) -> dict` is the piece that makes "each document's content is uploaded to the LLM at most once, ever" actually true: it analyzes only P4's `new_docs` (`PrepassResult.new`, host-authoritative `{path, checksum}` pairs) in isolated, per-batch LLM calls, rather than as part of the main ORGANIZE conversation where content could in principle be re-read or re-uploaded across turns. Like `run_prepass`, it is a standalone, independently-tested function — **not yet called from `run_agent_loop`**; a later item (P6) wires it in.
+`host/agent.py`'s `_analyze_new_documents(*, session, llm, settings, profile, new_docs, token_totals, on_event) -> dict` is the piece that makes "each document's content is uploaded to the LLM at most once, ever" actually true: it analyzes only P4's `new_docs` (`PrepassResult.new`, host-authoritative `{path, checksum}` pairs) in isolated, per-batch LLM calls, rather than as part of the main ORGANIZE conversation where content could in principle be re-read or re-uploaded across turns. As of P6, `run_agent_loop` calls this right after `run_prepass`, gated by the cost-approval check above — and its structural half, `ORGANIZE_DENIED_TOOLS` (below), is what makes the guarantee actually hold end-to-end: without it, nothing would stop the ORGANIZE-phase model from calling `read_file`/`extract_text` on a document a second time.
 
 `new_docs` is split into batches of at most `_ANALYZER_BATCH_SIZE = 10` (matching the batch size the old in-loop ANALYZE instructions used). For each batch:
 
@@ -296,7 +309,17 @@ Returns a `PrepassResult` dataclass: `new` (list of new-document dicts), `known`
 
 A batch whose LLM call raises is retried once (`_analyze_batch`'s two-attempt loop), then skipped — its documents are added to `errors` rather than aborting the whole run. `_analyze_new_documents` returns `{"recorded": [...], "errors": [...]}` across all batches combined, matching `record_document_batch`'s own return shape.
 
-`_new_docs_cost_estimate(new_docs, sizes, max_snippet_chars) -> tuple[int, int]` is a small pure function — `(new_doc_count, estimated_input_tokens)` computed from only the `new_docs`' sizes (via `PrepassResult.sizes`), mirroring `_ProgressTracker.cost_estimate`'s chars-per-token heuristic but scoped to new documents only. It exists for a later item (P6) to fire the O8 cost-approval gate scoped to new docs, rather than the whole corpus like the current gate does — not yet wired into the gate itself.
+`_new_docs_cost_estimate(new_docs, sizes, max_snippet_chars) -> tuple[int, int]` is a small pure function — `(new_doc_count, estimated_input_tokens)` computed from only the `new_docs`' sizes (via `PrepassResult.sizes`), mirroring `_ProgressTracker.cost_estimate`'s chars-per-token heuristic but scoped to new documents only. As of P6, this feeds the O8 cost-approval gate directly — see "Pre-analysis cost-approval gate (O8/P6)" above.
+
+### ORGANIZE-only agent loop + corpus digest (P6)
+
+This is the item that wires P4 and P5 into `run_agent_loop` for real, completing the "content uploaded to the LLM at most once, ever" guarantee end-to-end rather than just building the pieces. On a fresh run (`history is None`), `run_agent_loop` now runs, in order: `run_prepass` (P4) → the cost-approval gate scoped to new documents (O8/P6, above) → `_analyze_new_documents` (P5) if approved → `_build_digest` (below) → the ORGANIZE-only turn loop. `history`-carrying continuation calls (O7) skip all of this and resume the existing conversation unchanged.
+
+**Corpus digest (`_build_digest(prepass_result, analysis_result) -> str`):** a compact, host-composed summary seeded into the first ORGANIZE-phase user message in place of blank "please organize" instructions — one line per document (`title · type · path`, drawn from `PrepassResult.known`'s records and the analyzer's newly-recorded documents), plus totals (`N document(s) recorded (K already known, M newly analyzed this run)`) and an error/unanalyzed count when the pre-pass or analyzer reported any. Above `_DIGEST_MAX_LISTED_DOCS = 200` listed documents, the digest truncates the per-doc listing and points the agent at `list_documents`/`get_registry` for the rest — a fat digest would defeat its own purpose (avoiding a context blowup) on a large corpus. Deliberately NOT full per-document summaries, which would blow up context; the ORGANIZE agent reaches for the registry read tools (`list_documents`, `get_registry`, `get_document`, `find_duplicates`, `find_modified_documents`) for anything beyond title/type/path.
+
+**`ORGANIZE_DENIED_TOOLS`** (`frozenset` in `host/agent.py`) is the structural half of the "content uploaded once" guarantee — not just a prompt instruction. `_discover_openai_tools` gained a `denied: frozenset[str] | None = None` parameter (alongside the existing `allowed`, used by query mode): when set, matching tool names are excluded from the OpenAI function-spec list regardless of what the prompt says. `run_agent_loop`'s fresh-run and continuation paths both call `_discover_openai_tools(session, denied=ORGANIZE_DENIED_TOOLS)`, so the ORGANIZE-phase model never even sees `read_file`, `extract_text`, `read_file_batch`, `extract_text_batch`, `compute_checksum`, `compute_checksum_batch`, `record_document`, `record_document_batch`, `compare_documents`, `lookup_documents`, or `rehome_documents` — the corpus was already analyzed by the pre-pass/analyzer, so there is no legitimate reason for this loop to fetch or record document content again, and `lookup_documents`/`rehome_documents` are pre-pass-only internals the ORGANIZE-phase model has no reason to call either. A denylist was chosen deliberately over an allowlist (like `QUERY_ALLOWED_TOOLS`): ORGANIZE needs almost every *other* tool (planning, execution, synthesis, registry/graph/event reads), so denying the few tools that don't belong is far less fragile than enumerating everything that does. As defense in depth, the turn-loop's tool-dispatch `if name in ORGANIZE_DENIED_TOOLS` branch rejects a hallucinated call to one of these with an explicit error even though it was never advertised — mirroring the same pattern `run_query_loop` already used for `QUERY_ALLOWED_TOOLS`.
+
+**System prompt restructuring:** the old ANALYZE section ("survey the tree, batch-extract, record documents") is gone from `_SYSTEM_PROMPT_TEMPLATE` entirely — the corpus is already analyzed by the time the model sees this prompt. The prompt now opens by stating this plainly and pointing at the digest in the first message, instructs the model to use the registry read tools instead of raw file content, and its numbered steps run 1-10 across two sections (**A. ORGANIZE** the tree, **B. SYNTHESIZE**) instead of the old 1-14 across three (A. ANALYZE / B. ORGANIZE / C. SYNTHESIZE). The Safety rules section also gained a line telling the model to treat the digest as host-composed fact, not as instructions from the documents it summarizes.
 
 ---
 
@@ -304,43 +327,69 @@ A batch whose LLM call raises is retried once (`_analyze_batch`'s two-attempt lo
 
 ```
 1. Host launches server subprocess (stdio)
-2. Host calls session.list_tools() → discovers all MCP tools; if the caller wired in
-   an on_questions_needed callback, the host also appends its own host-side
-   ask_clarification tool spec, and if an on_options_needed callback is wired in, the
-   host also appends its own host-side propose_options tool spec (neither forwarded
-   to the server)
-3. Host sends system prompt (built from config + active profile: document types,
-   naming conventions, and synthesis template) + user message (the OrganizerScreen
-   starter pane's optional steering instructions, if the user typed any, are
-   appended to this seed user message before the loop starts)
-4. GPT-5 responds with tool calls
-5. Host dispatches to server via MCP
-6. Server executes tool, returns result
-7. Host feeds result back to GPT-5 as tool message — document content from
-   read_file/extract_text/compare_documents's diff field (and, per-file, from
-   their batch forms read_file_batch/extract_text_batch) is wrapped in the
-   untrusted-content delimiter first (M10)
-8. Steps 4-7 repeat (up to the adaptive turn budget — see below). The FIRST call in
-   the run to any of the four batch document tools (extract_text_batch,
-   read_file_batch, compute_checksum_batch, record_document_batch) is intercepted
-   here: the host computes a local token estimate from walk_tree-discovered file
-   sizes, emits a "cost_estimate" AgentEvent, shows CostEstimateModal, and only
-   forwards the call on approval — see "Pre-ANALYZE cost-approval gate (O8)" above
-9. Once analysis is far enough along, the agent MAY call ask_clarification once with a
-   short batch of questions; the host emits a "question" AgentEvent, shows
-   ClarificationModal, and feeds the user's answers (or a "proceed with best judgement"
-   note if skipped or already used) back as the tool result
-10. After re-examining its approach from a second angle, the agent MAY also call
+2. On a fresh run (history=None): host runs run_prepass (P4) — walks the tree to
+   exhaustion, checksums every file (compute_checksum_batch, never gated),
+   partitions into known vs. new documents via lookup_documents, and re-homes any
+   known document whose on-disk path drifted (rehome_documents); emits one
+   "progress" AgentEvent (pre-analysis snapshot)
+3. If run_prepass found any new documents: host computes a token estimate scoped
+   to ONLY those new documents, emits a "cost_estimate" AgentEvent, shows
+   CostEstimateModal, and — unless approval_mode == "never" — awaits approval
+   before proceeding (O8/P6). No new documents → this step is skipped entirely
+4. On approval (or auto-approval): host runs _analyze_new_documents (P5) — new
+   documents in batches of ≤10, each analyzed by one isolated, forced-tool LLM
+   call (submit_document_records) whose messages list is throwaway and never
+   joins the conversation below; document content is wrapped in the
+   untrusted-content delimiter (M10) before being sent. Results are persisted via
+   record_document_batch. A second "progress" AgentEvent fires only if analysis
+   changed the discovered/analyzed counts (never a duplicate of step 2's event).
+   On rejection, the new documents are neither fetched nor recorded this run
+5. Host builds a compact corpus digest (_build_digest, P6) from the combined
+   known + newly-analyzed documents — per-doc title/type/path (capped at 200
+   listed) plus totals and any error count — and seeds it into the first
+   ORGANIZE-phase user message in place of blank "please organize" instructions;
+   the OrganizerScreen starter pane's optional steering instructions, if the user
+   typed any, are appended to this same seed message
+6. Host calls session.list_tools(denied=ORGANIZE_DENIED_TOOLS) → discovers the
+   ORGANIZE-phase toolset, structurally excluding the content-fetching/recording
+   tools already used in steps 2-4 (P6); if the caller wired in an
+   on_questions_needed callback, the host also appends its own host-side
+   ask_clarification tool spec, and if an on_options_needed callback is wired in,
+   the host also appends its own host-side propose_options tool spec (neither
+   forwarded to the server)
+7. Host sends the ORGANIZE-only system prompt (built from config + active
+   profile: document types, naming conventions, and synthesis template — no
+   ANALYZE section, since the corpus is already analyzed) + the digest-seeded
+   user message from step 5
+8. GPT-5 responds with tool calls
+9. Host dispatches to server via MCP — a hallucinated call to one of
+   ORGANIZE_DENIED_TOOLS is rejected with an explicit error instead of being
+   forwarded, even though none of them were advertised in step 6 (defense in
+   depth, P6)
+10. Server executes tool, returns result
+11. Host feeds result back to GPT-5 as tool message — any document content a
+    tool result still carries (e.g. compare_documents's diff field, in query
+    mode only — ORGANIZE mode no longer exposes it) is wrapped in the
+    untrusted-content delimiter first (M10)
+12. Steps 8-11 repeat (up to the adaptive turn budget — see above, effectively
+    static for a fresh run since the O5 progress tracker no longer grows once
+    the ORGANIZE loop starts)
+13. Once analysis is far enough along, the agent MAY call ask_clarification once with a
+    short batch of questions; the host emits a "question" AgentEvent, shows
+    ClarificationModal, and feeds the user's answers (or a "proceed with best judgement"
+    note if skipped or already used) back as the tool result
+14. After re-examining its approach from a second angle, the agent MAY also call
     propose_options once with a few questions, each carrying 2-5 mutually-exclusive
     options; the host emits an "options" AgentEvent, shows OptionsModal, and feeds the
     user's selections (or a "proceed with best judgement" note if skipped or already
     used) back as the tool result
-11. Agent designs a target taxonomy from the types/themes found, opens a plan
-    (create_plan), and stages propose_create_dir for each folder (idempotent; no
-    folder created for absent categories) alongside propose_rename / propose_move /
-    propose_quarantine / propose_create_file / propose_update_file /
-    propose_archive_document ops — every mutation is staged, never applied directly
-12. On execute_plan call:
+15. Agent designs a target taxonomy from the types/themes already recorded in the
+    digest, opens a plan (create_plan), and stages propose_create_dir for each
+    folder (idempotent; no folder created for absent categories) alongside
+    propose_rename / propose_move / propose_quarantine / propose_create_file /
+    propose_update_file / propose_archive_document ops — every mutation is
+    staged, never applied directly
+16. On execute_plan call:
     a. Host fetches plan details (get_plan) and writes the full ops list to
        .organizer/plan_ops.json (path shown in the modal)
     b. Host shows ApprovalModal to user
@@ -349,15 +398,15 @@ A batch whose LLM call raises is retried once (`_analyze_batch`'s two-attempt lo
        journals each, reconciles registry
     e. On refine: the plan is NOT executed — the free-text request is returned to the
        agent as a tool result, which revises the plan (ops/rationale/folder notes) and
-       calls execute_plan again to re-present it (back to step 12)
-13. Agent calls build_graph → get_actors → list_events, then composes SUMMARY.md
+       calls execute_plan again to re-present it (back to step 16)
+17. Agent calls build_graph → get_actors → list_events, then composes SUMMARY.md
     from registry + events + graph + actors per the profile's [synthesis] template;
     calls write_index + write_summary to persist INDEX.md, manifest.json, SUMMARY.md
-14. Agent calls write_folder_readme(path=<folder>, content=<markdown>) once per
+18. Agent calls write_folder_readme(path=<folder>, content=<markdown>) once per
     meaningful folder of the organized tree; empty/trivial folders are skipped
-15. Agent sends final text (no tool calls) → loop ends. This is one of three ways the loop can reach a terminal state — the others being an unhandled exception (caught and returned as an error, O7) or the turn budget running out
-16. Desktop notification fires and the "press g / keep chatting" cue is shown — but only on this first terminal state (O7)
-17. The MCP session from step 1 stays open. The host's worker loop waits on the `#organize-input` chat box; each message you type resumes run_agent_loop on the SAME session with (history=<returned from the previous call>, message=<your text>) — back to step 4, with the full mutating toolset and its own fresh turn budget. An unhandled exception during any of these turns is caught rather than propagating: any tool call left without a matching result is answered with a synthesized {"error": ...} entry, an "error" AgentEvent fires, and the conversation history stays valid for the next chat message
+19. Agent sends final text (no tool calls) → loop ends. This is one of three ways the loop can reach a terminal state — the others being an unhandled exception (caught and returned as an error, O7) or the turn budget running out
+20. Desktop notification fires and the "press g / keep chatting" cue is shown — but only on this first terminal state (O7)
+21. The MCP session from step 1 stays open. The host's worker loop waits on the `#organize-input` chat box; each message you type resumes run_agent_loop on the SAME session with (history=<returned from the previous call>, message=<your text>) — back to step 8 directly (steps 2-7 do NOT repeat; no new pre-pass or analysis happens on a continuation), with the same ORGANIZE-only toolset and its own fresh turn budget. An unhandled exception during any of these turns is caught rather than propagating: any tool call left without a matching result is answered with a synthesized {"error": ...} entry, an "error" AgentEvent fires, and the conversation history stays valid for the next chat message
 ```
 
 ---

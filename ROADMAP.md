@@ -284,7 +284,7 @@ hard-stopping plan execution.
       host-authoritative path/checksum by index, persisted via
       `record_document_batch`. Cost gate fires once, counts only new docs, skipped
       when nothing is new. (requires: P4)
-- [ ] P6 · ORGANIZE-only agent loop + digest — `run_agent_loop` runs pre-pass +
+- [x] P6 · ORGANIZE-only agent loop + digest — `run_agent_loop` runs pre-pass +
       analyzer internally on a fresh run, seeds the conversation with the digest,
       rewrites system-prompt section A ("corpus already analyzed"), removes the
       in-loop `_COST_GATED_BATCH_TOOLS` gate, feeds pre-pass corpus size into the

@@ -10,8 +10,11 @@ The server registers tools via FastMCP (`server/main.py`); the implementations l
 !!! note "Path confinement"
     Every tool that takes a `path` (or `path_a`/`path_b`/`dest_dir`) argument is checked with `check_within_root` before it runs, and raises `PermissionError` if the resolved path falls outside both the run's `TARGET_DIR` and the server's own working directory. This applies whether the escape attempt is an absolute path or a `..` traversal. As of per-directory memory (P2), `.organizer/` and the quarantine dir themselves live *inside* `TARGET_DIR` for every real run, so that boundary is also where the run's own memory resides. For `read_file` / `extract_text` / `compare_documents` and their batch forms `read_file_batch` / `extract_text_batch`, `ALLOWLIST_DIRS` is also checked first via `Settings.effective_allowlist_dirs()` — an explicit, non-empty `ALLOWLIST_DIRS` is used as-is; otherwise it defaults to `[TARGET_DIR]` rather than no restriction — and `check_within_root` then applies as the always-on floor underneath it. In the batch forms, both checks run per path *before* that file is read/extracted, so one disallowed path in a batch surfaces as `{"error": ...}` for that entry rather than raising and failing the whole call. See [Security Model](../developer/security-model.md).
 
-!!! note "Pre-ANALYZE cost-approval gate (O8, host-side)"
-    The first call in a run to any of `extract_text_batch`, `read_file_batch`, `compute_checksum_batch`, or `record_document_batch` is gated by the **host**, not the server: `host/agent.py` computes a local token estimate from `walk_tree`-discovered file sizes and — unless `APPROVAL_MODE=never` — awaits a one-time user approval (`CostEstimateModal`) before forwarding that call. A rejection returns an error tool result instead of dispatching the call; the gate never fires again for the rest of the run, and the singular counterparts (`read_file`, `extract_text`, `compute_checksum`, `record_document`) are not gated. The MCP server itself has no awareness of this gate — see [Architecture § Pre-ANALYZE cost-approval gate (O8)](../developer/architecture.md#pre-analyze-cost-approval-gate-o8).
+!!! note "Pre-analysis cost-approval gate (O8/P6, host-side)"
+    Gated entirely by the **host**, not the server. As of P6, a fresh organize run first runs a deterministic pre-pass (`run_prepass`) that walks the whole corpus and checksums every file via `compute_checksum_batch` — this call is unconditional and never gated, since it's needed just to tell already-known documents from new ones. If that partition finds any new documents, `host/agent.py` computes a token estimate scoped to ONLY those new documents' sizes and — unless `APPROVAL_MODE=never` — awaits a one-time user approval (`CostEstimateModal`) before running the stateless analyzer, which is what actually calls `extract_text_batch`/`read_file_batch` (to fetch content) and `record_document_batch` (to persist results) for the new documents. A rejection skips the analyzer for this run — the new documents are neither fetched nor recorded. The gate fires at most once per run and is skipped entirely (no event, no callback) when there are no new documents. The MCP server itself has no awareness of this gate — see [Architecture § Pre-analysis cost-approval gate (O8/P6)](../developer/architecture.md#pre-analysis-cost-approval-gate-o8p6).
+
+!!! note "ORGANIZE-mode tool denylist (P6)"
+    The corpus is fully analyzed by the pre-pass + analyzer described above BEFORE the ORGANIZE turn loop starts, so the ORGANIZE-phase model's own toolset structurally excludes `read_file`, `extract_text`, `read_file_batch`, `extract_text_batch`, `compute_checksum`, `compute_checksum_batch`, `record_document`, `record_document_batch`, `compare_documents`, `lookup_documents`, and `rehome_documents` (`ORGANIZE_DENIED_TOOLS` in `host/agent.py`) — content-fetching/recording tools it has no legitimate reason to call again. This is a denylist, not just a prompt instruction: none of these tools are advertised to the model in ORGANIZE mode, and a hallucinated call to one of them is rejected with an explicit error regardless. Query mode is unaffected by this denylist — `read_file`, `extract_text`, `compare_documents`, `compute_checksum`, and their batch forms remain available there via `QUERY_ALLOWED_TOOLS`.
 
 ---
 
@@ -127,6 +130,9 @@ Typical use case: comparing successive versions of a document (e.g. two COPIL sl
 
 **Safety category:** Read-only — no filesystem writes.
 
+!!! note "Not available in ORGANIZE mode (P6)"
+    `compare_documents` is in `ORGANIZE_DENIED_TOOLS` — the ORGANIZE-phase model cannot call it, since the corpus (including duplicate/version comparison via `find_duplicates`/`find_modified_documents`) was already analyzed before the loop starts. It remains available in query mode via `QUERY_ALLOWED_TOOLS`.
+
 ---
 
 ### `compute_checksum`
@@ -154,8 +160,8 @@ Batch form of `read_file`: fetch text for many files in one MCP round trip inste
 !!! note
     Each path gets the same `ALLOWLIST_DIRS` (`effective_allowlist_dirs()`) and `check_within_root` checks as `read_file`, applied individually before that file is read; a path that fails either check never reaches `read_file` and appears in the result as `{"error": ...}` directly, without failing the other paths in the batch. The effective cap per file is `min(max_chars, MAX_SNIPPET_CHARS)`, same as `read_file`.
 
-!!! note "Second caller (P5)"
-    As of the stateless per-batch analyzer (P5), this tool also has a second caller: `host/agent.py`'s `_fetch_batch_content`, invoked directly by host code (not by the model's own tool-calling decision) for the non-extractable files in a batch of newly-discovered documents. Same tool, same server-side guards and egress logging — just a new, host-orchestrated caller. That analyzer is not yet wired into `run_agent_loop`, so in a live organize run this tool is still only ever called by the model, as described above.
+!!! note "Second caller (P5/P6)"
+    As of the stateless per-batch analyzer (P5), this tool also has a second caller: `host/agent.py`'s `_fetch_batch_content`, invoked directly by host code (not by the model's own tool-calling decision) for the non-extractable files in a batch of newly-discovered documents. Same tool, same server-side guards and egress logging — just a new, host-orchestrated caller. As of P6, this analyzer is wired into `run_agent_loop`'s pre-loop analysis stage (after the deterministic pre-pass, before the ORGANIZE turn loop), and `ORGANIZE_DENIED_TOOLS` excludes `read_file_batch` from the ORGANIZE-phase model's own toolset — so in a live organize run, this host-orchestrated call is now the *only* way this tool is ever reached; the model itself can only reach it via query mode (`QUERY_ALLOWED_TOOLS`).
 
 ---
 
@@ -169,8 +175,8 @@ Batch form of `extract_text`: extract text from many PDF/Office/Outlook `.msg` f
 
 **Returns:** `{path: content | {"error": message}}`, keyed by the exact path strings passed in.
 
-!!! note "Second caller (P5)"
-    Same as `read_file_batch` above: `_fetch_batch_content` (`host/agent.py`) also calls this directly, host-side, for the extractable files (`.pdf`/`.docx`/`.xlsx`/`.pptx`/`.msg`) in a stateless-analyzer batch — a file-type dispatch that used to be left entirely to the model's own judgement during the in-loop ANALYZE phase. Not yet reachable from a live organize run (P5's analyzer isn't wired into `run_agent_loop` yet).
+!!! note "Second caller (P5/P6)"
+    Same as `read_file_batch` above: `_fetch_batch_content` (`host/agent.py`) also calls this directly, host-side, for the extractable files (`.pdf`/`.docx`/`.xlsx`/`.pptx`/`.msg`) in a stateless-analyzer batch — a file-type dispatch that used to be left entirely to the model's own judgement during the in-loop ANALYZE phase. As of P6, this analyzer is wired into `run_agent_loop` and `ORGANIZE_DENIED_TOOLS` excludes `extract_text_batch` from the ORGANIZE-phase model's own toolset, so in a live organize run this host-orchestrated call is now the *only* way this tool is ever reached; the model itself can only reach it via query mode (`QUERY_ALLOWED_TOOLS`).
 
 ---
 
@@ -183,6 +189,9 @@ compute_checksum_batch(paths: list[str]) -> dict
 Batch form of `compute_checksum`: sha256 for many files in one round trip.
 
 **Returns:** `{path: checksum_hex | {"error": message}}`, keyed by the exact path strings passed in. Unlike `read_file_batch`/`extract_text_batch`, a successful entry is the checksum hex string directly, not a `{path, checksum}` dict (matching what the singular `compute_checksum` nests under its `checksum` field).
+
+!!! note "Second caller (P4/P6)"
+    `host/agent.py`'s `run_prepass` calls this tool directly, host-side, to checksum the WHOLE discovered corpus (not just new documents) as part of deterministic pre-analysis discovery — this call is unconditional and never subject to the cost-approval gate, since it's needed just to tell already-known documents from new ones. `ORGANIZE_DENIED_TOOLS` excludes `compute_checksum_batch` from the ORGANIZE-phase model's own toolset, so in a live organize run this host-orchestrated call is the *only* way this tool is ever reached; the model itself can only reach it via query mode (`QUERY_ALLOWED_TOOLS`).
 
 ---
 
@@ -550,8 +559,8 @@ Batch form of `record_document`: upsert many analyzed documents into the registr
 !!! note
     The registry is loaded once and saved once for the whole batch, not once per document — a deliberate efficiency trade-off; a mid-batch crash persists nothing. This differs from `read_file_batch`/`extract_text_batch`/`compute_checksum_batch`: this is a **mutating** tool, so it is *not* in `QUERY_ALLOWED_TOOLS` (query mode is read-only). Its per-document path confinement check also behaves differently from the read-only batch tools: `record_document_batch` runs `check_within_root` for every document's `path` *before* calling into `server.tools`, and a `PermissionError` on any one path raises immediately and aborts the whole call — it does not degrade to a per-item `{"error": ...}` entry the way a disallowed path does in `read_file_batch`/`extract_text_batch`/`compute_checksum_batch`.
 
-!!! note "Second caller (P5)"
-    As of the stateless per-batch analyzer (P5), `host/agent.py`'s `_analyze_new_documents` also calls this tool — once per analyzed batch, with the model-derived fields (title/type/summary/provenance/date/entities) rejoined to host-authoritative `checksum`/`path` by positional index, never by any identifier the model itself returns. No new registry-write code was added for this; it reuses this same tool. Not yet reachable from a live organize run (P5's analyzer isn't wired into `run_agent_loop` yet).
+!!! note "Second caller (P5/P6)"
+    As of the stateless per-batch analyzer (P5), `host/agent.py`'s `_analyze_new_documents` also calls this tool — once per analyzed batch, with the model-derived fields (title/type/summary/provenance/date/entities) rejoined to host-authoritative `checksum`/`path` by positional index, never by any identifier the model itself returns. No new registry-write code was added for this; it reuses this same tool. As of P6, this analyzer is wired into `run_agent_loop`, and `ORGANIZE_DENIED_TOOLS` excludes `record_document_batch` from the ORGANIZE-phase model's own toolset — so in a live organize run this host-orchestrated call is now the *only* way this tool is ever reached (it was never in `QUERY_ALLOWED_TOOLS` either, being a mutating tool).
 
 ---
 

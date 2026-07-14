@@ -111,16 +111,12 @@ Type any steering instructions you want the agent to follow, or leave the field 
 
 ## 5. Watch the agent work
 
-The main screen shows a sidebar file tree on the left and a single chat transcript on the right, with a compact **operations journal** strip docked along the bottom (above the status bar) — a horizontally-scrollable, one-line-per-entry view of the file operations recorded so far. Once analysis is under way, a **progress bar** appears above the status bar (e.g. "12 / 47 documents analyzed") and disappears again once that phase finishes. `telcontar` narrates its progress in plain language, one turn per macro-task; the raw tool calls behind each turn collect into a click-to-expand **internal steps** group:
+The main screen shows a sidebar file tree on the left and a single chat transcript on the right, with a compact **operations journal** strip docked along the bottom (above the status bar) — a horizontally-scrollable, one-line-per-entry view of the file operations recorded so far.
+
+Before any chat turn appears, telcontar deterministically discovers and checksums the whole directory tree, silently — no LLM call, and no transcript turn for this step, just a **progress bar** (e.g. "12 / 47 documents analyzed") above the status bar. If it finds documents it hasn't seen before, it pauses once to show a cost estimate scoped to just those new documents (see [How It Works](../user-guide/how-it-works.md#the-cost-estimate-approval-gate)) before reading and analyzing them. `telcontar` narrates the steps that follow in plain language, one turn per macro-task; the raw tool calls behind each turn collect into a click-to-expand **internal steps** group:
 
 ```
-telcontar  Scanning the directory…
-▸ internal steps
-
 telcontar  Reading documents…
-▸ internal steps
-
-telcontar  Computing checksums…
 ▸ internal steps
 
 telcontar  Recording documents in memory…
@@ -133,17 +129,13 @@ telcontar  Checking for duplicates…
 Expand an **internal steps** group to see the raw calls and results behind it, e.g.:
 
 ```
-▶ walk_tree(path='C:/Users/me/Documents/messy', max_depth=3)
-  {"path": "...", "max_depth": 3, "entries": [...]}
 ▶ extract_text_batch(paths=['.../rapport final v3.docx', ...])
   {".../rapport final v3.docx": "Rapport trimestriel Q1 2024...", ...}
-▶ compute_checksum_batch(paths=['.../rapport final v3.docx', ...])
-  {".../rapport final v3.docx": {"checksum": "a3f9..."}, ...}
 ▶ record_document_batch(documents=[{"checksum": "a3f9...", "title": "Rapport Q1 2024", ...}, ...])
   {"recorded": [{"checksum": "a3f9...", "status": "active"}, ...], "errors": []}
 ```
 
-The agent works through the discovered documents in batches of 10, reading, checksumming, and recording each batch in the registry in one call apiece, then uses `find_duplicates` to spot the copy.
+New documents are analyzed in isolated batches of 10 — read/extract, then one forced-tool LLM call returning a structured record per document, then recorded into the registry in one `record_document_batch` call per batch. Only once every new document is recorded does the chat loop begin; the agent (now working from a digest of the whole corpus, not raw file content) calls `find_duplicates` while planning to spot the copy.
 
 ---
 

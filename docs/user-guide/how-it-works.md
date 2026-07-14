@@ -40,34 +40,31 @@ Only once you proceed does the chat transcript appear and the agent loop start. 
 
 ## The agent loop
 
-Once you proceed past the starter pane, the **host** launches the **server** as a subprocess and begins a GPT-5 tool-calling loop. The agent follows a fixed three-phase workflow:
+Once you proceed past the starter pane, the **host** launches the **server** as a subprocess. Before any chat turn happens, telcontar analyzes the corpus deterministically; only once that finishes does the GPT-5 tool-calling loop begin, and it follows a fixed two-phase workflow.
 
-### Phase A — Analyse
+### Analysis — before the chat loop starts
 
-The agent first surveys the **whole directory tree** with `walk_tree` (recursive, up to `max_depth=3` levels; if a subpath comes back marked `truncated`, it **must** call `walk_tree` again on it, repeating until no truncated directory remains anywhere) so it discovers documents nested in subfolders, not just those sitting at the top level. Full coverage is mandatory — the agent is directed to never sample a subset of the discovered documents.
+This step is **not** the model reasoning turn-by-turn — it is host-orchestrated code, in two stages, so that each document's content is sent to the model **at most once, ever**:
 
-Then the agent works through the discovered documents in **batches of 10** (smaller only for unusually large individual files). For each batch:
+1. **Deterministic discovery (no LLM call).** The host recursively walks the **whole directory tree** (re-walking any subpath the server marks `truncated`, repeating until none remain anywhere — full coverage is mandatory), computes a sha256 checksum for every discovered file, and looks each checksum up against the registry to split the corpus into documents already known from a previous run and genuinely new ones. A known document whose on-disk location has drifted since it was last seen is silently corrected in the registry.
+2. **Isolated, per-batch analysis of the NEW documents only.** If there are new documents, telcontar pauses once to show a rough cost estimate scoped to just those new documents — see [The cost-estimate approval gate](#the-cost-estimate-approval-gate) below. On approval, the new documents are processed in **batches of 10** (smaller only for unusually large individual files): each batch's content is fetched (`read_file_batch` or `extract_text_batch` for PDF/Office) and sent to the model in a single, isolated call that must return one structured record — title, type, summary, date, entities — per document in the batch, in order; that call never joins the chat conversation you see afterward. The results are upserted into the **registry** via `record_document_batch`.
 
-1. Calls `read_file_batch` or `extract_text_batch` (for PDF/Office) to get the content of the batch's paths, and `compute_checksum_batch` for their sha256 content IDs — a bad path in a batch surfaces as that entry's error without failing the rest
-2. Calls `record_document_batch` once to upsert title, type, summary, date, and entities for the whole batch into the **registry** — a validation failure on one document doesn't block the rest
-3. Once every discovered document is recorded, calls `find_duplicates` and `find_modified_documents` to identify candidates for quarantine
+The registry is **content-addressed**: if you rename a file, telcontar still recognises it by checksum on the next run, so a re-run only ever analyzes documents it hasn't seen before — previously-known documents are reused from the registry without being re-read or re-sent to the model at all.
 
-The very first call to any of these four batch tools triggers a one-time **cost-approval gate** — see [The cost-estimate approval gate](#the-cost-estimate-approval-gate) below.
+Once analysis finishes, the host builds a compact **corpus digest** — every document's title, type, and path, plus totals — and hands it to the agent as the first message of the chat loop, in place of a blank "please organize" instruction. From here on, the chat-loop agent works from the digest and the read-only registry tools (`list_documents`, `get_registry`, `find_duplicates`, `find_modified_documents`, …) — it can no longer read raw file content, checksum a file, or record a document itself; those tools simply aren't offered to it.
 
-The registry is **content-addressed**: if you rename a file, telcontar still recognises it by checksum on the next run. Analysis results accumulate across sessions.
+### Phase A — Organize
 
-Between Phase A and Phase B, the agent has two optional, at-most-once checkpoints: it may pause to ask the user a short batch of clarifying questions if it hit genuine ambiguity — see [The clarification checkpoint](#the-clarification-checkpoint) below — and, after re-examining its intended approach from a second angle, it may also surface a few competing options for the user to choose between — see [The multiple-option checkpoint](#the-multiple-option-checkpoint) below.
-
-### Phase B — Organize
-
-1. The agent designs a **relevant target taxonomy** — a small, shallow, readable folder tree derived from the document types and themes actually found in the corpus (e.g. grouped by document type, workstream, or phase). It may redesign the **existing nested layout entirely** — documents already sitting in subfolders are reorganized too, not just those at the top level. Folders are only created for categories the corpus actually contains.
+1. The agent designs a **relevant target taxonomy** — a small, shallow, readable folder tree derived from the document types and themes already recorded (e.g. grouped by document type, workstream, or phase). It may redesign the **existing nested layout entirely** — documents already sitting in subfolders are reorganized too, not just those at the top level; it can call `walk_tree` to check the current on-disk layout first. Folders are only created for categories the corpus actually contains.
 2. The agent calls `create_plan` to open a new plan
 3. It stages operations with `propose_create_dir` for each new folder (idempotent and collision-safe), `propose_rename`, `propose_move` (filing each document into the taxonomy), `propose_quarantine` for duplicates or clutter, `propose_create_file`/`propose_update_file` for any new or updated files, and `propose_archive_document` to withdraw a document from active memory when appropriate — **every filesystem mutation is staged this way; there is no tool that writes to disk directly**
 4. It calls `review_plan` for a deduplication pre-flight check
 5. It calls `set_plan_rationale` with a short plain-language paragraph explaining the plan's philosophy — how it grouped, renamed, and quarantined documents and why — and `set_plan_folder_notes` with a one-line purpose note for each target folder. The host shows the rationale above the op list in the approval modal, followed by a target-layout tree with the folder notes beside each folder
 6. It calls `execute_plan` — at this point the **approval gate** fires
 
-### Phase C — Synthesize
+Before step 2 (`create_plan`), the agent has two optional, at-most-once checkpoints: it may pause to ask the user a short batch of clarifying questions if it hit genuine ambiguity — see [The clarification checkpoint](#the-clarification-checkpoint) below — and, after re-examining its intended approach from a second angle, it may also surface a few competing options for the user to choose between — see [The multiple-option checkpoint](#the-multiple-option-checkpoint) below.
+
+### Phase B — Synthesize
 
 1. Throughout the run, the agent records key project milestones with `create_event` — one short, verb-led, dated sentence per decision or delivery
 2. The agent calls `build_graph` to project the registry and events into the knowledge graph, then `get_actors` for the ranked main actors and `list_events` for the timeline
@@ -79,40 +76,43 @@ Between Phase A and Phase B, the agent has two optional, at-most-once checkpoint
 
 ## The cost-estimate approval gate
 
-Before any document content is actually fetched, telcontar pauses once to show a rough cost estimate and let you decide whether to proceed. This is the run's **primary cost control** — a single upfront checkpoint before the model can trigger real analysis spend, distinct from the adaptive turn budget that only acts as a backstop against a runaway or looping agent.
+After deterministic discovery finds the corpus's **new** (previously-unanalyzed) documents but before any of their content is actually fetched, telcontar pauses once to show a rough cost estimate scoped to just those new documents, and lets you decide whether to proceed. This is the run's **primary cost control** — a single upfront checkpoint before the model can trigger real analysis spend, distinct from the adaptive turn budget that only acts as a backstop against a runaway or looping agent.
 
-The gate fires on the **first call** to any of the batch tools (`extract_text_batch`, `read_file_batch`, `compute_checksum_batch`, `record_document_batch`) — i.e. right at the start of Phase A's per-batch work — and never again for the rest of the run. The estimate itself is a rough, local calculation from the file sizes already discovered via `walk_tree` (no extraction and no LLM call needed to produce it), shown as e.g. "~42 documents, ~18,500 input tokens estimated, batched in groups of 10 — proceed?".
+Because the estimate only ever covers new documents, re-running Organize on a folder that's mostly already analyzed shows a small estimate (or none at all — the gate is skipped entirely when there is nothing new to analyze), not a recalculation of the whole corpus. The estimate itself is a rough, local calculation from the file sizes discovery already found (no extraction and no LLM call needed to produce it), shown as e.g. "~42 documents, ~18,500 input tokens estimated, batched in groups of 10 — proceed?".
 
 ```
-Agent is about to call the first batch tool (e.g. extract_text_batch)
+Discovery finishes; N new (previously-unanalyzed) documents found
        │
        ▼
-Host computes a size-based estimate, shows CostEstimateModal
+Host computes a size-based estimate scoped to just those N documents,
+shows CostEstimateModal
        │
    User reviews
    ├── Proceed
    │       │
    │       ▼
-   │   The call is forwarded and Phase A continues normally
+   │   The new documents are analyzed, then the chat loop begins
    │
    └── Cancel
            │
            ▼
-       The agent is told the user did not approve; it stops and reports back
+       Analysis is skipped for this run — the new documents stay
+       unrecorded; the chat loop begins with only the already-known
+       documents in the digest
 ```
 
-In `APPROVAL_MODE=never`, this gate is skipped automatically (the estimate is still emitted for observability, it just never blocks). In `always` and `destructive_only`, it always shows once per run.
+In `APPROVAL_MODE=never`, this gate is skipped automatically (the estimate is still emitted for observability, it just never blocks). In `always` and `destructive_only`, it shows once per run whenever there are new documents to analyze.
 
 ---
 
 ## The clarification checkpoint
 
-After Phase A (Analyse) and before Phase B (Organize) begins, the agent **may** pause once to ask the user a short batch of clarifying questions — but only when it hits genuine ambiguity (unclear document type, competing taxonomy groupings, ambiguous naming). If there is no real ambiguity, the agent skips this and moves straight into Phase B with its own best judgement.
+Early in Phase A (Organize), before it calls `create_plan`, the agent **may** pause once to ask the user a short batch of clarifying questions — but only when it hits genuine ambiguity (unclear document type, competing taxonomy groupings, ambiguous naming). If there is no real ambiguity, the agent skips this and moves straight into building the plan with its own best judgement.
 
 This is a **host-side** capability, not an MCP server tool: `ask_clarification` is a synthetic tool the host injects into the model's tool list, and it is never forwarded to the MCP server.
 
 ```
-Agent finishes Phase A (Analyse)
+Agent begins Phase A (Organize), before calling create_plan
        │
        ▼
 Agent calls ask_clarification(questions)   (at most once per run)
@@ -138,12 +138,12 @@ A second call to `ask_clarification` in the same run is refused — the host tel
 
 ## The multiple-option checkpoint
 
-Also between Phase A and Phase B, the agent **may** pause once more — after re-examining its intended approach from a second angle — to let the user choose between competing courses of action, when there are genuinely several valid ways to classify or handle the corpus (e.g. group COPIL decks by date vs. by workstream vs. one flat folder). If one approach is clearly best, the agent skips this and moves straight into Phase B.
+Also within Phase A (Organize), before `create_plan`, the agent **may** pause once more — after re-examining its intended approach from a second angle — to let the user choose between competing courses of action, when there are genuinely several valid ways to classify or handle the corpus (e.g. group COPIL decks by date vs. by workstream vs. one flat folder). If one approach is clearly best, the agent skips this and moves straight into building the plan.
 
 Like the clarification checkpoint, this is a **host-side** capability, not an MCP server tool: `propose_options` is a synthetic tool the host injects into the model's tool list, and it is never forwarded to the MCP server.
 
 ```
-Agent finishes Phase A, re-examines its approach from a second angle
+Agent re-examines its approach from a second angle, before create_plan
        │
        ▼
 Agent calls propose_options(questions)   (at most once per run)
@@ -234,7 +234,7 @@ Typing a message there:
 
 1. Echoes it into the transcript as a `you` turn
 2. Resumes the agent loop with the conversation history returned by the previous call, plus your new message appended as a fresh user turn
-3. Runs with the **full mutating toolset** — plan, execute, write, everything the initial run had — so a follow-up like "quarantine the drafts too" or "actually group these by workstream" continues the *same* conversation instead of starting a fresh one
+3. Runs with the **same organize-mode toolset** as the initial run — plan, execute, write, and every registry/graph/event read tool (document-content tools such as reading or re-extracting a file stay unavailable, since the corpus was already analyzed) — so a follow-up like "quarantine the drafts too" or "actually group these by workstream" continues the *same* conversation instead of starting a fresh one
 
 ```
 Run reaches a terminal state (done / error / max turns)
@@ -258,7 +258,7 @@ This is distinct from **query mode** (`g`): query mode opens a *separate* screen
 
 A couple of things carry over differently on a continuation:
 
-- Each chat message gets its **own fresh turn budget**, not a share of the original run's. Since a continuation doesn't re-survey the tree with `walk_tree`, the adaptive turn-budget calculation (which scales with corpus size) resets to its floor of 50 turns — in practice not a limitation, since a follow-up message is normally a small, targeted ask rather than a fresh full-corpus analysis.
+- Each chat message gets its **own fresh turn budget**, not a share of the original run's. Since a continuation doesn't re-run the discovery/analysis stage, the adaptive turn-budget calculation (which scales with corpus size) resets to its floor of 50 turns — in practice not a limitation, since a follow-up message is normally a small, targeted ask rather than a fresh full-corpus analysis.
 - The desktop notification and the "press g / keep chatting" cue fire only once, on the *first* terminal state — not again after every subsequent chat turn.
 - If a turn raises an unhandled error partway through a batch of tool calls, telcontar no longer crashes the conversation: any tool call left without a result is answered with a synthetic error so the history stays valid, and you can keep typing to try again.
 
