@@ -27,6 +27,7 @@ from pathlib import Path
 
 from textual import on
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Container, Horizontal, ScrollableContainer, VerticalScroll
 from textual.css.query import NoMatches
 from textual.screen import ModalScreen, Screen
@@ -1884,6 +1885,12 @@ class OrganizerApp(App):
     TITLE = "Directory Organizer"
     SUB_TITLE = "Powered by GPT-5 + MCP"
 
+    # priority=True (P9): Textual's non-priority binding chain stops at the
+    # first modal screen it finds (ModalScreen.is_modal), deliberately hiding
+    # app-level bindings while a modal is open — settings must stay reachable
+    # even while ApprovalModal/CostEstimateModal is up, so this needs priority.
+    BINDINGS = [Binding("ctrl+s", "open_settings", "Settings", priority=True)]
+
     def on_mount(self) -> None:
         from config.settings import is_configured
 
@@ -1891,6 +1898,17 @@ class OrganizerApp(App):
             self.push_screen(StartupScreen())
         else:
             self.push_screen(SetupScreen())
+
+    def action_open_settings(self) -> None:
+        """Open settings from any screen (P9), guarded against double-push and
+        against bypassing the first-run wizard. Allowed while a modal
+        (ApprovalModal/CostEstimateModal) is on top — it stacks and pops back
+        cleanly; settings changed mid-run don't affect the already-running
+        agent loop, since settings are captured once at worker start.
+        """
+        if isinstance(self.screen, (ConfigScreen, SetupScreen)):
+            return
+        self.push_screen(ConfigScreen())
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

@@ -1515,6 +1515,88 @@ async def test_startup_picker_selection_drives_organize(
         assert app.screen._target == tmp_path
 
 
+# ── P9: settings from anywhere (ctrl+s) ───────────────────────────────────────
+
+
+async def test_ctrl_s_opens_settings_from_startup_screen(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("config.settings.is_configured", lambda: True)
+    monkeypatch.setattr(
+        "config.settings.read_user_config",
+        lambda: {"llm_base_url": "https://example.com/v1", "llm_model": "claude-sonnet-5"},
+    )
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(StartupScreen())
+        await pilot.pause()
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert isinstance(app.screen, ConfigScreen)
+
+
+async def test_ctrl_s_is_noop_when_config_screen_already_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("config.settings.is_configured", lambda: True)
+    monkeypatch.setattr(
+        "config.settings.read_user_config",
+        lambda: {"llm_base_url": "https://example.com/v1", "llm_model": "claude-sonnet-5"},
+    )
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(StartupScreen())
+        await pilot.pause()
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert isinstance(app.screen, ConfigScreen)
+        stack_len = len(app.screen_stack)
+
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert len(app.screen_stack) == stack_len
+        assert isinstance(app.screen, ConfigScreen)
+
+
+async def test_ctrl_s_is_noop_during_setup_screen() -> None:
+    """Don't let ctrl+s bypass the first-run wizard — ConfigScreen can persist
+    a half-configured state (e.g. an empty key) that skips SetupScreen's
+    guided keyring/plaintext-fallback flow."""
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(SetupScreen())
+        await pilot.pause()
+        stack_len = len(app.screen_stack)
+
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert len(app.screen_stack) == stack_len
+        assert isinstance(app.screen, SetupScreen)
+
+
+async def test_ctrl_s_opens_settings_over_a_modal(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Settings stay reachable even mid-modal (e.g. while a cost estimate is
+    awaiting approval) — it stacks on top and pops back cleanly."""
+    from host.app import CostEstimateModal
+
+    monkeypatch.setattr("config.settings.is_configured", lambda: True)
+    monkeypatch.setattr(
+        "config.settings.read_user_config",
+        lambda: {"llm_base_url": "https://example.com/v1", "llm_model": "claude-sonnet-5"},
+    )
+    app = OrganizerApp()
+    async with app.run_test(size=(100, 40)) as pilot:
+        app.push_screen(StartupScreen())
+        await pilot.pause()
+        app.push_screen(
+            CostEstimateModal(new_documents=1, already_analyzed=0, estimated_tokens=100)
+        )
+        await pilot.pause()
+        assert isinstance(app.screen, CostEstimateModal)
+
+        await pilot.press("ctrl+s")
+        await pilot.pause()
+        assert isinstance(app.screen, ConfigScreen)
+
+
 # ── L3: prior-instructions conversation starter ───────────────────────────────
 
 

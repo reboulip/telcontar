@@ -23,6 +23,7 @@ When you run `telcontar`, the app checks whether a minimum configuration (AI ser
 
 - **First run** — the **setup wizard** (`SetupScreen`) appears automatically. It guides you through choosing an AI provider, entering the service URL and API key, and selecting a document profile. The key is stored in the OS credential store (Windows Credential Manager / macOS Keychain); other settings go to `~/.telcontar/config.env`.
 - **Returning user** — the **startup screen** (`StartupScreen`) appears directly. It offers three actions: **Organize**, **Query**, and **⚙ Settings**. Press `s` or click **⚙ Settings** at any time to open the settings panel (`ConfigScreen`), where you can change the URL, API key, profile, and approval mode.
+- **From anywhere** — press `Ctrl+S` at any point in the app, on any screen, to open the same settings panel — not just from the startup screen. It even works while a modal (plan approval, cost estimate) is on screen; the settings panel stacks on top and pops back cleanly. It's a no-op if settings are already open, or during the first-run setup wizard (to avoid persisting a half-configured state that skips the wizard's guided keyring/plaintext-fallback flow).
 
 ---
 

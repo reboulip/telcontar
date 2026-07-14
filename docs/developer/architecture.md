@@ -282,6 +282,12 @@ At any point before or while building the plan, the agent may check in with the 
 
 The system prompt's two former paragraphs ("Optional clarification checkpoint" / "Optional multiple-option checkpoint") are now one "Optional chat checkpoint" paragraph referencing `ask_user`, and the `"question"`/`"options"` `EventKind`s are merged into one `"ask_user"` kind.
 
+### Settings from anywhere (P9)
+
+`OrganizerApp` (the root Textual `App`) carries an app-level `ctrl+s` binding, `action_open_settings`, that pushes `ConfigScreen` from *any* screen — not just via `StartupScreen`'s pre-existing local `s` binding/button. It is a no-op if `ConfigScreen` is already the current screen (no double-push), and a no-op if `SetupScreen` is current, since `ConfigScreen` could persist a half-configured state that bypasses `SetupScreen`'s guided keyring/plaintext-fallback flow.
+
+The binding must be declared as `Binding("ctrl+s", "open_settings", "Settings", priority=True)` (from `textual.binding`), not a plain tuple: Textual's non-priority key-binding resolution chain deliberately stops at the first `ModalScreen` it encounters, so that a modal fully captures input and a background shortcut (e.g. `q`/quit) can't fire accidentally while a confirmation dialog is open. Without `priority=True`, `ctrl+s` would silently not fire while `ApprovalModal` or `CostEstimateModal` is on screen. With it, the binding reaches `action_open_settings` regardless of what modal is stacked on top, and `ConfigScreen` stacks over it and pops back cleanly. Any future app-level binding meant to work while a modal is open needs the same `priority=True`.
+
 ### Output-sink abstraction
 
 `server/sinks.py` defines a `Sink` protocol (`name`, `external`, `write_summary`, `write_folder_readme`) and a `resolve_sinks(names, allow_external)` factory. The MCP handlers for `write_summary` and `write_folder_readme` call `resolve_sinks` at request time, passing the profile's `[sinks] default` list and the `egress_allow_external_sinks` setting, then fan the call out to each resolved sink.

@@ -297,7 +297,7 @@ hard-stopping plan execution.
       the next chat message; delete `ClarificationModal`/`OptionsModal`.
       `CostEstimateModal` reworded to "N new documents (M already analyzed,
       skipped)". (requires: P7)
-- [ ] P9 · Settings from anywhere — app-level `ctrl+s` binding opening
+- [x] P9 · Settings from anywhere — app-level `ctrl+s` binding opening
       `ConfigScreen` from any screen, guarded against double-push.
 
 ---
