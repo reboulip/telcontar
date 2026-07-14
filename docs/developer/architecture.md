@@ -222,7 +222,9 @@ This is the **primary** cost control for an organize run — the adaptive turn b
 
 The estimate is scoped to **new documents only**: `_new_docs_cost_estimate(new_docs, sizes, max_snippet_chars) -> (doc_count, estimated_tokens)` (P5) mirrors `_ProgressTracker.cost_estimate`'s chars-per-token heuristic (`sum(min(size, max_snippet_chars) // 4 for size in sizes.values())`, 4 chars/token) but sums only over `PrepassResult.new`'s sizes — a re-run where most of the corpus is already known no longer estimates cost for the whole tree the way the pre-P6 gate did. `_handle_cost_approval` emits a `"cost_estimate"` `AgentEvent` with this estimate, then — unless `settings.approval_mode == "never"` or no `on_cost_approval_needed` callback is wired — awaits the host's `CostApprovalCallback` (`Callable[[str, dict], Awaitable[CostApprovalResult]]`). Rejection skips `_analyze_new_documents` entirely for this run — the new documents are neither fetched nor recorded, and surface in the corpus digest's error/unanalyzed count rather than as recorded documents; approval runs the analyzer normally. The gate fires **at most once per run**, and is skipped entirely — no event, no callback — when `run_prepass` finds no new documents at all.
 
-`host/app.py` wires the callback to `CostEstimateModal` — unchanged from O8's original design: no op list, no refinement, just the estimate and Proceed/Cancel — and narrates the estimate and the user's choice into the transcript. The status bar shows "Awaiting cost approval…" while the modal is open.
+As of P8, the `"cost_estimate"` event's `data` dict is `{"new": doc_count, "already_analyzed": already_analyzed_count, "estimated_tokens": estimated_tokens}` — `already_analyzed` (the `PrepassResult.known` count) sits alongside the new-doc estimate so the approval summary text reads "N new document(s) (M already analyzed, skipped), ~T input tokens estimated…" instead of leaving the skipped majority of a re-run corpus unmentioned. This completes the data-shape migration P6 deferred (the dict originally carried `{"documents": N, "estimated_tokens": T}`).
+
+`host/app.py` wires the callback to `CostEstimateModal`, whose constructor is `(new_documents, already_analyzed, estimated_tokens, batch_size=10)` — matching the P8 data shape above — and narrates the estimate and the user's choice into the transcript. The status bar shows "Awaiting cost approval…" while the modal is open.
 
 ### Resumable chat after a stop (O7)
 
@@ -268,23 +270,17 @@ Telcontar maintains three append-only JSONL logs — each with a different purpo
 
 The paths above are relative defaults; as of P2, `Settings.for_target` anchors them at the run's target directory rather than telcontar's project root — see [Per-directory memory (P2)](#per-directory-memory-p2) above.
 
-### Post-analysis clarification checkpoint
+### ask_user chat checkpoint (P8)
 
-Between the ANALYZE and ORGANIZE phases, the agent may surface a batch of clarifying questions when it hits genuine ambiguity (unclear document type, competing taxonomy groupings, ambiguous naming). This is implemented entirely on the **host** side, not as an MCP server tool:
+At any point before or while building the plan, the agent may check in with the user — a genuine clarifying question, competing options to choose between, or a mix in the same call. P8 merges what used to be two separate, once-per-run modal checkpoints (K1's `ask_clarification`/`ClarificationResult`/`QuestionsCallback`/`_handle_clarification` and L7's `propose_options`/`OptionsResult`/`OptionsCallback`/`_handle_options`) into a single synthetic tool, still implemented entirely on the **host** side, not as an MCP server tool:
 
-- `host/agent.py` defines a synthetic tool spec, `ask_clarification`, that is appended to the OpenAI tool list only when the caller wires in an `on_questions_needed` callback (`QuestionsCallback = Callable[[list[str]], Awaitable[ClarificationResult]]`) — it is never registered with, or forwarded to, the MCP server.
-- When the model calls `ask_clarification`, `_handle_clarification` enforces the at-most-once-per-run rule and the "nothing to add → proceed" path, emits a `"question"` `AgentEvent` (with the questions in `data`), and awaits the callback.
-- `host/app.py` wires `on_questions_needed` to show `ClarificationModal` (mirrors `ApprovalModal`): one free-text `Input` per question, with **Submit answers** and **Skip — best judgement** buttons, returning a `ClarificationResult`.
-- If the user skips, submits no answers, or the checkpoint was already used this run, the tool result is a note telling the agent to proceed with its own best judgement — the agent is instructed never to stall waiting for answers.
+- `host/agent.py` defines one synthetic tool spec, `ask_user` (`_ASK_USER_TOOL_NAME`/`_ASK_USER_TOOL_SPEC`), appended to the OpenAI tool list only when the caller wires in an `on_ask_user_needed` callback (`AskUserCallback = Callable[[list[dict]], Awaitable[AskUserResult]]`) — never registered with, or forwarded to, the MCP server. Its schema takes 1-5 `questions`, each `{text, options?}` — `options` (2-5 mutually-exclusive strings) makes an item multiple-choice; omitting it makes it an open question.
+- When the model calls `ask_user`, `_handle_ask_user` drops malformed/empty items, emits an `"ask_user"` `AgentEvent` (with the well-formed questions in `data`), and awaits the callback. `AskUserResult` carries the user's raw chat reply as free text (`reply: str`, `provided: bool`) rather than per-question structured answers — the host no longer distinguishes open answers from option picks once the reply comes back, since both now arrive as one chat message.
+- **No once-per-run guard** — unlike the K1/L7 checkpoints it replaces, `ask_user` can be called any number of times in a run; live chat makes repeated check-ins natural instead of an interruption budget.
+- `host/app.py` renders the question(s)/option(s) as a normal `telcontar` transcript turn and awaits the *same* live-chat message queue P7 wired up (`self._messages`) rather than `push_screen_wait`-ing a modal — there is no `ClarificationModal`/`OptionsModal` anymore, and the `RadioButton`/`RadioSet` imports they alone used are gone. The next chat message the user sends is returned as `AskUserResult(reply=message, provided=True)`.
+- If the callback is unavailable or no well-formed questions were provided, the tool result is a note telling the agent to proceed with its own best judgement — the agent is instructed not to stall or offload every decision onto this checkpoint.
 
-### Multiple-option checkpoint
-
-Also between the ANALYZE and ORGANIZE phases, after re-examining its intended approach from a second angle, the agent may surface a few questions carrying competing, mutually-exclusive options for the user to pick from — implemented the same way, entirely on the **host** side:
-
-- `host/agent.py` defines a synthetic tool spec, `propose_options`, that is appended to the OpenAI tool list only when the caller wires in an `on_options_needed` callback (`OptionsCallback = Callable[[list[dict]], Awaitable[OptionsResult]]`) — it is never registered with, or forwarded to, the MCP server.
-- When the model calls `propose_options`, `_handle_options` enforces the at-most-once-per-run rule, drops any question that lacks a non-empty prompt or has fewer than two options, emits an `"options"` `AgentEvent` (with the questions in `data`), and awaits the callback.
-- `host/app.py` wires `on_options_needed` to show `OptionsModal` (mirrors `ClarificationModal`): one `RadioSet` per question (2-5 `RadioButton` options, first pre-selected), with **Submit choices** and **Skip — best judgement** buttons, returning an `OptionsResult`.
-- If the user skips, makes no selection, or the checkpoint was already used this run, the tool result is a note telling the agent to proceed with its own best judgement — the agent is instructed not to stall or offload every decision onto this checkpoint.
+The system prompt's two former paragraphs ("Optional clarification checkpoint" / "Optional multiple-option checkpoint") are now one "Optional chat checkpoint" paragraph referencing `ask_user`, and the `"question"`/`"options"` `EventKind`s are merged into one `"ask_user"` kind.
 
 ### Output-sink abstraction
 
@@ -371,10 +367,8 @@ This is the item that wires P4 and P5 into `run_agent_loop` for real, completing
 6. Host calls session.list_tools(denied=ORGANIZE_DENIED_TOOLS) → discovers the
    ORGANIZE-phase toolset, structurally excluding the content-fetching/recording
    tools already used in steps 2-4 (P6); if the caller wired in an
-   on_questions_needed callback, the host also appends its own host-side
-   ask_clarification tool spec, and if an on_options_needed callback is wired in,
-   the host also appends its own host-side propose_options tool spec (neither
-   forwarded to the server)
+   on_ask_user_needed callback, the host also appends its own host-side ask_user
+   tool spec (P8; never forwarded to the server)
 7. Host sends the ORGANIZE-only system prompt (built from config + active
    profile: document types, naming conventions, and synthesis template — no
    ANALYZE section, since the corpus is already analyzed) + the digest-seeded
@@ -394,22 +388,20 @@ This is the item that wires P4 and P5 into `run_agent_loop` for real, completing
     turn; steps 8-11 then repeat (up to the adaptive turn budget — see above,
     effectively static for a fresh run since the O5 progress tracker no longer
     grows once the ORGANIZE loop starts)
-13. Once analysis is far enough along, the agent MAY call ask_clarification once with a
-    short batch of questions; the host emits a "question" AgentEvent, shows
-    ClarificationModal, and feeds the user's answers (or a "proceed with best judgement"
-    note if skipped or already used) back as the tool result
-14. After re-examining its approach from a second angle, the agent MAY also call
-    propose_options once with a few questions, each carrying 2-5 mutually-exclusive
-    options; the host emits an "options" AgentEvent, shows OptionsModal, and feeds the
-    user's selections (or a "proceed with best judgement" note if skipped or already
-    used) back as the tool result
-15. Agent designs a target taxonomy from the types/themes already recorded in the
+13. At any point before or while building the plan, the agent MAY call ask_user
+    (P8) with 1-5 items — plain questions, multiple-choice ones (2-5 options), or
+    a mix; the host emits an "ask_user" AgentEvent, renders the item(s) as a
+    transcript turn, and blocks on the live-chat message queue (P7) for the
+    user's next chat reply (or a "proceed with best judgement" note if the
+    callback is unavailable or nothing well-formed was asked) — unlimited per
+    run, no once-per-run guard
+14. Agent designs a target taxonomy from the types/themes already recorded in the
     digest, opens a plan (create_plan), and stages propose_create_dir for each
     folder (idempotent; no folder created for absent categories) alongside
     propose_rename / propose_move / propose_quarantine / propose_create_file /
     propose_update_file / propose_archive_document ops — every mutation is
     staged, never applied directly
-16. On execute_plan call:
+15. On execute_plan call:
     a. Host fetches plan details (get_plan) and writes the full ops list to
        .organizer/plan_ops.json (path shown in the modal)
     b. Host shows ApprovalModal to user
@@ -418,15 +410,15 @@ This is the item that wires P4 and P5 into `run_agent_loop` for real, completing
        journals each, reconciles registry
     e. On refine: the plan is NOT executed — the free-text request is returned to the
        agent as a tool result, which revises the plan (ops/rationale/folder notes) and
-       calls execute_plan again to re-present it (back to step 16)
-17. Agent calls build_graph → get_actors → list_events, then composes SUMMARY.md
+       calls execute_plan again to re-present it (back to step 15)
+16. Agent calls build_graph → get_actors → list_events, then composes SUMMARY.md
     from registry + events + graph + actors per the profile's [synthesis] template;
     calls write_index + write_summary to persist INDEX.md, manifest.json, SUMMARY.md
-18. Agent calls write_folder_readme(path=<folder>, content=<markdown>) once per
+17. Agent calls write_folder_readme(path=<folder>, content=<markdown>) once per
     meaningful folder of the organized tree; empty/trivial folders are skipped
-19. Agent sends final text (no tool calls) → normally the loop would end here, UNLESS a chat message is waiting in message_queue at this exact instant (P7): if so, the queued message(s) are appended as a user turn and the loop continues from step 8 instead of ending — letting a live chat message redirect an in-progress run. Otherwise, this is one of three ways the loop can reach a terminal state — the others being an unhandled exception (caught and returned as an error, O7) or the turn budget running out
-20. Desktop notification fires and the "press g / keep chatting" cue is shown — but only on this first terminal state (O7)
-21. The MCP session from step 1 stays open, and the #organize-input chat box (live since the start of the run, P7) stays enabled. The host's worker loop waits on `#organize-input` for any message that arrives strictly AFTER run_agent_loop has already returned (i.e. the agent is fully idle and no live call remains to drain the queue itself) — each such message resumes run_agent_loop on the SAME session with (history=<returned from the previous call>, message=<your text>, message_queue=<the same queue>) — back to step 8 directly (steps 2-7 do NOT repeat; no new pre-pass or analysis happens on a continuation), with the same ORGANIZE-only toolset, its own fresh turn budget, and the same live-chat draining (step 5b/12/19) as the initial run. An unhandled exception during any of these turns is caught rather than propagating: any tool call left without a matching result is answered with a synthesized {"error": ...} entry, an "error" AgentEvent fires, and the conversation history stays valid for the next chat message
+18. Agent sends final text (no tool calls) → normally the loop would end here, UNLESS a chat message is waiting in message_queue at this exact instant (P7): if so, the queued message(s) are appended as a user turn and the loop continues from step 8 instead of ending — letting a live chat message redirect an in-progress run. Otherwise, this is one of three ways the loop can reach a terminal state — the others being an unhandled exception (caught and returned as an error, O7) or the turn budget running out
+19. Desktop notification fires and the "press g / keep chatting" cue is shown — but only on this first terminal state (O7)
+20. The MCP session from step 1 stays open, and the #organize-input chat box (live since the start of the run, P7) stays enabled. The host's worker loop waits on `#organize-input` for any message that arrives strictly AFTER run_agent_loop has already returned (i.e. the agent is fully idle and no live call remains to drain the queue itself) — each such message resumes run_agent_loop on the SAME session with (history=<returned from the previous call>, message=<your text>, message_queue=<the same queue>) — back to step 8 directly (steps 2-7 do NOT repeat; no new pre-pass or analysis happens on a continuation), with the same ORGANIZE-only toolset, its own fresh turn budget, and the same live-chat draining (step 5b/12/18) as the initial run. An unhandled exception during any of these turns is caught rather than propagating: any tool call left without a matching result is answered with a synthesized {"error": ...} entry, an "error" AgentEvent fires, and the conversation history stays valid for the next chat message
 ```
 
 ---

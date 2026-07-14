@@ -62,7 +62,7 @@ Once analysis finishes, the host builds a compact **corpus digest** — every do
 5. It calls `set_plan_rationale` with a short plain-language paragraph explaining the plan's philosophy — how it grouped, renamed, and quarantined documents and why — and `set_plan_folder_notes` with a one-line purpose note for each target folder. The host shows the rationale above the op list in the approval modal, followed by a target-layout tree with the folder notes beside each folder
 6. It calls `execute_plan` — at this point the **approval gate** fires
 
-Before step 2 (`create_plan`), the agent has two optional, at-most-once checkpoints: it may pause to ask the user a short batch of clarifying questions if it hit genuine ambiguity — see [The clarification checkpoint](#the-clarification-checkpoint) below — and, after re-examining its intended approach from a second angle, it may also surface a few competing options for the user to choose between — see [The multiple-option checkpoint](#the-multiple-option-checkpoint) below.
+At any point before or while building the plan, the agent may pause to check in with the user — genuine clarifying questions, competing options to choose between, or a mix — see [The ask_user chat checkpoint](#the-ask_user-chat-checkpoint) below.
 
 ### Phase B — Synthesize
 
@@ -78,7 +78,7 @@ Before step 2 (`create_plan`), the agent has two optional, at-most-once checkpoi
 
 After deterministic discovery finds the corpus's **new** (previously-unanalyzed) documents but before any of their content is actually fetched, telcontar pauses once to show a rough cost estimate scoped to just those new documents, and lets you decide whether to proceed. This is the run's **primary cost control** — a single upfront checkpoint before the model can trigger real analysis spend, distinct from the adaptive turn budget that only acts as a backstop against a runaway or looping agent.
 
-Because the estimate only ever covers new documents, re-running Organize on a folder that's mostly already analyzed shows a small estimate (or none at all — the gate is skipped entirely when there is nothing new to analyze), not a recalculation of the whole corpus. The estimate itself is a rough, local calculation from the file sizes discovery already found (no extraction and no LLM call needed to produce it), shown as e.g. "~42 documents, ~18,500 input tokens estimated, batched in groups of 10 — proceed?".
+Because the estimate only ever covers new documents, re-running Organize on a folder that's mostly already analyzed shows a small estimate (or none at all — the gate is skipped entirely when there is nothing new to analyze), not a recalculation of the whole corpus. The estimate itself is a rough, local calculation from the file sizes discovery already found (no extraction and no LLM call needed to produce it), shown as e.g. "~42 new document(s) (10 already analyzed, skipped), ~18,500 input tokens estimated, batched in groups of 10 — proceed?".
 
 ```
 Discovery finishes; N new (previously-unanalyzed) documents found
@@ -105,65 +105,33 @@ In `APPROVAL_MODE=never`, this gate is skipped automatically (the estimate is st
 
 ---
 
-## The clarification checkpoint
+## The ask_user chat checkpoint
 
-Early in Phase A (Organize), before it calls `create_plan`, the agent **may** pause once to ask the user a short batch of clarifying questions — but only when it hits genuine ambiguity (unclear document type, competing taxonomy groupings, ambiguous naming). If there is no real ambiguity, the agent skips this and moves straight into building the plan with its own best judgement.
+At any point before or while building the plan, the agent **may** call `ask_user` with a short batch of items — plain clarifying questions, multiple-choice options for the user to pick from, or a mix in the same call — when it hits genuine ambiguity (unclear document type, competing taxonomy groupings, ambiguous naming) or there are genuinely several valid ways to classify or handle the corpus (e.g. group COPIL decks by date vs. by workstream vs. one flat folder). If there is no real ambiguity, the agent skips this and proceeds with its own best judgement.
 
-This is a **host-side** capability, not an MCP server tool: `ask_clarification` is a synthetic tool the host injects into the model's tool list, and it is never forwarded to the MCP server.
-
-```
-Agent begins Phase A (Organize), before calling create_plan
-       │
-       ▼
-Agent calls ask_clarification(questions)   (at most once per run)
-       │
-       ▼
-Host shows ClarificationModal — one free-text input per question
-       │
-   User reviews
-   ├── Submit answers (any subset, blanks are skipped)
-   │       │
-   │       ▼
-   │   Answers fed back to the agent to refine its decisions before create_plan
-   │
-   └── Skip — best judgement
-           │
-           ▼
-       Agent proceeds using its own judgement
-```
-
-A second call to `ask_clarification` in the same run is refused — the host tells the agent it already asked and to proceed with its own best judgement. The agent is instructed not to stall waiting for answers.
-
----
-
-## The multiple-option checkpoint
-
-Also within Phase A (Organize), before `create_plan`, the agent **may** pause once more — after re-examining its intended approach from a second angle — to let the user choose between competing courses of action, when there are genuinely several valid ways to classify or handle the corpus (e.g. group COPIL decks by date vs. by workstream vs. one flat folder). If one approach is clearly best, the agent skips this and moves straight into building the plan.
-
-Like the clarification checkpoint, this is a **host-side** capability, not an MCP server tool: `propose_options` is a synthetic tool the host injects into the model's tool list, and it is never forwarded to the MCP server.
+This is a **host-side** capability, not an MCP server tool: `ask_user` is a synthetic tool the host injects into the model's tool list, and it is never forwarded to the MCP server. Unlike the modal-based checkpoints it replaces, it has no dialog of its own — it renders as a normal `telcontar` turn in the chat transcript and blocks on the exact same live-chat message queue described in [Chatting during and after a run](#chatting-during-and-after-a-run-live-chat-resumable-chat) below, so your next chat message is read as the reply. There is no once-per-run cap: because it's a normal chat exchange rather than an interruptive modal, the agent can check in as many times as it genuinely needs to.
 
 ```
-Agent re-examines its approach from a second angle, before create_plan
+Agent hits genuine ambiguity, at any point before/while building the plan
        │
        ▼
-Agent calls propose_options(questions)   (at most once per run)
+Agent calls ask_user(questions)   (1-5 items; each may carry 2-5 options)
        │
        ▼
-Host shows OptionsModal — one RadioSet (2-5 options) per question
+Question(s) rendered as a "telcontar" turn in the transcript
        │
-   User reviews
-   ├── Submit choices (one option per question; first option pre-selected)
-   │       │
-   │       ▼
-   │   Selections fed back to the agent, which follows them before create_plan
-   │
-   └── Skip — best judgement
-           │
-           ▼
-       Agent proceeds using its own judgement
+       ▼
+Agent's tool call blocks on the live-chat message queue
+       │
+   You type a reply in the chat box
+       │
+       ▼
+Reply echoed as a "you" turn, returned to the agent as free text;
+the agent continues — and may call ask_user again later if a new
+ambiguity comes up
 ```
 
-A second call to `propose_options` in the same run is refused — the host tells the agent it already proposed options and to proceed with its own best judgement. Like `ask_clarification`, the agent is instructed to use this only for real, close judgement calls, not to offload every decision, and never to stall.
+The agent is instructed not to stall or use this to offload every decision — only for real, close judgement calls; otherwise it proceeds with its own best judgement.
 
 ---
 
@@ -233,6 +201,8 @@ The chat box (`#organize-input`) at the bottom of the Organizer screen is enable
 ### Live mid-run chat
 
 While the agent is still working — even during the pre-pass/analysis stage, before the first chat turn — a message you type is queued and woven into the run at the next opportunity, without waiting for it to finish: right before the run's first LLM call, after every turn's batch of tool calls completes, and — most importantly — at the moment the agent would otherwise stop (its response carries no more tool calls). At that last point, if a message is waiting, the agent takes it as a new instruction and keeps going instead of ending the run. This lets you course-correct an in-progress run, e.g. "actually, group by year instead", without waiting for it to finish first.
+
+This is the same queue [the `ask_user` chat checkpoint](#the-ask_user-chat-checkpoint) blocks on when the agent has a question for you — an `ask_user` call is really just a special case of this mechanism, one where the agent is the one waiting on your next message.
 
 ```
 Run in progress (pre-pass / analysis / a turn's tool calls)

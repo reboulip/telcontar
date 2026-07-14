@@ -32,8 +32,7 @@ EventKind = Literal[
     "tool_call",
     "tool_result",
     "plan_ready",
-    "question",
-    "options",
+    "ask_user",
     "progress",
     "cost_estimate",
     "tokens",
@@ -79,92 +78,47 @@ class CostApprovalResult:
 CostApprovalCallback = Callable[[str, dict], Awaitable[CostApprovalResult]]
 
 
-# ── Clarification checkpoint (K1) ─────────────────────────────────────────────
+# ── ask_user chat checkpoint (P8) ──────────────────────────────────────────────
 
 
 @dataclass
-class ClarificationResult:
-    """Answers from the post-analysis clarification checkpoint.
+class AskUserResult:
+    """The user's chat reply to an `ask_user` checkpoint (P8).
 
-    ``provided`` is False when the user skipped / had nothing to add, in which case
-    the agent proceeds with its own best judgement.
+    Merges the old modal-based clarification (K1) and multiple-option (L7)
+    checkpoints into one chat-based ask: ``reply`` is the user's raw free-text
+    message, however many questions/options were asked. ``provided`` is False
+    when no reply was captured (degenerate/no-callback case), in which case the
+    agent proceeds with its own best judgement.
     """
 
-    answers: dict[str, str] = field(default_factory=dict)
+    reply: str = ""
     provided: bool = False
 
 
-QuestionsCallback = Callable[[list[str]], Awaitable[ClarificationResult]]
+# A callback given a list of {"text": str, "options": [str, ...] | omitted} → AskUserResult.
+AskUserCallback = Callable[[list[dict]], Awaitable[AskUserResult]]
 
-# Host-side synthetic tool: never forwarded to the MCP server. The agent may call
-# it once, after ANALYZE and before create_plan, to surface a batch of clarifying
-# questions. Only advertised to the model when a QuestionsCallback is wired in.
-_CLARIFY_TOOL_NAME = "ask_clarification"
-_CLARIFY_TOOL_SPEC: dict[str, Any] = {
+# Host-side synthetic tool: never forwarded to the MCP server. Renders in the
+# transcript and awaits the user's next chat message (P7's message_queue) — no
+# modal, no once-per-run cap (unlike the K1/L7 checkpoints it replaces): live
+# chat makes repeated check-ins natural. Only advertised to the model when an
+# AskUserCallback is wired in.
+_ASK_USER_TOOL_NAME = "ask_user"
+_ASK_USER_TOOL_SPEC: dict[str, Any] = {
     "type": "function",
     "function": {
-        "name": _CLARIFY_TOOL_NAME,
+        "name": _ASK_USER_TOOL_NAME,
         "description": (
-            "Ask the user a short batch of clarifying questions ONCE, after you have "
-            "analyzed the documents but BEFORE building the plan (create_plan), when you "
-            "hit genuine ambiguity (unclear document type, competing taxonomy groupings, "
-            "ambiguous naming). Provide 1-5 concise questions and use the answers to refine "
-            "your decisions. Do NOT stall waiting for answers: if there is no real ambiguity, "
-            "skip this and proceed with your best judgement. Callable at most once per run."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "questions": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "1-5 short clarifying questions for the user.",
-                }
-            },
-            "required": ["questions"],
-        },
-    },
-}
-
-
-# ── Multiple-option proposals (L7) ────────────────────────────────────────────
-
-
-@dataclass
-class OptionsResult:
-    """The user's picks from the multiple-option checkpoint (L7).
-
-    ``selections`` maps each question to the option the user chose. ``provided`` is
-    False when the user skipped, in which case the agent proceeds with its own best
-    judgement.
-    """
-
-    selections: dict[str, str] = field(default_factory=dict)
-    provided: bool = False
-
-
-# A callback given a list of {"question": str, "options": [str, ...]} → OptionsResult.
-OptionsCallback = Callable[[list[dict]], Awaitable[OptionsResult]]
-
-# Host-side synthetic tool (like ask_clarification): never forwarded to the MCP
-# server. The agent may call it once — after a second-angle self-review — to surface
-# competing classification/handling choices the user picks from. Only advertised to
-# the model when an OptionsCallback is wired in.
-_OPTIONS_TOOL_NAME = "propose_options"
-_OPTIONS_TOOL_SPEC: dict[str, Any] = {
-    "type": "function",
-    "function": {
-        "name": _OPTIONS_TOOL_NAME,
-        "description": (
-            "Propose competing options for the user to choose from ONCE, after you have "
-            "analyzed the documents and re-examined your plan from a second angle, when "
-            "there are genuinely several valid ways to classify or handle the corpus "
-            "(e.g. group COPIL decks by date vs. by workstream vs. one flat folder). "
-            "Provide 1-5 questions, each with 2-5 concrete, mutually-exclusive options that "
-            "cover the realistic alternatives; the user picks one per question and you follow "
-            "their choice. Do NOT stall or use this to offload every decision — only surface "
-            "options for real, close judgement calls, otherwise proceed with your best "
-            "judgement. Callable at most once per run."
+            "Ask the user something in chat and wait for their reply — for genuine "
+            "clarifying questions (unclear document type, competing taxonomy groupings, "
+            "ambiguous naming) or to propose competing options for the user to pick from "
+            "(e.g. group by date vs. by workstream vs. flat), or both in the same call. "
+            "Provide 1-5 items; give 'options' (2-5 concrete, mutually-exclusive choices) "
+            "for a multiple-choice item, omit it for an open question. The reply arrives as "
+            "a normal chat message for you to read and act on. Do NOT stall or use this to "
+            "offload every decision — only ask for real, close judgement calls; otherwise "
+            "proceed with your best judgement."
         ),
         "parameters": {
             "type": "object",
@@ -174,16 +128,16 @@ _OPTIONS_TOOL_SPEC: dict[str, Any] = {
                     "items": {
                         "type": "object",
                         "properties": {
-                            "question": {"type": "string"},
+                            "text": {"type": "string"},
                             "options": {
                                 "type": "array",
                                 "items": {"type": "string"},
                                 "description": "2-5 concrete, mutually-exclusive options.",
                             },
                         },
-                        "required": ["question", "options"],
+                        "required": ["text"],
                     },
-                    "description": "1-5 questions, each with its competing options.",
+                    "description": "1-5 questions; add 'options' for a multiple-choice one.",
                 }
             },
             "required": ["questions"],
@@ -235,19 +189,16 @@ A. ORGANIZE the tree:
       quarantined files and reclaim space once applied; skip it if nothing was
       quarantined.
 
-   Optional clarification checkpoint: before building the plan, if you hit
-   genuine ambiguity (unclear document type, competing taxonomy groupings,
-   ambiguous naming), you MAY call ask_clarification with a short batch of
-   questions and use the answers to refine your decisions. Do not stall — if
-   there is no real ambiguity, skip it and proceed with your best judgement.
-
-   Optional multiple-option checkpoint: re-examine your intended approach from
-   a second angle. If there are genuinely several valid ways to classify or
-   handle the corpus (e.g. group by date vs. by workstream vs. flat), you MAY
-   call propose_options with a few questions, each carrying the competing
-   options, and follow the user's choice. Use this only for real, close
-   judgement calls — not to offload every decision — and never stall: if one
-   approach is clearly best, just take it.
+   Optional chat checkpoint: at any point before or while building the plan,
+   if you hit genuine ambiguity (unclear document type, competing taxonomy
+   groupings, ambiguous naming) or there are genuinely several valid ways to
+   classify or handle the corpus (e.g. group by date vs. by workstream vs.
+   flat), you MAY call ask_user with a short batch of questions — plain
+   questions, multiple-choice ones (with options), or a mix — and use the
+   chat reply to refine your decisions. Not capped at once; ask again later if
+   a new ambiguity comes up. Do not stall or use this to offload every
+   decision — only ask for real, close judgement calls; otherwise proceed with
+   your best judgement.
 
 B. SYNTHESIZE:
    5. Record key project events as you go with create_event(sentence, date): one
@@ -1266,8 +1217,7 @@ async def run_agent(
     llm: AsyncOpenAI,
     on_event: EventCallback,
     on_approval_needed: ApprovalCallback,
-    on_questions_needed: QuestionsCallback | None = None,
-    on_options_needed: OptionsCallback | None = None,
+    on_ask_user_needed: AskUserCallback | None = None,
     on_cost_approval_needed: CostApprovalCallback | None = None,
     instructions: str | None = None,
     history: list[dict[str, Any]] | None = None,
@@ -1277,8 +1227,9 @@ async def run_agent(
 
     ``instructions`` carries the user's optional pre-analysis steering text (L3);
     it is appended to the agent's first user turn so the run follows the user's
-    intent instead of auto-organizing blind. ``on_options_needed`` wires the L7
-    multiple-option checkpoint. ``on_cost_approval_needed`` wires the O8
+    intent instead of auto-organizing blind. ``on_ask_user_needed`` wires the P8
+    chat checkpoint (clarifying questions and/or multiple-choice options,
+    unlimited per run). ``on_cost_approval_needed`` wires the O8
     pre-ANALYZE token-estimate approval gate. ``history``/``message`` mirror
     ``run_query_loop``'s shape (O7): pass the history returned by a previous call
     back in, with a new free-text ``message``, to continue the same conversation
@@ -1295,8 +1246,7 @@ async def run_agent(
             session=session,
             on_event=on_event,
             on_approval_needed=on_approval_needed,
-            on_questions_needed=on_questions_needed,
-            on_options_needed=on_options_needed,
+            on_ask_user_needed=on_ask_user_needed,
             on_cost_approval_needed=on_cost_approval_needed,
             project_root=project_root,
             instructions=instructions,
@@ -1312,8 +1262,7 @@ async def run_agent_loop(
     session: ClientSession,
     on_event: EventCallback,
     on_approval_needed: ApprovalCallback,
-    on_questions_needed: QuestionsCallback | None = None,
-    on_options_needed: OptionsCallback | None = None,
+    on_ask_user_needed: AskUserCallback | None = None,
     on_cost_approval_needed: CostApprovalCallback | None = None,
     project_root: Path | None = None,
     instructions: str | None = None,
@@ -1325,8 +1274,10 @@ async def run_agent_loop(
 
     Separated from run_agent so tests can inject a mock session directly.
     ``instructions`` is the user's optional pre-analysis steering text (L3),
-    appended to the seed user message when present. ``on_options_needed`` wires the
-    L7 multiple-option checkpoint. ``on_cost_approval_needed`` wires the O8
+    appended to the seed user message when present. ``on_ask_user_needed`` wires
+    the P8 chat checkpoint (clarifying questions and/or multiple-choice options,
+    unlimited per run — the agent's reply arrives as a normal chat message via
+    ``message_queue``). ``on_cost_approval_needed`` wires the O8
     pre-analysis token-estimate approval gate, now scoped to NEW documents only
     (P5/P6) — when None, or when ``settings.approval_mode == "never"``, the gate
     auto-approves (still emits the "cost_estimate" event for observability, just
@@ -1379,14 +1330,11 @@ async def run_agent_loop(
     # content-fetching/recording tools (already used, exactly once, by the
     # pre-pass/analyzer below) rather than merely being told not to use them.
     openai_tools = await _discover_openai_tools(session, denied=ORGANIZE_DENIED_TOOLS)
-    # Advertise the host-side synthetic tools only when their callback is wired in.
-    if on_questions_needed is not None:
-        openai_tools = [*openai_tools, _CLARIFY_TOOL_SPEC]
-    if on_options_needed is not None:
-        openai_tools = [*openai_tools, _OPTIONS_TOOL_SPEC]
+    # Advertise the host-side synthetic ask_user tool only when its callback is
+    # wired in. Unlimited per run (P8) — no once-per-run guard.
+    if on_ask_user_needed is not None:
+        openai_tools = [*openai_tools, _ASK_USER_TOOL_SPEC]
 
-    clarification_used = False
-    options_used = False
     tracker = _ProgressTracker()
     token_totals = {"in": 0, "out": 0}
 
@@ -1413,6 +1361,7 @@ async def run_agent_loop(
             )
             proceed = await _handle_cost_approval(
                 doc_count=len(prepass_result.new),
+                already_analyzed=len(prepass_result.known),
                 estimated_tokens=estimated_tokens,
                 settings=settings,
                 on_event=on_event,
@@ -1501,19 +1450,11 @@ async def run_agent_loop(
 
                 on_event(AgentEvent("tool_call", f"{name}({_fmt_args(args)})", data={"tool": name}))
 
-                if name == _CLARIFY_TOOL_NAME:
-                    result, clarification_used = await _handle_clarification(
+                if name == _ASK_USER_TOOL_NAME:
+                    result = await _handle_ask_user(
                         args=args,
                         on_event=on_event,
-                        on_questions_needed=on_questions_needed,
-                        already_used=clarification_used,
-                    )
-                elif name == _OPTIONS_TOOL_NAME:
-                    result, options_used = await _handle_options(
-                        args=args,
-                        on_event=on_event,
-                        on_options_needed=on_options_needed,
-                        already_used=options_used,
+                        on_ask_user_needed=on_ask_user_needed,
                     )
                 elif name in ORGANIZE_DENIED_TOOLS:
                     # Defense in depth (mirrors query mode): the model can only
@@ -1720,108 +1661,47 @@ async def _dispatch(
     return _extract_content(raw)
 
 
-async def _handle_clarification(
+async def _handle_ask_user(
     *,
     args: dict[str, Any],
     on_event: EventCallback,
-    on_questions_needed: QuestionsCallback | None,
-    already_used: bool,
-) -> tuple[Any, bool]:
-    """Surface the agent's clarifying questions once; return (tool_result, used).
-
-    Enforces the at-most-once-per-run rule and the "nothing to add → proceed"
-    path. Never raises: on any degenerate input it returns a note telling the
-    agent to proceed with its own best judgement.
+    on_ask_user_needed: AskUserCallback | None,
+) -> Any:
+    """Surface the agent's question(s)/option(s) in the transcript and await
+    the user's chat reply (P8). Unlimited per run — no once-per-run guard,
+    unlike the K1/L7 modal checkpoints this replaces; live chat makes repeated
+    check-ins natural. Never raises: on any degenerate input it returns a note
+    telling the agent to proceed with its own best judgement.
     """
-    questions = [str(q).strip() for q in (args.get("questions") or []) if str(q).strip()]
-
-    if on_questions_needed is None:
-        return {
-            "note": "Clarification is unavailable here; proceed with your best judgement."
-        }, already_used
-    if already_used:
-        return (
-            {
-                "note": "You already asked your clarifying questions; proceed with your best judgement."
-            },
-            True,
-        )
-    if not questions:
-        return {"note": "No questions provided; proceed with your best judgement."}, already_used
-
-    on_event(
-        AgentEvent(
-            "question",
-            f"Asking {len(questions)} clarifying question(s)",
-            data={"questions": questions},
-        )
-    )
-    result = await on_questions_needed(questions)
-    if not result.provided or not result.answers:
-        return (
-            {
-                "answers": {},
-                "note": "The user had nothing to add; proceed with your best judgement.",
-            },
-            True,
-        )
-    return {"answers": result.answers}, True
-
-
-async def _handle_options(
-    *,
-    args: dict[str, Any],
-    on_event: EventCallback,
-    on_options_needed: OptionsCallback | None,
-    already_used: bool,
-) -> tuple[Any, bool]:
-    """Surface the agent's competing options once; return (tool_result, used).
-
-    Mirrors ``_handle_clarification``: enforces at-most-once, tolerates degenerate
-    input, and never raises. Each question needs a non-empty prompt and at least
-    two options to be a real choice; otherwise it is dropped.
-    """
-    questions: list[dict] = []
+    questions: list[dict[str, Any]] = []
     for q in args.get("questions") or []:
         if not isinstance(q, dict):
             continue
-        text = str(q.get("question", "")).strip()
+        text = str(q.get("text", "")).strip()
+        if not text:
+            continue
         options = [str(o).strip() for o in (q.get("options") or []) if str(o).strip()]
-        if text and len(options) >= 2:
-            questions.append({"question": text, "options": options})
+        entry: dict[str, Any] = {"text": text}
+        if options:
+            entry["options"] = options
+        questions.append(entry)
 
-    if on_options_needed is None:
-        return {
-            "note": "Option selection is unavailable here; proceed with your best judgement."
-        }, already_used
-    if already_used:
-        return (
-            {"note": "You already proposed options; proceed with your best judgement."},
-            True,
-        )
+    if on_ask_user_needed is None:
+        return {"note": "Asking the user is unavailable here; proceed with your best judgement."}
     if not questions:
-        return (
-            {"note": "No well-formed options provided; proceed with your best judgement."},
-            already_used,
-        )
+        return {"note": "No well-formed questions provided; proceed with your best judgement."}
 
     on_event(
         AgentEvent(
-            "options",
-            f"Proposing options for {len(questions)} question(s)",
+            "ask_user",
+            f"Asking {len(questions)} question(s)",
             data={"questions": questions},
         )
     )
-    result = await on_options_needed(questions)
-    if not result.provided or not result.selections:
-        return (
-            {
-                "selections": {},
-                "note": "The user did not choose; proceed with your best judgement.",
-            },
-            True,
-        )
-    return {"selections": result.selections}, True
+    result = await on_ask_user_needed(questions)
+    if not result.provided or not result.reply.strip():
+        return {"reply": "", "note": "No reply received; proceed with your best judgement."}
+    return {"reply": result.reply}
 
 
 # ── Pre-analysis cost-estimate gate (O8/P6) ───────────────────────────────────
@@ -1830,6 +1710,7 @@ async def _handle_options(
 async def _handle_cost_approval(
     *,
     doc_count: int,
+    already_analyzed: int,
     estimated_tokens: int,
     settings: Settings,
     on_event: EventCallback,
@@ -1840,26 +1721,26 @@ async def _handle_cost_approval(
     mid-loop, first-batch-tool-call trigger now that analysis happens entirely
     before the ORGANIZE turn loop starts. Returns True if analysis should
     proceed. Always emits the `cost_estimate` event, even when auto-approved,
-    for observability.
+    for observability. ``already_analyzed`` (P8) is the known-doc count,
+    surfaced alongside the new-doc estimate so the approval prompt reads "N new
+    documents (M already analyzed, skipped)" instead of leaving the skipped
+    majority of a re-run corpus unmentioned.
     """
     summary = (
-        f"~{doc_count} documents, ~{estimated_tokens} input tokens estimated, "
-        "batched in groups of 10 — proceed?"
+        f"~{doc_count} new document(s) ({already_analyzed} already analyzed, skipped), "
+        f"~{estimated_tokens} input tokens estimated, batched in groups of 10 — proceed?"
     )
-    on_event(
-        AgentEvent(
-            "cost_estimate",
-            summary,
-            data={"documents": doc_count, "estimated_tokens": estimated_tokens},
-        )
-    )
+    data = {
+        "new": doc_count,
+        "already_analyzed": already_analyzed,
+        "estimated_tokens": estimated_tokens,
+    }
+    on_event(AgentEvent("cost_estimate", summary, data=data))
 
     if settings.approval_mode == "never" or on_cost_approval_needed is None:
         return True
 
-    approval = await on_cost_approval_needed(
-        summary, {"documents": doc_count, "estimated_tokens": estimated_tokens}
-    )
+    approval = await on_cost_approval_needed(summary, data)
     return approval.approved
 
 

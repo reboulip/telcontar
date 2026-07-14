@@ -292,7 +292,7 @@ hard-stopping plan execution.
 - [x] P7 · Live mid-run chat — `run_agent_loop` gains `message_queue`; queued user
       messages injected as user turns between agent turns; `#organize-input`
       enabled for the whole run. (requires: P6)
-- [ ] P8 · `ask_user` chat checkpoint — merge `ask_clarification`/`propose_options`
+- [x] P8 · `ask_user` chat checkpoint — merge `ask_clarification`/`propose_options`
       into one synthetic `ask_user` tool that renders in the transcript and awaits
       the next chat message; delete `ClarificationModal`/`OptionsModal`.
       `CostEstimateModal` reworded to "N new documents (M already analyzed,

@@ -12,9 +12,8 @@ from unittest.mock import AsyncMock, MagicMock, call
 from host.agent import (
     AgentEvent,
     ApprovalResult,
-    ClarificationResult,
+    AskUserResult,
     CostApprovalResult,
-    OptionsResult,
     PrepassResult,
     _analyze_new_documents,
     _collect_truncated_dirs,
@@ -403,14 +402,20 @@ async def test_never_mode_skips_approval_and_executes(tmp_path: Path) -> None:
     assert "execute_plan" in called_tools
 
 
-# ── Clarification checkpoint (K1) ─────────────────────────────────────────────
+# ── ask_user chat checkpoint (P8) ───────────────────────────────────────────────
+
+# P8 merges K1's ask_clarification and L7's propose_options into one synthetic
+# ask_user tool: a question can be open-ended or carry multiple-choice
+# 'options', the reply is free-text chat (no modal), and — unlike the old
+# once-per-run modal checkpoints — there is no cap on how many times it can be
+# called in a single run.
 
 
-async def _run_with_questions(
+async def _run_with_ask_user(
     tmp_path: Path,
     *,
     responses: list[MagicMock],
-    on_questions_needed: AsyncMock | None,
+    on_ask_user_needed: AsyncMock | None,
 ) -> tuple[list[list[dict]], list[Any]]:
     """Drive the loop with a scripted LLM; capture per-turn messages and tools."""
     captured_messages: list[list[dict]] = []
@@ -433,219 +438,124 @@ async def _run_with_questions(
         session=_session([], {}),
         on_event=lambda _: None,
         on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
-        on_questions_needed=on_questions_needed,
+        on_ask_user_needed=on_ask_user_needed,
     )
     return captured_messages, captured_tools
 
 
-async def test_ask_clarification_feeds_answers_back_to_agent(tmp_path: Path) -> None:
-    on_questions = AsyncMock(
-        return_value=ClarificationResult(answers={"Group by?": "by phase"}, provided=True)
-    )
-    messages, _ = await _run_with_questions(
+async def test_ask_user_open_question_feeds_reply_back_to_agent(tmp_path: Path) -> None:
+    on_ask_user = AsyncMock(return_value=AskUserResult(reply="by phase", provided=True))
+    messages, _ = await _run_with_ask_user(
         tmp_path,
         responses=[
-            _tool_response("ask_clarification", {"questions": ["Group by?"]}),
+            _tool_response("ask_user", {"questions": [{"text": "Group by?"}]}),
             _text_response("Thanks — proceeding."),
         ],
-        on_questions_needed=on_questions,
+        on_ask_user_needed=on_ask_user,
     )
 
-    on_questions.assert_called_once_with(["Group by?"])
+    on_ask_user.assert_called_once_with([{"text": "Group by?"}])
     tool_msgs = [m for batch in messages for m in batch if m.get("role") == "tool"]
     assert any("by phase" in m.get("content", "") for m in tool_msgs)
 
 
-async def test_ask_clarification_at_most_once_per_run(tmp_path: Path) -> None:
-    on_questions = AsyncMock(return_value=ClarificationResult(answers={"q": "a"}, provided=True))
-    messages, _ = await _run_with_questions(
-        tmp_path,
-        responses=[
-            _tool_response("ask_clarification", {"questions": ["q1"]}, call_id="c1"),
-            _tool_response("ask_clarification", {"questions": ["q2"]}, call_id="c2"),
-            _text_response("done"),
-        ],
-        on_questions_needed=on_questions,
-    )
-
-    on_questions.assert_called_once()  # second call is refused by the once-guard
-    tool_msgs = [m for batch in messages for m in batch if m.get("role") == "tool"]
-    assert any("already asked" in m.get("content", "") for m in tool_msgs)
-
-
-async def test_ask_clarification_skip_tells_agent_to_proceed(tmp_path: Path) -> None:
-    on_questions = AsyncMock(return_value=ClarificationResult(answers={}, provided=False))
-    messages, _ = await _run_with_questions(
-        tmp_path,
-        responses=[
-            _tool_response("ask_clarification", {"questions": ["q1"]}),
-            _text_response("ok"),
-        ],
-        on_questions_needed=on_questions,
-    )
-
-    on_questions.assert_called_once()
-    tool_msgs = [m for batch in messages for m in batch if m.get("role") == "tool"]
-    assert any("best judgement" in m.get("content", "") for m in tool_msgs)
-
-
-async def test_clarification_tool_advertised_only_when_callback_present(tmp_path: Path) -> None:
-    # With a callback wired in, the synthetic tool is offered to the model.
-    _, tools_with = await _run_with_questions(
-        tmp_path,
-        responses=[_text_response("done")],
-        on_questions_needed=AsyncMock(return_value=ClarificationResult()),
-    )
-    names_with = {t["function"]["name"] for t in tools_with[0]}
-    assert "ask_clarification" in names_with
-
-    # Without a callback, it is not advertised.
-    _, tools_without = await _run_with_questions(
-        tmp_path,
-        responses=[_text_response("done")],
-        on_questions_needed=None,
-    )
-    names_without = {t["function"]["name"] for t in tools_without[0]}
-    assert "ask_clarification" not in names_without
-
-
-# ── L7: multiple-option proposals ─────────────────────────────────────────────
-
-
-async def _run_with_options(
-    tmp_path: Path,
-    *,
-    responses: list[MagicMock],
-    on_options_needed: AsyncMock | None,
-) -> tuple[list[list[dict]], list[Any]]:
-    """Drive the loop with a scripted LLM; capture per-turn messages and tools."""
-    captured_messages: list[list[dict]] = []
-    captured_tools: list[Any] = []
-    queue = list(responses)
-
-    llm = AsyncMock()
-
-    async def _create(**kwargs: Any) -> Any:
-        captured_messages.append(list(kwargs.get("messages", [])))
-        captured_tools.append(kwargs.get("tools"))
-        return queue.pop(0)
-
-    llm.chat.completions.create.side_effect = _create
-
-    await run_agent_loop(
-        target=tmp_path,
-        settings=_settings(tmp_path),
-        llm=llm,
-        session=_session([], {}),
-        on_event=lambda _: None,
-        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
-        on_options_needed=on_options_needed,
-    )
-    return captured_messages, captured_tools
-
-
-async def test_propose_options_feeds_selections_back_to_agent(tmp_path: Path) -> None:
-    on_options = AsyncMock(
-        return_value=OptionsResult(selections={"Group by?": "by workstream"}, provided=True)
-    )
-    messages, _ = await _run_with_options(
+async def test_ask_user_multiple_choice_feeds_reply_back_to_agent(tmp_path: Path) -> None:
+    on_ask_user = AsyncMock(return_value=AskUserResult(reply="by workstream", provided=True))
+    messages, _ = await _run_with_ask_user(
         tmp_path,
         responses=[
             _tool_response(
-                "propose_options",
-                {"questions": [{"question": "Group by?", "options": ["by date", "by workstream"]}]},
+                "ask_user",
+                {"questions": [{"text": "Group by?", "options": ["by date", "by workstream"]}]},
             ),
             _text_response("Thanks — proceeding."),
         ],
-        on_options_needed=on_options,
+        on_ask_user_needed=on_ask_user,
     )
 
-    on_options.assert_called_once()
+    on_ask_user.assert_called_once_with(
+        [{"text": "Group by?", "options": ["by date", "by workstream"]}]
+    )
     tool_msgs = [m for batch in messages for m in batch if m.get("role") == "tool"]
     assert any("by workstream" in m.get("content", "") for m in tool_msgs)
 
 
-async def test_propose_options_at_most_once_per_run(tmp_path: Path) -> None:
-    on_options = AsyncMock(return_value=OptionsResult(selections={"q": "a"}, provided=True))
-    messages, _ = await _run_with_options(
+async def test_ask_user_unlimited_per_run(tmp_path: Path) -> None:
+    """Unlike the old K1/L7 modal checkpoints, ask_user has no once-per-run
+    guard — live chat makes repeated check-ins natural (P8)."""
+    on_ask_user = AsyncMock(
+        side_effect=[
+            AskUserResult(reply="first answer", provided=True),
+            AskUserResult(reply="second answer", provided=True),
+        ]
+    )
+    messages, _ = await _run_with_ask_user(
         tmp_path,
         responses=[
-            _tool_response(
-                "propose_options",
-                {"questions": [{"question": "q1", "options": ["a", "b"]}]},
-                call_id="c1",
-            ),
-            _tool_response(
-                "propose_options",
-                {"questions": [{"question": "q2", "options": ["a", "b"]}]},
-                call_id="c2",
-            ),
+            _tool_response("ask_user", {"questions": [{"text": "q1"}]}, call_id="c1"),
+            _tool_response("ask_user", {"questions": [{"text": "q2"}]}, call_id="c2"),
             _text_response("done"),
         ],
-        on_options_needed=on_options,
+        on_ask_user_needed=on_ask_user,
     )
 
-    on_options.assert_called_once()  # second call refused by the once-guard
+    assert on_ask_user.call_count == 2
     tool_msgs = [m for batch in messages for m in batch if m.get("role") == "tool"]
-    assert any("already proposed options" in m.get("content", "") for m in tool_msgs)
+    assert any("first answer" in m.get("content", "") for m in tool_msgs)
+    assert any("second answer" in m.get("content", "") for m in tool_msgs)
 
 
-async def test_propose_options_skip_tells_agent_to_proceed(tmp_path: Path) -> None:
-    on_options = AsyncMock(return_value=OptionsResult(selections={}, provided=False))
-    messages, _ = await _run_with_options(
+async def test_ask_user_no_reply_tells_agent_to_proceed(tmp_path: Path) -> None:
+    on_ask_user = AsyncMock(return_value=AskUserResult(reply="", provided=False))
+    messages, _ = await _run_with_ask_user(
         tmp_path,
         responses=[
-            _tool_response(
-                "propose_options",
-                {"questions": [{"question": "q1", "options": ["a", "b"]}]},
-            ),
+            _tool_response("ask_user", {"questions": [{"text": "q1"}]}),
             _text_response("ok"),
         ],
-        on_options_needed=on_options,
+        on_ask_user_needed=on_ask_user,
     )
 
-    on_options.assert_called_once()
+    on_ask_user.assert_called_once()
     tool_msgs = [m for batch in messages for m in batch if m.get("role") == "tool"]
-    assert any("best judgement" in m.get("content", "") for m in tool_msgs)
+    assert any("No reply received" in m.get("content", "") for m in tool_msgs)
 
 
-async def test_malformed_options_skipped_without_prompting(tmp_path: Path) -> None:
-    # A question with fewer than two options isn't a real choice → dropped, and the
-    # callback is never invoked.
-    on_options = AsyncMock(return_value=OptionsResult(selections={"q": "a"}, provided=True))
-    messages, _ = await _run_with_options(
+async def test_ask_user_malformed_questions_skipped_without_prompting(tmp_path: Path) -> None:
+    # A question with no 'text' isn't well-formed → dropped, callback never invoked.
+    on_ask_user = AsyncMock(return_value=AskUserResult(reply="a", provided=True))
+    messages, _ = await _run_with_ask_user(
         tmp_path,
         responses=[
-            _tool_response(
-                "propose_options",
-                {"questions": [{"question": "only one", "options": ["a"]}]},
-            ),
+            _tool_response("ask_user", {"questions": [{"options": ["a", "b"]}]}),
             _text_response("ok"),
         ],
-        on_options_needed=on_options,
+        on_ask_user_needed=on_ask_user,
     )
 
-    on_options.assert_not_called()
+    on_ask_user.assert_not_called()
     tool_msgs = [m for batch in messages for m in batch if m.get("role") == "tool"]
-    assert any("No well-formed options" in m.get("content", "") for m in tool_msgs)
+    assert any("No well-formed questions" in m.get("content", "") for m in tool_msgs)
 
 
-async def test_options_tool_advertised_only_when_callback_present(tmp_path: Path) -> None:
-    _, tools_with = await _run_with_options(
+async def test_ask_user_tool_advertised_only_when_callback_present(tmp_path: Path) -> None:
+    # With a callback wired in, the synthetic tool is offered to the model.
+    _, tools_with = await _run_with_ask_user(
         tmp_path,
         responses=[_text_response("done")],
-        on_options_needed=AsyncMock(return_value=OptionsResult()),
+        on_ask_user_needed=AsyncMock(return_value=AskUserResult()),
     )
     names_with = {t["function"]["name"] for t in tools_with[0]}
-    assert "propose_options" in names_with
+    assert "ask_user" in names_with
 
-    _, tools_without = await _run_with_options(
+    # Without a callback, it is not advertised.
+    _, tools_without = await _run_with_ask_user(
         tmp_path,
         responses=[_text_response("done")],
-        on_options_needed=None,
+        on_ask_user_needed=None,
     )
     names_without = {t["function"]["name"] for t in tools_without[0]}
-    assert "propose_options" not in names_without
+    assert "ask_user" not in names_without
 
 
 # ── Op removal ────────────────────────────────────────────────────────────────
@@ -1551,9 +1461,11 @@ async def test_cost_gate_fires_once_before_analysis_for_new_docs_only(tmp_path: 
 
     on_cost_approval.assert_awaited_once()
     summary, data = on_cost_approval.await_args.args
-    # Only the 1 NEW document counts — the known one is excluded entirely.
-    assert data == {"documents": 1, "estimated_tokens": 1000}
-    assert "1 documents" in summary
+    # Only the 1 NEW document counts — the known one is excluded from the
+    # estimate, but its count is still surfaced (P8: "N new, M already analyzed").
+    assert data == {"new": 1, "already_analyzed": 1, "estimated_tokens": 1000}
+    assert "1 new document" in summary
+    assert "1 already analyzed" in summary
     assert any(e.kind == "cost_estimate" for e in events)
 
 

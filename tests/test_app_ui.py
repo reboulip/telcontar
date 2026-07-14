@@ -391,8 +391,7 @@ async def test_organizer_screen_groups_tool_events_into_steps(
         session=None,
         on_event,
         on_approval_needed,
-        on_questions_needed=None,
-        on_options_needed=None,
+        on_ask_user_needed=None,
         on_cost_approval_needed=None,
         project_root=None,
         instructions=None,
@@ -991,50 +990,53 @@ async def test_approval_modal_shows_ops_json_path(tmp_path: Path) -> None:
         assert "plan_ops.json" in label
 
 
-# ── L7: multiple-option proposals ─────────────────────────────────────────────
+# ── P8: ask_user chat checkpoint ────────────────────────────────────────────
 
 
-async def test_options_modal_submit_returns_selection(tmp_path: Path) -> None:
-    from textual.widgets import RadioButton, RadioSet
+async def test_ask_user_renders_question_and_resolves_from_chat_reply(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """P8: ask_user has no modal — it renders as a transcript turn and blocks
+    on the same live-chat queue #organize-input already feeds (P7)."""
+    from config.settings import Settings
 
-    from host.app import OptionsModal
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+    monkeypatch.setattr("host.app._send_notification", lambda target: None)
 
-    questions = [
-        {
-            "question": "How should COPIL decks be grouped?",
-            "options": ["by date", "by workstream", "flat"],
-        }
-    ]
+    captured: dict = {}
+
+    async def fake_run_agent_loop(*, on_ask_user_needed=None, **kwargs: object) -> tuple[str, list]:
+        result = await on_ask_user_needed(
+            [{"text": "Group by?", "options": ["by date", "by workstream"]}]
+        )
+        captured["result"] = result
+        return "done", []
+
+    _patch_run_agent_loop(monkeypatch, fake_run_agent_loop)
+
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
-        captured: dict = {}
-        app.push_screen(OptionsModal(questions), lambda res: captured.update(res=res))
+        app.push_screen(OrganizerScreen(tmp_path))
         await pilot.pause()
-        radio_set = app.screen.query_one("#options-set-0", RadioSet)
-        buttons = list(radio_set.query(RadioButton))
-        buttons[1].value = True  # choose "by workstream"
-        await pilot.pause()
-        await pilot.click("#options-submit")
-        await pilot.pause()
-        res = captured["res"]
-        assert res.provided is True
-        assert res.selections == {"How should COPIL decks be grouped?": "by workstream"}
+        await pilot.click("#proceed-btn")
+        await pilot.pause(0.2)
 
+        transcript = _transcript_text(app.screen)
+        assert "I have a question for you" in transcript
+        assert "Group by?" in transcript
 
-async def test_options_modal_skip_returns_empty(tmp_path: Path) -> None:
-    from host.app import OptionsModal
+        organize_input = app.screen.query_one("#organize-input", Input)
+        organize_input.focus()
+        await pilot.pause()
+        organize_input.value = "by workstream"
+        await pilot.press("enter")
+        await pilot.pause(0.2)
 
-    questions = [{"question": "Q?", "options": ["a", "b"]}]
-    app = OrganizerApp()
-    async with app.run_test(size=(100, 40)) as pilot:
-        captured: dict = {}
-        app.push_screen(OptionsModal(questions), lambda res: captured.update(res=res))
-        await pilot.pause()
-        await pilot.click("#options-skip")
-        await pilot.pause()
-        res = captured["res"]
-        assert res.provided is False
-        assert res.selections == {}
+    assert captured["result"].reply == "by workstream"
+    assert captured["result"].provided is True
 
 
 # ── O8: pre-ANALYZE cost-estimate modal ───────────────────────────────────────
@@ -1047,10 +1049,13 @@ async def test_cost_estimate_modal_shows_summary(tmp_path: Path) -> None:
 
     app = OrganizerApp()
     async with app.run_test(size=(100, 40)) as pilot:
-        app.push_screen(CostEstimateModal(documents=42, estimated_tokens=12345))
+        app.push_screen(
+            CostEstimateModal(new_documents=42, already_analyzed=7, estimated_tokens=12345)
+        )
         await pilot.pause()
         summary = app.screen.query_one("#cost-summary", Static)
-        assert "42 documents" in str(summary.content)
+        assert "42 new document(s)" in str(summary.content)
+        assert "7 already analyzed, skipped" in str(summary.content)
         assert "12345 input tokens" in str(summary.content)
         assert "groups of 10" in str(summary.content)
 
@@ -1062,7 +1067,7 @@ async def test_cost_estimate_modal_proceed_approves(tmp_path: Path) -> None:
     async with app.run_test(size=(100, 40)) as pilot:
         captured: dict = {}
         app.push_screen(
-            CostEstimateModal(documents=1, estimated_tokens=100),
+            CostEstimateModal(new_documents=1, already_analyzed=0, estimated_tokens=100),
             lambda res: captured.update(res=res),
         )
         await pilot.pause()
@@ -1078,7 +1083,7 @@ async def test_cost_estimate_modal_cancel_rejects(tmp_path: Path) -> None:
     async with app.run_test(size=(100, 40)) as pilot:
         captured: dict = {}
         app.push_screen(
-            CostEstimateModal(documents=1, estimated_tokens=100),
+            CostEstimateModal(new_documents=1, already_analyzed=0, estimated_tokens=100),
             lambda res: captured.update(res=res),
         )
         await pilot.pause()
@@ -1111,8 +1116,7 @@ async def test_organizer_status_bar_shows_token_usage(
         session=None,
         on_event,
         on_approval_needed,
-        on_questions_needed=None,
-        on_options_needed=None,
+        on_ask_user_needed=None,
         on_cost_approval_needed=None,
         project_root=None,
         instructions=None,
@@ -1159,8 +1163,7 @@ async def test_organizer_progress_row_hidden_until_first_progress_event(
         session=None,
         on_event,
         on_approval_needed,
-        on_questions_needed=None,
-        on_options_needed=None,
+        on_ask_user_needed=None,
         on_cost_approval_needed=None,
         project_root=None,
         instructions=None,
@@ -1203,8 +1206,7 @@ async def test_organizer_progress_row_shows_and_updates_on_progress_event(
         session=None,
         on_event,
         on_approval_needed,
-        on_questions_needed=None,
-        on_options_needed=None,
+        on_ask_user_needed=None,
         on_cost_approval_needed=None,
         project_root=None,
         instructions=None,
@@ -1250,8 +1252,7 @@ async def test_organizer_progress_row_hides_on_done(
         session=None,
         on_event,
         on_approval_needed,
-        on_questions_needed=None,
-        on_options_needed=None,
+        on_ask_user_needed=None,
         on_cost_approval_needed=None,
         project_root=None,
         instructions=None,
@@ -1296,8 +1297,7 @@ async def test_organizer_progress_row_hides_on_error(
         session=None,
         on_event,
         on_approval_needed,
-        on_questions_needed=None,
-        on_options_needed=None,
+        on_ask_user_needed=None,
         on_cost_approval_needed=None,
         project_root=None,
         instructions=None,
@@ -1345,8 +1345,7 @@ async def test_organizer_narrates_macro_tasks_in_transcript(
         session=None,
         on_event,
         on_approval_needed,
-        on_questions_needed=None,
-        on_options_needed=None,
+        on_ask_user_needed=None,
         on_cost_approval_needed=None,
         project_root=None,
         instructions=None,
@@ -1418,8 +1417,7 @@ async def test_organizer_narrates_new_propose_tools_as_planning_changes(
         session=None,
         on_event,
         on_approval_needed,
-        on_questions_needed=None,
-        on_options_needed=None,
+        on_ask_user_needed=None,
         on_cost_approval_needed=None,
         project_root=None,
         instructions=None,
@@ -1494,7 +1492,7 @@ async def test_startup_picker_selection_drives_organize(
         llm,
         on_event,
         on_approval_needed,
-        on_questions_needed=None,
+        on_ask_user_needed=None,
         **kwargs: object,
     ):
         return "done", []

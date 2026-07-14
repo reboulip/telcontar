@@ -10,8 +10,12 @@ QueryScreen     — interactive NL Q&A over an analyzed corpus
 
 Modals
 ------
-ApprovalModal      — plan review with per-op checkboxes (inline removal)
-ClarificationModal — post-analysis clarifying questions with free-text answers
+ApprovalModal     — plan review with per-op checkboxes (inline removal)
+CostEstimateModal — one-time pre-analysis cost-approval gate
+
+ask_user's clarifying-question/multiple-option checkpoint (P8) has no modal of
+its own — it renders as a normal chat turn and awaits the next chat message,
+same as any other live chat exchange.
 """
 
 from __future__ import annotations
@@ -36,8 +40,6 @@ from textual.widgets import (
     Input,
     Label,
     ProgressBar,
-    RadioButton,
-    RadioSet,
     RichLog,
     Rule,
     Select,
@@ -47,9 +49,8 @@ from textual.widgets import (
 from host.agent import (
     AgentEvent,
     ApprovalResult,
-    ClarificationResult,
+    AskUserResult,
     CostApprovalResult,
-    OptionsResult,
 )
 
 # Package root: host/app.py → host/ → project root (or site-packages/).
@@ -94,8 +95,7 @@ _TOOL_NARRATION: dict[str, str] = {
     "write_index": "Writing the index…",
     "write_summary": "Writing the summary…",
     "write_folder_readme": "Describing folders…",
-    "ask_clarification": "Asking you for clarification…",
-    "propose_options": "Reviewing options with you…",
+    "ask_user": "Asking you a question…",
 }
 
 
@@ -291,190 +291,17 @@ class ApprovalModal(ModalScreen[ApprovalResult]):
         self.dismiss(ApprovalResult(approved=False))
 
 
-# ── Clarification modal (K1) ─────────────────────────────────────────────────
-
-
-class ClarificationModal(ModalScreen[ClarificationResult]):
-    """Present the agent's clarifying questions as free-text inputs (K1).
-
-    Shown at most once per run, after the analysis pass. The user may answer any
-    subset and Submit, or Skip entirely — an empty result tells the agent to
-    proceed with its own best judgement.
-    """
-
-    DEFAULT_CSS = """
-    ClarificationModal {
-        align: center middle;
-    }
-    #clarify-dialog {
-        width: 70%;
-        max-height: 80%;
-        border: round $accent;
-        background: $surface;
-        padding: 1 2;
-    }
-    #clarify-title {
-        text-style: bold;
-        padding-bottom: 1;
-        color: $accent;
-    }
-    #clarify-scroll {
-        max-height: 20;
-    }
-    .clarify-q {
-        text-style: bold;
-        padding-top: 1;
-    }
-    .clarify-input {
-        margin-bottom: 1;
-    }
-    #clarify-buttons {
-        align: center middle;
-        padding-top: 1;
-        height: 3;
-    }
-    #clarify-buttons Button {
-        margin: 0 2;
-    }
-    """
-
-    BINDINGS = [("escape", "skip", "Skip")]
-
-    def __init__(self, questions: list[str]) -> None:
-        super().__init__()
-        self._questions = questions
-
-    def compose(self) -> ComposeResult:
-        with Container(id="clarify-dialog"):
-            yield Label(
-                f"The agent has {len(self._questions)} clarifying question(s)",
-                id="clarify-title",
-            )
-            yield Rule()
-            with ScrollableContainer(id="clarify-scroll"):
-                for i, question in enumerate(self._questions):
-                    yield Label(question, classes="clarify-q")
-                    yield Input(
-                        placeholder="Your answer (leave blank to skip this one)",
-                        id=f"clarify-input-{i}",
-                        classes="clarify-input",
-                    )
-            yield Rule()
-            with Horizontal(id="clarify-buttons"):
-                yield Button("Submit answers", variant="success", id="clarify-submit")
-                yield Button("Skip — best judgement", id="clarify-skip")
-
-    @on(Button.Pressed, "#clarify-submit")
-    def _submit(self) -> None:
-        answers: dict[str, str] = {}
-        for i, question in enumerate(self._questions):
-            value = self.query_one(f"#clarify-input-{i}", Input).value.strip()
-            if value:
-                answers[question] = value
-        self.dismiss(ClarificationResult(answers=answers, provided=bool(answers)))
-
-    @on(Button.Pressed, "#clarify-skip")
-    def action_skip(self) -> None:
-        self.dismiss(ClarificationResult(answers={}, provided=False))
-
-
-# ── Options modal (L7) ────────────────────────────────────────────────────────
-
-
-class OptionsModal(ModalScreen[OptionsResult]):
-    """Present the agent's competing options as single-choice selections (L7).
-
-    Shown at most once per run. Each question renders as a RadioSet of its options;
-    Submit returns the chosen option per question, Skip returns an empty result so
-    the agent proceeds with its own best judgement.
-    """
-
-    DEFAULT_CSS = """
-    OptionsModal {
-        align: center middle;
-    }
-    #options-dialog {
-        width: 70%;
-        max-height: 80%;
-        border: round $accent;
-        background: $surface;
-        padding: 1 2;
-    }
-    #options-title {
-        text-style: bold;
-        padding-bottom: 1;
-        color: $accent;
-    }
-    #options-scroll {
-        max-height: 20;
-    }
-    .options-q {
-        text-style: bold;
-        padding-top: 1;
-    }
-    .options-set {
-        margin-bottom: 1;
-    }
-    #options-buttons {
-        align: center middle;
-        padding-top: 1;
-        height: 3;
-    }
-    #options-buttons Button {
-        margin: 0 2;
-    }
-    """
-
-    BINDINGS = [("escape", "skip", "Skip")]
-
-    def __init__(self, questions: list[dict]) -> None:
-        super().__init__()
-        # Each item: {"question": str, "options": [str, ...]}.
-        self._questions = questions
-
-    def compose(self) -> ComposeResult:
-        with Container(id="options-dialog"):
-            yield Label(
-                f"The agent proposes options for {len(self._questions)} question(s)",
-                id="options-title",
-            )
-            yield Rule()
-            with ScrollableContainer(id="options-scroll"):
-                for i, item in enumerate(self._questions):
-                    yield Label(item.get("question", ""), classes="options-q")
-                    with RadioSet(id=f"options-set-{i}", classes="options-set"):
-                        for j, option in enumerate(item.get("options", [])):
-                            # First option pre-selected so a plain Submit is valid.
-                            yield RadioButton(option, value=(j == 0))
-            yield Rule()
-            with Horizontal(id="options-buttons"):
-                yield Button("Submit choices", variant="success", id="options-submit")
-                yield Button("Skip — best judgement", id="options-skip")
-
-    @on(Button.Pressed, "#options-submit")
-    def _submit(self) -> None:
-        selections: dict[str, str] = {}
-        for i, item in enumerate(self._questions):
-            radio_set = self.query_one(f"#options-set-{i}", RadioSet)
-            pressed = radio_set.pressed_button
-            if pressed is not None:
-                selections[item.get("question", "")] = str(pressed.label)
-        self.dismiss(OptionsResult(selections=selections, provided=bool(selections)))
-
-    @on(Button.Pressed, "#options-skip")
-    def action_skip(self) -> None:
-        self.dismiss(OptionsResult(selections={}, provided=False))
-
-
 # ── Cost-estimate modal (O8) ──────────────────────────────────────────────────
 
 
 class CostEstimateModal(ModalScreen[CostApprovalResult]):
-    """One-time pre-ANALYZE approval: show the estimated cost, let the user proceed or cancel.
+    """One-time pre-analysis approval: show the estimated cost, let the user
+    proceed or cancel (O8/P6/P8).
 
-    Shown at most once per run, before the first batch document-content tool call.
-    Unlike ApprovalModal there is no op list or refinement — just a rough estimate
-    and a yes/no.
+    Shown at most once per run, before the P5 analyzer processes any newly-
+    discovered documents — scoped to NEW documents only, since already-known
+    ones are never re-analyzed. Unlike ApprovalModal there is no op list or
+    refinement — just a rough estimate and a yes/no.
     """
 
     DEFAULT_CSS = """
@@ -511,9 +338,16 @@ class CostEstimateModal(ModalScreen[CostApprovalResult]):
 
     BINDINGS = [("escape", "cancel", "Cancel")]
 
-    def __init__(self, documents: int, estimated_tokens: int, batch_size: int = 10) -> None:
+    def __init__(
+        self,
+        new_documents: int,
+        already_analyzed: int,
+        estimated_tokens: int,
+        batch_size: int = 10,
+    ) -> None:
         super().__init__()
-        self._documents = documents
+        self._new_documents = new_documents
+        self._already_analyzed = already_analyzed
         self._estimated_tokens = estimated_tokens
         self._batch_size = batch_size
 
@@ -521,8 +355,10 @@ class CostEstimateModal(ModalScreen[CostApprovalResult]):
         with Container(id="cost-dialog"):
             yield Label("Analyze this corpus?", id="cost-title")
             yield Static(
-                f"~{self._documents} documents, ~{self._estimated_tokens} input tokens "
-                f"estimated, batched in groups of {self._batch_size}.",
+                f"{self._new_documents} new document(s) "
+                f"({self._already_analyzed} already analyzed, skipped), "
+                f"~{self._estimated_tokens} input tokens estimated, "
+                f"batched in groups of {self._batch_size}.",
                 id="cost-summary",
             )
             yield Label(
@@ -1624,10 +1460,8 @@ class OrganizerScreen(Screen):
                     self._current_tool = ""
                 case "plan_ready":
                     self._set_status("Waiting for plan approval…")
-                case "question":
-                    self._set_status("Awaiting your answers…")
-                case "options":
-                    self._set_status("Awaiting your choice…")
+                case "ask_user":
+                    self._set_status("Awaiting your reply…")
                 case "cost_estimate":
                     self._set_status("Awaiting cost approval…")
                 case "progress":
@@ -1671,33 +1505,24 @@ class OrganizerScreen(Screen):
                 self._add_turn("user", "[red]Rejected[/red] — sending feedback to agent")
             return result
 
-        async def on_questions_needed(questions: list[str]) -> ClarificationResult:
+        async def on_ask_user_needed(questions: list[dict]) -> AskUserResult:
+            """Render the agent's question(s)/option(s) as a chat turn and
+            await the next chat message (P8) — no modal, unlimited per run,
+            reusing the same live-chat queue P7 already wired up."""
+            lines = []
+            for q in questions:
+                line = f"• {q['text']}"
+                options = q.get("options")
+                if options:
+                    line += "  [dim](" + " / ".join(options) + ")[/dim]"
+                lines.append(line)
             self._add_turn(
                 "telcontar",
-                f"[bold cyan]The agent has {len(questions)} clarifying question(s)[/bold cyan] "
-                "— awaiting your input…",
+                "[bold cyan]I have a question for you[/bold cyan]\n" + "\n".join(lines),
             )
-            answer: ClarificationResult = await self.app.push_screen_wait(
-                ClarificationModal(questions)
-            )
-            if answer.provided:
-                self._add_turn("user", f"[green]Answered {len(answer.answers)} question(s)[/green]")
-            else:
-                self._add_turn("user", "[dim]Skipped — the agent will use its best judgement[/dim]")
-            return answer
-
-        async def on_options_needed(questions: list[dict]) -> OptionsResult:
-            self._add_turn(
-                "telcontar",
-                f"[bold cyan]The agent proposes options for {len(questions)} "
-                "question(s)[/bold cyan] — awaiting your choice…",
-            )
-            choice: OptionsResult = await self.app.push_screen_wait(OptionsModal(questions))
-            if choice.provided:
-                self._add_turn("user", f"[green]Chose {len(choice.selections)} option(s)[/green]")
-            else:
-                self._add_turn("user", "[dim]Skipped — the agent will use its best judgement[/dim]")
-            return choice
+            reply = await self._messages.get()
+            self._add_turn("user", reply)
+            return AskUserResult(reply=reply, provided=True)
 
         async def on_cost_approval_needed(summary: str, data: dict) -> CostApprovalResult:
             self._add_turn(
@@ -1705,7 +1530,11 @@ class OrganizerScreen(Screen):
                 f"[bold cyan]Cost estimate:[/bold cyan] {summary}",
             )
             result: CostApprovalResult = await self.app.push_screen_wait(
-                CostEstimateModal(data.get("documents", 0), data.get("estimated_tokens", 0))
+                CostEstimateModal(
+                    data.get("new", 0),
+                    data.get("already_analyzed", 0),
+                    data.get("estimated_tokens", 0),
+                )
             )
             self._add_turn(
                 "user",
@@ -1729,8 +1558,7 @@ class OrganizerScreen(Screen):
                     session=session,
                     on_event=on_event,
                     on_approval_needed=on_approval_needed,
-                    on_questions_needed=on_questions_needed,
-                    on_options_needed=on_options_needed,
+                    on_ask_user_needed=on_ask_user_needed,
                     on_cost_approval_needed=on_cost_approval_needed,
                     project_root=project_root,
                     instructions=instructions,
@@ -1752,8 +1580,7 @@ class OrganizerScreen(Screen):
                         session=session,
                         on_event=on_event,
                         on_approval_needed=on_approval_needed,
-                        on_questions_needed=on_questions_needed,
-                        on_options_needed=on_options_needed,
+                        on_ask_user_needed=on_ask_user_needed,
                         on_cost_approval_needed=on_cost_approval_needed,
                         project_root=project_root,
                         history=self._history,
