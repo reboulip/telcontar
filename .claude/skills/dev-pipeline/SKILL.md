@@ -44,6 +44,14 @@ scratch state, so a resumed sprint reuses it without re-planning.
    Example: `feat/phase-1-skeleton` for milestone `Phase 1 — Skeleton`.
 3. All implementation commits go on this branch. The branch merges into `develop` when the sprint is complete (fast-forward by default for a clean sprint-only branch; see Step 7).
 
+**Run this step in the foreground** (synchronously — do not dispatch it as a
+background `Agent` call). Step 1 cannot usefully proceed until the branch
+exists, so there is no real parallelism to exploit here (unlike the
+lookahead-forecast agents used later in the pipeline). Dispatching it in the
+background invites an improvised busy-wait (e.g. a placeholder `Bash` no-op)
+while waiting for something the harness will already notify about — just run
+it and let the tool call return before moving to Step 1.
+
 ---
 
 ## Step 1 — Find the active milestone
