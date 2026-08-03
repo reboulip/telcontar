@@ -1082,6 +1082,7 @@ async def _analyze_new_documents(
     new_docs: list[dict[str, str]],
     token_totals: dict[str, int],
     on_event: EventCallback,
+    tracker: _ProgressTracker,
 ) -> dict[str, Any]:
     """Stateless per-batch analysis of NEW documents only (P5).
 
@@ -1092,6 +1093,9 @@ async def _analyze_new_documents(
     INDEX (never by any value the model returns) and persisted via
     `record_document_batch`. A batch whose LLM call fails is retried once, then
     skipped — its documents surface in `errors`, never silently dropped.
+
+    Emits a `"progress"` event after each successfully recorded batch (Q2) so
+    the TUI progress bar advances incrementally instead of jumping at the end.
 
     Returns `{"recorded": [record_dict, ...], "errors": [...]}`, matching
     `record_document_batch`'s own shape across all batches combined.
@@ -1125,8 +1129,21 @@ async def _analyze_new_documents(
         result = _extract_content(raw)
         on_event(AgentEvent("tool_result", _fmt_result(result)))
         if isinstance(result, dict):
-            recorded.extend(r for r in result.get("recorded", []) if isinstance(r, dict))
+            batch_recorded = [r for r in result.get("recorded", []) if isinstance(r, dict)]
+            recorded.extend(batch_recorded)
             errors.extend(e for e in result.get("errors", []) if isinstance(e, dict))
+            for record in batch_recorded:
+                if record.get("path"):
+                    tracker.add_analyzed(record["path"])
+
+            progress = tracker.counts()
+            on_event(
+                AgentEvent(
+                    "progress",
+                    f"Analyzed {progress[0]} / {progress[1]} documents",
+                    data={"analyzed": progress[0], "total": progress[1]},
+                )
+            )
 
     return {"recorded": recorded, "errors": errors}
 
@@ -1349,10 +1366,6 @@ async def run_agent_loop(
             tracker.add_analyzed(doc["path"])
         for doc in prepass_result.new:
             tracker.add_discovered(doc["path"], prepass_result.sizes.get(doc["path"]))
-        # run_prepass already emitted a "progress" event matching this exact
-        # snapshot — only emit a second one below if analysis actually moved
-        # the numbers, instead of firing an identical duplicate.
-        progress_after_prepass = tracker.counts()
 
         analysis_result: dict[str, Any] = {"recorded": [], "errors": []}
         if prepass_result.new:
@@ -1376,20 +1389,8 @@ async def run_agent_loop(
                     new_docs=prepass_result.new,
                     token_totals=token_totals,
                     on_event=on_event,
+                    tracker=tracker,
                 )
-                for record in analysis_result.get("recorded", []):
-                    if isinstance(record, dict) and record.get("path"):
-                        tracker.add_analyzed(record["path"])
-
-        progress = tracker.counts()
-        if progress != progress_after_prepass:
-            on_event(
-                AgentEvent(
-                    "progress",
-                    f"Analyzed {progress[0]} / {progress[1]} documents",
-                    data={"analyzed": progress[0], "total": progress[1]},
-                )
-            )
 
         digest = _build_digest(prepass_result, analysis_result)
         user_content = f"Please organize the directory: {target}\n\n{digest}"

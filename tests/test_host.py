@@ -19,6 +19,7 @@ from host.agent import (
     _collect_truncated_dirs,
     _extract_content,
     _new_docs_cost_estimate,
+    _ProgressTracker,
     run_agent_loop,
     run_prepass,
     run_query_loop,
@@ -2310,6 +2311,7 @@ async def test_analyze_batch_dispatches_by_extension(tmp_path: Path) -> None:
         new_docs=[{"path": pdf, "checksum": "c1"}, {"path": txt, "checksum": "c2"}],
         token_totals={"in": 0, "out": 0},
         on_event=lambda _: None,
+        tracker=_ProgressTracker(),
     )
 
     called_tools = {c.args[0] for c in session.call_tool.await_args_list}
@@ -2345,6 +2347,7 @@ async def test_analyze_batch_wraps_document_content_in_delimiter(tmp_path: Path)
         new_docs=[{"path": a, "checksum": "c1"}],
         token_totals={"in": 0, "out": 0},
         on_event=lambda _: None,
+        tracker=_ProgressTracker(),
     )
 
     user_msg = captured_msgs[0][1]["content"]
@@ -2372,6 +2375,7 @@ async def test_analyze_new_documents_rejoins_by_index_not_by_model_value(tmp_pat
         new_docs=[{"path": a, "checksum": "c-a"}, {"path": b, "checksum": "c-b"}],
         token_totals={"in": 0, "out": 0},
         on_event=lambda _: None,
+        tracker=_ProgressTracker(),
     )
 
     recorded_call = next(
@@ -2406,11 +2410,45 @@ async def test_analyze_new_documents_batches_at_ten(tmp_path: Path) -> None:
         new_docs=docs,
         token_totals={"in": 0, "out": 0},
         on_event=lambda _: None,
+        tracker=_ProgressTracker(),
     )
 
     llm_calls = llm.chat.completions.create.call_args_list
     assert len(llm_calls) == 2
     assert len(result["recorded"]) == 15
+
+
+async def test_analyze_new_documents_emits_progress_per_batch(tmp_path: Path) -> None:
+    """Q2: the progress bar should advance after each batch, not jump at the end."""
+    docs = [{"path": str(tmp_path / f"{i}.txt"), "checksum": f"c{i}"} for i in range(15)]
+    session = _analyzer_session(
+        read_result={d["path"]: "content" for d in docs},
+    )
+    records_batch = [
+        {"title": f"T{i}", "type": "notes", "summary": "s", "provenance": "p"} for i in range(10)
+    ]
+    llm = _llm(
+        _submit_records_response(records_batch, call_id="tc1"),
+        _submit_records_response(records_batch[:5], call_id="tc2"),
+    )
+    events: list[AgentEvent] = []
+
+    await _analyze_new_documents(
+        session=session,
+        llm=llm,
+        settings=_settings(tmp_path),
+        profile=None,
+        new_docs=docs,
+        token_totals={"in": 0, "out": 0},
+        on_event=events.append,
+        tracker=_ProgressTracker(),
+    )
+
+    progress = [e for e in events if e.kind == "progress"]
+    assert [p.data for p in progress] == [
+        {"analyzed": 10, "total": 10},
+        {"analyzed": 15, "total": 15},
+    ]
 
 
 async def test_analyze_batch_reports_error_for_unmatched_tail(tmp_path: Path) -> None:
@@ -2431,6 +2469,7 @@ async def test_analyze_batch_reports_error_for_unmatched_tail(tmp_path: Path) ->
         new_docs=[{"path": a, "checksum": "c-a"}, {"path": b, "checksum": "c-b"}],
         token_totals={"in": 0, "out": 0},
         on_event=lambda _: None,
+        tracker=_ProgressTracker(),
     )
 
     assert len(result["recorded"]) == 1
@@ -2458,6 +2497,7 @@ async def test_analyze_batch_retries_once_then_skips_on_failure(tmp_path: Path) 
         new_docs=[{"path": a, "checksum": "c-a"}],
         token_totals={"in": 0, "out": 0},
         on_event=events.append,
+        tracker=_ProgressTracker(),
     )
 
     assert llm.chat.completions.create.await_count == 2
@@ -2490,6 +2530,7 @@ async def test_analyze_new_documents_accumulates_tokens(tmp_path: Path) -> None:
         new_docs=[{"path": a, "checksum": "c-a"}],
         token_totals=totals,
         on_event=lambda _: None,
+        tracker=_ProgressTracker(),
     )
 
     assert totals == {"in": 100, "out": 20}
@@ -2507,6 +2548,7 @@ async def test_analyze_new_documents_skips_llm_call_when_no_new_docs(tmp_path: P
         new_docs=[],
         token_totals={"in": 0, "out": 0},
         on_event=lambda _: None,
+        tracker=_ProgressTracker(),
     )
 
     assert result == {"recorded": [], "errors": []}
