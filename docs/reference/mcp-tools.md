@@ -247,7 +247,7 @@ Read-only pre-flight check. Detects:
 | `plan_id` | str | UUID of the plan |
 | `total_ops` | int | Total ops in the plan |
 | `duplicates` | list | Duplicate op groups `{src, op_type, op_ids}` |
-| `missing_sources` | list | Missing file entries `{op_id, op_type, src}` |
+| `missing_sources` | list | Missing file entries `{op_id, op_type, src}` — `create_dir` ops are exempt, since their `src` is the not-yet-created destination directory rather than a path expected to already exist |
 | `is_valid` | bool | True when no duplicates and no missing sources |
 
 Does not modify the plan.

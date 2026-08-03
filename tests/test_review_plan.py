@@ -188,3 +188,50 @@ class TestReviewPlanMissingSources:
         assert before["ops"] == after["ops"]
         assert before["state"] == after["state"]
         assert before["updated_at"] == after["updated_at"]
+
+
+class TestReviewPlanCreateDir:
+    def test_create_dir_op_not_flagged_as_missing(self, tmp_path: Path, plans_dir: Path) -> None:
+        p = Plan.new()
+        dest = str(tmp_path / "not_yet_created")
+        p.ops.append(PlanOp.new("create_dir", dest, ""))
+        save(p, plans_dir)
+
+        result = review_plan(p.plan_id, plans_dir)
+        assert result["missing_sources"] == []
+        assert result["is_valid"] is True
+
+    def test_create_dir_then_move_into_it_is_valid(self, tmp_path: Path, plans_dir: Path) -> None:
+        src = tmp_path / "file.txt"
+        src.write_text("x")
+        dest_dir = str(tmp_path / "new_dir")
+        p = Plan.new()
+        p.ops.append(PlanOp.new("create_dir", dest_dir, ""))
+        p.ops.append(PlanOp.new("move", str(src), dest_dir))
+        save(p, plans_dir)
+
+        result = review_plan(p.plan_id, plans_dir)
+        assert result["missing_sources"] == []
+        assert result["is_valid"] is True
+
+    def test_multiple_create_dir_ops_not_flagged(self, tmp_path: Path, plans_dir: Path) -> None:
+        p = Plan.new()
+        p.ops.append(PlanOp.new("create_dir", str(tmp_path / "dir1"), ""))
+        p.ops.append(PlanOp.new("create_dir", str(tmp_path / "dir2"), ""))
+        save(p, plans_dir)
+
+        result = review_plan(p.plan_id, plans_dir)
+        assert result["missing_sources"] == []
+
+    def test_other_missing_op_still_flagged_alongside_create_dir(
+        self, tmp_path: Path, plans_dir: Path
+    ) -> None:
+        p = Plan.new()
+        p.ops.append(PlanOp.new("create_dir", str(tmp_path / "new_dir"), ""))
+        missing_path = str(tmp_path / "gone.txt")
+        p.ops.append(PlanOp.new("rename", missing_path, "new.txt"))
+        save(p, plans_dir)
+
+        result = review_plan(p.plan_id, plans_dir)
+        assert len(result["missing_sources"]) == 1
+        assert result["missing_sources"][0]["src"] == missing_path

@@ -288,7 +288,7 @@ def review_plan(plan_id: str, plans_dir: Path) -> dict:
     for op in p.ops:
         key = (op.src, op.op_type)
         seen.setdefault(key, []).append(op.op_id)
-        if not Path(op.src).exists():
+        if op.op_type != "create_dir" and not Path(op.src).exists():
             missing.append({"op_id": op.op_id, "op_type": op.op_type, "src": op.src})
 
     duplicates = [

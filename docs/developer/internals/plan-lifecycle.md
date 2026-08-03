@@ -209,7 +209,7 @@ Scan a plan for issues without modifying it.
 **Processing:**
 1. Load the plan file for plan_id.
 2. Scan all operations for duplicate (src, op_type) pairs. Flag these as conflicts.
-3. Validate that all source files still exist.
+3. Validate that all source files still exist, except for `create_dir` ops — their `src` holds the not-yet-created destination directory, not an existing path, so they are skipped by this check.
 4. Return a report.
 
 ## Executing a Plan
