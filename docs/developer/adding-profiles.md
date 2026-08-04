@@ -60,7 +60,7 @@ description = "Anything not covered above."
 
 - Keep `id` values lowercase and underscore-separated
 - Always include an `"other"` catch-all
-- Descriptions are injected into the system prompt — be specific enough for GPT-5 to classify correctly
+- Descriptions are injected into the system prompt — be specific enough for the model to classify correctly
 - `id` values must be unique within the profile (duplicate IDs cause a startup error)
 
 ### 4. Define the entity model

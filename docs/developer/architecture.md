@@ -1,6 +1,6 @@
 # Architecture
 
-Telcontar is a locally-run AI directory organizer built on the **Model Context Protocol (MCP)**. Two Python processes communicate over stdio: a **host** that runs the GPT-5 agent loop and a **server** that owns all file operations.
+Telcontar is a locally-run AI directory organizer built on the **Model Context Protocol (MCP)**. Two Python processes communicate over stdio: a **host** that runs the agent loop and a **server** that owns all file operations.
 
 ---
 
@@ -51,8 +51,8 @@ User
                           ▲
                           │ API calls
 ┌─────────────────────────┴───────────────────────────┐
-│  OpenAI-compatible endpoint (Azure / Mammouth)      │
-│  GPT-5 — chat completions with tool use             │
+│  OpenAI-compatible endpoint                         │
+│  chat completions with tool use                     │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -381,13 +381,13 @@ This is the item that wires P4 and P5 into `run_agent_loop` for real, completing
    profile: document types, naming conventions, and synthesis template — no
    ANALYZE section, since the corpus is already analyzed) + the digest-seeded
    user message from step 5
-8. GPT-5 responds with tool calls
+8. The model responds with tool calls
 9. Host dispatches to server via MCP — a hallucinated call to one of
    ORGANIZE_DENIED_TOOLS is rejected with an explicit error instead of being
    forwarded, even though none of them were advertised in step 6 (defense in
    depth, P6)
 10. Server executes tool, returns result
-11. Host feeds result back to GPT-5 as tool message — any document content a
+11. Host feeds result back to the model as a tool message — any document content a
     tool result still carries (e.g. compare_documents's diff field, in query
     mode only — ORGANIZE mode no longer exposes it) is wrapped in the
     untrusted-content delimiter first (M10)
@@ -438,11 +438,11 @@ This is the item that wires P4 and P5 into `run_agent_loop` for real, completing
 2. Host launches server subprocess (stdio) — same MCP server, same registry
 3. Host calls session.list_tools() → filters to QUERY_ALLOWED_TOOLS (read-only subset)
 4. Host sends query-mode system prompt (built from active profile) + user's first question
-5. GPT-5 responds with tool calls against the read-only allowlist
+5. The model responds with tool calls against the read-only allowlist
 6. Host dispatches to server via MCP (mutating tool names are blocked in the host even if
    the model hallucinates one — defense in depth)
 7. Server executes tool, returns result
-8. Host feeds result back to GPT-5 as tool message — same untrusted-content
+8. Host feeds result back to the model as a tool message — same untrusted-content
    delimiter wrapping as organize mode applies here too (M10)
 9. Steps 5-8 repeat until the model produces a final text answer
 10. Answer is displayed in the RichLog; conversation history is threaded across questions

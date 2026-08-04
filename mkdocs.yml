@@ -1,5 +1,5 @@
 site_name: Telcontar
-site_description: Local AI document organizer — profile-driven, MCP-powered, GPT-5 backed
+site_description: Local AI document organizer — profile-driven, MCP-powered, backend-agnostic
 repo_url: https://github.com/reboulip/telcontar
 repo_name: telcontar
 docs_dir: docs

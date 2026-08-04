@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     llm_base_url: str = ""
     llm_api_key: str = ""
     llm_model: str = "gpt-5"
-    llm_api_version: str = ""  # Azure only; leave empty for Mammouth
+    llm_api_version: str = ""  # Azure only; leave empty for every other provider
 
     # Safety
     approval_mode: Literal["always", "destructive_only", "never"] = "always"

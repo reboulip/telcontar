@@ -16,7 +16,7 @@ def _version() -> str:
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="telcontar",
-        description="Local, profile-driven document-intelligence engine (MCP + GPT-5).",
+        description="Local, profile-driven document-intelligence engine (MCP-based, LLM-agnostic).",
     )
     parser.add_argument("--version", action="version", version=f"telcontar {_version()}")
     # Tolerate unrecognized args (e.g. a future/ignored --target) so bare launch

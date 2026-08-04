@@ -2,11 +2,11 @@
 
 Telcontar is a locally-run, profile-driven document-intelligence engine. Point it at a messy directory, and it will:
 
-1. **Analyse** each file — extract title, date, document type, summary, and key people via GPT-5
+1. **Analyse** each file — extract title, date, document type, summary, and key people via an LLM
 2. **Organize** the tree — rename files to readable names, move them to sensible locations, quarantine clutter
 3. **Synthesize** — produce `INDEX.md`, `manifest.json`, and a narrative `SUMMARY.md`
 
-All file I/O stays on your machine. Only the text content needed for reasoning is sent to the LLM endpoint (Azure OpenAI GPT-5 or any OpenAI-compatible API).
+All file I/O stays on your machine. Only the text content needed for reasoning is sent to any OpenAI-compatible endpoint (Azure OpenAI, Mammouth, or another compatible provider).
 
 ---
 
@@ -15,7 +15,7 @@ All file I/O stays on your machine. Only the text content needed for reasoning i
 | Concept | What it is |
 |---|---|
 | **MCP server** | A Python process exposing guarded file tools over the Model Context Protocol |
-| **MCP host** | A Textual TUI that drives the GPT-5 agent loop and handles user approval |
+| **MCP host** | A Textual TUI that drives the agent loop and handles user approval |
 | **Domain profile** | A TOML file externalizing everything corpus-specific: types, entities, naming convention |
 | **Plan** | A list of proposed file operations that the user reviews and approves before execution |
 | **Registry** | A content-addressed document memory (sha256 → metadata), keyed so records survive renames |

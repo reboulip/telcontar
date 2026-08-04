@@ -6,7 +6,7 @@ Telcontar is built around two processes that communicate over the **Model Contex
 User
   │
   ▼
-MCP Host  (Textual TUI + GPT-5 agent loop)
+MCP Host  (Textual TUI + agent loop)
   │  stdio transport
   ▼
 MCP Server  (guarded file tools, plan engine, registry)
@@ -21,7 +21,7 @@ Local filesystem  +  .organizer/ state
 
 When you run `telcontar`, the app checks whether a minimum configuration (AI service URL + API key) is present:
 
-- **First run** — the **setup wizard** (`SetupScreen`) appears automatically. It guides you through choosing an AI provider, entering the service URL and API key, and selecting a document profile. The key is stored in the OS credential store (Windows Credential Manager / macOS Keychain); other settings go to `~/.telcontar/config.env`.
+- **First run** — the **setup wizard** (`SetupScreen`) appears automatically. It guides you through choosing an endpoint (Azure OpenAI or another OpenAI-compatible service), entering the service URL and API key, and selecting a document profile. The key is stored in the OS credential store (Windows Credential Manager / macOS Keychain); other settings go to `~/.telcontar/config.env`.
 - **Returning user** — the **startup screen** (`StartupScreen`) appears directly. It offers three actions: **Organize**, **Query**, and **⚙ Settings**. Press `s` or click **⚙ Settings** at any time to open the settings panel (`ConfigScreen`), where you can change the URL, API key, profile, and approval mode.
 - **From anywhere** — press `Ctrl+S` at any point in the app, on any screen, to open the same settings panel — not just from the startup screen. It even works while a modal (plan approval, cost estimate) is on screen; the settings panel stacks on top and pops back cleanly. It's a no-op if settings are already open, or during the first-run setup wizard (to avoid persisting a half-configured state that skips the wizard's guided keyring/plaintext-fallback flow).
 
@@ -41,7 +41,7 @@ Only once you proceed does the chat transcript appear and the agent loop start. 
 
 ## The agent loop
 
-Once you proceed past the starter pane, the **host** launches the **server** as a subprocess. Before any chat turn happens, telcontar analyzes the corpus deterministically; only once that finishes does the GPT-5 tool-calling loop begin, and it follows a fixed two-phase workflow.
+Once you proceed past the starter pane, the **host** launches the **server** as a subprocess. Before any chat turn happens, telcontar analyzes the corpus deterministically; only once that finishes does the LLM tool-calling loop begin, and it follows a fixed two-phase workflow.
 
 ### Analysis — before the chat loop starts
 
@@ -275,8 +275,8 @@ The host opens a `QueryScreen` — a chat-style TUI with a `RichLog` output area
 
 For each question:
 
-1. The host sends the query-mode system prompt (built from the active profile) plus the user's question to GPT-5.
-2. GPT-5 calls read-only tools to gather facts:
+1. The host sends the query-mode system prompt (built from the active profile) plus the user's question to the model.
+2. The model calls read-only tools to gather facts:
    - `list_documents` / `get_registry` / `get_document` / `lookup_documents` — recorded documents and their metadata (`lookup_documents` is the batch form of `get_document`, one round trip for many checksums)
    - `list_events` — the dated project timeline
    - `get_graph` / `get_actors` — the knowledge graph and ranked main actors

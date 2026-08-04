@@ -1,4 +1,4 @@
-"""Async agent loop: MCP client + GPT-5 tool-calling loop.
+"""Async agent loop: MCP client + LLM tool-calling loop.
 
 Fully decoupled from Textual — callers pass async callbacks for events and
 approval so this module can be exercised in plain pytest tests.
@@ -1301,7 +1301,7 @@ async def run_agent_loop(
     message_queue: "asyncio.Queue[str] | None" = None,
     ledger: "_TokenLedger | None" = None,
 ) -> tuple[str, list[dict[str, Any]]]:
-    """Run the GPT-5 tool-calling loop against an already-connected MCP session.
+    """Run the LLM tool-calling loop against an already-connected MCP session.
 
     Separated from run_agent so tests can inject a mock session directly.
     ``instructions`` is the user's optional pre-analysis steering text (L3),

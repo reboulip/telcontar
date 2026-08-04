@@ -189,17 +189,17 @@ async def test_journal_screen_undo_action_reverses_last_op(tmp_path: Path) -> No
     assert not (tmp_path / "new.txt").exists()
 
 
-async def test_setup_wizard_mammouth_sets_model_hint_and_placeholder() -> None:
+async def test_setup_wizard_compatible_service_sets_model_hint_and_placeholder() -> None:
     app = OrganizerApp()
     async with app.run_test(size=(90, 50)) as pilot:
         app.push_screen(SetupScreen())
         await pilot.pause()
         await pilot.click("#btn-welcome-next")
         await pilot.pause()
-        await pilot.click("#btn-svc-mammouth")
+        await pilot.click("#btn-svc-compatible")
         await pilot.pause()
         screen = app.screen
-        assert "Mammouth" in str(screen.query_one("#model-hint").content)
+        assert "OpenAI-compatible" in str(screen.query_one("#url-hint").content)
         assert screen.query_one("#input-model", Input).placeholder == "e.g. gpt-5"
 
 
@@ -210,7 +210,7 @@ async def test_setup_wizard_blocks_on_empty_model() -> None:
         await pilot.pause()
         await pilot.click("#btn-welcome-next")
         await pilot.pause()
-        await pilot.click("#btn-svc-other")
+        await pilot.click("#btn-svc-compatible")
         await pilot.pause()
         screen = app.screen
         screen.query_one("#input-url", Input).value = "https://example.com/v1"
@@ -235,7 +235,7 @@ async def test_setup_wizard_saves_model_name(monkeypatch: pytest.MonkeyPatch) ->
         await pilot.pause()
         await pilot.click("#btn-welcome-next")
         await pilot.pause()
-        await pilot.click("#btn-svc-other")
+        await pilot.click("#btn-svc-compatible")
         await pilot.pause()
         screen = app.screen
         screen.query_one("#input-url", Input).value = "https://example.com/v1"
@@ -270,7 +270,7 @@ async def test_setup_wizard_warns_before_plaintext_key_fallback(
         await pilot.pause()
         await pilot.click("#btn-welcome-next")
         await pilot.pause()
-        await pilot.click("#btn-svc-other")
+        await pilot.click("#btn-svc-compatible")
         await pilot.pause()
         screen = app.screen
         screen.query_one("#input-url", Input).value = "https://example.com/v1"

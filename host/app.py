@@ -462,7 +462,7 @@ class SetupScreen(Screen):
     def __init__(self) -> None:
         super().__init__()
         self._step = 0
-        self._service = "other"
+        self._service = "openai_compatible"
         self._pending_url = ""
         self._pending_key = ""
         self._pending_model = ""
@@ -497,11 +497,12 @@ class SetupScreen(Screen):
                 # ── Step 1: service selection ─────────────────────────────────
                 with Container(id="step-service"):
                     yield Label("Which AI service will you use?", classes="step-question")
-                    yield Button("Mammouth", classes="service-btn", id="btn-svc-mammouth")
-                    yield Button("Azure OpenAI", classes="service-btn", id="btn-svc-azure")
                     yield Button(
-                        "Other / I'll enter a URL", classes="service-btn", id="btn-svc-other"
+                        "Any OpenAI-compatible service",
+                        classes="service-btn",
+                        id="btn-svc-compatible",
                     )
+                    yield Button("Azure OpenAI", classes="service-btn", id="btn-svc-azure")
 
                 # ── Step 2: API details ───────────────────────────────────────
                 with Container(id="step-api"):
@@ -576,15 +577,16 @@ class SetupScreen(Screen):
         self._show_step(1)
 
     # Service selection → API details
-    @on(Button.Pressed, "#btn-svc-mammouth")
-    def _pick_mammouth(self) -> None:
-        self._service = "mammouth"
+    @on(Button.Pressed, "#btn-svc-compatible")
+    def _pick_compatible(self) -> None:
+        self._service = "openai_compatible"
         self.query_one("#url-hint", Label).update(
-            "Mammouth: paste the base URL from your Mammouth account dashboard."
+            "Enter the base URL of your OpenAI-compatible service "
+            "(e.g. Mammouth, OpenAI, a local inference server, etc.)."
         )
-        self.query_one("#input-url", Input).placeholder = "https://api.mammouth.ai/v1"
+        self.query_one("#input-url", Input).placeholder = "https://…"
         self.query_one("#model-hint", Label).update(
-            "Check the model list in your Mammouth dashboard — it must match exactly."
+            "The exact model identifier documented by your provider."
         )
         self.query_one("#input-model", Input).placeholder = "e.g. gpt-5"
         self._show_step(2)
@@ -604,19 +606,6 @@ class SetupScreen(Screen):
             "(often, but not always, the same as the model)."
         )
         self.query_one("#input-model", Input).placeholder = "e.g. gpt-5"
-        self._show_step(2)
-
-    @on(Button.Pressed, "#btn-svc-other")
-    def _pick_other(self) -> None:
-        self._service = "other"
-        self.query_one("#url-hint", Label).update(
-            "Enter the base URL of any OpenAI-compatible AI service."
-        )
-        self.query_one("#input-url", Input).placeholder = "https://…"
-        self.query_one("#model-hint", Label).update(
-            "The exact model identifier documented by your provider."
-        )
-        self.query_one("#input-model", Input).placeholder = "e.g. gpt-4o"
         self._show_step(2)
 
     # API details → back to service / forward to profile
@@ -1900,7 +1889,7 @@ class OrganizerApp(App):
     """Root Textual application."""
 
     TITLE = "Directory Organizer"
-    SUB_TITLE = "Powered by GPT-5 + MCP"
+    SUB_TITLE = "Powered by an LLM + MCP"
 
     # priority=True (P9): Textual's non-priority binding chain stops at the
     # first modal screen it finds (ModalScreen.is_modal), deliberately hiding

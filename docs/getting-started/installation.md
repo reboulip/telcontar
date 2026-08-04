@@ -6,7 +6,7 @@
 |---|---|
 | Python 3.12+ | Tested on 3.12 and 3.13 |
 | [uv](https://docs.astral.sh/uv/) | Package and environment manager |
-| GPT-5 endpoint | Azure OpenAI (prod) or Mammouth (dev) — any OpenAI-compatible API works |
+| OpenAI-compatible endpoint | Azure OpenAI, Mammouth, or any other provider with an OpenAI-compatible chat-completions API |
 
 ### Install uv
 
@@ -91,4 +91,4 @@ cd telcontar
 uv sync --all-groups
 ```
 
-For dev, point `LLM_BASE_URL`/`LLM_API_KEY` at Mammouth via a `.env` file in the project root.  See [Configuration](configuration.md) for the full reference.
+For dev, point `LLM_BASE_URL`/`LLM_API_KEY` at your endpoint via a `.env` file in the project root.  See [Configuration](configuration.md) for the full reference.

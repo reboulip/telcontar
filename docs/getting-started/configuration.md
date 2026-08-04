@@ -15,7 +15,7 @@ The reference below is for **advanced or developer use**: env vars and a project
 | `LLM_BASE_URL` | **yes** | `""` | Base URL of the OpenAI-compatible endpoint.<br>Azure: `https://<resource>.openai.azure.com/openai/deployments/<deployment>`<br>Mammouth: the standard Mammouth base URL.<br>Set by the wizard and stored in `~/.telcontar/config.env`. |
 | `LLM_API_KEY` | **yes** | `""` | API key for the endpoint. Set by the wizard and stored in the OS credential store. If the keyring is unavailable, the wizard/settings screen warns loudly and requires pressing the save/finish button a second time to explicitly confirm storing it in plaintext at `~/.telcontar/config.env` instead — it is never written there silently. |
 | `LLM_MODEL` | no | `gpt-5` | Model name passed in chat completion requests |
-| `LLM_API_VERSION` | no | `""` | Azure only — `api-version` query parameter (e.g. `2025-01-01-preview`). Leave blank for Mammouth. |
+| `LLM_API_VERSION` | no | `""` | Azure only — `api-version` query parameter (e.g. `2025-01-01-preview`). Leave blank for every other provider. |
 
 ### Safety
 
@@ -61,11 +61,43 @@ The reference below is for **advanced or developer use**: env vars and a project
 
 ---
 
+## Backend compatibility
+
+Telcontar works with **any OpenAI-compatible chat-completions endpoint that
+supports tool calling** — the code path never branches on which provider
+you point it at; swapping `LLM_BASE_URL`/`LLM_API_KEY` (and, for Azure only,
+`LLM_API_VERSION`) is the only thing that changes. Concretely, the endpoint
+must support:
+
+- `POST /chat/completions` with `model`, `messages`, `tools`, and
+  `tool_choice`.
+- **Forced tool choice** (`tool_choice={"type": "function", "function":
+  {"name": ...}}`), used by the document analyzer to guarantee a structured
+  response for every batch.
+- Multiple `tool_calls` per assistant message.
+- *(optional)* `usage.prompt_tokens` / `usage.completion_tokens` (and,
+  ideally, `usage.prompt_tokens_details.cached_tokens`) — telcontar's token
+  counters and profiling log (see [Token usage](#token-usage) above) degrade
+  to a silent no-op when a response omits `usage`.
+- *(optional)* an `api-version` query parameter — Azure OpenAI only; every
+  other provider ignores it (leave `LLM_API_VERSION` blank).
+
+!!! warning
+    An endpoint that silently ignores forced `tool_choice` will degrade
+    document analysis rather than error loudly — if analysis results look
+    wrong on an unfamiliar endpoint, verify it actually honors forced tool
+    choice before assuming a telcontar bug.
+
+Verified against Azure OpenAI and Mammouth. Any other endpoint meeting the
+contract above should work.
+
+---
+
 ## Switching environments
 
-Telcontar uses the same code path for Azure and Mammouth — only the `base_url` and `api_key` differ:
+Telcontar uses the same code path for every OpenAI-compatible endpoint — only the `base_url` and `api_key` (and, for Azure, `api_version`) differ:
 
-=== "Mammouth (dev)"
+=== "Generic OpenAI-compatible endpoint"
     ```ini
     LLM_BASE_URL=https://api.mammouth.ai/v1
     LLM_API_KEY=mam-...
@@ -73,7 +105,7 @@ Telcontar uses the same code path for Azure and Mammouth — only the `base_url`
     LLM_API_VERSION=
     ```
 
-=== "Azure OpenAI (prod)"
+=== "Azure OpenAI (needs api-version)"
     ```ini
     LLM_BASE_URL=https://my-resource.openai.azure.com/openai/deployments/gpt-5
     LLM_API_KEY=az-...
@@ -82,7 +114,7 @@ Telcontar uses the same code path for Azure and Mammouth — only the `base_url`
     ```
 
 !!! tip
-    Keep two `.env` files (`.env.dev`, `.env.prod`) and symlink or copy the active one to `.env`. No code changes are ever needed to switch.
+    Keep two `.env` files (e.g. `.env.dev`, `.env.prod`) and symlink or copy the active one to `.env`. No code changes are ever needed to switch.
 
 ---
 

@@ -2,13 +2,13 @@
 
 Local AI assistant that organizes a directory tree: renames files to readable names based on content, moves them to sensible locations, quarantines clutter, and produces an index and summary. Once a corpus is analyzed, an interactive **query mode** lets you ask natural-language questions over the registry, event journal, and knowledge graph — read-only, no reorganization needed. All file operations run locally; only content snippets are sent to the LLM endpoint.
 
-**Architecture:** custom MCP server (file tools) + custom MCP host (GPT-5 agent loop) over stdio transport.
+**Architecture:** custom MCP server (file tools) + custom MCP host (agent loop) over stdio transport.
 
 ## Prerequisites
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) for environment management
-- Access to an OpenAI-compatible GPT-5 endpoint (Azure or Mammouth)
+- Access to any OpenAI-compatible chat-completions endpoint (Azure OpenAI, Mammouth, or another compatible provider)
 
 ## Setup
 

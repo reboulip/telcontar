@@ -15,7 +15,7 @@
    Untrusted                    Semi-trusted                    Trusted-but-remote
  ┌───────────┐   extract/read  ┌──────────────┐   tool calls   ┌──────────────────┐
  │ Documents │ ───────────────▶│  MCP Host    │◀──────────────▶│  LLM endpoint    │
- │ in target │                 │ (GPT-5 loop) │   file content │ (Azure / Mammouth│
+ │ in target │                 │ (agent loop) │   file content │ (Azure / Mammouth│
  │  directory│                 │              │  + metadata    │  / any base_url) │
  └───────────┘                 └──────┬───────┘                └──────────────────┘
       ▲                               │ stdio (all tool calls)
@@ -475,8 +475,9 @@ Until the remaining P1/P2 items land, an operator can materially reduce exposure
       password exports). Move those out first.
 - [ ] Only organize documents you trust the *origin* of. A PDF from an untrusted
       source is executable input to the agent.
-- [ ] In dev, remember the endpoint (Mammouth or any pasted URL) is a third party —
-      use non-sensitive corpora there. Reserve real data for the private Azure endpoint.
+- [ ] In dev, remember the endpoint is likely a third party (e.g. Mammouth, OpenAI, or
+      a custom URL) — use non-sensitive corpora there. Reserve real data for a private,
+      vetted endpoint (e.g. a dedicated Azure OpenAI deployment).
 - [ ] Back up the target tree before the first run; `undo_last` is best-effort and
       per-operation, not a substitute for a snapshot.
 - [ ] Leave `EGRESS_ALLOW_EXTERNAL_SINKS=false` unless you have vetted the external

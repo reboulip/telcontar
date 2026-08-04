@@ -1,12 +1,12 @@
-# CLAUDE.md — Local Directory Organizer (MCP + GPT-5)
+# CLAUDE.md — Local Directory Organizer (MCP-based)
 
 ## Project Overview
 
-A locally-run, **profile-driven document-intelligence engine**. Given a directory of documents dumped in bulk, it analyzes each one (title, date, type, summary, author, mentioned people, why it's here), records them in a persistent content-addressed memory registry, detects duplicates and modified versions, organizes the tree (rename / move / quarantine), and synthesizes an overall summary — all locally. Everything domain-specific (the document-type vocabulary, entity/role model, extraction guardrails, naming, synthesis template, output sinks) is externalized into a declarative **domain profile**, so the same engine serves different kinds of corpora. The **IS/IT-project profile** (`profiles/is_it_project.toml`) ships as profile #1. Intelligence comes from GPT-5 via an OpenAI-compatible endpoint; the server stays deterministic (it persists what the model reasons out).
+A locally-run, **profile-driven document-intelligence engine**. Given a directory of documents dumped in bulk, it analyzes each one (title, date, type, summary, author, mentioned people, why it's here), records them in a persistent content-addressed memory registry, detects duplicates and modified versions, organizes the tree (rename / move / quarantine), and synthesizes an overall summary — all locally. Everything domain-specific (the document-type vocabulary, entity/role model, extraction guardrails, naming, synthesis template, output sinks) is externalized into a declarative **domain profile**, so the same engine serves different kinds of corpora. The **IS/IT-project profile** (`profiles/is_it_project.toml`) ships as profile #1. Intelligence comes from an LLM via any OpenAI-compatible endpoint; the server stays deterministic (it persists what the model reasons out).
 
 **Architecture:** MCP-based (Stack B1).
 - A custom Python MCP server exposes guarded file-system tools.
-- A thin custom Python MCP host runs the GPT-5 agent loop and routes to an OpenAI-compatible endpoint (Azure in prod, Mammouth in dev).
+- A thin custom Python MCP host runs the agent loop and routes to any OpenAI-compatible endpoint (Azure OpenAI, Mammouth, or another compatible provider).
 
 ## Core Principles
 
@@ -32,16 +32,16 @@ A locally-run, **profile-driven document-intelligence engine**. Given a director
 ### Components
 
 1. **MCP Server** (`server/`) — exposes file tools, owns all guardrails, the quarantine logic, and the undo journal. Never deletes.
-2. **MCP Host** (`host/`) — runs the GPT-5 loop, connects to the MCP server over stdio, manages the plan/approval flow and config.
+2. **MCP Host** (`host/`) — runs the agent loop, connects to the MCP server over stdio, manages the plan/approval flow and config.
 3. **Config** (`config/`) — env-based, swaps dev/prod endpoints.
 
 ### Data flow
 
 ```
-User → Host (GPT-5 loop) → MCP Server (tools) → Local filesystem
+User → Host (agent loop) → MCP Server (tools) → Local filesystem
               ↑                      ↓
        OpenAI-compatible       Undo journal +
-       endpoint (GPT-5)        quarantine folder
+       endpoint (LLM)          quarantine folder
 ```
 
 ## Configuration
@@ -149,7 +149,7 @@ project/
 ├── .env                    # config (gitignored)
 ├── host/
 │   ├── __init__.py
-│   ├── main.py             # GPT-5 agent loop, MCP client, approval flow
+│   ├── main.py             # agent loop, MCP client, approval flow
 │   └── llm.py              # openai SDK wrapper (Azure/Mammouth via base_url)
 ├── server/
 │   ├── __init__.py

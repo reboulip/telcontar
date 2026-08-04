@@ -54,7 +54,7 @@ Use `manifest.json` to pipe telcontar's output into other tools (search indexes,
 
 ### `SUMMARY.md`
 
-A **GPT-5–authored narrative** structured according to the active profile's `[synthesis]` table. For the bundled `is_it_project` profile the output is a French-language project synthesis titled "Synthèse du projet" with six `##` sections:
+An **LLM-authored narrative** structured according to the active profile's `[synthesis]` table. For the bundled `is_it_project` profile the output is a French-language project synthesis titled "Synthèse du projet" with six `##` sections:
 
 - **Vue d'ensemble** — what the corpus covers and its overall status
 - **Acteurs principaux** — who appears and in what capacity (from ranked actors)

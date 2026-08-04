@@ -35,7 +35,7 @@ If this is your first time running telcontar, the **setup wizard** appears autom
 
 **Step 1 — Choose your AI service:**
 
-Select your provider (Mammouth, Azure OpenAI, or another compatible service).
+Pick **Any OpenAI-compatible service** (Mammouth, OpenAI, a local inference server, etc.) or **Azure OpenAI**, if that's what you use.
 
 **Step 2 — Enter your details:**
 
