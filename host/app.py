@@ -21,7 +21,6 @@ same as any other live chat exchange.
 from __future__ import annotations
 
 import asyncio
-import os
 import tomllib
 from pathlib import Path
 
@@ -53,51 +52,18 @@ from host.agent import (
     AskUserResult,
     CostApprovalResult,
 )
+from host.format import fmt_exc as _fmt_exc
+from host.format import fmt_journal_entry as _fmt_journal_entry
+from host.format import fmt_op as _fmt_op
+from host.format import render_target_layout as _render_target_layout
+from host.narration import Narrator
+from host.paths import directory_overview as _directory_overview
+from host.paths import find_organizer_root as _find_organizer_root
+from host.paths import resolve_journal_path as _resolve_journal_path
+from host.paths import resolve_plans_dir as _resolve_plans_dir
 
 # Package root: host/app.py → host/ → project root (or site-packages/).
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
-
-# Friendly, plain-language narration for the conversation pane (F10). Maps each
-# MCP tool to the macro-task it belongs to; consecutive calls in the same macro
-# task collapse to a single line so the pane reads as progress, not a call log.
-_TOOL_NARRATION: dict[str, str] = {
-    "list_dir": "Scanning the directory…",
-    "walk_tree": "Exploring nested folders…",
-    "read_file": "Reading documents…",
-    "extract_text": "Reading documents…",
-    "read_file_batch": "Reading documents…",
-    "extract_text_batch": "Reading documents…",
-    "compute_checksum": "Computing checksums…",
-    "compute_checksum_batch": "Computing checksums…",
-    "lookup_documents": "Looking up documents in memory…",
-    "record_document": "Recording documents in memory…",
-    "record_document_batch": "Recording documents in memory…",
-    "find_duplicates": "Checking for duplicates…",
-    "find_modified_documents": "Checking for newer versions…",
-    "compare_documents": "Comparing documents…",
-    "create_plan": "Planning changes…",
-    "propose_rename": "Planning changes…",
-    "propose_move": "Planning changes…",
-    "propose_quarantine": "Planning changes…",
-    "propose_create_file": "Planning changes…",
-    "propose_update_file": "Planning changes…",
-    "propose_create_dir": "Planning changes…",
-    "propose_archive_document": "Planning changes…",
-    "propose_compress_quarantine": "Planning changes…",
-    "review_plan": "Reviewing the plan…",
-    "set_plan_rationale": "Summarizing the plan…",
-    "set_plan_folder_notes": "Describing the target folders…",
-    "execute_plan": "Applying the plan…",
-    "create_event": "Recording project events…",
-    "build_graph": "Building the knowledge graph…",
-    "get_graph": "Building the knowledge graph…",
-    "get_actors": "Identifying the main actors…",
-    "list_events": "Reviewing the timeline…",
-    "write_index": "Writing the index…",
-    "write_summary": "Writing the summary…",
-    "write_folder_readme": "Describing folders…",
-    "ask_user": "Asking you a question…",
-}
 
 
 # ── Profile helpers ───────────────────────────────────────────────────────────
@@ -862,52 +828,6 @@ class ConfigScreen(Screen):
 # ── Journal screen ────────────────────────────────────────────────────────────
 
 
-def _find_organizer_root(start: Path) -> Path | None:
-    """Find the nearest directory at or above ``start`` containing `.organizer`
-    (P2 Query-mode resolution): per-directory memory means a folder the user
-    picks for Query may be a subfolder of what was actually organized, so this
-    walks up from ``start`` until it finds a `.organizer`, or hits the
-    filesystem root without finding one."""
-    current = start.resolve()
-    while True:
-        if (current / ".organizer").is_dir():
-            return current
-        if current.parent == current:
-            return None
-        current = current.parent
-
-
-def _resolve_journal_path(target: Path) -> Path:
-    from config.settings import Settings
-
-    return Settings().for_target(target).journal_path
-
-
-def _resolve_plans_dir(target: Path) -> Path:
-    from config.settings import Settings
-
-    return Settings().for_target(target).plans_dir
-
-
-def _fmt_journal_entry(entry: dict) -> str:
-    ts = entry.get("timestamp", "?")
-    op_type = entry.get("op_type", "?")
-    if op_type == "hard_stop":
-        reason = entry.get("reason", "")
-        failed = entry.get("failed_count", len(entry.get("failed_ops", [])))
-        lines = [f"[bold red]{ts}  HARD STOP[/bold red]  ({failed} op(s) failed) — {reason}"]
-        for fop in entry.get("failed_ops", []):
-            lines.append(
-                f"    [red]✗ {fop.get('op_type', '?')}[/red]  {fop.get('src', '?')}"
-                f"  — {fop.get('error', '')}"
-            )
-        return "\n".join(lines)
-    src = entry.get("src", "?")
-    dst = entry.get("dst")
-    target = f"  →  {dst}" if dst else ""
-    return f"[dim]{ts}[/dim]  {op_type:<10}  {src}{target}"
-
-
 class JournalScreen(ModalScreen[None]):
     """Read-only view of the full undo journal, newest entries last — and the
     one place ``undo_last`` can be triggered from (S1).
@@ -993,61 +913,6 @@ class JournalScreen(ModalScreen[None]):
 
 
 # ── Organizer screen ──────────────────────────────────────────────────────────
-
-
-def _quarantine_basename() -> str:
-    """Basename of the configured quarantine dir, for discovery-hiding (P2).
-
-    Falls back to the default name on any settings error — this only feeds a
-    display nicety (the starter-pane overview), never a safety guard.
-    """
-    from config.settings import Settings
-
-    try:
-        return Settings().quarantine_dir.name
-    except Exception:
-        return "_quarantine"
-
-
-def _directory_overview(target: Path, max_entries: int = 5000) -> str:
-    """Code-generated, deterministic one-glance summary of a directory (L3).
-
-    Reads only names and structure — no file contents, no LLM, no latency —
-    counting files, subfolders and the most common file types. Bounded by
-    ``max_entries`` so a huge tree cannot stall the UI (the count then reads
-    ``N+``). Shown as the opening telcontar turn before ANALYZE so the user can
-    steer the run instead of it auto-organizing.
-    """
-    hidden_names = {".organizer", _quarantine_basename()}
-    file_count = 0
-    dir_count = 0
-    ext_counts: dict[str, int] = {}
-    truncated = False
-    for _root, dirs, files in os.walk(target):
-        dirs[:] = [d for d in dirs if d not in hidden_names]
-        dir_count += len(dirs)
-        for name in files:
-            if file_count >= max_entries:
-                truncated = True
-                break
-            file_count += 1
-            ext = Path(name).suffix.lower() or "(no extension)"
-            ext_counts[ext] = ext_counts.get(ext, 0) + 1
-        if truncated:
-            break
-
-    count_label = f"{file_count}{'+' if truncated else ''}"
-    lines = [
-        f"Target directory: {target}",
-        f"{count_label} file(s) across {dir_count} subfolder(s).",
-    ]
-    if ext_counts:
-        top = sorted(ext_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:6]
-        breakdown = ", ".join(f"{n}× {ext}" for ext, n in top)
-        lines.append(f"Most common types: {breakdown}.")
-    else:
-        lines.append("No files found at or below this folder.")
-    return "\n".join(lines)
 
 
 class OrganizerScreen(Screen):
@@ -1170,7 +1035,7 @@ class OrganizerScreen(Screen):
         self._target = target
         self._status = "Initialising…"
         self._tokens = ""
-        self._last_narration = ""
+        self._narrator = Narrator()
         self._done = False
         self._started = False
         # Name of the tool whose result we're awaiting — lets a tool_result event
@@ -1411,9 +1276,8 @@ class OrganizerScreen(Screen):
         the turn also closes the open internal-steps group, so the detailed calls
         for this macro-task collect under it.
         """
-        phrase = _TOOL_NARRATION.get(tool)
-        if phrase and phrase != self._last_narration:
-            self._last_narration = phrase
+        phrase = self._narrator.narrate(tool)
+        if phrase:
             self._add_turn("telcontar", f"[dim italic]{phrase}[/dim italic]")
 
     def action_view_journal(self) -> None:
@@ -1918,154 +1782,6 @@ class OrganizerApp(App):
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-
-
-def _fmt_exc(exc: BaseException) -> str:
-    """Format an exception with its type so errors are actionable, not just a message.
-
-    anyio/asyncio TaskGroups (the MCP session, the LLM HTTP client) wrap any child
-    failure in an ExceptionGroup whose own message is just "unhandled errors in a
-    TaskGroup (N sub-exception(s))" — useless on its own. Drill into `.exceptions`
-    (recursively, since groups can nest) to surface the real leaf error(s) instead.
-    """
-    if isinstance(exc, BaseExceptionGroup):
-        return "; ".join(_fmt_exc(sub) for sub in exc.exceptions)
-    return f"{type(exc).__name__}: {exc}"
-
-
-def _is_op_out_of_scope(op: dict, target: Path | None) -> bool:
-    """Best-effort UI check: does this op's source resolve outside ``target``?
-
-    Advisory only — the server's own `check_within_root` guard (M2) is the real
-    enforcement boundary. This just makes the existing risk visible to the
-    approver. Defensive: any resolution error (missing src, bad path) reads as
-    in-scope rather than raising, so a malformed op never crashes the modal.
-    """
-    if target is None:
-        return False
-    src = op.get("src") or ""
-    if not src:
-        return False
-    try:
-        Path(src).resolve().relative_to(target.resolve())
-        return False
-    except (ValueError, OSError):
-        return True
-
-
-def _fmt_op(op: dict, target: Path | None = None) -> str:
-    op_type = op.get("op_type", "?")
-    src = Path(op.get("src", "")).name
-    dst = op.get("dst", "")
-    match op_type:
-        case "rename":
-            label = f"RENAME   {src}  →  {dst}"
-        case "move":
-            label = f"MOVE     {src}  →  {dst}"
-        case "quarantine":
-            label = f"QUARANTINE  {src}"
-        case "update_file":
-            # Subtle, not alarming (M4's discreet-styling convention): the
-            # overwrite flag matters to the approver but isn't a red-banner risk.
-            # Parens, not square brackets — Textual's markup parser treats
-            # `[...]` as a style tag and silently drops unrecognized names.
-            overwrite_flag = (
-                "  [dim](overwrite)[/dim]" if (op.get("params") or {}).get("overwrite") else ""
-            )
-            label = f"UPDATE   {src}{overwrite_flag}"
-        case _:
-            label = f"{op_type.upper()}  {src}"
-    if _is_op_out_of_scope(op, target):
-        # Same discreet convention as the overwrite flag above — a quiet cue,
-        # not a red banner, per the explicit "keep this subtle" instruction (S4).
-        label += "  [dim](outside target)[/dim]"
-    return label
-
-
-# ── Plan target-layout preview (L5) ──────────────────────────────────────────
-
-
-def _target_folders(ops: list[dict]) -> list[str]:
-    """Distinct target folders a plan will populate (move dests + quarantine dir)."""
-    folders: set[str] = set()
-    for op in ops:
-        dst = op.get("dst") or ""
-        if not dst:
-            continue
-        if op.get("op_type") == "move":
-            folders.add(dst)
-        elif op.get("op_type") == "quarantine":
-            folders.add(str(Path(dst).parent))
-    return sorted(folders)
-
-
-def _note_for(folder: str, notes: dict) -> str:
-    """Best-effort match of a (possibly absolute) folder path to a folder note.
-
-    The agent may key notes by a short relative folder name (``"01_decisions"``)
-    while the plan ops carry absolute destinations, so match on the full path, its
-    forward-slashed form, its basename, or a path suffix.
-    """
-    if not notes:
-        return ""
-    norm = folder.replace("\\", "/").rstrip("/")
-    name = Path(folder).name
-    for key in (folder, norm, name):
-        if key in notes:
-            return str(notes[key])
-    for key, val in notes.items():
-        k = str(key).replace("\\", "/").strip("/")
-        if k and (norm == k or norm.endswith("/" + k) or name == Path(k).name):
-            return str(val)
-    return ""
-
-
-def _render_target_layout(ops: list[dict], folder_notes: dict) -> list[str]:
-    """Render the plan's target folder tree with per-folder purpose notes (L5).
-
-    Returns tree lines (box-drawing connectors) or an empty list when the plan
-    has no folder destinations. Folders with no note render as bare nodes.
-    """
-    folders = _target_folders(ops)
-    if not folders:
-        return []
-    norm = [f.replace("\\", "/").rstrip("/") for f in folders]
-    try:
-        base = (
-            str(Path(norm[0]).parent).replace("\\", "/")
-            if len(norm) == 1
-            else os.path.commonpath(norm).replace("\\", "/")
-        )
-    except ValueError:  # e.g. paths on different drives — no common base
-        base = ""
-
-    tree: dict = {}
-    note_at: dict[tuple[str, ...], str] = {}
-    for folder in norm:
-        rel = folder[len(base) :].strip("/") if base and folder.startswith(base) else folder
-        parts = [p for p in rel.split("/") if p]
-        node = tree
-        for part in parts:
-            node = node.setdefault(part, {})
-        note = _note_for(folder, folder_notes)
-        if note and parts:
-            note_at[tuple(parts)] = note
-
-    lines: list[str] = [f"{Path(base).name or base or 'target'}/"]
-
-    def _walk(node: dict, prefix: str, acc: tuple[str, ...]) -> None:
-        items = sorted(node.items())
-        for i, (name, children) in enumerate(items):
-            last = i == len(items) - 1
-            connector = "└── " if last else "├── "
-            new_acc = acc + (name,)
-            note = note_at.get(new_acc, "")
-            suffix = f"  — {note}" if note else ""
-            lines.append(f"{prefix}{connector}{name}/{suffix}")
-            _walk(children, prefix + ("    " if last else "│   "), new_acc)
-
-    _walk(tree, "", ())
-    return lines
 
 
 def _send_notification(target: Path) -> None:
