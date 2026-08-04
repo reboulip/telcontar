@@ -20,6 +20,7 @@ from host.agent import (
     _extract_content,
     _new_docs_cost_estimate,
     _ProgressTracker,
+    _TokenLedger,
     run_agent_loop,
     run_prepass,
     run_query_loop,
@@ -1031,7 +1032,8 @@ async def test_tokens_events_accumulate_across_turns(tmp_path: Path) -> None:
 
     token_events = [e for e in events if e.kind == "tokens"]
     assert len(token_events) == 2
-    assert token_events[-1].data == {"in": 1500, "out": 300}  # cumulative
+    assert token_events[-1].data["in"] == 1500  # cumulative
+    assert token_events[-1].data["out"] == 300
     assert "1.5K in" in token_events[-1].text
     assert "300 out" in token_events[-1].text
 
@@ -2309,7 +2311,7 @@ async def test_analyze_batch_dispatches_by_extension(tmp_path: Path) -> None:
         settings=_settings(tmp_path),
         profile=None,
         new_docs=[{"path": pdf, "checksum": "c1"}, {"path": txt, "checksum": "c2"}],
-        token_totals={"in": 0, "out": 0},
+        ledger=_TokenLedger(),
         on_event=lambda _: None,
         tracker=_ProgressTracker(),
     )
@@ -2345,7 +2347,7 @@ async def test_analyze_batch_wraps_document_content_in_delimiter(tmp_path: Path)
         settings=_settings(tmp_path),
         profile=None,
         new_docs=[{"path": a, "checksum": "c1"}],
-        token_totals={"in": 0, "out": 0},
+        ledger=_TokenLedger(),
         on_event=lambda _: None,
         tracker=_ProgressTracker(),
     )
@@ -2373,7 +2375,7 @@ async def test_analyze_new_documents_rejoins_by_index_not_by_model_value(tmp_pat
         settings=_settings(tmp_path),
         profile=None,
         new_docs=[{"path": a, "checksum": "c-a"}, {"path": b, "checksum": "c-b"}],
-        token_totals={"in": 0, "out": 0},
+        ledger=_TokenLedger(),
         on_event=lambda _: None,
         tracker=_ProgressTracker(),
     )
@@ -2408,7 +2410,7 @@ async def test_analyze_new_documents_batches_at_ten(tmp_path: Path) -> None:
         settings=_settings(tmp_path),
         profile=None,
         new_docs=docs,
-        token_totals={"in": 0, "out": 0},
+        ledger=_TokenLedger(),
         on_event=lambda _: None,
         tracker=_ProgressTracker(),
     )
@@ -2439,7 +2441,7 @@ async def test_analyze_new_documents_emits_progress_per_batch(tmp_path: Path) ->
         settings=_settings(tmp_path),
         profile=None,
         new_docs=docs,
-        token_totals={"in": 0, "out": 0},
+        ledger=_TokenLedger(),
         on_event=events.append,
         tracker=_ProgressTracker(),
     )
@@ -2467,7 +2469,7 @@ async def test_analyze_batch_reports_error_for_unmatched_tail(tmp_path: Path) ->
         settings=_settings(tmp_path),
         profile=None,
         new_docs=[{"path": a, "checksum": "c-a"}, {"path": b, "checksum": "c-b"}],
-        token_totals={"in": 0, "out": 0},
+        ledger=_TokenLedger(),
         on_event=lambda _: None,
         tracker=_ProgressTracker(),
     )
@@ -2495,7 +2497,7 @@ async def test_analyze_batch_retries_once_then_skips_on_failure(tmp_path: Path) 
         settings=_settings(tmp_path),
         profile=None,
         new_docs=[{"path": a, "checksum": "c-a"}],
-        token_totals={"in": 0, "out": 0},
+        ledger=_TokenLedger(),
         on_event=events.append,
         tracker=_ProgressTracker(),
     )
@@ -2520,7 +2522,7 @@ async def test_analyze_new_documents_accumulates_tokens(tmp_path: Path) -> None:
     )
     response.usage = SimpleNamespace(prompt_tokens=100, completion_tokens=20)
     llm = _llm(response)
-    totals = {"in": 0, "out": 0}
+    ledger = _TokenLedger()
 
     await _analyze_new_documents(
         session=session,
@@ -2528,12 +2530,49 @@ async def test_analyze_new_documents_accumulates_tokens(tmp_path: Path) -> None:
         settings=_settings(tmp_path),
         profile=None,
         new_docs=[{"path": a, "checksum": "c-a"}],
-        token_totals=totals,
+        ledger=ledger,
         on_event=lambda _: None,
         tracker=_ProgressTracker(),
     )
 
-    assert totals == {"in": 100, "out": 20}
+    assert ledger.totals == {"in": 100, "out": 20}
+
+
+async def test_analyze_new_documents_writes_one_log_line_per_batch(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    from host.tokenlog import all_entries
+
+    docs = [{"path": str(tmp_path / f"{i}.txt"), "checksum": f"c{i}"} for i in range(15)]
+    session = _analyzer_session(read_result={d["path"]: "content" for d in docs})
+    records_batch = [
+        {"title": f"T{i}", "type": "notes", "summary": "s", "provenance": "p"} for i in range(10)
+    ]
+    r1 = _submit_records_response(records_batch, call_id="tc1")
+    r1.usage = SimpleNamespace(prompt_tokens=100, completion_tokens=20)
+    r2 = _submit_records_response(records_batch[:5], call_id="tc2")
+    r2.usage = SimpleNamespace(prompt_tokens=60, completion_tokens=10)
+    llm = _llm(r1, r2)
+    log_path = tmp_path / ".organizer" / "tokens.jsonl"
+    ledger = _TokenLedger(log_path=log_path, model="gpt-5")
+
+    await _analyze_new_documents(
+        session=session,
+        llm=llm,
+        settings=_settings(tmp_path),
+        profile=None,
+        new_docs=docs,
+        ledger=ledger,
+        on_event=lambda _: None,
+        tracker=_ProgressTracker(),
+    )
+
+    entries = all_entries(log_path)
+    assert [e["phase"] for e in entries] == ["analyze", "analyze"]
+    assert [e["step"] for e in entries] == [0, 1]
+    assert [e["docs"] for e in entries] == [10, 5]
+    assert [e["in"] for e in entries] == [100, 60]
+    assert entries[-1]["total_in"] == 160
 
 
 async def test_analyze_new_documents_skips_llm_call_when_no_new_docs(tmp_path: Path) -> None:
@@ -2546,7 +2585,7 @@ async def test_analyze_new_documents_skips_llm_call_when_no_new_docs(tmp_path: P
         settings=_settings(tmp_path),
         profile=None,
         new_docs=[],
-        token_totals={"in": 0, "out": 0},
+        ledger=_TokenLedger(),
         on_event=lambda _: None,
         tracker=_ProgressTracker(),
     )

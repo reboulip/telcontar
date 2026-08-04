@@ -53,6 +53,12 @@ The reference below is for **advanced or developer use**: env vars and a project
 | `EGRESS_PATH` | no | `.organizer/egress.jsonl` | Append-only audit log: one entry (path, size in bytes, tool, timestamp) per `read_file`/`extract_text`/`compare_documents` call — and, per successful file, per `read_file_batch`/`extract_text_batch` call — recording what content was sent to the LLM endpoint. Not exposed as an MCP tool — open the file directly to audit a run. Relative to the target directory being organized (same rebasing as `JOURNAL_PATH`). S8 hardening — see [Security Model](../developer/security-model.md). |
 | `EGRESS_ALLOW_EXTERNAL_SINKS` | no | `false` | Allow non-local output sinks (e.g. a MediaWiki MCP integration). The built-in `local_markdown` sink is always allowed regardless of this flag. Set to `true` only when you have connected a separate MCP sink integration and want its name listed in the profile's `[sinks] default`. |
 
+### Token usage
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `TOKEN_LOG_PATH` | no | `.organizer/tokens.jsonl` | Append-only profiling log: one entry per LLM call (analyze/organize/query/estimate phases) recording input/output/cached token counts and running totals, for optimization analysis (R2). Always on — no flag to disable it. Not exposed as an MCP tool — open the file directly. Relative to the target directory being organized (same rebasing as `JOURNAL_PATH`). |
+
 ---
 
 ## Switching environments
@@ -92,6 +98,7 @@ Telcontar's memory is **per-directory**: each run's `.organizer/` state lives *i
 │   ├── events.jsonl    # Append-only project event journal (narrative log)
 │   ├── archive.jsonl   # Append-only archive log (why a document left active memory)
 │   ├── egress.jsonl    # Append-only audit log of content sent to the LLM endpoint
+│   ├── tokens.jsonl    # Append-only per-LLM-call token-usage profiling log
 │   ├── registry.json   # Document memory (sha256 → metadata)
 │   └── graph.json      # Knowledge graph (derived from registry + events; rebuilt on demand)
 └── _quarantine/         # Quarantined files (QUARANTINE_DIR)

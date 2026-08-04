@@ -10,6 +10,7 @@ import asyncio
 import json
 import os
 import sys
+import uuid
 from collections.abc import Awaitable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -21,6 +22,8 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 from openai import AsyncOpenAI
 
 from config.settings import Settings
+from host.tokenlog import TokenLogEntry
+from host.tokenlog import append as _append_token_log
 from server.plan import load as _load_plan
 from server.plan import save as _save_plan
 from server.profile import Profile, load_profile
@@ -971,7 +974,8 @@ async def _analyze_batch(
     settings: Settings,
     profile: Profile | None,
     batch: list[dict[str, str]],
-    token_totals: dict[str, int],
+    ledger: _TokenLedger,
+    batch_index: int,
     on_event: EventCallback,
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     """Analyze one batch (<=10 NEW docs) with a single isolated, forced-tool LLM
@@ -1006,6 +1010,7 @@ async def _analyze_batch(
     ]
 
     on_event(AgentEvent("thinking", f"Analyzing {len(batch)} document(s)…"))
+    est_in = len(json.dumps(messages, default=str)) // 4
     response: Any = None
     last_error: Exception | None = None
     for _attempt in range(2):  # one retry on a transient failure
@@ -1031,7 +1036,14 @@ async def _analyze_batch(
             for doc in batch
         ]
 
-    _accumulate_tokens(response, token_totals, on_event)
+    ledger.record(
+        response,
+        phase="analyze",
+        step=batch_index,
+        on_event=on_event,
+        docs=len(batch),
+        est_in=est_in,
+    )
 
     records: list[dict[str, Any]] = []
     for tool_call in response.choices[0].message.tool_calls or []:
@@ -1080,7 +1092,7 @@ async def _analyze_new_documents(
     settings: Settings,
     profile: Profile | None,
     new_docs: list[dict[str, str]],
-    token_totals: dict[str, int],
+    ledger: _TokenLedger,
     on_event: EventCallback,
     tracker: _ProgressTracker,
 ) -> dict[str, Any]:
@@ -1111,7 +1123,8 @@ async def _analyze_new_documents(
             settings=settings,
             profile=profile,
             batch=batch,
-            token_totals=token_totals,
+            ledger=ledger,
+            batch_index=i // _ANALYZER_BATCH_SIZE,
             on_event=on_event,
         )
         errors.extend(batch_errors)
@@ -1353,7 +1366,7 @@ async def run_agent_loop(
         openai_tools = [*openai_tools, _ASK_USER_TOOL_SPEC]
 
     tracker = _ProgressTracker()
-    token_totals = {"in": 0, "out": 0}
+    ledger = _TokenLedger.new(settings)
 
     if history is None:
         profile = _try_load_profile(project_root, settings)
@@ -1372,6 +1385,7 @@ async def run_agent_loop(
             _, estimated_tokens = _new_docs_cost_estimate(
                 prepass_result.new, prepass_result.sizes, settings.max_snippet_chars
             )
+            ledger.log_estimate(step=0, docs=len(prepass_result.new), est_in=estimated_tokens)
             proceed = await _handle_cost_approval(
                 doc_count=len(prepass_result.new),
                 already_analyzed=len(prepass_result.known),
@@ -1387,7 +1401,7 @@ async def run_agent_loop(
                     settings=settings,
                     profile=profile,
                     new_docs=prepass_result.new,
-                    token_totals=token_totals,
+                    ledger=ledger,
                     on_event=on_event,
                     tracker=tracker,
                 )
@@ -1419,6 +1433,7 @@ async def run_agent_loop(
     try:
         while turn < _analysis_turn_budget(tracker.counts()[1]):
             on_event(AgentEvent("thinking", "Calling LLM…"))
+            est_in = len(json.dumps(messages, default=str)) // 4
 
             response = await llm.chat.completions.create(
                 model=settings.llm_model,
@@ -1426,7 +1441,9 @@ async def run_agent_loop(
                 tools=openai_tools,  # type: ignore[arg-type]
                 tool_choice="auto",
             )
-            _accumulate_tokens(response, token_totals, on_event)
+            ledger.record(
+                response, phase="organize", step=turn, on_event=on_event, est_in=est_in
+            )
 
             choice = response.choices[0]
             messages.append(choice.message.model_dump(exclude_none=True))
@@ -1591,9 +1608,10 @@ async def run_query_loop(
     messages = history
     messages.append({"role": "user", "content": question})
 
-    token_totals = {"in": 0, "out": 0}
+    ledger = _TokenLedger.new(settings)
     for _turn in range(_MAX_TURNS):
         on_event(AgentEvent("thinking", "Calling LLM…"))
+        est_in = len(json.dumps(messages, default=str)) // 4
 
         response = await llm.chat.completions.create(
             model=settings.llm_model,
@@ -1601,7 +1619,7 @@ async def run_query_loop(
             tools=openai_tools,  # type: ignore[arg-type]
             tool_choice="auto",
         )
-        _accumulate_tokens(response, token_totals, on_event)
+        ledger.record(response, phase="query", step=_turn, on_event=on_event, est_in=est_in)
 
         choice = response.choices[0]
         messages.append(choice.message.model_dump(exclude_none=True))
@@ -1873,28 +1891,129 @@ def _fmt_tokens(n: int) -> str:
     return f"{n / 1_000_000:.1f}M".replace(".0M", "M")
 
 
-def _accumulate_tokens(response: Any, totals: dict[str, int], on_event: EventCallback) -> None:
-    """Add a response's token usage to the running totals and emit a `tokens` event.
+@dataclass
+class _TokenLedger:
+    """Tracks running token totals across a run's LLM calls, persisting a
+    per-call profiling-log entry to disk as it goes (R2, GH #27).
 
-    OpenAI-compatible responses carry ``usage.prompt_tokens`` / ``completion_tokens``;
-    a missing ``usage`` (some endpoints omit it) is silently skipped.
+    ``log_path``/``model`` are best read off a `Settings` instance via `new()`
+    rather than set directly — `Settings.token_log_path` may be a `MagicMock`
+    in tests that stub settings wholesale, so `new()` guards with an
+    `isinstance` check rather than assuming a real `Path`.
     """
-    usage = getattr(response, "usage", None)
-    if usage is None:
-        return
-    prompt = getattr(usage, "prompt_tokens", 0)
-    completion = getattr(usage, "completion_tokens", 0)
-    if not isinstance(prompt, int) or not isinstance(completion, int):
-        return  # endpoint omitted real counts (or a test double) — nothing to add
-    totals["in"] += prompt
-    totals["out"] += completion
-    on_event(
-        AgentEvent(
-            "tokens",
-            f"{_fmt_tokens(totals['in'])} in / {_fmt_tokens(totals['out'])} out",
-            data={"in": totals["in"], "out": totals["out"]},
+
+    log_path: Path | None = None
+    model: str = ""
+    run_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
+    calls: int = 0
+    totals: dict[str, int] = field(default_factory=lambda: {"in": 0, "out": 0})
+
+    @classmethod
+    def new(cls, settings: Settings) -> "_TokenLedger":
+        log_path = settings.token_log_path
+        model = settings.llm_model
+        return cls(
+            log_path=log_path if isinstance(log_path, Path) else None,
+            model=model if isinstance(model, str) else "",
         )
-    )
+
+    def record(
+        self,
+        response: Any,
+        *,
+        phase: str,
+        step: int,
+        on_event: EventCallback,
+        docs: int | None = None,
+        est_in: int | None = None,
+    ) -> None:
+        """Add a response's token usage to the running totals, append a
+        profiling-log entry, and emit a `tokens` event.
+
+        OpenAI-compatible responses carry ``usage.prompt_tokens`` /
+        ``completion_tokens``; a missing ``usage`` (some endpoints omit it) is
+        silently skipped — no entry, no event.
+        """
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return
+        prompt = getattr(usage, "prompt_tokens", 0)
+        completion = getattr(usage, "completion_tokens", 0)
+        if not isinstance(prompt, int) or not isinstance(completion, int):
+            return  # endpoint omitted real counts (or a test double) — nothing to add
+        cached = getattr(getattr(usage, "prompt_tokens_details", None), "cached_tokens", 0)
+        if not isinstance(cached, int):
+            cached = 0
+
+        self.calls += 1
+        # Single isolated policy line: how this call's `prompt` folds into the
+        # running "in" total. Today it's a straight sum (legacy behavior) —
+        # R1 [#27] may turn this into a per-phase replace policy once this
+        # log's own data confirms whether an endpoint reports a fresh
+        # per-call count or an already-cumulative one.
+        self.totals["in"] += prompt
+        self.totals["out"] += completion
+
+        if isinstance(self.log_path, Path):
+            entry = TokenLogEntry.new(
+                run_id=self.run_id,
+                phase=phase,
+                step=step,
+                call=self.calls,
+                model=self.model,
+                docs=docs,
+                in_=prompt,
+                cached_in=cached,
+                out=completion,
+                est_in=est_in,
+                total_in=self.totals["in"],
+                total_out=self.totals["out"],
+            )
+            try:
+                _append_token_log(self.log_path, entry)
+            except OSError:
+                pass
+
+        on_event(
+            AgentEvent(
+                "tokens",
+                f"{_fmt_tokens(self.totals['in'])} in / {_fmt_tokens(self.totals['out'])} out",
+                data={
+                    "in": self.totals["in"],
+                    "out": self.totals["out"],
+                    "cached_in": cached,
+                    "call_in": prompt,
+                    "call_out": completion,
+                },
+            )
+        )
+
+    def log_estimate(self, *, step: int, docs: int, est_in: int) -> None:
+        """Log the pre-analysis cost estimate as its own entry (phase=
+        "estimate"), so estimate-vs-actual is auditable from one file. No
+        `tokens` event — the existing `cost_estimate` event already covers
+        that observability point.
+        """
+        if not isinstance(self.log_path, Path):
+            return
+        entry = TokenLogEntry.new(
+            run_id=self.run_id,
+            phase="estimate",
+            step=step,
+            call=self.calls,
+            model=self.model,
+            docs=docs,
+            in_=0,
+            cached_in=0,
+            out=0,
+            est_in=est_in,
+            total_in=self.totals["in"],
+            total_out=self.totals["out"],
+        )
+        try:
+            _append_token_log(self.log_path, entry)
+        except OSError:
+            pass
 
 
 def _fmt_result(result: Any) -> str:

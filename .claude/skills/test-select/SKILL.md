@@ -67,7 +67,8 @@ Apply these rules in order (first match wins):
 | `host/agent.py` only | `tests/test_host.py tests/test_tools_outputs.py` |
 | `host/app.py` only | `tests/test_app_ui.py` |
 | `host/main.py` only | `tests/test_entrypoints.py` |
-| Any file in `host/` | `tests/test_host.py tests/test_tools_outputs.py tests/test_app_ui.py tests/test_entrypoints.py` |
+| `host/tokenlog.py` only | `tests/test_token_log.py` |
+| Any file in `host/` | `tests/test_host.py tests/test_tools_outputs.py tests/test_app_ui.py tests/test_entrypoints.py tests/test_token_log.py` |
 | Changes span `server/` + `host/` | Full suite |
 | Cross-cutting refactor or interface change | Full suite |
 | When in doubt | Full suite |

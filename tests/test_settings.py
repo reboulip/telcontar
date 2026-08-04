@@ -33,6 +33,7 @@ class TestForTarget:
         assert rebased.graph_path == target.resolve() / ".organizer" / "graph.json"
         assert rebased.archive_path == target.resolve() / ".organizer" / "archive.jsonl"
         assert rebased.egress_path == target.resolve() / ".organizer" / "egress.jsonl"
+        assert rebased.token_log_path == target.resolve() / ".organizer" / "tokens.jsonl"
 
     def test_absolute_paths_pass_through_unchanged(self, tmp_path: Path) -> None:
         target = tmp_path / "corpus"

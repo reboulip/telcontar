@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     archive_path: Path = Path(".organizer/archive.jsonl")
     # S8: audit trail of document content sent to the LLM endpoint
     egress_path: Path = Path(".organizer/egress.jsonl")
+    # R2: per-step token-usage profiling log (input/output tokens per LLM call)
+    token_log_path: Path = Path(".organizer/tokens.jsonl")
 
     # Egress / extraction
     max_snippet_chars: int = 4000
@@ -110,6 +112,7 @@ class Settings(BaseSettings):
                 "graph_path": _rebase(self.graph_path),
                 "archive_path": _rebase(self.archive_path),
                 "egress_path": _rebase(self.egress_path),
+                "token_log_path": _rebase(self.token_log_path),
             }
         )
 
