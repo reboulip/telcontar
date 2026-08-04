@@ -1451,9 +1451,7 @@ async def run_agent_loop(
                 tools=openai_tools,  # type: ignore[arg-type]
                 tool_choice="auto",
             )
-            ledger.record(
-                response, phase="organize", step=turn, on_event=on_event, est_in=est_in
-            )
+            ledger.record(response, phase="organize", step=turn, on_event=on_event, est_in=est_in)
 
             choice = response.choices[0]
             messages.append(choice.message.model_dump(exclude_none=True))
