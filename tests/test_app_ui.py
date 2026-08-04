@@ -398,6 +398,7 @@ async def test_organizer_screen_groups_tool_events_into_steps(
         history=None,
         message=None,
         message_queue=None,
+        ledger=None,
     ):
         on_event(AgentEvent("tool_call", "list_dir(path='.')"))
         on_event(AgentEvent("tool_result", "{'entries': []}"))
@@ -566,7 +567,7 @@ async def test_query_screen_routes_tool_events_to_timeline(
         yield None
 
     async def fake_run_query_loop(
-        *, question, settings, llm, session, on_event, history, project_root
+        *, question, settings, llm, session, on_event, history, project_root, ledger=None
     ):
         on_event(AgentEvent("tool_call", "list_documents()"))
         on_event(AgentEvent("tool_result", "[]"))
@@ -1123,6 +1124,7 @@ async def test_organizer_status_bar_shows_token_usage(
         history=None,
         message=None,
         message_queue=None,
+        ledger=None,
     ):
         on_event(AgentEvent("tokens", "12.3K in / 1.0K out", data={"in": 12300, "out": 1000}))
         on_event(AgentEvent("done", "done"))
@@ -1170,6 +1172,7 @@ async def test_organizer_progress_row_hidden_until_first_progress_event(
         history=None,
         message=None,
         message_queue=None,
+        ledger=None,
     ):
         return "done", []
 
@@ -1213,6 +1216,7 @@ async def test_organizer_progress_row_shows_and_updates_on_progress_event(
         history=None,
         message=None,
         message_queue=None,
+        ledger=None,
     ):
         on_event(
             AgentEvent("progress", "Analyzed 3 / 10 documents", data={"analyzed": 3, "total": 10})
@@ -1259,6 +1263,7 @@ async def test_organizer_progress_row_hides_on_done(
         history=None,
         message=None,
         message_queue=None,
+        ledger=None,
     ):
         on_event(
             AgentEvent("progress", "Analyzed 3 / 10 documents", data={"analyzed": 3, "total": 10})
@@ -1304,6 +1309,7 @@ async def test_organizer_progress_row_hides_on_error(
         history=None,
         message=None,
         message_queue=None,
+        ledger=None,
     ):
         on_event(
             AgentEvent("progress", "Analyzed 3 / 10 documents", data={"analyzed": 3, "total": 10})
@@ -1352,6 +1358,7 @@ async def test_organizer_narrates_macro_tasks_in_transcript(
         history=None,
         message=None,
         message_queue=None,
+        ledger=None,
     ):
         on_event(AgentEvent("tool_call", "read_file(path='a')", data={"tool": "read_file"}))
         # Same macro-task → must collapse to one narration turn.
@@ -1424,6 +1431,7 @@ async def test_organizer_narrates_new_propose_tools_as_planning_changes(
         history=None,
         message=None,
         message_queue=None,
+        ledger=None,
     ):
         for tool in new_propose_tools:
             on_event(AgentEvent("tool_call", f"{tool}(...)", data={"tool": tool}))

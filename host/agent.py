@@ -1299,6 +1299,7 @@ async def run_agent_loop(
     history: list[dict[str, Any]] | None = None,
     message: str | None = None,
     message_queue: "asyncio.Queue[str] | None" = None,
+    ledger: "_TokenLedger | None" = None,
 ) -> tuple[str, list[dict[str, Any]]]:
     """Run the GPT-5 tool-calling loop against an already-connected MCP session.
 
@@ -1352,6 +1353,14 @@ async def run_agent_loop(
     being picked up after it stops. This is independent of ``history``/
     ``message`` (O7's separate-invocation resume path for a run that already
     ended, where no live queue exists) — both can be used together or alone.
+
+    ``ledger`` (R1, GH #27): pass the same `_TokenLedger` across a run and its
+    follow-up continuations (O7) so the running token totals persist across
+    turns instead of silently resetting to zero on every call — the caller
+    (e.g. `OrganizerScreen`) constructs one `_TokenLedger.new(settings)` per
+    screen and threads it through every `run_agent_loop` call for that
+    screen's lifetime. When None (the default — tests, one-shot callers), a
+    fresh ledger is constructed for this call only.
     """
     if project_root is None:
         project_root = Path(__file__).resolve().parent.parent
@@ -1366,7 +1375,8 @@ async def run_agent_loop(
         openai_tools = [*openai_tools, _ASK_USER_TOOL_SPEC]
 
     tracker = _ProgressTracker()
-    ledger = _TokenLedger.new(settings)
+    if ledger is None:
+        ledger = _TokenLedger.new(settings)
 
     if history is None:
         profile = _try_load_profile(project_root, settings)
@@ -1587,6 +1597,7 @@ async def run_query_loop(
     on_event: EventCallback,
     history: list[dict[str, Any]] | None = None,
     project_root: Path | None = None,
+    ledger: "_TokenLedger | None" = None,
 ) -> tuple[str, list[dict[str, Any]]]:
     """Answer one NL question over the corpus using read-only tools only.
 
@@ -1594,6 +1605,11 @@ async def run_query_loop(
     a previous call back in to preserve multi-turn context. When None, a fresh
     history seeded with the query-mode system prompt is created. Returns the
     answer text and the updated history.
+
+    ``ledger`` (R1, GH #27): pass the same `_TokenLedger` across a chat's
+    questions so running token totals persist for the whole `QueryScreen`
+    session instead of resetting on every question. When None (the
+    default), a fresh ledger is constructed for this call only.
     """
     if project_root is None:
         project_root = Path(__file__).resolve().parent.parent
@@ -1608,7 +1624,8 @@ async def run_query_loop(
     messages = history
     messages.append({"role": "user", "content": question})
 
-    ledger = _TokenLedger.new(settings)
+    if ledger is None:
+        ledger = _TokenLedger.new(settings)
     for _turn in range(_MAX_TURNS):
         on_event(AgentEvent("thinking", "Calling LLM…"))
         est_in = len(json.dumps(messages, default=str)) // 4
@@ -1906,7 +1923,7 @@ class _TokenLedger:
     model: str = ""
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     calls: int = 0
-    totals: dict[str, int] = field(default_factory=lambda: {"in": 0, "out": 0})
+    totals: dict[str, int] = field(default_factory=lambda: {"in": 0, "out": 0, "cached_in": 0})
 
     @classmethod
     def new(cls, settings: Settings) -> "_TokenLedger":
@@ -1947,12 +1964,21 @@ class _TokenLedger:
 
         self.calls += 1
         # Single isolated policy line: how this call's `prompt` folds into the
-        # running "in" total. Today it's a straight sum (legacy behavior) —
-        # R1 [#27] may turn this into a per-phase replace policy once this
-        # log's own data confirms whether an endpoint reports a fresh
-        # per-call count or an already-cumulative one.
-        self.totals["in"] += prompt
+        # running "in" total (R1, GH #27). Confirmed against a real API
+        # journal: within one growing ORGANIZE/QUERY conversation, the
+        # endpoint's `usage.prompt_tokens` is already a cumulative
+        # session-wide total (the whole resent history so far), so summing it
+        # across turns compounds an already-cumulative number — replace
+        # instead. ANALYZE-phase batches are independent, throwaway
+        # conversations with no shared history between batches, so their
+        # (small, correct) prompt_tokens values are still genuinely additive
+        # across batches.
+        if phase == "analyze":
+            self.totals["in"] += prompt
+        else:
+            self.totals["in"] = prompt
         self.totals["out"] += completion
+        self.totals["cached_in"] += cached
 
         if isinstance(self.log_path, Path):
             entry = TokenLogEntry.new(
@@ -1977,11 +2003,14 @@ class _TokenLedger:
         on_event(
             AgentEvent(
                 "tokens",
-                f"{_fmt_tokens(self.totals['in'])} in / {_fmt_tokens(self.totals['out'])} out",
+                f"{_fmt_tokens(self.totals['in'])} in "
+                f"({_fmt_tokens(self.totals['cached_in'])} cached) / "
+                f"{_fmt_tokens(self.totals['out'])} out",
                 data={
                     "in": self.totals["in"],
                     "out": self.totals["out"],
                     "cached_in": cached,
+                    "total_cached_in": self.totals["cached_in"],
                     "call_in": prompt,
                     "call_out": completion,
                 },

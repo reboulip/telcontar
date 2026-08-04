@@ -363,7 +363,8 @@ class CostEstimateModal(ModalScreen[CostApprovalResult]):
                 id="cost-summary",
             )
             yield Label(
-                "[dim]A rough estimate from file sizes, not a real tokenization.[/dim]",
+                "[dim]A rough estimate from file sizes, not a real tokenization. "
+                "Covers analysis only — organizing the corpus afterward adds more.[/dim]",
                 id="cost-disclaimer",
                 markup=True,
             )
@@ -1431,7 +1432,7 @@ class OrganizerScreen(Screen):
 
     async def _agent_worker(self, instructions: str | None = None) -> None:
         from config.settings import load as load_settings
-        from host.agent import mcp_session, run_agent_loop
+        from host.agent import _TokenLedger, mcp_session, run_agent_loop
         from host.llm import make_client
 
         try:
@@ -1442,6 +1443,11 @@ class OrganizerScreen(Screen):
             return
 
         llm = make_client(settings)
+        # One ledger for the whole screen's lifetime (R1, GH #27) — threaded
+        # through every run_agent_loop call below, initial and follow-up
+        # alike, so the running token totals persist across chat turns
+        # instead of resetting on each call.
+        ledger = _TokenLedger.new(settings)
 
         def on_event(event: AgentEvent) -> None:
             match event.kind:
@@ -1564,6 +1570,7 @@ class OrganizerScreen(Screen):
                     project_root=project_root,
                     instructions=instructions,
                     message_queue=self._messages,
+                    ledger=ledger,
                 )
 
                 # A run_agent_loop call only returns once the agent has fully
@@ -1587,6 +1594,7 @@ class OrganizerScreen(Screen):
                         history=self._history,
                         message=message,
                         message_queue=self._messages,
+                        ledger=ledger,
                     )
         except Exception as exc:
             self._add_turn(
@@ -1712,17 +1720,25 @@ class QueryScreen(Screen):
 
     async def _query_worker(self) -> None:
         from config.settings import load as load_settings
-        from host.agent import mcp_session, run_query_loop
+        from host.agent import _TokenLedger, mcp_session, run_query_loop
         from host.llm import make_client
 
         try:
-            settings = load_settings()
+            # Rebased onto self._target (P2, per-directory memory) — mirrors
+            # OrganizerScreen._agent_worker. Previously unrebased (R1, GH #27),
+            # so query-mode paths (including the token log) resolved relative
+            # to the process CWD instead of the corpus's own `.organizer/`.
+            settings = load_settings().for_target(self._target)
         except Exception as exc:
             self._log(f"[bold red]Config error:[/bold red] {_fmt_exc(exc)}")
             self._set_status("Error — check settings")
             return
 
         llm = make_client(settings)
+        # One ledger for the whole chat session (R1, GH #27) — threaded
+        # through every question so running token totals persist instead of
+        # resetting per question.
+        ledger = _TokenLedger.new(settings)
 
         def on_event(event: AgentEvent) -> None:
             match event.kind:
@@ -1752,6 +1768,7 @@ class QueryScreen(Screen):
                         on_event=on_event,
                         history=history,
                         project_root=_PROJECT_ROOT,
+                        ledger=ledger,
                     )
                     self._log(f"[green]{answer}[/green]")
                     self._set_status("Ready — ask a question.")

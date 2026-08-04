@@ -81,6 +81,8 @@ After deterministic discovery finds the corpus's **new** (previously-unanalyzed)
 
 Because the estimate only ever covers new documents, re-running Organize on a folder that's mostly already analyzed shows a small estimate (or none at all — the gate is skipped entirely when there is nothing new to analyze), not a recalculation of the whole corpus. The estimate itself is a rough, local calculation from the file sizes discovery already found (no extraction and no LLM call needed to produce it), shown as e.g. "~42 new document(s) (10 already analyzed, skipped), ~18,500 input tokens estimated, batched in groups of 10 — proceed?".
 
+This estimate covers **analysis only** — the ANALYZE phase that reads and records the new documents. The chat-driven ORGANIZE phase that follows (planning, staging, and any follow-up chat turns) adds further LLM calls of its own, so the session's actual running token total — shown on the status bar once the run is underway — will end up noticeably higher than this upfront estimate. That running total is cumulative for the whole screen's session (Organize or Query), not just the latest call, and also breaks out how many of the input tokens were served from cache.
+
 ```
 Discovery finishes; N new (previously-unanalyzed) documents found
        │

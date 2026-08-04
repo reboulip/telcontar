@@ -1012,7 +1012,13 @@ def test_fmt_tokens_readable() -> None:
     assert _fmt_tokens(3_500_000) == "3.5M"
 
 
-async def test_tokens_events_accumulate_across_turns(tmp_path: Path) -> None:
+async def test_tokens_events_replace_in_sum_out_within_conversation(tmp_path: Path) -> None:
+    """R1, GH #27: within one growing ORGANIZE conversation, each call's
+    ``usage.prompt_tokens`` already reflects the whole resent history so
+    far (confirmed against a real API journal), so the running "in" total
+    replaces rather than sums turn over turn — unlike "out"
+    (completion_tokens), which is a fresh per-call value and keeps summing.
+    """
     from types import SimpleNamespace
 
     r1 = _tool_response("list_dir", {"path": "."})
@@ -1032,9 +1038,10 @@ async def test_tokens_events_accumulate_across_turns(tmp_path: Path) -> None:
 
     token_events = [e for e in events if e.kind == "tokens"]
     assert len(token_events) == 2
-    assert token_events[-1].data["in"] == 1500  # cumulative
-    assert token_events[-1].data["out"] == 300
-    assert "1.5K in" in token_events[-1].text
+    assert token_events[0].data["in"] == 1000
+    assert token_events[-1].data["in"] == 500  # replaced, not summed, with r2's value
+    assert token_events[-1].data["out"] == 300  # summed: 200 + 100
+    assert "500 in" in token_events[-1].text
     assert "300 out" in token_events[-1].text
 
 
@@ -2535,7 +2542,7 @@ async def test_analyze_new_documents_accumulates_tokens(tmp_path: Path) -> None:
         tracker=_ProgressTracker(),
     )
 
-    assert ledger.totals == {"in": 100, "out": 20}
+    assert ledger.totals == {"in": 100, "out": 20, "cached_in": 0}
 
 
 async def test_analyze_new_documents_writes_one_log_line_per_batch(tmp_path: Path) -> None:
