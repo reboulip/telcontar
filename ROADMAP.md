@@ -21,6 +21,34 @@ work.
 
 ---
 
+> #### ◆ Break 1 — resolved (Stage 0 spike, predates Phase 18)
+>
+> A throwaway spike (not in the repo) validated four assumptions behind the Phase 18-21
+> plan against a real corpus and a real LLM endpoint, before any of these phases were
+> implemented:
+>
+> 1. **Event delivery** — a synchronous `on_event` mutating elements directly, held
+>    inside `with client:` for the run's lifetime, kept pace with a real run without
+>    dropping events.
+> 2. **Awaited dialogs** — `await ui.dialog()` held open 20-30s+ without stalling the
+>    page or the engine's MCP session.
+> 3. **The one-queue idiom** — a chat message sent mid-run reached `message_queue` and
+>    was correctly labelled in the transcript.
+> 4. **Tab lifecycle — the one that changed the plan.** A bare reload does NOT kill or
+>    cleanly detach the background run; it silently orphans it instead (the run keeps
+>    calling tools/the LLM, but every UI element it touches -- including any future
+>    dialog -- targets the now-dead client, so an approval/cost gate hit after reload
+>    deadlocks forever with zero visible symptom).
+>
+> **Resolution:** direct element mutation from a background task, held inside `with
+> client:`, is the winning event-delivery pattern. The reload finding means a run
+> registry with real reconnect (keyed by run id, re-attaching a fresh page load to an
+> existing run's pending dialog) is REQUIRED from Phase 18's S4, not deferred -- this is
+> already folded into S4's item text below. Nothing else the spike touched contradicted
+> the plan.
+
+---
+
 ## Phase 18 — Web UI foundations
 
 - [x] S1 · Extract `host/format.py`, `host/paths.py`, `host/narration.py` from `host/app.py` — move the framework-independent formatters (`_fmt_journal_entry`, `_fmt_op`, `_render_target_layout`), path/discovery helpers (`_find_organizer_root`, `_resolve_journal_path`, `_resolve_plans_dir`, `_quarantine_basename`, `_directory_overview`, `_is_op_out_of_scope`, `_target_folders`/`_note_for`), and the `_TOOL_NARRATION` table + collapse rule into shared, UI-agnostic modules; `host/app.py` imports them from their new location. Zero behaviour change — first step of the Textual→NiceGUI migration, so both UIs can share one implementation.
@@ -29,6 +57,22 @@ work.
 - [ ] S4 · Add the NiceGUI web UI skeleton — `host/web/main.py`, `session.py`, `bridge.py`: `ui.run` on `127.0.0.1` with an ephemeral port, `show=True`, `reload=False`; a `RunSession` keyed by a run id (URL param or `app.storage`) so a page reload re-attaches to an existing run's pending dialog instead of silently orphaning it (validated via spike: an unreconnectable dialog can deadlock the approval gate with no visible symptom); the synchronous `AgentEvent` bridge and the three awaited callbacks (approval/cost/ask_user), driven against the registry's current client.
 - [ ] S5 · A single working organizer view in NiceGUI — transcript, status, chat input, approval dialog, cost dialog; deliberately plain, no styling pass yet. Move blocking synchronous I/O off the event loop where it currently runs inline: `_directory_overview` (full `os.walk`), `_load_profile_options` (glob + TOML parse), journal reads, and `server.tools.undo_last` (moves files on disk).
 - [ ] S6 · Wire `telcontar --web` into `host/main.py` (default stays the Textual TUI); add `nicegui` to `pyproject.toml`'s main dependencies.
+
+> #### ◆ Break 2 — now there's something real to react to
+>
+> This is the highest-value break in the plan: you'll have used the thing in a browser
+> for the first time, and design opinions become concrete rather than hypothetical.
+> Reflect on these before starting Phase 19 -- fold them into that phase's `/dev-pipeline`
+> Step 1.7 planning round rather than deciding them in isolation:
+>
+> - **Layout of the organizer screen.** Sidebar + transcript + chat is the TUI's shape.
+>   Is that right for the web, or does the run want a different frame? Bring 2-3
+>   sketches to this break.
+> - **Transcript form:** chat bubbles, or a log/timeline? The TUI's "internal steps"
+>   collapsible is a genuinely good idea -- keep, or replace with a filterable timeline?
+> - **Visual identity.** NiceGUI ships Quasar's look. Accept it, or establish a small
+>   palette and type treatment of your own?
+> - Does anything from Phase 18 suggest reordering the Phase 19 parity work?
 
 ---
 
@@ -47,6 +91,16 @@ work.
 - [ ] T9 · Replace the Textual Pilot test suite (`tests/test_app_ui.py`, 67 tests) with NiceGUI's headless `user` fixture, reserving the real-browser `screen` fixture for a handful of genuine end-to-end paths; delete the 5 tests that are thin wrappers over `_fmt_op`/`_render_target_layout` now that S2 covers that logic directly.
 - [ ] T10 · Flip the default: `telcontar` opens the web UI, `telcontar --tui` becomes the Textual escape hatch. Update README + docs.
 
+> #### ◆ Break 3 — choose where the UX budget goes
+>
+> The app is now fully usable in a browser. This is the moment to decide what's actually
+> worth building, with real usage behind the opinion -- fold this into Phase 20's
+> `/dev-pipeline` Step 1.7 planning round. The candidate table already lives below as
+> U3-U9 (`[deferred]` until chosen); pick 3-4 of them here. Also decide whether the
+> corpus browser (U5) and knowledge-graph view (U6) deserve their own phase entirely --
+> they're arguably new features rather than UI work, not just a redesign of an existing
+> screen.
+
 ---
 
 ## Phase 20 — Experience & delivery
@@ -62,6 +116,18 @@ work.
 - [ ] U7 · [deferred] Live-updating file tree — watch the reorganization happen as ops execute.
 - [ ] U8 · [deferred] Per-document progress — replace the single progress bar with "which document, right now".
 - [ ] U9 · [deferred] Query answers with citations — link answers back to the documents they came from.
+
+> #### ◆ Break 4 — the retirement decision
+>
+> Fold this into Phase 21's `/dev-pipeline` Step 1.7 planning round -- Phase 21 only
+> proceeds if this break says so:
+>
+> - Has the web UI earned enough trust to delete the TUI? There is no rush; carrying it
+>   costs almost nothing now that the shared helpers are extracted (Phase 18 S1).
+> - Is there a real headless/SSH use case worth keeping the TUI permanently for? (If
+>   yes, Phase 21 is cancelled, and the answer is "both, forever" -- a legitimate
+>   outcome, not a failure.)
+> - Any parity gap that only showed up in daily use?
 
 ---
 
