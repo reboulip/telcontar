@@ -116,6 +116,37 @@ def _patch_run_agent_loop(monkeypatch: pytest.MonkeyPatch, fake_run_agent_loop) 
     monkeypatch.setattr("host.agent.run_agent_loop", fake_run_agent_loop)
 
 
+def test_host_app_alias_imports_still_resolve() -> None:
+    """host/app.py re-imports helpers moved to host/format.py and host/paths.py
+    as module-level aliases (Phase 18 S1). This guards that seam directly —
+    monkeypatch.setattr("host.app._resolve_journal_path", ...) elsewhere in this
+    file relies on it resolving to a real, patchable module attribute."""
+    from host.app import (
+        _directory_overview,
+        _find_organizer_root,
+        _fmt_exc,
+        _fmt_journal_entry,
+        _fmt_op,
+        _render_target_layout,
+        _resolve_journal_path,
+        _resolve_plans_dir,
+    )
+
+    assert all(
+        callable(fn)
+        for fn in (
+            _directory_overview,
+            _find_organizer_root,
+            _fmt_exc,
+            _fmt_journal_entry,
+            _fmt_op,
+            _render_target_layout,
+            _resolve_journal_path,
+            _resolve_plans_dir,
+        )
+    )
+
+
 async def test_setup_wizard_welcome_step_wraps_instead_of_truncating(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -479,33 +510,6 @@ async def test_startup_screen_escape_quits(monkeypatch: pytest.MonkeyPatch, tmp_
 # ── P2: per-directory memory — Query mode target resolution ───────────────────
 
 
-def test_find_organizer_root_finds_organizer_at_start(tmp_path: Path) -> None:
-    from host.app import _find_organizer_root
-
-    (tmp_path / ".organizer").mkdir()
-
-    assert _find_organizer_root(tmp_path) == tmp_path.resolve()
-
-
-def test_find_organizer_root_walks_up_to_parent(tmp_path: Path) -> None:
-    from host.app import _find_organizer_root
-
-    (tmp_path / ".organizer").mkdir()
-    sub = tmp_path / "docs" / "2024"
-    sub.mkdir(parents=True)
-
-    assert _find_organizer_root(sub) == tmp_path.resolve()
-
-
-def test_find_organizer_root_returns_none_when_absent(tmp_path: Path) -> None:
-    from host.app import _find_organizer_root
-
-    sub = tmp_path / "docs"
-    sub.mkdir()
-
-    assert _find_organizer_root(sub) is None
-
-
 async def test_query_button_shows_error_when_no_organizer_found(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -743,27 +747,6 @@ async def test_approval_modal_without_folder_notes_has_no_disclaimer(tmp_path: P
 # ── M3: update_file collision-safety surfaced in the approval modal ──────────
 
 
-def test_fmt_op_update_file_without_overwrite_has_no_flag() -> None:
-    from host.app import _fmt_op
-
-    op = {"op_type": "update_file", "src": "/a/notes.md", "dst": "", "params": {"content": "x"}}
-    assert _fmt_op(op) == "UPDATE   notes.md"
-
-
-def test_fmt_op_update_file_with_overwrite_shows_subtle_flag() -> None:
-    from host.app import _fmt_op
-
-    op = {
-        "op_type": "update_file",
-        "src": "/a/notes.md",
-        "dst": "",
-        "params": {"content": "x", "overwrite": True},
-    }
-    formatted = _fmt_op(op)
-    assert "notes.md" in formatted
-    assert "overwrite" in formatted
-
-
 async def test_approval_modal_shows_update_file_overwrite_flag(tmp_path: Path) -> None:
     from textual.widgets import Checkbox
 
@@ -790,31 +773,6 @@ async def test_approval_modal_shows_update_file_overwrite_flag(tmp_path: Path) -
 
 
 # ── M4: discreet out-of-scope indicator in the approval modal ────────────────
-
-
-def test_fmt_op_in_scope_has_no_indicator(tmp_path: Path) -> None:
-    from host.app import _fmt_op
-
-    op = {"op_type": "move", "src": str(tmp_path / "doc.pdf"), "dst": "/sorted", "op_id": "o1"}
-    assert _fmt_op(op, tmp_path) == "MOVE     doc.pdf  →  /sorted"
-
-
-def test_fmt_op_out_of_scope_shows_subtle_indicator(tmp_path: Path) -> None:
-    from host.app import _fmt_op
-
-    target = tmp_path / "target"
-    outside = tmp_path / "elsewhere" / "secret.env"
-    op = {"op_type": "rename", "src": str(outside), "dst": "renamed.env", "op_id": "o1"}
-    formatted = _fmt_op(op, target)
-    assert "secret.env" in formatted
-    assert "outside target" in formatted
-
-
-def test_fmt_op_no_target_has_no_indicator() -> None:
-    from host.app import _fmt_op
-
-    op = {"op_type": "rename", "src": "/anywhere/doc.pdf", "dst": "new.pdf", "op_id": "o1"}
-    assert "outside target" not in _fmt_op(op, None)
 
 
 async def test_approval_modal_flags_out_of_scope_op(tmp_path: Path) -> None:
@@ -863,32 +821,6 @@ async def test_approval_modal_does_not_flag_in_scope_op(tmp_path: Path) -> None:
 
 
 # ── L5: plan target-layout preview ────────────────────────────────────────────
-
-
-def test_render_target_layout_builds_tree_with_notes() -> None:
-    from host.app import _render_target_layout
-
-    ops = [
-        {"op_type": "move", "src": "/in/a.pdf", "dst": "/t/01_decisions", "op_id": "o1"},
-        {"op_type": "move", "src": "/in/b.pdf", "dst": "/t/02_copil", "op_id": "o2"},
-        {"op_type": "quarantine", "src": "/in/c.pdf", "dst": "/t/_quarantine/c.pdf", "op_id": "o3"},
-    ]
-    notes = {"01_decisions": "Formal decision records", "_quarantine": "Duplicates"}
-    text = "\n".join(_render_target_layout(ops, notes))
-    assert "01_decisions/" in text
-    assert "Formal decision records" in text
-    assert "_quarantine/" in text
-    assert "Duplicates" in text
-    # A target folder without a note still appears in the tree (bare node).
-    assert "02_copil/" in text
-
-
-def test_render_target_layout_empty_without_folder_ops() -> None:
-    from host.app import _render_target_layout
-
-    # Rename-only plans move nothing into a folder, so there's no target tree.
-    ops = [{"op_type": "rename", "src": "/in/a.pdf", "dst": "a_clean.pdf", "op_id": "o1"}]
-    assert _render_target_layout(ops, {}) == []
 
 
 async def test_approval_modal_shows_target_layout(tmp_path: Path) -> None:

@@ -68,7 +68,8 @@ Apply these rules in order (first match wins):
 | `host/app.py` only | `tests/test_app_ui.py` |
 | `host/main.py` only | `tests/test_entrypoints.py` |
 | `host/tokenlog.py` only | `tests/test_token_log.py` |
-| Any file in `host/` | `tests/test_host.py tests/test_tools_outputs.py tests/test_app_ui.py tests/test_entrypoints.py tests/test_token_log.py` |
+| `host/format.py`, `host/paths.py`, or `host/narration.py` only | `tests/test_host_format.py tests/test_host_paths.py tests/test_app_ui.py` |
+| Any file in `host/` | `tests/test_host.py tests/test_tools_outputs.py tests/test_app_ui.py tests/test_entrypoints.py tests/test_token_log.py tests/test_host_format.py tests/test_host_paths.py` |
 | Changes span `server/` + `host/` | Full suite |
 | Cross-cutting refactor or interface change | Full suite |
 | When in doubt | Full suite |
