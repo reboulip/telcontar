@@ -23,17 +23,17 @@ import socket
 from dataclasses import dataclass
 from pathlib import Path
 
-from nicegui import app, ui
+from nicegui import app, run, ui
 
 from host.agent import ApprovalResult, CostApprovalResult
 from host.format import fmt_op
+from host.paths import directory_overview
 from host.web import session as web_session
 from host.web.bridge import AgentBridge
 
 # Set by run_web() before ui.run() starts; read by the landing page so a
 # `telcontar --web --target DIR` launch skips straight to a run instead of
-# showing the picker. None means "show the picker" (S5 replaces the bare
-# text input below with a full server-side directory browser).
+# showing the directory browser. None means "show the browser".
 _default_target: Path | None = None
 
 
@@ -47,38 +47,67 @@ class _RenderState:
 
 
 def _start_run(target: Path) -> web_session.RunSession:
-    session = web_session.create(target)
-    AgentBridge(session).start()
-    return session
+    return web_session.create(target)
+
+
+def _list_subdirs(path: Path) -> list[Path]:
+    """Blocking directory listing — always called via run.io_bound (S5's
+    blocking-I/O rule: this stalls the whole server, not just one tab, unlike
+    the TUI where a blocking call only stalled one terminal)."""
+    try:
+        return sorted(
+            (p for p in path.iterdir() if p.is_dir() and not p.name.startswith(".")),
+            key=lambda p: p.name.lower(),
+        )
+    except OSError:
+        return []
 
 
 @ui.page("/")
-def index_page() -> None:
+async def index_page() -> None:
+    from config.settings import is_configured
+
+    if not is_configured():
+        ui.label("telcontar isn't configured yet").classes("text-h5")
+        ui.label(
+            "Run `telcontar` once (the Textual TUI) to complete first-time setup, "
+            "then reload this page."
+        )
+        return
+
     if _default_target is not None:
         session = _start_run(_default_target)
         ui.navigate.to(f"/run/{session.run_id}")
         return
 
     ui.label("telcontar").classes("text-h5")
-    target_input = ui.input("Directory to organize").classes("w-96")
+    ui.label("Pick a directory to organize:")
+    current = Path.home()
+    path_label = ui.label(str(current)).classes("font-mono text-sm")
+    listing_column = ui.column().classes("w-full max-h-96 overflow-auto")
 
-    def _submit() -> None:
-        raw = target_input.value.strip()
-        if not raw:
-            ui.notify("Enter a directory path", color="negative")
-            return
-        target = Path(raw)
-        if not target.is_dir():
-            ui.notify(f"Not a directory: {target}", color="negative")
-            return
-        session = _start_run(target)
+    async def _show(path: Path) -> None:
+        nonlocal current
+        current = path
+        path_label.set_text(str(current))
+        entries = await run.io_bound(_list_subdirs, current) or []
+        listing_column.clear()
+        with listing_column:
+            if current.parent != current:
+                ui.button("⬆ ..", on_click=lambda: _show(current.parent)).props("flat align=left")
+            for entry in entries:
+                ui.button(entry.name, on_click=lambda p=entry: _show(p)).props("flat align=left")
+
+    def _select() -> None:
+        session = _start_run(current)
         ui.navigate.to(f"/run/{session.run_id}")
 
-    ui.button("Start organizing", on_click=_submit)
+    ui.button("Use this directory", on_click=_select, color="primary").classes("mt-2")
+    await _show(current)
 
 
 @ui.page("/run/{run_id}")
-def run_page(run_id: str) -> None:
+async def run_page(run_id: str) -> None:
     session = web_session.get(run_id)
     if session is None:
         ui.label(
@@ -86,23 +115,48 @@ def run_page(run_id: str) -> None:
         ).classes("text-negative")
         return
 
-    transcript_column = ui.column().classes("w-full")
-    status_label = ui.label()
-    progress_bar = ui.linear_progress(value=0.0)
-    progress_bar.visible = False
-    with ui.row().classes("w-full items-center"):
-        chat_input = ui.input("Chat anytime…").classes("flex-grow")
+    starter_column = ui.column().classes("w-full")
+    main_column = ui.column().classes("w-full")
+    starter_column.visible = not session.started
+    main_column.visible = session.started
 
-        def _send() -> None:
-            text = chat_input.value.strip()
-            if not text:
-                return
-            chat_input.value = ""
-            session.add_turn("user", text)
-            session.messages.put_nowait(text)
+    with starter_column:
+        ui.label("Here's what I found").classes("text-h6")
+        overview_label = ui.label("Scanning…").classes("whitespace-pre font-mono text-sm")
+        instructions_input = ui.input(
+            "Steering instructions (optional) — e.g. "
+            '"group by workstream", "don\'t quarantine drafts"'
+        ).classes("w-full")
 
-        chat_input.on("keydown.enter", lambda _: _send())
-        ui.button("Send", on_click=_send)
+        def _start() -> None:
+            text = instructions_input.value.strip()
+            AgentBridge(session).start(instructions=text or None)
+            starter_column.visible = False
+            main_column.visible = True
+
+        ui.button("Start organizing", on_click=_start, color="primary")
+
+    if not session.started:
+        overview_label.set_text(await run.io_bound(directory_overview, session.target) or "")
+
+    with main_column:
+        transcript_column = ui.column().classes("w-full")
+        status_label = ui.label()
+        progress_bar = ui.linear_progress(value=0.0)
+        progress_bar.visible = False
+        with ui.row().classes("w-full items-center"):
+            chat_input = ui.input("Chat anytime…").classes("flex-grow")
+
+            def _send() -> None:
+                text = chat_input.value.strip()
+                if not text:
+                    return
+                chat_input.value = ""
+                session.add_turn("user", text)
+                session.messages.put_nowait(text)
+
+            chat_input.on("keydown.enter", lambda _: _send())
+            ui.button("Send", on_click=_send)
 
     render_state = _RenderState()
 
@@ -184,6 +238,9 @@ def run_page(run_id: str) -> None:
 
         _show_pending_dialog()
         chat_input.enabled = session.started
+        if session.started:
+            starter_column.visible = False
+            main_column.visible = True
 
     ui.timer(0.5, _refresh)
 

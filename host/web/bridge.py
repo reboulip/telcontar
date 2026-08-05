@@ -113,19 +113,21 @@ class AgentBridge:
         session.add_turn("user", reply)
         return AskUserResult(reply=reply, provided=True)
 
-    def start(self) -> asyncio.Task:
+    def start(self, instructions: str | None = None) -> asyncio.Task:
         """Kick off the run as a detached task owned by the RunSession, not by
         any NiceGUI client — the task must keep running across a page
         reload/close, per the reconnect design."""
         self.session.started = True
-        task = asyncio.create_task(self.run())
+        task = asyncio.create_task(self.run(instructions))
         self.session.task = task
         return task
 
-    async def run(self) -> None:
+    async def run(self, instructions: str | None = None) -> None:
         """Drive one full organize run against self.session: settings load
         through the run_agent_loop continuation loop. A near-verbatim port of
-        OrganizerScreen._agent_worker onto a plain asyncio.Task."""
+        OrganizerScreen._agent_worker onto a plain asyncio.Task. ``instructions``
+        is the user's optional pre-analysis steering text (L3), only meaningful
+        on the first call."""
         from config.settings import load as load_settings
         from host.agent import _TokenLedger, mcp_session, run_agent_loop
         from host.llm import make_client
@@ -159,6 +161,7 @@ class AgentBridge:
                     on_ask_user_needed=self.on_ask_user_needed,
                     on_cost_approval_needed=self.on_cost_approval_needed,
                     project_root=project_root,
+                    instructions=instructions,
                     message_queue=session.messages,
                     ledger=ledger,
                 )

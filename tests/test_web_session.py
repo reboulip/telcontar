@@ -284,6 +284,57 @@ async def test_run_threads_same_ledger_and_queue_across_continuation(
         await task
 
 
+async def test_start_passes_instructions_only_on_first_call(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """S5: the starter pane's steering-instructions box must reach the first
+    run_agent_loop call (L3) but never a continuation — same contract as the
+    TUI's OrganizerScreen._agent_worker(instructions=...)."""
+    from contextlib import asynccontextmanager
+
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+
+    @asynccontextmanager
+    async def fake_mcp_session(
+        project_root: Path, target: Path | None = None
+    ) -> AsyncIterator[object]:
+        yield object()
+
+    monkeypatch.setattr("host.agent.mcp_session", fake_mcp_session)
+
+    seen_instructions: list[object] = []
+
+    async def fake_run_agent_loop(**kwargs: object) -> tuple[str, list]:
+        seen_instructions.append(kwargs.get("instructions"))
+        on_event = kwargs["on_event"]
+        if kwargs.get("history") is None:
+            on_event(AgentEvent("done", "first"))  # type: ignore[operator]
+            return "first", [{"role": "assistant"}]
+        on_event(AgentEvent("done", "second"))  # type: ignore[operator]
+        return "second", [*kwargs["history"], {"role": "assistant"}]  # type: ignore[misc]
+
+    monkeypatch.setattr("host.agent.run_agent_loop", fake_run_agent_loop)
+
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = AgentBridge(session)
+    task = bridge.start(instructions="group by workstream")
+
+    await asyncio.sleep(0.05)
+    session.messages.put_nowait("follow up")
+    await asyncio.sleep(0.05)
+
+    assert seen_instructions == ["group by workstream", None]
+
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
 async def test_run_reports_config_error_without_raising(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

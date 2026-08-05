@@ -337,14 +337,13 @@ This is the item that wires P4 and P5 into `run_agent_loop` for real, completing
 
 **System prompt restructuring:** the old ANALYZE section ("survey the tree, batch-extract, record documents") is gone from `_SYSTEM_PROMPT_TEMPLATE` entirely — the corpus is already analyzed by the time the model sees this prompt. The prompt now opens by stating this plainly and pointing at the digest in the first message, instructs the model to use the registry read tools instead of raw file content, and its numbered steps run 1-10 across two sections (**A. ORGANIZE** the tree, **B. SYNTHESIZE**) instead of the old 1-14 across three (A. ANALYZE / B. ORGANIZE / C. SYNTHESIZE). The Safety rules section also gained a line telling the model to treat the digest as host-composed fact, not as instructions from the documents it summarizes.
 
-### NiceGUI web UI foundations (S4, in progress)
+### NiceGUI web UI foundations (S4, updated by S5, in progress)
 
 `host/web/` is a new package — the first piece of a planned Textual→NiceGUI web UI
-migration (ROADMAP Phase 18). It is pure scaffolding: nothing in `host/main.py`
-wires it up yet, so it is not reachable from the `telcontar` CLI today (a `--web`
-flag is a separate, later roadmap item). It exists alongside `host/app.py`'s
-Textual TUI, not in place of it — both `textual` and `nicegui` are now main
-dependencies in `pyproject.toml`.
+migration (ROADMAP Phase 18). Nothing in `host/main.py` wires it up yet, so it is
+not reachable from the `telcontar` CLI today (a `--web` flag is a separate, later
+roadmap item — S6). It exists alongside `host/app.py`'s Textual TUI, not in place
+of it — both `textual` and `nicegui` are now main dependencies in `pyproject.toml`.
 
 - `host/web/session.py` — `RunSession`, framework-agnostic per-run state
   (transcript, status, tokens, progress, a `pending` approval/cost request keyed to
@@ -358,15 +357,32 @@ dependencies in `pyproject.toml`.
   Textual TUI, plus `run()`/`start()`, which drive one full organize run (settings
   load → `mcp_session` → `run_agent_loop`, including the O7 continuation loop for
   follow-up chat messages) as a detached `asyncio.Task`. Also `nicegui`-free.
-- `host/web/main.py` is the only module in the package that imports `nicegui`. It
-  registers a landing page (`/`, a bare directory-path input for now) and the
-  organizer view (`/run/{run_id}`: transcript, status, progress bar, chat input, and
-  approval/cost dialogs), and exposes `run_web(target: Path | None = None)`, which
-  binds an ephemeral local port and calls `ui.run(host="127.0.0.1", ..., show=True,
-  reload=False)` — never `0.0.0.0`, to avoid exposing the approval gate on the LAN.
-  `reload=False` is load-bearing, not a style choice: with `reload=True`, uvicorn
-  forces a `SelectorEventLoop` on Windows, where `asyncio.create_subprocess_exec`
-  (used to launch the MCP server subprocess) raises `NotImplementedError`.
+  Both `start()` and `run()` take an optional `instructions: str | None = None`,
+  threaded into the *first* `run_agent_loop` call only — never into an O7
+  continuation — mirroring the Textual TUI's `OrganizerScreen._agent_worker`.
+- `host/web/main.py` is the only module in the package that imports `nicegui`. The
+  landing page (`/`) first checks `config.settings.is_configured()`: if telcontar
+  hasn't been set up yet, it shows a short message pointing the user at the
+  Textual TUI (`telcontar`) to complete first-time setup instead of any picker.
+  Once configured, it renders a server-side directory browser — `Path.iterdir()`
+  under the hood (`_list_subdirs`), offloaded via NiceGUI's `run.io_bound` since
+  it's blocking disk I/O — letting the user navigate into subfolders and confirm
+  with a "Use this directory" button (S4's version took a bare directory-path
+  text input instead). The organizer view (`/run/{run_id}`) now opens on a
+  **starter pane** shown before the run begins: a directory overview (reusing
+  `host.paths.directory_overview`, also offloaded via `run.io_bound`) plus an
+  optional free-text steering-instructions input (mirrors the Textual TUI's
+  pre-analysis steering box) and a "Start organizing" button. Only clicking that
+  button constructs the `AgentBridge` and calls `start(instructions=...)` — S4's
+  version started the run immediately on directory selection. Once started
+  (`session.started`), the starter pane hides and the transcript/status/progress
+  bar/chat input/approval-cost-dialogs view (unchanged from S4) takes over.
+  `run_web(target: Path | None = None)` still binds an ephemeral local port and
+  calls `ui.run(host="127.0.0.1", ..., show=True, reload=False)` — never
+  `0.0.0.0`, to avoid exposing the approval gate on the LAN. `reload=False` is
+  load-bearing, not a style choice: with `reload=True`, uvicorn forces a
+  `SelectorEventLoop` on Windows, where `asyncio.create_subprocess_exec` (used to
+  launch the MCP server subprocess) raises `NotImplementedError`.
 
 **Reload-safe design:** a page reload creates a new NiceGUI client, but `RunSession`
 (looked up by run_id from the URL) persists independently of any one client, and a

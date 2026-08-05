@@ -367,12 +367,15 @@ polls and mutates this data rather than deciding how it's drawn.
 the same callback contract `host.app.OrganizerScreen` uses:
 `on_event`/`on_approval_needed`/`on_cost_approval_needed`/`on_ask_user_needed` (the
 last awaits the next message on `session.messages`, mirroring P8's live-chat
-`ask_user` checkpoint). `start()` launches `run()` as a detached `asyncio.Task`
-owned by the `RunSession` (not by any one NiceGUI client); `run()` is a
-near-verbatim port of `OrganizerScreen._agent_worker` onto a plain `asyncio.Task` —
-loads settings, opens `mcp_session`, calls `run_agent_loop`, then loops on
-`session.messages.get()` for O7-style follow-up continuations, threading one
-`_TokenLedger` across all of them.
+`ask_user` checkpoint). `start(instructions: str | None = None)` launches
+`run(instructions)` as a detached `asyncio.Task` owned by the `RunSession` (not by
+any one NiceGUI client); `run()` is a near-verbatim port of
+`OrganizerScreen._agent_worker` onto a plain `asyncio.Task` — loads settings, opens
+`mcp_session`, calls `run_agent_loop`, then loops on `session.messages.get()` for
+O7-style follow-up continuations, threading one `_TokenLedger` across all of them.
+`instructions` (S5) is the starter pane's optional steering text; it is passed
+only to the first `run_agent_loop` call, never to a continuation, matching
+`host/app.py`'s `_agent_worker(instructions=...)` contract.
 
 **`host/web/main.py`** — the only module in the package importing `nicegui`. Pages
 are registered at import time (`@ui.page("/")`, `@ui.page("/run/{run_id}")`) but
@@ -381,8 +384,36 @@ importing the module is side-effect-free. Each connected browser tab polls
 `RunSession`/`TranscriptItem` state with its own `ui.timer`, rather than the bridge
 touching NiceGUI elements directly — this is what lets a page reload re-attach to
 an in-flight approval/cost dialog (via `session.pending`) instead of orphaning it.
+
+The landing page (`/`, S5) checks `config.settings.is_configured()` first: if
+unconfigured, it shows a plain message directing the user to run the Textual TUI
+(`telcontar`) once to complete first-time setup, rather than any picker. Once
+configured, it renders a server-side directory browser (`_list_subdirs`, a
+`Path.iterdir()` walk filtering to subdirectories and dropping dotfiles) letting
+the user navigate into subfolders and confirm with "Use this directory" — replacing
+S4's bare directory-path text input. `_list_subdirs` is blocking disk I/O, so every
+call goes through NiceGUI's `run.io_bound`, per S5's rule that a page handler must
+never block the shared event loop (a stall here freezes every connected tab, not
+just one, unlike the Textual TUI where a blocking call only stalled one terminal).
+
+The run page (`/run/{run_id}`, S5) opens on a starter pane — hidden once
+`session.started` — showing a directory overview (`host.paths.directory_overview`,
+also dispatched via `run.io_bound`) and an optional free-text steering-instructions
+input mirroring the Textual TUI's pre-analysis steering box. Only its
+"Start organizing" button constructs `AgentBridge(session)` and calls
+`start(instructions=...)`, which is what actually launches the agent task; S4's
+version began the run as soon as a directory was picked. Once `session.started`
+flips, the starter pane hides and the transcript/status/progress-bar/chat-input/
+approval-cost-dialog view built in S4 takes over unchanged.
+
 `_pick_port()` binds an ephemeral `127.0.0.1` port. `run_web` calls
 `ui.run(host="127.0.0.1", port=port, show=True, reload=False)` — `reload=False` is
 required, not stylistic: `reload=True` forces uvicorn onto a `SelectorEventLoop` on
 Windows, where `asyncio.create_subprocess_exec` (the MCP server subprocess launch)
 raises `NotImplementedError`.
+
+Note: the ROADMAP text for S5 also names `_load_profile_options`, journal reads,
+and `server.tools.undo_last` as blocking calls to move off the event loop, but none
+have a call site in this view yet — there is no profile selector, journal panel, or
+Undo button here (that UI is deferred to Phase 19, item T6). Only the directory
+listing and `directory_overview` needed, and got, `run.io_bound` treatment so far.
