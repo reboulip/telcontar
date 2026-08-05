@@ -341,3 +341,48 @@ The MCP host package. Drives the agent loop and presents the Textual TUI.
 **Key function:** `make_client(settings) -> AsyncOpenAI` — creates an `AsyncOpenAI` instance pointed at `settings.llm_base_url`. For Azure, it also injects `default_query={"api-version": ...}` so the Azure API version parameter is sent on every request.
 
 **Design note:** No provider-specific code is needed for most endpoints — only Azure requires the extra `api-version` query parameter; any other OpenAI-compatible provider (Mammouth, OpenAI, etc.) works with just the `base_url` and `api_key` overrides.
+
+---
+
+### `host/web/` (in progress — Phase 18, not yet wired into the CLI)
+
+**Role:** New NiceGUI-based web UI package — the first piece of a planned
+Textual→NiceGUI migration. No `--web` CLI flag exists yet (`host/main.py` does not
+import this package), so nothing here is reachable by an end user today.
+
+**`host/web/session.py`** — framework-agnostic per-run state, no `nicegui` import.
+Key types: `RunSession` (`run_id`, `target`, `transcript`, `status`, `tokens`,
+`progress`, `pending: PendingRequest | None`, `messages: asyncio.Queue`,
+`history: list[dict] | None`, `narrator`, `task`), `TranscriptItem`
+(`seq`/`kind`/`speaker`/`text`/`lines`), `PendingRequest`
+(`request_id`/`kind`/`payload`/`future: asyncio.Future`). `RunSession.add_turn`/
+`append_step` mirror `OrganizerScreen`'s `_add_turn`/`_append_step` grouping logic;
+`new_pending`/`resolve_pending` manage the one in-flight approval/cost request per
+session. Module-level registry `create(target) -> RunSession` / `get(run_id)` /
+`close(run_id)` / `all_sessions()`, keyed by a `secrets.token_urlsafe(16)` run id —
+deliberately unit-testable in plain pytest, since a page (`host/web/main.py`) only
+polls and mutates this data rather than deciding how it's drawn.
+
+**`host/web/bridge.py`** — `AgentBridge(session)`, also `nicegui`-free. Implements
+the same callback contract `host.app.OrganizerScreen` uses:
+`on_event`/`on_approval_needed`/`on_cost_approval_needed`/`on_ask_user_needed` (the
+last awaits the next message on `session.messages`, mirroring P8's live-chat
+`ask_user` checkpoint). `start()` launches `run()` as a detached `asyncio.Task`
+owned by the `RunSession` (not by any one NiceGUI client); `run()` is a
+near-verbatim port of `OrganizerScreen._agent_worker` onto a plain `asyncio.Task` —
+loads settings, opens `mcp_session`, calls `run_agent_loop`, then loops on
+`session.messages.get()` for O7-style follow-up continuations, threading one
+`_TokenLedger` across all of them.
+
+**`host/web/main.py`** — the only module in the package importing `nicegui`. Pages
+are registered at import time (`@ui.page("/")`, `@ui.page("/run/{run_id}")`) but
+nothing binds a port until `run_web(target: Path | None = None)` is called, so
+importing the module is side-effect-free. Each connected browser tab polls
+`RunSession`/`TranscriptItem` state with its own `ui.timer`, rather than the bridge
+touching NiceGUI elements directly — this is what lets a page reload re-attach to
+an in-flight approval/cost dialog (via `session.pending`) instead of orphaning it.
+`_pick_port()` binds an ephemeral `127.0.0.1` port. `run_web` calls
+`ui.run(host="127.0.0.1", port=port, show=True, reload=False)` — `reload=False` is
+required, not stylistic: `reload=True` forces uvicorn onto a `SelectorEventLoop` on
+Windows, where `asyncio.create_subprocess_exec` (the MCP server subprocess launch)
+raises `NotImplementedError`.

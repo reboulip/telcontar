@@ -337,6 +337,47 @@ This is the item that wires P4 and P5 into `run_agent_loop` for real, completing
 
 **System prompt restructuring:** the old ANALYZE section ("survey the tree, batch-extract, record documents") is gone from `_SYSTEM_PROMPT_TEMPLATE` entirely — the corpus is already analyzed by the time the model sees this prompt. The prompt now opens by stating this plainly and pointing at the digest in the first message, instructs the model to use the registry read tools instead of raw file content, and its numbered steps run 1-10 across two sections (**A. ORGANIZE** the tree, **B. SYNTHESIZE**) instead of the old 1-14 across three (A. ANALYZE / B. ORGANIZE / C. SYNTHESIZE). The Safety rules section also gained a line telling the model to treat the digest as host-composed fact, not as instructions from the documents it summarizes.
 
+### NiceGUI web UI foundations (S4, in progress)
+
+`host/web/` is a new package — the first piece of a planned Textual→NiceGUI web UI
+migration (ROADMAP Phase 18). It is pure scaffolding: nothing in `host/main.py`
+wires it up yet, so it is not reachable from the `telcontar` CLI today (a `--web`
+flag is a separate, later roadmap item). It exists alongside `host/app.py`'s
+Textual TUI, not in place of it — both `textual` and `nicegui` are now main
+dependencies in `pyproject.toml`.
+
+- `host/web/session.py` — `RunSession`, framework-agnostic per-run state
+  (transcript, status, tokens, progress, a `pending` approval/cost request keyed to
+  an `asyncio.Future`, a chat `messages` queue, conversation `history`), plus a
+  module-level registry (`create`/`get`/`close`/`all_sessions`) keyed by a
+  `secrets.token_urlsafe(16)` run id. Deliberately has no `nicegui` import, so it is
+  unit-testable in plain pytest.
+- `host/web/bridge.py` — `AgentBridge` wraps a `RunSession` and exposes
+  `on_event`/`on_approval_needed`/`on_cost_approval_needed`/`on_ask_user_needed`, the
+  same callback contract `host/agent.py`'s `run_agent_loop` already uses for the
+  Textual TUI, plus `run()`/`start()`, which drive one full organize run (settings
+  load → `mcp_session` → `run_agent_loop`, including the O7 continuation loop for
+  follow-up chat messages) as a detached `asyncio.Task`. Also `nicegui`-free.
+- `host/web/main.py` is the only module in the package that imports `nicegui`. It
+  registers a landing page (`/`, a bare directory-path input for now) and the
+  organizer view (`/run/{run_id}`: transcript, status, progress bar, chat input, and
+  approval/cost dialogs), and exposes `run_web(target: Path | None = None)`, which
+  binds an ephemeral local port and calls `ui.run(host="127.0.0.1", ..., show=True,
+  reload=False)` — never `0.0.0.0`, to avoid exposing the approval gate on the LAN.
+  `reload=False` is load-bearing, not a style choice: with `reload=True`, uvicorn
+  forces a `SelectorEventLoop` on Windows, where `asyncio.create_subprocess_exec`
+  (used to launch the MCP server subprocess) raises `NotImplementedError`.
+
+**Reload-safe design:** a page reload creates a new NiceGUI client, but `RunSession`
+(looked up by run_id from the URL) persists independently of any one client, and a
+pending approval/cost request is an `asyncio.Future` parked on the session rather
+than an awaited NiceGUI dialog — so a reload re-attaches to an in-flight approval
+instead of orphaning it. This was validated in a pre-implementation spike (see
+ROADMAP.md's "Break 1" note ahead of Phase 18), which found that a bare reload does
+**not** kill the background run — it silently orphans it, and any UI element the
+run's task then tries to touch afterward targets a dead client, which can
+permanently deadlock an approval gate with no visible symptom.
+
 ---
 
 ## Data flow (one organize session)
