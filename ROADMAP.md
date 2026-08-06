@@ -1,4 +1,4 @@
-﻿# Roadmap
+# Roadmap
 
 Completed phases (1–15) have been moved to
 [ROADMAP-ARCHIVE.md](ROADMAP-ARCHIVE.md) to keep this file focused on open
@@ -23,7 +23,7 @@ work.
 
 > #### ◆ Break 1 — resolved (Stage 0 spike, predates Phase 18)
 >
-> A throwaway spike (not in the repo) validated four assumptions behind the Phase 18-21
+> A throwaway spike (not in the repo) validated four assumptions behind the Phase 18-22
 > plan against a real corpus and a real LLM endpoint, before any of these phases were
 > implemented:
 >
@@ -58,85 +58,109 @@ work.
 - [x] S5 · A single working organizer view in NiceGUI — transcript, status, chat input, approval dialog, cost dialog; deliberately plain, no styling pass yet. Move blocking synchronous I/O off the event loop where it currently runs inline: `_directory_overview` (full `os.walk`), `_load_profile_options` (glob + TOML parse), journal reads, and `server.tools.undo_last` (moves files on disk).
 - [x] S6 · Wire `telcontar --web` into `host/main.py` (default stays the Textual TUI); add `nicegui` to `pyproject.toml`'s main dependencies.
 
-> #### ◆ Break 2 — now there's something real to react to
+> #### ◆ Break 2 — resolved (first real browser session, after Phase 18)
 >
-> This is the highest-value break in the plan: you'll have used the thing in a browser
-> for the first time, and design opinions become concrete rather than hypothetical.
-> Reflect on these before starting Phase 19 -- fold them into that phase's `/dev-pipeline`
-> Step 1.7 planning round rather than deciding them in isolation:
+> Phase 18 shipped and the web UI was driven against a real corpus for the first time.
+> The reactions below became **Phase 19**, deliberately inserted *before* the parity
+> port so the eight remaining screens land in their final frame instead of being
+> rebuilt after it.
 >
-> - **Layout of the organizer screen.** Sidebar + transcript + chat is the TUI's shape.
->   Is that right for the web, or does the run want a different frame? Bring 2-3
->   sketches to this break.
-> - **Transcript form:** chat bubbles, or a log/timeline? The TUI's "internal steps"
->   collapsible is a genuinely good idea -- keep, or replace with a filterable timeline?
-> - **Visual identity.** NiceGUI ships Quasar's look. Accept it, or establish a small
->   palette and type treatment of your own?
-> - Does anything from Phase 18 suggest reordering the Phase 19 parity work?
+> - **Layout of the organizer screen** → the sidebar shape is right in principle, but
+>   the sidebar must be **permanent on every screen** (it's where the user verifies that
+>   things actually happened), much **denser**, a **real tree** rather than a flat list,
+>   **wider**, and **live-resizable**. (Phase 19 T2/T3/T4.)
+> - **Transcript form** → split it. Only user↔telcontar exchanges belong in the
+>   conversation; telcontar's own steps should read as **logs**, not chat bubbles. The
+>   internal-steps idea is worth keeping but is useful only rarely, so it should take
+>   very little space — a small per-line toggle opening a **separate zone**, with
+>   **pretty-printed JSON** instead of raw dumps. (Phase 19 T5/T6.)
+> - **Visual identity** → don't settle for Quasar's defaults. Establish telcontar's own:
+>   its namesake is a human/Númenórean king with elven ties — gold-and-silver accents,
+>   an elvish-flavoured but genuinely readable display face. (Phase 19 T8.)
+> - **Does anything suggest reordering the parity work?** → yes, the whole shell and
+>   interaction layer moves ahead of it. Real use also surfaced one defect that is *not*
+>   a UI problem at all: the plan is never presented for approval unless the user
+>   explicitly asks for it (Phase 19 T1) — an engine-level flow bug that hits the TUI
+>   just as hard.
 
 ---
 
-## Phase 19 — Parity
+## Phase 19 — Shell, interaction model & identity
 
-*(Web UI gains everything the TUI does and becomes the default `telcontar` entrypoint; the TUI survives as `telcontar --tui` until Phase 21. Safety-critical paths — approval, cost, undo — are ported faithfully; everything else gets a cleaner surface but no redesign.)*
+*(Break 2's feedback, folded in ahead of the parity port: the frame every screen lives in — permanent navigation, a real tree, the conversation/log split, telcontar's own visual identity — plus one engine-level approval-flow bug found in real use. Ordered defect-first, then shell, then the surfaces that hang off it.)*
 
-- [ ] T1 · Startup view — folder picker (may already be partially done via Phase 18's S5 directory browser — check before rebuilding), Organize / Query / Settings. A browser can't return a real filesystem path from a native picker, so build this as a server-side browse view on the existing `list_dir` tool.
-- [ ] T2 · Setup wizard — 5 steps with real routing (the TUI mounts all five and toggles `.display`). Preserve `PlaintextKeyFallbackNeeded` → warn → explicit second confirmation.
-- [ ] T3 · Settings view — same behaviour as the wizard, including the blank-key-preserves-existing rule.
-- [ ] T4 · Approval dialog — faithful: per-op toggles returning `removed_op_ids`, refinement text, reject, both disclaimers; refinement takes priority over approval. While here: refresh the file tree on `execute_plan` result (it currently never updates as the agent moves files).
-- [ ] T5 · Cost estimate dialog — faithful. While here: fix `batch_size` never being passed (it always claims "groups of 10").
-- [ ] T6 · Journal view + undo, with a visible affordance (currently keyboard-only: `j` then `u`) — user-only, the agent still has no undo tool. While here: refresh the ops-journal strip after an undo (it currently goes stale).
-- [ ] T7 · Query view — answer pane + tool timeline. While here: fix it calling `load()` without `.for_target()`, unlike the organizer.
-- [ ] T8 · Fix the remaining warts found during planning: `error` AgentEvents are wrongly treated as terminal (an analysis-batch failure emits `error` but the run continues — only `done`, max-turns, and the loop's own exception path should end a run); the token counter resets to 0 per continuation (`token_totals` is per-call) — accumulate across calls in the UI, coordinating with Phase 17 R1's fix rather than re-deriving it; the wizard's "Press Finish again" message doesn't match its "Save & continue →" button label.
-- [ ] T9 · Replace the Textual Pilot test suite (`tests/test_app_ui.py`, 67 tests) with NiceGUI's headless `user` fixture, reserving the real-browser `screen` fixture for a handful of genuine end-to-end paths; delete the 5 tests that are thin wrappers over `_fmt_op`/`_render_target_layout` now that S2 covers that logic directly.
-- [ ] T10 · Flip the default: `telcontar` opens the web UI, `telcontar --tui` becomes the Textual escape hatch. Update README + docs.
+- [ ] T1 · Fix: a finished plan is never presented for approval unless the user asks — the approval gate fires *only* from `_handle_execute_plan` (`host/agent.py`), i.e. only when the model actually calls the `execute_plan` tool. Observed at Break 2: the model completed ANALYZE, built and saved the plan, then ended its turn without calling `execute_plan`, so the run went terminal with no dialog and only a follow-up "I approve the plan" chat message drove it to call the tool. This is engine-level and affects the Textual TUI identically — fix the ORGANIZE-phase prompt/loop so a completed plan always leads into `execute_plan`, and add a loop-level guard so a run that is about to end with a saved-but-never-executed plan re-prompts the model once instead of stopping silently.
+- [ ] T2 · Persistent app shell — a left navigation/inspection sidebar rendered on **every** route, not just the run view, so the tree stays visible while the user checks that things happen correctly. Build it once as a shared layout (a `ui.left_drawer`-based shell function that each `@ui.page` mounts) rather than per-page markup; `host/web/main.py`'s pages currently each compose their own bare column.
+- [ ] T3 · A real file-tree view in the sidebar — replace the flat one-button-per-folder listing built in S5 with a genuine collapsible tree (`ui.tree`) over the target directory, at a far denser vertical rhythm (the current spacing wastes most of the column). This doubles as the folder picker, so it supersedes the browse-view half of Phase 20's U1 — build it once, here. Live refresh as ops execute stays deferred (Phase 21 V7).
+- [ ] T4 · Sidebar width — wider by default, and **live-resizable** by the user (drag handle, remembered for the session), so deep trees aren't cramped and the main content doesn't have to shrink to compensate.
+- [ ] T5 · Split conversation from logs — only genuine user↔telcontar exchanges (chat messages, `ask_user` checkpoints, approval/cost outcomes) render as conversation; telcontar's own tool activity renders as a compact log stream in its own zone, never as chat bubbles. `host/web/session.py`'s `TranscriptItem` already carries the `kind` discriminator ("turn" vs "steps"); this is a rendering change plus a per-`AgentEvent`-kind routing decision in `host/web/bridge.py`.
+- [ ] T6 · Internal steps — minimal footprint, readable payloads: one compact line per step with a small toggle that opens the raw detail in a **separate zone** (side panel or drawer) instead of today's inline `ui.expansion` shoving the transcript around; pretty-print JSON payloads (indented, syntax-highlighted) rather than the current single-line `_fmt_result` dump.
+- [ ] T7 · Browser tab title — "telcontar", plus the target directory once one is selected (e.g. `telcontar — invoices-2024`); every tab currently reads "NiceGUI" (`ui.run(title=…)` plus per-page `ui.page(title=…)`).
+- [ ] T8 · Visual identity — a palette and type treatment of telcontar's own, expressing its namesake: a Númenórean/human king (Aragorn's Quenya name), his elven connections, and kingly metal — gold and silver accents on a dark base, an elvish-flavoured but genuinely readable display face for headings against a plain, legible body face. Apply it through Quasar/NiceGUI theme tokens (`ui.colors` plus one small CSS layer) so the identity lives in one place rather than being sprinkled per-component.
+
+---
+
+## Phase 20 — Parity
+
+*(Web UI gains everything the TUI does and becomes the default `telcontar` entrypoint; the TUI survives as `telcontar --tui` until Phase 22. Safety-critical paths — approval, cost, undo — are ported faithfully; everything else gets a cleaner surface but no redesign. Everything here is built inside the Phase 19 shell.)*
+
+- [ ] U1 · Startup view — Organize / Query / Settings entry points. The folder-picker half is superseded by Phase 19's T3 sidebar tree (built once, in the shell) — check before rebuilding. A browser can't return a real filesystem path from a native picker, so selection stays a server-side browse over the existing `list_dir` tool.
+- [ ] U2 · Setup wizard — 5 steps with real routing (the TUI mounts all five and toggles `.display`). Preserve `PlaintextKeyFallbackNeeded` → warn → explicit second confirmation.
+- [ ] U3 · Settings view — same behaviour as the wizard, including the blank-key-preserves-existing rule.
+- [ ] U4 · Approval dialog — faithful: per-op toggles returning `removed_op_ids`, refinement text, reject, both disclaimers; refinement takes priority over approval. While here: refresh the Phase 19 T3 sidebar tree on `execute_plan` result (it currently never updates as the agent moves files).
+- [ ] U5 · Cost estimate dialog — faithful. While here: fix `batch_size` never being passed (it always claims "groups of 10").
+- [ ] U6 · Journal view + undo, with a visible affordance (currently keyboard-only: `j` then `u`) — user-only, the agent still has no undo tool. While here: refresh the ops-journal strip after an undo (it currently goes stale). This is also where Phase 18's deferred `run.io_bound` offloads for journal reads and `server.tools.undo_last` finally get a real call site.
+- [ ] U7 · Query view — answer pane + tool timeline. While here: fix it calling `load()` without `.for_target()`, unlike the organizer.
+- [ ] U8 · Fix the remaining warts found during planning: `error` AgentEvents are wrongly treated as terminal (an analysis-batch failure emits `error` but the run continues — only `done`, max-turns, and the loop's own exception path should end a run); the token counter resets to 0 per continuation (`token_totals` is per-call) — accumulate across calls in the UI, coordinating with Phase 17 R1's fix rather than re-deriving it; the wizard's "Press Finish again" message doesn't match its "Save & continue →" button label.
+- [ ] U9 · Replace the Textual Pilot test suite (`tests/test_app_ui.py`, 67 tests) with NiceGUI's headless `user` fixture, reserving the real-browser `screen` fixture for a handful of genuine end-to-end paths; delete the 5 tests that are thin wrappers over `_fmt_op`/`_render_target_layout` now that S2 covers that logic directly.
+- [ ] U10 · Flip the default: `telcontar` opens the web UI, `telcontar --tui` becomes the Textual escape hatch. Update README + docs.
 
 > #### ◆ Break 3 — choose where the UX budget goes
 >
 > The app is now fully usable in a browser. This is the moment to decide what's actually
-> worth building, with real usage behind the opinion -- fold this into Phase 20's
+> worth building, with real usage behind the opinion -- fold this into Phase 21's
 > `/dev-pipeline` Step 1.7 planning round. The candidate table already lives below as
-> U3-U9 (`[deferred]` until chosen); pick 3-4 of them here. Also decide whether the
-> corpus browser (U5) and knowledge-graph view (U6) deserve their own phase entirely --
+> V3-V9 (`[deferred]` until chosen); pick 3-4 of them here. Also decide whether the
+> corpus browser (V5) and knowledge-graph view (V6) deserve their own phase entirely --
 > they're arguably new features rather than UI work, not just a redesign of an existing
 > screen.
 
 ---
 
-## Phase 20 — Experience & delivery
+## Phase 21 — Experience & delivery
 
-*(Scope beyond the two fixed items below is chosen once Phase 19 has seen daily use — pick 3–4 of the candidates below at that point; they're marked `[deferred]` until chosen.)*
+*(Scope beyond the two fixed items below is chosen once Phase 20 has seen daily use — pick 3–4 of the candidates below at that point; they're marked `[deferred]` until chosen.)*
 
-- [ ] U1 · Native window — `ui.run(native=True)` via pywebview, with `telcontar --browser` as the escape hatch. Restores "one command, one window".
-- [ ] U2 · Security hardening pass — confirm `127.0.0.1` binding, a per-launch token in the opened URL, Origin check, `storage_secret`; have doc-keeper record the new local-server trust boundary in `docs/developer/security-model.md`.
-- [ ] U3 · [deferred] Plan review as a before/after tree — the approval gate is the highest-trust screen; a checkbox list is a terminal-era compromise.
-- [ ] U4 · [deferred] Document preview pane — click a file, see the PDF/text inline.
-- [ ] U5 · [deferred] Corpus browser — a sortable, filterable table over `.organizer/registry.json` (title, type, date, summary, entities), today only reachable by asking the agent.
-- [ ] U6 · [deferred] Knowledge-graph view — `server/graph.py` already builds the graph; currently invisible.
-- [ ] U7 · [deferred] Live-updating file tree — watch the reorganization happen as ops execute.
-- [ ] U8 · [deferred] Per-document progress — replace the single progress bar with "which document, right now".
-- [ ] U9 · [deferred] Query answers with citations — link answers back to the documents they came from.
+- [ ] V1 · Native window — `ui.run(native=True)` via pywebview, with `telcontar --browser` as the escape hatch. Restores "one command, one window".
+- [ ] V2 · Security hardening pass — confirm `127.0.0.1` binding, a per-launch token in the opened URL, Origin check, `storage_secret`; have doc-keeper record the new local-server trust boundary in `docs/developer/security-model.md` (still unrecorded there as of Phase 18 — `telcontar --web` binds a loopback TCP socket and serves the approval gate over HTTP, which the audit's trust-boundary and capability-surface sections don't yet reflect).
+- [ ] V3 · [deferred] Plan review as a before/after tree — the approval gate is the highest-trust screen; a checkbox list is a terminal-era compromise.
+- [ ] V4 · [deferred] Document preview pane — click a file, see the PDF/text inline.
+- [ ] V5 · [deferred] Corpus browser — a sortable, filterable table over `.organizer/registry.json` (title, type, date, summary, entities), today only reachable by asking the agent.
+- [ ] V6 · [deferred] Knowledge-graph view — `server/graph.py` already builds the graph; currently invisible.
+- [ ] V7 · [deferred] Live-updating file tree — builds on Phase 19's T3 sidebar tree; watch the reorganization happen as ops execute.
+- [ ] V8 · [deferred] Per-document progress — replace the single progress bar with "which document, right now".
+- [ ] V9 · [deferred] Query answers with citations — link answers back to the documents they came from.
 
 > #### ◆ Break 4 — the retirement decision
 >
-> Fold this into Phase 21's `/dev-pipeline` Step 1.7 planning round -- Phase 21 only
+> Fold this into Phase 22's `/dev-pipeline` Step 1.7 planning round -- Phase 22 only
 > proceeds if this break says so:
 >
 > - Has the web UI earned enough trust to delete the TUI? There is no rush; carrying it
 >   costs almost nothing now that the shared helpers are extracted (Phase 18 S1).
 > - Is there a real headless/SSH use case worth keeping the TUI permanently for? (If
->   yes, Phase 21 is cancelled, and the answer is "both, forever" -- a legitimate
+>   yes, Phase 22 is cancelled, and the answer is "both, forever" -- a legitimate
 >   outcome, not a failure.)
 > - Any parity gap that only showed up in daily use?
 
 ---
 
-## Phase 21 — Retire the TUI
+## Phase 22 — Retire the TUI
 
 *(Only proceeds if a later decision judges the web UI has earned enough trust to retire the TUI — "keep both forever" is an acceptable outcome, not a failure. All items deferred until that decision is made.)*
 
-- [ ] V1 · [deferred] Delete `host/app.py` and `tests/test_app_ui.py`; remove the `--tui` flag. Only if a later design break decides the web UI has earned enough trust to retire the TUI.
-- [ ] V2 · [deferred] Drop `textual` and `textual-dev` from `pyproject.toml` (note: `textual-dev` transitively provides `textual-serve`, the terminal-in-a-browser fallback — removing it drops that too).
-- [ ] V3 · [deferred] Docs sweep — 11 files currently mention Textual/TUI (42 occurrences), heaviest in `docs/user-guide/how-it-works.md`, `docs/getting-started/quickstart.md`, `docs/index.md`; prune the `test-select` scope-table rows for the deleted files.
+- [ ] W1 · [deferred] Delete `host/app.py` and `tests/test_app_ui.py`; remove the `--tui` flag. Only if a later design break decides the web UI has earned enough trust to retire the TUI.
+- [ ] W2 · [deferred] Drop `textual` and `textual-dev` from `pyproject.toml` (note: `textual-dev` transitively provides `textual-serve`, the terminal-in-a-browser fallback — removing it drops that too).
+- [ ] W3 · [deferred] Docs sweep — 11 files currently mention Textual/TUI (42 occurrences), heaviest in `docs/user-guide/how-it-works.md`, `docs/getting-started/quickstart.md`, `docs/index.md`; prune the `test-select` scope-table rows for the deleted files.
 
 ---

@@ -362,7 +362,7 @@ run_web` for `--web` — so launching one UI never pays the other's import cost
 Textual→NiceGUI migration. As of S6, `telcontar --web` (`host/main.py`, lazy import)
 launches it in place of the Textual TUI, which stays the default with no flags. It
 does not yet have feature parity with the TUI — no setup wizard, no query mode, no
-journal/undo UI (deferred to Phase 19, item T6) — see `host/main.py`, above.
+journal/undo UI (deferred to Phase 20, item U6) — see `host/main.py`, above.
 
 **`host/web/session.py`** — framework-agnostic per-run state, no `nicegui` import.
 Key types: `RunSession` (`run_id`, `target`, `transcript`, `status`, `tokens`,
@@ -429,5 +429,5 @@ raises `NotImplementedError`.
 Note: the ROADMAP text for S5 also names `_load_profile_options`, journal reads,
 and `server.tools.undo_last` as blocking calls to move off the event loop, but none
 have a call site in this view yet — there is no profile selector, journal panel, or
-Undo button here (that UI is deferred to Phase 19, item T6). Only the directory
+Undo button here (that UI is deferred to Phase 20, item U6). Only the directory
 listing and `directory_overview` needed, and got, `run.io_bound` treatment so far.

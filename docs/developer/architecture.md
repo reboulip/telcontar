@@ -350,7 +350,7 @@ meaningful only with `--web`, skips the landing page's directory picker and star
 a run for that directory immediately. It exists alongside `host/app.py`'s Textual
 TUI, not in place of it — both `textual` and `nicegui` are main dependencies in
 `pyproject.toml`. Feature parity with the TUI isn't there yet — no setup wizard, no
-query mode, no journal/undo UI (that's Phase 19, item T6) — so the web UI is an
+query mode, no journal/undo UI (that's Phase 20, item U6) — so the web UI is an
 alternative launch mode for an already-configured install, not (yet) the primary
 way to use telcontar.
 
