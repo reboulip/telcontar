@@ -34,6 +34,16 @@ The Textual TUI opens. On first run the **setup wizard** appears; returning user
 
 A chat box at the bottom of the Organizer screen is live for the whole run, not just once it stops — type a message at any point (e.g. "actually, group by year instead") and it's woven into the agent's in-progress work as soon as it's between turns, without waiting for the run to finish first. After the run reaches a stopping point (done, error, or max-turns), the same box keeps working — a follow-up message (e.g. "quarantine the drafts too") resumes the same conversation, on the same MCP session, with the same organize toolset (document content stays unavailable, since the corpus was already analyzed). Press **g** instead to jump into a separate read-only query mode over the just-analyzed corpus.
 
+**CLI flags:**
+
+| Flag | Description |
+|---|---|
+| `--version` | Print the installed version and exit. |
+| `--web` | Launch the web UI (NiceGUI, runs in a local browser tab) instead of the Textual TUI. The TUI is still the default when no flags are passed. |
+| `--target PATH` | Only meaningful with `--web` — skip the landing page's directory picker and start a run for `PATH` immediately. Ignored otherwise. |
+
+The web UI is a foundational, still-in-progress alternative to the TUI — it doesn't yet have first-time setup, query mode, or a journal/undo view, so those still require the Textual TUI. It is not yet the recommended way to run telcontar.
+
 ## Development
 
 ```bash

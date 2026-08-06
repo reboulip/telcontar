@@ -79,6 +79,8 @@ uv run --group test pytest -q
 
 Both accept `--help` and `--version`, which print and exit immediately without launching the TUI or the server.
 
+`telcontar` also accepts `--web` (launches the web UI in a local browser tab instead of the TUI — still foundational, without the TUI's setup wizard, query mode, or journal/undo view) and `--target PATH` (only meaningful with `--web`; jumps straight to a run for `PATH` instead of showing the web UI's directory picker).
+
 ---
 
 ## Advanced: developer setup

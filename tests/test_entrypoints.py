@@ -15,6 +15,7 @@ from __future__ import annotations
 import subprocess
 import sys
 from importlib.metadata import entry_points
+from pathlib import Path
 
 import pytest
 
@@ -71,3 +72,49 @@ class TestEntryPointsRunAndExitClean:
         r = _run_main(module, prog, "--version")
         assert r.returncode == 0, r.stderr
         assert prog in r.stdout
+
+
+# ── S6: --web routes to the NiceGUI entrypoint instead of the Textual TUI ────────
+
+
+class TestWebFlagRouting:
+    """In-process (not subprocess) so run_web can be mocked out — actually
+    starting the web server isn't something a unit test should do."""
+
+    def test_web_flag_routes_to_run_web(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from host.main import main
+
+        calls: list[Path | None] = []
+        monkeypatch.setattr("host.web.main.run_web", lambda target=None: calls.append(target))
+        monkeypatch.setattr(sys, "argv", ["telcontar", "--web"])
+
+        main()
+
+        assert calls == [None]
+
+    def test_web_flag_with_target_passes_it_through(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from host.main import main
+
+        calls: list[Path | None] = []
+        monkeypatch.setattr("host.web.main.run_web", lambda target=None: calls.append(target))
+        monkeypatch.setattr(sys, "argv", ["telcontar", "--web", "--target", "/tmp/some-dir"])
+
+        main()
+
+        assert calls == [Path("/tmp/some-dir")]
+
+    def test_no_web_flag_launches_the_tui_not_the_web_ui(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from host.main import main
+
+        web_calls = []
+        tui_calls = []
+        monkeypatch.setattr("host.web.main.run_web", lambda target=None: web_calls.append(target))
+        monkeypatch.setattr("host.app.OrganizerApp.run", lambda self: tui_calls.append(True))
+        monkeypatch.setattr(sys, "argv", ["telcontar"])
+
+        main()
+
+        assert tui_calls == [True]
+        assert web_calls == []

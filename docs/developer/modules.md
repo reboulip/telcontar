@@ -204,11 +204,23 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 
 The MCP host package. Drives the agent loop and presents the Textual TUI.
 
-### `host/main.py` (~9 lines)
+### `host/main.py`
 
-**Role:** CLI entrypoint. Instantiates `OrganizerApp` and calls `.run()`.
+**Role:** CLI entrypoint. Parses arguments and routes to one of the two UIs.
 
 **Entry point:** `main()` is registered as the `telcontar` script in `pyproject.toml`.
+
+**Flags:** `--version` (prints the installed version and exits); `--web` (`store_true` —
+launches the NiceGUI web UI instead of the Textual TUI; the TUI remains the default
+with no flags); `--target PATH` (only meaningful together with `--web` — skips the
+landing page's directory picker and starts a run for that directory immediately;
+ignored otherwise). Unrecognized args are tolerated (`parse_known_args`) so a bare
+launch keeps working.
+
+**Design note:** As of S6, each UI's dependency import is lazy and scoped to its own
+branch — `from host.app import OrganizerApp` for the TUI, `from host.web.main import
+run_web` for `--web` — so launching one UI never pays the other's import cost
+(`textual` vs. `nicegui`).
 
 ---
 
@@ -344,11 +356,13 @@ The MCP host package. Drives the agent loop and presents the Textual TUI.
 
 ---
 
-### `host/web/` (in progress — Phase 18, not yet wired into the CLI)
+### `host/web/` (Phase 18)
 
-**Role:** New NiceGUI-based web UI package — the first piece of a planned
-Textual→NiceGUI migration. No `--web` CLI flag exists yet (`host/main.py` does not
-import this package), so nothing here is reachable by an end user today.
+**Role:** NiceGUI-based web UI package — the first piece of a planned
+Textual→NiceGUI migration. As of S6, `telcontar --web` (`host/main.py`, lazy import)
+launches it in place of the Textual TUI, which stays the default with no flags. It
+does not yet have feature parity with the TUI — no setup wizard, no query mode, no
+journal/undo UI (deferred to Phase 19, item T6) — see `host/main.py`, above.
 
 **`host/web/session.py`** — framework-agnostic per-run state, no `nicegui` import.
 Key types: `RunSession` (`run_id`, `target`, `transcript`, `status`, `tokens`,

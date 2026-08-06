@@ -192,3 +192,6 @@ A desktop notification fires when the agent is done. The chat box at the bottom 
 - Adjust the approval level in **⚙ Settings** once you trust the agent — see [Approval Modes](../user-guide/approval-modes.md).
 - Understand the output files: [Outputs](../user-guide/outputs.md).
 - Learn how to create a profile for your own document corpus: [Adding a Profile](../developer/adding-profiles.md).
+
+!!! note "Also available: the web UI"
+    `telcontar --web` opens the same organize experience in a local browser tab instead of the Textual TUI. It's a foundational, still-in-progress alternative (ROADMAP Phase 18) — it doesn't have the setup wizard, query mode, or a journal/undo view yet, so first-time setup and those workflows still need the TUI described above. Once telcontar is configured, `telcontar --web --target PATH` skips its landing page's directory picker and jumps straight to a run for `PATH`.

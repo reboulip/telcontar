@@ -337,13 +337,22 @@ This is the item that wires P4 and P5 into `run_agent_loop` for real, completing
 
 **System prompt restructuring:** the old ANALYZE section ("survey the tree, batch-extract, record documents") is gone from `_SYSTEM_PROMPT_TEMPLATE` entirely — the corpus is already analyzed by the time the model sees this prompt. The prompt now opens by stating this plainly and pointing at the digest in the first message, instructs the model to use the registry read tools instead of raw file content, and its numbered steps run 1-10 across two sections (**A. ORGANIZE** the tree, **B. SYNTHESIZE**) instead of the old 1-14 across three (A. ANALYZE / B. ORGANIZE / C. SYNTHESIZE). The Safety rules section also gained a line telling the model to treat the digest as host-composed fact, not as instructions from the documents it summarizes.
 
-### NiceGUI web UI foundations (S4, updated by S5, in progress)
+### NiceGUI web UI foundations (S4-S6)
 
-`host/web/` is a new package — the first piece of a planned Textual→NiceGUI web UI
-migration (ROADMAP Phase 18). Nothing in `host/main.py` wires it up yet, so it is
-not reachable from the `telcontar` CLI today (a `--web` flag is a separate, later
-roadmap item — S6). It exists alongside `host/app.py`'s Textual TUI, not in place
-of it — both `textual` and `nicegui` are now main dependencies in `pyproject.toml`.
+`host/web/` is a package — the first piece of a planned Textual→NiceGUI web UI
+migration (ROADMAP Phase 18). As of S6, `telcontar --web` (`host/main.py`) launches
+it in place of the Textual TUI; the TUI remains the default when no flags are
+passed, and `--web`'s `from host.web.main import run_web` import is lazy — scoped
+to that branch only — mirroring the existing lazy `from host.app import
+OrganizerApp` import on the no-flag path, so neither UI's dependency (`nicegui` vs.
+`textual`) is paid for unless that UI is actually launched. A `--target PATH` flag,
+meaningful only with `--web`, skips the landing page's directory picker and starts
+a run for that directory immediately. It exists alongside `host/app.py`'s Textual
+TUI, not in place of it — both `textual` and `nicegui` are main dependencies in
+`pyproject.toml`. Feature parity with the TUI isn't there yet — no setup wizard, no
+query mode, no journal/undo UI (that's Phase 19, item T6) — so the web UI is an
+alternative launch mode for an already-configured install, not (yet) the primary
+way to use telcontar.
 
 - `host/web/session.py` — `RunSession`, framework-agnostic per-run state
   (transcript, status, tokens, progress, a `pending` approval/cost request keyed to

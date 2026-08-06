@@ -58,6 +58,8 @@ telcontar
 
 The setup wizard guides you through entering your API key (stored securely in the OS credential store). The TUI then asks for a target directory, analyses it, and shows a plan of file operations for your approval before anything is moved.
 
+Once configured, `telcontar --web` also opens the same experience in a local browser tab — a foundational, still-in-progress alternative to the TUI (no setup wizard or query mode there yet), not a replacement for it.
+
 ---
 
 ## Design principles
