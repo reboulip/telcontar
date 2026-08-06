@@ -12,8 +12,9 @@ project's `## Branch Model` / `## Releases` rules in `CLAUDE.md`: `main` only
 moves via a no-squash PR from `develop`, and tags/releases are always cut from
 `main` **after** that PR merges — never directly from `develop`.
 
-All git/gh work is delegated to `repo-manager`. The main session never runs
-`git commit`, `git push`, `git merge`, or `gh pr merge` directly.
+All git/gh work runs directly in the main session, per CLAUDE.md's Branch Model hard
+rules (no `--force`, no `--no-verify`, no amending a published commit, no direct push
+to `main`).
 
 ---
 
@@ -29,8 +30,6 @@ All git/gh work is delegated to `repo-manager`. The main session never runs
 ---
 
 ## Step 2 — Bump, push, open the PR
-
-Delegate to `repo-manager` in one call:
 
 1. Edit `pyproject.toml`'s `version` field.
 2. Commit: `chore: bump version to <X.Y.Z> (beta)` (drop "(beta)" for a
@@ -60,8 +59,8 @@ real bug in the test — chasing it with a bigger `sleep()` treats the symptom;
 find what invariant the fixed delay was actually standing in for and wait on
 that instead (see `tests/test_app_ui.py`'s own "gotchas" docstring for a
 worked example — a Textual `Button` click-debounce that silently swallows a
-too-fast re-click). Push the fix (delegate commit+push to `repo-manager`,
-same PR/branch — do not open a new PR) and re-arm the CI wait.
+too-fast re-click). Commit and push the fix directly (same PR/branch — do not
+open a new PR) and re-arm the CI wait.
 
 Do not proceed to Step 4 until every check is green.
 
@@ -69,7 +68,7 @@ Do not proceed to Step 4 until every check is green.
 
 ## Step 4 — Merge, tag, verify
 
-Delegate to `repo-manager` in one call:
+Run directly:
 
 1. Merge the PR **without squashing**: `gh pr merge <N> --merge --delete-branch=false`
    (keep `develop` — it's the permanent integration branch, not a throwaway
@@ -80,7 +79,7 @@ Delegate to `repo-manager` in one call:
 5. `git push origin v<X.Y.Z>`.
 6. `git checkout develop` (return to the branch the session started on).
 
-Then, in the main session (read-only, no delegation needed):
+Then, read-only verification:
 
 1. Confirm the tag commit matches `origin/main` HEAD
    (`git rev-list -n1 v<X.Y.Z>` == `git rev-list -n1 origin/main`).

@@ -208,6 +208,12 @@ For dev, point `LLM_BASE_URL`/`LLM_API_KEY` at Mammouth. For prod, point them at
 - Never push directly to `main`.
 - Squash commit message: `<type>: <summary>` (imperative, ≤72 chars).
 
+### Hard rules (all git work, run directly in the main session)
+- Never force-push (`--force`, `-f`).
+- Never skip hooks (`--no-verify`).
+- Never amend a published commit.
+- Never commit without being asked to (outside an approved `/dev-pipeline` or `/release` run).
+
 ## Releases
 
 Releases are **automated** by `.github/workflows/release.yml`, which triggers on pushing any `v*` tag. To cut a release:
@@ -228,9 +234,7 @@ ROADMAP items that resolve a GitHub issue must tag it inline: `[#N]` at the end 
 
 ## Workflow Agents
 
-All git work and task orchestration is delegated to specialized agents and skills. The main session focuses on domain implementation only.
-
-- **`repo-manager`** (Haiku subagent): Handles all git operations and edits to generic project files (`pyproject.toml`, `.gitignore`, `README.md`, `ROADMAP.md`, `CLAUDE.md`). **Always delegate git commits and branch operations here — never run `git commit` in the main session.**
+Task orchestration for non-trivial work is delegated to specialized agents and skills; git operations run directly in the main session (see Branch Model's Hard rules).
 
 - **`feature-forecast`** (Haiku subagent, background): Pre-reads the codebase for the next ROADMAP item while the current item is being implemented. Invoked automatically by `/dev-pipeline` with `run_in_background: true`.
 

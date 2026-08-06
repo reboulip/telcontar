@@ -25,6 +25,7 @@ You are invoked **once per feature cluster** at the *start* of a development spr
 1. Read `CLAUDE.md` and the exact text of each ROADMAP item in your cluster (given in the prompt).
 2. Deep-read the code these items touch: the modules they'll edit, the MCP tools/signatures involved, the domain profile if relevant, adjacent tests, and any code they'll couple to. Use `Grep`/`Glob` to find call sites and existing patterns before recommending an approach — match how the codebase already does things.
 3. Look for what the item text does *not* say: ambiguous output formats/JSON shapes, undecided tool signatures, who composes prose (LLM vs. deterministic code), ordering dependencies between items, missing prerequisites, and collisions with the safety model (never-delete, never-overwrite, approval flow, journaling, egress caps).
+4. For each item, work out **which files it will write** and **which other items it depends on**. The root uses this to batch independent items into waves (one test+commit cycle per wave instead of per item), so precision here directly buys sprint speed — and a missed collision costs a wasted wave.
 
 ## Output — the Planning Report
 
@@ -35,6 +36,22 @@ The item labels + titles you are planning, one line each.
 
 ### Recommended approach & sequencing
 The shape of the implementation for the cluster: the order to implement the items in (and why), the key modules/functions to add or change, and any shared scaffolding to build first. Reference concrete files as `path:line` where useful.
+
+### Files touched & dependencies
+
+**Required, machine-read by the root to compute implementation waves. Never omit it, never say "None".**
+
+One row per item in your cluster, in this exact table shape:
+
+| Item | Writes | Depends on | Notes |
+|------|--------|------------|-------|
+| T3 | `host/web/main.py`, `tests/test_web_session.py` | T2 | mounts into T2's shell contract |
+
+- **Writes** — every file the item will create or modify, **including test files**. Be exhaustive and concrete (real paths, not "the web UI"). Over-listing is cheap; under-listing causes two items to be batched into one wave and collide.
+- **Depends on** — item labels (from any cluster in the sprint, not just yours) whose output this item builds on: a contract it mounts into, a helper it calls, a signature it consumes. `—` if none. **A shared file alone is not a dependency** — that's what Writes captures. This column is for *semantic* order.
+- **Notes** — one clause on the nature of the dependency, or anything that makes the row's collision risk non-obvious.
+
+If you are unsure whether an item touches a file, list it. If you are unsure whether B depends on A, say so in Notes and recommend serializing them.
 
 ### Cross-cutting decisions
 Decisions that must be consistent *across* the items in this cluster (and ideally the sprint): shared data shapes, tool signatures, naming, output-file formats, error handling. State the decision you recommend for each. These are the things that are expensive to get inconsistent.

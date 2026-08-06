@@ -10,7 +10,7 @@ description: Triage open GH issues (implement / defer / drop with labels), then 
 1. Fetches all open GH issues not yet carrying a disposition label (`roadmap`, `deferred`, or `dropped`).
 2. Reads each one and classifies its nature.
 3. **Triages each issue** with the user — implement, defer, or drop — and immediately applies the decided disposition (label + comment, closing if dropped) before planning starts.
-4. For issues marked *implement*: proposes a mapping into `ROADMAP.md` following this project's `- [ ] <Label> · <description>` convention, asks disambiguation questions as needed, writes the items via `repo-manager` (never directly — see Step 7), labels each issue `roadmap`, and posts a roadmap-link comment.
+4. For issues marked *implement*: proposes a mapping into `ROADMAP.md` following this project's `- [ ] <Label> · <description>` convention, asks disambiguation questions as needed, writes the items directly and commits (see Step 7), labels each issue `roadmap`, and posts a roadmap-link comment.
 
 ---
 
@@ -85,7 +85,7 @@ After each batch, immediately apply the decided dispositions (Step 3a) before as
 
 ### Step 3a — Apply triage dispositions
 
-For each issue just triaged, apply its disposition immediately (direct PowerShell — these are GH API mutations, not local git state, so they don't go through `repo-manager`):
+For each issue just triaged, apply its disposition immediately via direct PowerShell (GH API mutations, not local git state):
 
 **Dropped:**
 ```powershell
@@ -164,34 +164,24 @@ Skip this step if no issues are being implemented.
 
 ---
 
-## Step 7 — Update ROADMAP.md (via `repo-manager`)
+## Step 7 — Update ROADMAP.md
 
-Unlike a generic edit, `ROADMAP.md` is on `repo-manager`'s exclusive remit in
-this project (CLAUDE.md: git commits and edits to `ROADMAP.md` are always
-delegated, never done directly in the main session). Hand off both the edit
-and the commit in one call:
+Verify the current branch is `develop` (this is a planning-doc change, not a feature
+implementation, so it does not need a `feat/` branch) — if it is not, stop and report
+back rather than switching branches.
 
-```
-Agent({
-  subagent_type: "repo-manager",
-  description: "Add roadmap items from GH issue triage",
-  prompt: "Verify the current branch is `develop` (this is a planning-doc
-  change, not a feature implementation, so it does not need a feat/ branch) —
-  if it is not, stop and report back rather than switching branches.
+Insert the item(s) into `ROADMAP.md` directly: for each item, the target section header
+(or the exact new `## Phase N — <theme>` header to insert, and where — immediately after
+the active milestone's closing `---`, matching existing style), and the exact line to add:
+`- [ ] <Label> · <item text> [#N]` (or `[#N] [#M]` if it covers multiple issues).
 
-  Insert the following item(s) into ROADMAP.md:
-  [for each item: target section header (or the exact new '## Phase N — <theme>'
-  header to insert, and where — immediately after the active milestone's
-  closing '---', matching existing style), and the exact line to add:
-  '- [ ] <Label> · <item text> [#N]' (or '[#N] [#M]' if it covers multiple
-  issues)]
-
-  Stage and commit ONLY ROADMAP.md.
-  Commit message: 'docs: roadmap items from GH issue triage (#N, #M, ...)'"
-})
+Then stage and commit ONLY `ROADMAP.md`:
+```bash
+git add ROADMAP.md
+git commit -m "docs: roadmap items from GH issue triage (#N, #M, ...)"
 ```
 
-After the agent reports back, spot-check that the section hierarchy is intact (no orphaned headers, checklist still well-formed) by re-reading `ROADMAP.md`.
+Spot-check that the section hierarchy is intact (no orphaned headers, checklist still well-formed) by re-reading `ROADMAP.md`.
 
 ---
 
@@ -220,7 +210,7 @@ gh issue comment <number> --body "This issue has been planned for development.
 ## Rules
 
 - Never write to `ROADMAP.md` before Step 6 confirmation.
-- `ROADMAP.md` edits and their commit always go through `repo-manager` — never edited or committed directly from the main session.
+- `ROADMAP.md` edits and their commit run directly in the main session (see Step 7).
 - Always include a `[#N]` back-reference on every roadmap item sourced from a GH issue.
 - Apply triage dispositions (Step 3a) per batch as soon as the user confirms — do not wait until the end of the full triage.
 - `dropped` issues are closed in GH; `deferred` issues remain open. Neither gets a `ROADMAP.md` entry — that's reserved for `implement` issues (see the note in Step 3a distinguishing GH-deferred from the roadmap's own `[deferred]` tag).

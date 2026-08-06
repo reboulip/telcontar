@@ -71,7 +71,6 @@ The project ships several Claude Code skills and agents for development workflow
 |---|---|
 | `/dev-pipeline` | Full sprint orchestrator — reads ROADMAP.md, implements items on `feat/` branches |
 | `/test-select` | Runs minimal pytest scope for the current branch's changes — call before every commit |
-| `repo-manager` agent | Handles all git operations — delegate commits and branch ops here |
 | `doc-keeper` agent | Updates docs at the end of each feature step — runs before the commit |
 | `feature-forecast` agent | Background prefetch — pre-reads codebase for the next ROADMAP item |
 
