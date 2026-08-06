@@ -540,9 +540,20 @@ async def test_query_button_shows_error_when_no_organizer_found(
 async def test_query_button_resolves_organizer_root_from_parent(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    from contextlib import asynccontextmanager
     from types import SimpleNamespace
 
     monkeypatch.setattr("config.settings.is_configured", lambda: True)
+
+    # QueryScreen.on_mount starts _query_worker unconditionally (it doesn't wait
+    # for a question), so navigating here for real would open a real mcp_session
+    # — spawning a real server subprocess that outlives this test's event loop
+    # once the app tears down, leaking an asyncio pipe transport on Windows.
+    @asynccontextmanager
+    async def fake_mcp_session(project_root, target=None):
+        yield None
+
+    monkeypatch.setattr("host.agent.mcp_session", fake_mcp_session)
 
     (tmp_path / ".organizer").mkdir()
     sub = tmp_path / "docs"
