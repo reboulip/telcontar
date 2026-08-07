@@ -10,6 +10,7 @@ reconnect work: a pending approval/cost future outlives any one client.
 from __future__ import annotations
 
 import asyncio
+import json
 import secrets
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,16 +18,38 @@ from typing import Literal
 
 from host.narration import Narrator
 
-TranscriptKind = Literal["turn", "steps"]
+# ── Conversation (T5) ────────────────────────────────────────────────────────
+#
+# Turns only, now — genuine user<->telcontar exchanges (chat, ask_user,
+# approval/cost outcomes, done/error). Tool activity lives in `steps` below
+# instead of being interleaved here as a "steps"-kind item.
 
 
 @dataclass
 class TranscriptItem:
     seq: int
-    kind: TranscriptKind
     speaker: str
     text: str
-    lines: list[str] = field(default_factory=list)
+
+
+# ── Internal steps / log stream (T6) ─────────────────────────────────────────
+
+StepStatus = Literal["running", "ok", "error"]
+
+# Detail-payload cap: a read_file_batch/extract_text_batch result can be
+# megabytes of document text — never hold or render that unbounded, even
+# though it's only ever displayed, not executed.
+_MAX_STEP_DETAIL_CHARS = 20_000
+
+
+@dataclass
+class StepRecord:
+    seq: int
+    tool: str
+    summary: str
+    args: dict = field(default_factory=dict)
+    detail: str = ""
+    status: StepStatus = "running"
 
 
 PendingKind = Literal["approval", "cost"]
@@ -45,6 +68,8 @@ class RunSession:
     run_id: str
     target: Path
     transcript: list[TranscriptItem] = field(default_factory=list)
+    steps: list[StepRecord] = field(default_factory=list)
+    activity: str = ""
     status: str = "Initialising…"
     tokens: str = ""
     progress: dict = field(default_factory=dict)
@@ -56,7 +81,7 @@ class RunSession:
     history: list[dict] | None = None
     narrator: Narrator = field(default_factory=Narrator)
     task: asyncio.Task | None = None
-    _steps_item: TranscriptItem | None = field(default=None, repr=False)
+    _open_step: StepRecord | None = field(default=None, repr=False)
     _seq: int = field(default=0, repr=False)
 
     def _next_seq(self) -> int:
@@ -64,19 +89,41 @@ class RunSession:
         return self._seq
 
     def add_turn(self, speaker: str, text: str) -> None:
-        """Append a speaker-tagged turn, closing any open internal-steps group —
-        mirrors OrganizerScreen._add_turn."""
-        self._steps_item = None
-        self.transcript.append(TranscriptItem(self._next_seq(), "turn", speaker, text))
+        """Append a speaker-tagged turn — a genuine user<->telcontar exchange,
+        never telcontar's own tool activity (that's `open_step`/`close_step`
+        below, rendered in the separate log zone, T5)."""
+        self.transcript.append(TranscriptItem(self._next_seq(), speaker, text))
 
-    def append_step(self, line: str) -> None:
-        """Append a raw tool line to the current internal-steps group, opening
-        one if none is open — mirrors OrganizerScreen._append_step."""
-        if self._steps_item is None:
-            self._steps_item = TranscriptItem(self._next_seq(), "steps", "telcontar", "", [])
-            self.transcript.append(self._steps_item)
-        self._steps_item.lines.append(line)
-        self._steps_item.text = "\n".join(self._steps_item.lines)
+    def open_step(self, tool: str, summary: str, args: dict | None = None) -> StepRecord:
+        """Start a new log-stream entry for one tool call (T6). Any
+        previously-open step is left as-is — a step that never got closed
+        (e.g. the run errored out mid-call) stays "running" forever, which is
+        the correct visual, not a bug: it shows exactly where things stopped.
+        """
+        step = StepRecord(self._next_seq(), tool, summary, args=dict(args or {}))
+        self.steps.append(step)
+        self._open_step = step
+        return step
+
+    def close_step(self, result: object, *, ok: bool) -> None:
+        """Close the currently-open step (if any) with its tool result.
+
+        The detail payload pairs the call's args with its result — useful for
+        seeing what was actually asked for, not just what came back — pretty-
+        printed and capped at `_MAX_STEP_DETAIL_CHARS` (a batch read/extract
+        result can be megabytes of document text; this is a display cap, not
+        the egress cap `MAX_SNIPPET_CHARS` already enforces upstream).
+        """
+        step = self._open_step
+        if step is None:
+            return
+        payload = {"args": step.args, "result": result}
+        detail = json.dumps(payload, indent=2, default=str, ensure_ascii=False)
+        if len(detail) > _MAX_STEP_DETAIL_CHARS:
+            detail = detail[:_MAX_STEP_DETAIL_CHARS] + "\n… (truncated)"
+        step.status = "ok" if ok else "error"
+        step.detail = detail
+        self._open_step = None
 
     def new_pending(self, kind: PendingKind, payload: dict) -> PendingRequest:
         request = PendingRequest(

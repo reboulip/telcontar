@@ -379,7 +379,7 @@ Three parts:
   call `execute_plan`, the run ends normally but the final text names the
   unexecuted plan id instead of losing it silently.
 
-### NiceGUI web UI foundations (S4-S6, extended by T2/T3)
+### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6)
 
 `host/web/` is a package — the first piece of a planned Textual→NiceGUI web UI
 migration (ROADMAP Phase 18). As of S6, `telcontar --web` (`host/main.py`) launches
@@ -396,10 +396,23 @@ query mode, no journal/undo UI (that's Phase 20, item U6) — so the web UI is a
 alternative launch mode for an already-configured install, not (yet) the primary
 way to use telcontar.
 
-- `host/web/session.py` — `RunSession`, framework-agnostic per-run state
-  (transcript, status, tokens, progress, a `pending` approval/cost request keyed to
-  an `asyncio.Future`, a chat `messages` queue, conversation `history`), plus a
-  module-level registry (`create`/`get`/`close`/`all_sessions`) keyed by a
+- `host/web/session.py` — `RunSession`, framework-agnostic per-run state. As of
+  T5/T6, the transcript is turns-only: `RunSession.transcript: list[TranscriptItem]`
+  (`seq`/`speaker`/`text`) holds genuine user↔telcontar exchanges (chat, ask_user,
+  approval/cost outcomes, done/error) via `add_turn(speaker, text)`. Tool activity no
+  longer interleaves there as a "steps"-kind item; instead `RunSession.steps:
+  list[StepRecord]` (`seq`/`tool`/`summary`/`args`/`detail`/`status:
+  "running"|"ok"|"error"`) holds it, and `RunSession.activity: str` holds a single
+  mutable "what's happening right now" narration line. `open_step(tool, summary,
+  args)` starts a step "running"; `close_step(result, ok=...)` pairs it with its
+  result — `{"args": ..., "result": result}`, pretty-printed JSON, capped at
+  `_MAX_STEP_DETAIL_CHARS = 20_000` with a "(truncated)" suffix — and marks it "ok"
+  or "error". A step that never closes (the run errored out mid-call) stays
+  "running" forever by design — it shows exactly where things stopped, not a bug.
+  `transcript` and `steps` share the same `_seq` counter for a stable relative
+  ordering. Also holds status, tokens, progress, a `pending` approval/cost request
+  keyed to an `asyncio.Future`, a chat `messages` queue, conversation `history`,
+  plus a module-level registry (`create`/`get`/`close`/`all_sessions`) keyed by a
   `secrets.token_urlsafe(16)` run id. Deliberately has no `nicegui` import, so it is
   unit-testable in plain pytest. `get_sidebar_width()`/`set_sidebar_width(width)`
   (T4) manage one in-memory sidebar-width preference (240-720px, default 380) for
@@ -415,16 +428,37 @@ way to use telcontar.
   Both `start()` and `run()` take an optional `instructions: str | None = None`,
   threaded into the *first* `run_agent_loop` call only — never into an O7
   continuation — mirroring the Textual TUI's `OrganizerScreen._agent_worker`.
-- `host/web/shell.py` (T2, extended by T3) — `app_shell(*, target=None,
+  As of T5/T6, `on_event`'s `tool_call`/`tool_result` handling no longer appends a
+  chat turn — that was the "telcontar talking to itself in bubbles" T5 fixes.
+  `tool_call` narrates into `session.activity` (via `Narrator.narrate`) and calls
+  `session.open_step(tool, event.text, args)`, reading `tool`/`args` off `event.data`
+  (`host/agent.py`'s 5 `AgentEvent("tool_call", ...)` sites now carry `data={"tool":
+  name, "args": args}`, previously just the tool name); `tool_result` calls
+  `session.close_step(result, ok=...)`, inferring `ok` from whether `event.data`'s
+  `result` dict contains an `"error"` key (the same 5 sites now carry
+  `data={"result": result}`, previously no data at all — additive only, no
+  `run_agent_loop`/`run_query_loop` signature change).
+- `host/web/shell.py` (T2, extended by T3, and T6) — `app_shell(*, target=None,
   on_select=None)`, a `@contextmanager` mounted by every `@ui.page` route, including
   the early-return branches (not-configured, run-not-found), so a left-sidebar frame
   is visible on every screen rather than being assembled per-page. It creates the
   `ui.left_drawer` as a direct child of the page body — NiceGUI's
   `require_top_level_layout` raises `RuntimeError` if a drawer is nested inside
   another container — mounts a `ui.tree` inside it from `host.web.tree.build_nodes`
-  (`.props("dense no-connectors")` for a denser vertical rhythm), and yields a
-  `Shell` dataclass (`drawer`, `tree`, `content`, `target`, `selected`) that the page
-  body builds into via `with app_shell(...) as shell:`. The tree's `on_select`
+  (`.props("dense no-connectors")` for a denser vertical rhythm). As of T6 it also
+  creates a `ui.right_drawer` alongside the left one — both are top-level layout
+  elements subject to the same `require_top_level_layout` constraint — and yields a
+  `Shell` dataclass (`drawer`, `tree`, `content`, `detail_drawer`, `target`,
+  `selected`) that the page body builds into via `with app_shell(...) as shell:`.
+  `Shell.show_detail(title, detail)` populates and opens the right drawer with one
+  internal step's full payload; it deliberately renders via
+  `ui.codemirror(detail, language="JSON").disable()`, never `ui.code`/`ui.markdown`
+  — both of those render through a markdown fenced-code path, and step detail can
+  carry untrusted document content (e.g. a `read_file_batch`/`extract_text_batch`
+  result) that must never be interpreted as markup. `ui.codemirror` takes the
+  content as a plain value/prop instead, with `.disable()` making it read-only
+  display, not an editor. `host/web/main.py`'s `run_page` is the only caller,
+  reached via a per-step "code" icon button. The tree's `on_select`
   handler ignores clicks on lazy-load placeholder nodes and otherwise sets
   `shell.selected` and invokes the optional `on_select` callback; its `on_expand`
   handler is async and, the first time a real directory node is expanded, calls
@@ -478,8 +512,21 @@ way to use telcontar.
   pre-analysis steering box) and a "Start organizing" button. Only clicking that
   button constructs the `AgentBridge` and calls `start(instructions=...)` — S4's
   version started the run immediately on directory selection. Once started
-  (`session.started`), the starter pane hides and the transcript/status/progress
-  bar/chat input/approval-cost-dialogs view (unchanged from S4) takes over.
+  (`session.started`), the starter pane hides and the main view (status/progress
+  bar/chat input/approval-cost-dialogs unchanged from S4) takes over. As of T5/T6,
+  that main view is two independent zones instead of one interleaved stream: a
+  `conversation_column` (turns only, `ui.chat_message`, rendering `session.transcript`)
+  and, below a separator, a pinned-bottom `activity_label` (the current narration
+  line, `session.activity`) plus a scrolling `log_column` (~25vh) rendering
+  `session.steps` as one compact line each — a status glyph (▶ running / · ok /
+  ✗ error) plus the step's summary — with a small "code" icon button per row that
+  calls `shell.show_detail(step.summary, step.detail)` to open the full payload in
+  the right-side detail drawer (T6). A per-client `_RenderState.step_rows` dict
+  (keyed by seq) caps the DOM at `_MAX_LOG_ROWS = 500` (oldest row deleted first)
+  and lets an already-rendered "running" step's line update in place once it
+  closes — unlike `TranscriptItem`s, `StepRecord`s mutate after creation.
+  `run_page`'s `with app_shell(...) as shell:` now captures the `Shell` handle
+  (previously discarded) so it can reach `shell.show_detail()`.
   `run_web(target: Path | None = None)` still binds an ephemeral local port and
   calls `ui.run(host="127.0.0.1", ..., show=True, reload=False)` — never
   `0.0.0.0`, to avoid exposing the approval gate on the LAN. `reload=False` is

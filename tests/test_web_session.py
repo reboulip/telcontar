@@ -39,19 +39,15 @@ def test_get_unknown_run_id_returns_none() -> None:
     assert web_session.get("does-not-exist") is None
 
 
-# ── RunSession: transcript building ──────────────────────────────────────────────
+# ── RunSession: transcript building (turns only, T5) ─────────────────────────────
 
 
-def test_add_turn_closes_open_steps_group(tmp_path: Path) -> None:
+def test_add_turn_appends_to_transcript_only(tmp_path: Path) -> None:
     session = RunSession(run_id="x", target=tmp_path)
-    session.append_step("a")
-    session.append_step("b")
-    session.add_turn("telcontar", "done")
-    session.append_step("c")
+    session.add_turn("telcontar", "hello")
 
-    assert [item.kind for item in session.transcript] == ["steps", "turn", "steps"]
-    assert session.transcript[0].text == "a\nb"
-    assert session.transcript[2].text == "c"
+    assert [item.text for item in session.transcript] == ["hello"]
+    assert session.steps == []
 
 
 def test_seq_numbers_are_monotonic(tmp_path: Path) -> None:
@@ -61,30 +57,147 @@ def test_seq_numbers_are_monotonic(tmp_path: Path) -> None:
     assert [item.seq for item in session.transcript] == [1, 2]
 
 
+def test_seq_is_shared_between_transcript_and_steps(tmp_path: Path) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+    session.add_turn("telcontar", "one")
+    session.open_step("list_dir", "list_dir(path='.')")
+    session.add_turn("telcontar", "two")
+
+    assert [t.seq for t in session.transcript] == [1, 3]
+    assert [s.seq for s in session.steps] == [2]
+
+
+# ── RunSession: internal steps (T6) ───────────────────────────────────────────────
+
+
+def test_open_step_appends_a_running_step(tmp_path: Path) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+
+    step = session.open_step("list_dir", "list_dir(path='.')", {"path": "."})
+
+    assert session.steps == [step]
+    assert step.tool == "list_dir"
+    assert step.summary == "list_dir(path='.')"
+    assert step.args == {"path": "."}
+    assert step.status == "running"
+    assert step.detail == ""
+
+
+def test_close_step_sets_status_and_detail(tmp_path: Path) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+    step = session.open_step("list_dir", "list_dir(path='.')", {"path": "."})
+
+    session.close_step({"entries": []}, ok=True)
+
+    assert step.status == "ok"
+    assert '"path": "."' in step.detail
+    assert '"entries": []' in step.detail
+
+
+def test_close_step_marks_error_status(tmp_path: Path) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+    session.open_step("execute_plan", "execute_plan(plan_id='p1')")
+
+    session.close_step({"error": "Plan rejected by user."}, ok=False)
+
+    assert session.steps[0].status == "error"
+
+
+def test_close_step_without_open_step_is_a_noop(tmp_path: Path) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+
+    session.close_step({"ok": True}, ok=True)  # must not raise
+
+    assert session.steps == []
+
+
+def test_open_step_without_closing_previous_leaves_it_running(tmp_path: Path) -> None:
+    """A step that never gets a matching tool_result (e.g. the run errored
+    out mid-call) stays 'running' forever — the correct visual, not a bug."""
+    session = RunSession(run_id="x", target=tmp_path)
+    first = session.open_step("list_dir", "list_dir(a)")
+    session.open_step("list_dir", "list_dir(b)")
+
+    assert first.status == "running"
+    assert len(session.steps) == 2
+
+
+def test_close_step_truncates_oversized_detail(tmp_path: Path) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+    session.open_step("read_file_batch", "read_file_batch(2 files)")
+
+    session.close_step({"a.txt": "x" * 30_000}, ok=True)
+
+    detail = session.steps[0].detail
+    assert len(detail) <= web_session._MAX_STEP_DETAIL_CHARS + len("\n… (truncated)")
+    assert detail.endswith("(truncated)")
+
+
 # ── AgentBridge.on_event ──────────────────────────────────────────────────────────
 
 
-def test_on_event_tool_call_narrates_then_appends_step(tmp_path: Path) -> None:
+def test_on_event_tool_call_sets_activity_and_opens_step(tmp_path: Path) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = AgentBridge(session)
+
+    bridge.on_event(
+        AgentEvent(
+            "tool_call",
+            "list_dir(path='.')",
+            data={"tool": "list_dir", "args": {"path": "."}},
+        )
+    )
+
+    assert session.transcript == []
+    assert "Scanning the directory" in session.activity
+    assert len(session.steps) == 1
+    assert session.steps[0].tool == "list_dir"
+    assert session.steps[0].summary == "list_dir(path='.')"
+    assert session.steps[0].args == {"path": "."}
+    assert session.steps[0].status == "running"
+
+
+def test_on_event_tool_result_closes_the_open_step(tmp_path: Path) -> None:
     session = RunSession(run_id="x", target=tmp_path)
     bridge = AgentBridge(session)
 
     bridge.on_event(AgentEvent("tool_call", "list_dir(path='.')", data={"tool": "list_dir"}))
+    bridge.on_event(AgentEvent("tool_result", "{'entries': []}", data={"result": {"entries": []}}))
 
-    assert session.transcript[0].kind == "turn"
-    assert "Scanning the directory" in session.transcript[0].text
-    assert session.transcript[1].kind == "steps"
-    assert "list_dir" in session.transcript[1].text
+    assert session.steps[0].status == "ok"
+    assert "entries" in session.steps[0].detail
 
 
-def test_on_event_consecutive_same_narration_collapses(tmp_path: Path) -> None:
+def test_on_event_tool_result_with_error_key_marks_step_error(tmp_path: Path) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = AgentBridge(session)
+
+    bridge.on_event(
+        AgentEvent("tool_call", "execute_plan(plan_id='p1')", data={"tool": "execute_plan"})
+    )
+    bridge.on_event(
+        AgentEvent(
+            "tool_result",
+            "rejected",
+            data={"result": {"error": "Plan rejected by user."}},
+        )
+    )
+
+    assert session.steps[0].status == "error"
+
+
+def test_on_event_consecutive_same_narration_sets_activity_once(tmp_path: Path) -> None:
     session = RunSession(run_id="x", target=tmp_path)
     bridge = AgentBridge(session)
 
     bridge.on_event(AgentEvent("tool_call", "list_dir(a)", data={"tool": "list_dir"}))
+    first_activity = session.activity
     bridge.on_event(AgentEvent("tool_call", "list_dir(b)", data={"tool": "list_dir"}))
 
-    turns = [item for item in session.transcript if item.kind == "turn"]
-    assert len(turns) == 1
+    # Narrator collapses repeats — activity is unchanged, but both calls still
+    # opened their own step.
+    assert session.activity == first_activity
+    assert len(session.steps) == 2
 
 
 def test_on_event_progress_updates_session_progress(tmp_path: Path) -> None:

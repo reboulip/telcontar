@@ -312,6 +312,14 @@ To be fair to the design, these mitigations exist and should be preserved:
   in a `read_file_batch` / `extract_text_batch` call — is logged to
   `.organizer/egress.jsonl` (path, size, tool, timestamp) — an operator can review
   exactly what left the machine after any run.
+- **The web UI's internal-step detail view never renders untrusted content as
+  markup (T6)**: `host/web/shell.py`'s `Shell.show_detail` — which shows the raw
+  args/result of a tool call, potentially including document text pulled via
+  `read_file_batch`/`extract_text_batch` — deliberately uses
+  `ui.codemirror(...).disable()` rather than `ui.code`/`ui.markdown`, both of which
+  render through a markdown fenced-code path; `ui.codemirror` takes the content as
+  a plain value/prop, so there is no path from document content to interpreted
+  markup in the browser.
 
 ---
 

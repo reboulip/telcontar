@@ -24,7 +24,7 @@ sidebar stays visible while the user browses or waits.
 from __future__ import annotations
 
 import socket
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from nicegui import app, run, ui
@@ -44,11 +44,16 @@ _default_target: Path | None = None
 
 @dataclass
 class _RenderState:
-    """Per-client render cursor for run_page — plain instance attributes
-    (rather than a dict) so mypy can track the two different value types."""
+    """Per-client render cursor for run_page. ``step_rows`` holds each
+    rendered step's (row, label) elements, keyed by seq, so a step that was
+    "running" when first rendered can have its glyph/summary updated in
+    place once it closes — StepRecords mutate after creation, unlike
+    TranscriptItems."""
 
-    seq: int = 0
+    turn_seq: int = 0
+    step_seq: int = 0
     shown_request_id: str | None = None
+    step_rows: dict[int, tuple[ui.row, ui.label]] = field(default_factory=dict)
 
 
 def _start_run(target: Path) -> web_session.RunSession:
@@ -89,7 +94,7 @@ async def index_page() -> None:
 async def run_page(run_id: str) -> None:
     session = web_session.get(run_id)
 
-    with app_shell(target=session.target if session is not None else None):
+    with app_shell(target=session.target if session is not None else None) as shell:
         if session is None:
             ui.label(
                 "Run not found — it may have finished and been cleared, or the link is wrong."
@@ -121,7 +126,7 @@ async def run_page(run_id: str) -> None:
             overview_label.set_text(await run.io_bound(directory_overview, session.target) or "")
 
         with main_column:
-            transcript_column = ui.column().classes("w-full")
+            conversation_column = ui.column().classes("w-full")
             status_label = ui.label()
             progress_bar = ui.linear_progress(value=0.0)
             progress_bar.visible = False
@@ -139,15 +144,53 @@ async def run_page(run_id: str) -> None:
                 chat_input.on("keydown.enter", lambda _: _send())
                 ui.button("Send", on_click=_send)
 
+            # Internal-step log strip (T5/T6) — pinned at the bottom, always
+            # visible, distinct from the conversation above: telcontar's own
+            # tool activity never renders as a chat bubble. activity_label is
+            # the "what's happening right now" line; log_column is the
+            # scrolling one-line-per-step history, each with a toggle that
+            # opens the full payload in shell's right-side detail drawer.
+            ui.separator()
+            activity_label = ui.label().classes("text-xs text-grey-6 q-px-sm")
+            log_column = (
+                ui.column()
+                .classes("w-full overflow-auto q-px-sm q-gutter-none")
+                .style("max-height: 25vh; min-height: 25vh;")
+            )
+
         render_state = _RenderState()
 
-        def _render_item(item: web_session.TranscriptItem) -> None:
-            with transcript_column:
-                if item.kind == "turn":
-                    ui.chat_message(item.text, name=item.speaker, sent=item.speaker == "user")
-                else:
-                    with ui.expansion("internal steps").classes("w-full"):
-                        ui.label(item.text).classes("whitespace-pre font-mono text-xs")
+        def _render_turn(item: web_session.TranscriptItem) -> None:
+            with conversation_column:
+                ui.chat_message(item.text, name=item.speaker, sent=item.speaker == "user")
+
+        _STEP_GLYPHS = {"running": "▶", "ok": "·", "error": "✗"}
+
+        def _fmt_step_line(step: web_session.StepRecord) -> str:
+            return f"{_STEP_GLYPHS[step.status]} {step.summary}"
+
+        def _render_step_row(step: web_session.StepRecord) -> tuple[ui.row, ui.label]:
+            with log_column:
+                row = ui.row().classes("w-full items-center q-gutter-xs no-wrap")
+                with row:
+                    label = ui.label(_fmt_step_line(step)).classes(
+                        "whitespace-pre font-mono text-xs ellipsis flex-grow"
+                    )
+                    ui.button(
+                        icon="code",
+                        on_click=lambda: shell.show_detail(
+                            step.summary, step.detail or "(pending…)"
+                        ),
+                    ).props("flat dense size=xs")
+            return row, label
+
+        _MAX_LOG_ROWS = 500
+
+        def _prune_log() -> None:
+            while len(render_state.step_rows) > _MAX_LOG_ROWS:
+                oldest_seq = next(iter(render_state.step_rows))
+                row, _label = render_state.step_rows.pop(oldest_seq)
+                row.delete()
 
         def _show_pending_dialog() -> None:
             pending = session.pending
@@ -203,9 +246,20 @@ async def run_page(run_id: str) -> None:
 
         def _refresh() -> None:
             for item in session.transcript:
-                if item.seq > render_state.seq:
-                    _render_item(item)
-                    render_state.seq = item.seq
+                if item.seq > render_state.turn_seq:
+                    _render_turn(item)
+                    render_state.turn_seq = item.seq
+
+            activity_label.set_text(session.activity)
+            for step in session.steps:
+                if step.seq > render_state.step_seq:
+                    render_state.step_rows[step.seq] = _render_step_row(step)
+                    render_state.step_seq = step.seq
+                    _prune_log()
+                else:
+                    entry = render_state.step_rows.get(step.seq)
+                    if entry is not None:
+                        entry[1].set_text(_fmt_step_line(step))
 
             line = session.status
             if session.tokens:

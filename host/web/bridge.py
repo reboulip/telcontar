@@ -39,15 +39,19 @@ class AgentBridge:
             case "thinking":
                 session.status = event.text
             case "tool_call":
-                # Narrate first so the telcontar turn precedes (and opens a
-                # fresh group for) the detailed call it announces.
+                # Narration becomes the log zone's "current activity" line
+                # (T5) — never a chat turn; that was the "telcontar talking
+                # to itself in bubbles" T5 was written to fix.
                 tool = (event.data or {}).get("tool", "")
                 phrase = session.narrator.narrate(tool)
                 if phrase:
-                    session.add_turn("telcontar", phrase)
-                session.append_step(f"▶ {event.text}")
+                    session.activity = phrase
+                args = (event.data or {}).get("args") or {}
+                session.open_step(tool, event.text, args)
             case "tool_result":
-                session.append_step(f"  {event.text}")
+                result = (event.data or {}).get("result")
+                ok = not (isinstance(result, dict) and "error" in result)
+                session.close_step(result, ok=ok)
             case "plan_ready":
                 session.status = "Waiting for plan approval…"
             case "ask_user":

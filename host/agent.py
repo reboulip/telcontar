@@ -945,33 +945,31 @@ async def _fetch_batch_content(
 
     content: dict[str, Any] = {}
     if extract_paths:
+        extract_args = {"paths": extract_paths, "max_chars": settings.max_snippet_chars}
         on_event(
             AgentEvent(
                 "tool_call",
                 f"extract_text_batch({len(extract_paths)} files)",
-                data={"tool": "extract_text_batch"},
+                data={"tool": "extract_text_batch", "args": extract_args},
             )
         )
-        raw = await session.call_tool(
-            "extract_text_batch", {"paths": extract_paths, "max_chars": settings.max_snippet_chars}
-        )
+        raw = await session.call_tool("extract_text_batch", extract_args)
         result = _extract_content(raw)
-        on_event(AgentEvent("tool_result", _fmt_result(result)))
+        on_event(AgentEvent("tool_result", _fmt_result(result), data={"result": result}))
         if isinstance(result, dict):
             content.update(result)
     if read_paths:
+        read_args = {"paths": read_paths, "max_chars": settings.max_snippet_chars}
         on_event(
             AgentEvent(
                 "tool_call",
                 f"read_file_batch({len(read_paths)} files)",
-                data={"tool": "read_file_batch"},
+                data={"tool": "read_file_batch", "args": read_args},
             )
         )
-        raw = await session.call_tool(
-            "read_file_batch", {"paths": read_paths, "max_chars": settings.max_snippet_chars}
-        )
+        raw = await session.call_tool("read_file_batch", read_args)
         result = _extract_content(raw)
-        on_event(AgentEvent("tool_result", _fmt_result(result)))
+        on_event(AgentEvent("tool_result", _fmt_result(result), data={"result": result}))
         if isinstance(result, dict):
             content.update(result)
     return content
@@ -1141,16 +1139,17 @@ async def _analyze_new_documents(
         if not documents:
             continue
 
+        record_args = {"documents": documents}
         on_event(
             AgentEvent(
                 "tool_call",
                 f"record_document_batch({len(documents)} docs)",
-                data={"tool": "record_document_batch"},
+                data={"tool": "record_document_batch", "args": record_args},
             )
         )
-        raw = await session.call_tool("record_document_batch", {"documents": documents})
+        raw = await session.call_tool("record_document_batch", record_args)
         result = _extract_content(raw)
-        on_event(AgentEvent("tool_result", _fmt_result(result)))
+        on_event(AgentEvent("tool_result", _fmt_result(result), data={"result": result}))
         if isinstance(result, dict):
             batch_recorded = [r for r in result.get("recorded", []) if isinstance(r, dict)]
             recorded.extend(batch_recorded)
@@ -1591,7 +1590,13 @@ async def run_agent_loop(
                 name = tool_call.function.name
                 args: dict[str, Any] = json.loads(tool_call.function.arguments or "{}")
 
-                on_event(AgentEvent("tool_call", f"{name}({_fmt_args(args)})", data={"tool": name}))
+                on_event(
+                    AgentEvent(
+                        "tool_call",
+                        f"{name}({_fmt_args(args)})",
+                        data={"tool": name, "args": args},
+                    )
+                )
 
                 if name == _ASK_USER_TOOL_NAME:
                     result = await _handle_ask_user(
@@ -1630,7 +1635,7 @@ async def run_agent_loop(
                     if name == "execute_plan":
                         plan_gate_reached = True
 
-                on_event(AgentEvent("tool_result", _fmt_result(result)))
+                on_event(AgentEvent("tool_result", _fmt_result(result), data={"result": result}))
 
                 messages.append(
                     {
@@ -1781,10 +1786,16 @@ async def run_query_loop(
             if name not in QUERY_ALLOWED_TOOLS:
                 result: Any = {"error": f"Tool {name!r} is not available in query mode."}
             else:
-                on_event(AgentEvent("tool_call", f"{name}({_fmt_args(args)})", data={"tool": name}))
+                on_event(
+                    AgentEvent(
+                        "tool_call",
+                        f"{name}({_fmt_args(args)})",
+                        data={"tool": name, "args": args},
+                    )
+                )
                 raw = await session.call_tool(name, args)
                 result = _extract_content(raw)
-                on_event(AgentEvent("tool_result", _fmt_result(result)))
+                on_event(AgentEvent("tool_result", _fmt_result(result), data={"result": result}))
 
             messages.append(
                 {

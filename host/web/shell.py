@@ -25,6 +25,12 @@ Sidebar width (T4) is a single in-memory preference in
 for why. The drag handle only updates the DOM live in JS; the width is only
 persisted (and the Quasar `width` prop re-applied) once, on mouseup, via a
 custom `tc_sidebar_resized` event.
+
+The internal-step detail zone (T6) is a `ui.right_drawer`, created here
+alongside the left one — both are top-level layout elements, so both must be
+direct children of the page's content, per the same `require_top_level_layout`
+constraint. `Shell.show_detail()` is the only way `host/web/main.py` touches
+it, so the widget choice stays an implementation detail of this module.
 """
 
 from __future__ import annotations
@@ -82,12 +88,13 @@ _RESIZE_JS = """
 
 @dataclass
 class Shell:
-    """Handle to one page build's mounted shell — the sidebar drawer/tree and
-    the page's main content column."""
+    """Handle to one page build's mounted shell — the sidebar drawer/tree,
+    the internal-step detail drawer, and the page's main content column."""
 
     drawer: ui.left_drawer
     tree: ui.tree
     content: ui.column
+    detail_drawer: ui.right_drawer
     target: Path | None = None
     selected: Path | None = None
 
@@ -98,6 +105,22 @@ class Shell:
         self.target = root
         self.tree.props["nodes"] = web_tree.build_nodes(root)
         self.tree.update()
+
+    def show_detail(self, title: str, detail: str) -> None:
+        """Populate and open the step-detail drawer (T6).
+
+        Never `ui.code`/`ui.markdown` here: both render through a markdown
+        fenced-code path, and step detail can carry untrusted document
+        content that must never be interpreted as markup. `ui.codemirror`
+        takes the content as a plain value/prop instead — no injection path
+        — and is set read-only via `.disable()` since this is a display-only
+        view, not an editor.
+        """
+        self.detail_drawer.clear()
+        with self.detail_drawer:
+            ui.label(title).classes("text-subtitle2 q-pa-sm")
+            ui.codemirror(detail, language="JSON").classes("w-full h-full").disable()
+        self.detail_drawer.show()
 
 
 def _apply_theme() -> None:
@@ -149,8 +172,16 @@ def app_shell(
             nodes, node_key="id", label_key="label", children_key="children"
         ).props("dense no-connectors")
 
+    detail_drawer = ui.right_drawer(value=False).classes("tc-detail-drawer")
+
     content = ui.column().classes("w-full")
-    shell = Shell(drawer=drawer, tree=tree_widget, content=content, target=root)
+    shell = Shell(
+        drawer=drawer,
+        tree=tree_widget,
+        content=content,
+        detail_drawer=detail_drawer,
+        target=root,
+    )
 
     def _handle_select(e: ValueChangeEventArguments) -> None:
         if not e.value or e.value.endswith(web_tree.PLACEHOLDER_SUFFIX):
