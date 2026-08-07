@@ -4,7 +4,26 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from host.web.theme import window_title
+from host.web.theme import (
+    FAVICON_SVG,
+    PALETTE,
+    css,
+    font_face_css,
+    window_title,
+)
+
+# Exactly the keyword set nicegui.app.colors() accepts.
+_QUASAR_COLOR_TOKENS = {
+    "primary",
+    "secondary",
+    "accent",
+    "dark",
+    "dark_page",
+    "positive",
+    "negative",
+    "info",
+    "warning",
+}
 
 
 def test_window_title_none_is_plain_telcontar() -> None:
@@ -35,3 +54,79 @@ def test_window_title_drive_root_falls_back_to_full_path() -> None:
 
     assert title != "telcontar — "
     assert title == f"telcontar — {root}"
+
+
+# ── PALETTE ────────────────────────────────────────────────────────────────
+
+
+def test_palette_matches_quasar_color_tokens_exactly() -> None:
+    assert set(PALETTE.keys()) == _QUASAR_COLOR_TOKENS
+
+
+def test_palette_values_are_hex_colors() -> None:
+    for value in PALETTE.values():
+        assert value.startswith("#")
+        assert len(value) in (4, 7)  # "#abc" or "#aabbcc"
+
+
+def test_palette_positive_and_negative_stay_in_their_hue_families() -> None:
+    # Approve/Reject must never be re-hued gold/silver — the approval
+    # dialog is the highest-trust screen in the product.
+    assert PALETTE["positive"] not in (PALETTE["primary"], PALETTE["secondary"])
+    assert PALETTE["negative"] not in (PALETTE["primary"], PALETTE["secondary"])
+
+
+# ── favicon ───────────────────────────────────────────────────────────────
+
+
+def test_favicon_svg_is_a_raw_svg_string() -> None:
+    assert FAVICON_SVG.strip().startswith("<svg")
+    assert FAVICON_SVG.strip().endswith("</svg>")
+
+
+# ── font_face_css / css ──────────────────────────────────────────────────
+
+
+def test_font_face_css_empty_when_font_file_absent(tmp_path: Path) -> None:
+    assert font_face_css(tmp_path) == ""
+
+
+def test_font_face_css_present_when_font_file_exists(tmp_path: Path) -> None:
+    (tmp_path / "cinzel-latin-600.woff2").write_bytes(b"fake-woff2-bytes")
+
+    result = font_face_css(tmp_path)
+
+    assert "@font-face" in result
+    assert "Cinzel" in result
+    assert "cinzel-latin-600.woff2" in result
+
+
+def test_css_always_contains_fallback_stack_regardless_of_font_file(
+    tmp_path: Path,
+) -> None:
+    result = css(tmp_path)
+
+    assert "Trajan Pro" in result
+    assert "Palatino Linotype" in result
+    assert "Georgia" in result
+
+
+def test_css_contains_button_contrast_fix() -> None:
+    result = css()
+
+    assert ".q-btn.bg-primary" in result
+    assert "#0E1116" in result
+
+
+def test_css_binds_display_font_to_quasar_heading_classes() -> None:
+    result = css()
+
+    assert ".text-h1" in result
+    assert ".text-h6" in result
+    assert "Cinzel" in result
+
+
+def test_css_includes_font_face_when_file_present(tmp_path: Path) -> None:
+    (tmp_path / "cinzel-latin-600.woff2").write_bytes(b"fake-woff2-bytes")
+
+    assert "@font-face" in css(tmp_path)

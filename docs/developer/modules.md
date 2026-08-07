@@ -508,14 +508,42 @@ node still carries the placeholder rather than real children — both support
 home directory, returning an empty list (never raising) on any other platform,
 Python version, or enumeration error.
 
-**`host/web/theme.py`** (T7) — product-identity helpers, `nicegui`-free like
-`session.py`/`bridge.py`/`tree.py`. `window_title(target: Path | None = None) ->
-str` returns `"telcontar"` with no target, or `f"telcontar — {target.name}"` once
-one is selected, falling back to the full path string when `.name` is empty (a
-Windows drive root, e.g. `Path("C:\\")`, so the title never ends in a dangling
-"— "). Designated home for T8's upcoming palette/CSS/favicon work.
+**`host/web/theme.py`** (T7, extended by T8) — product-identity helpers,
+`nicegui`-free like `session.py`/`bridge.py`/`tree.py`. `window_title(target: Path
+| None = None) -> str` returns `"telcontar"` with no target, or `f"telcontar —
+{target.name}"` once one is selected, falling back to the full path string when
+`.name` is empty (a Windows drive root, e.g. `Path("C:\\")`, so the title never
+ends in a dangling "— "). T8 adds telcontar's visual identity — a
+Númenórean/human-king (Aragorn's Quenya name) motif, gold and silver on a dark
+base:
 
-**`host/web/main.py`** (extended by T5/T6/T7) — now shares nicegui-importing duties
+- `PALETTE: dict[str, str]` — exactly the 9 keyword names `nicegui.app.colors()`
+  accepts (`primary`/`secondary`/`accent`/`dark`/`dark_page`/`positive`/
+  `negative`/`info`/`warning`). Gold `primary` (`#C8A951`), mithril-silver
+  `secondary` (`#AEB6C4`), `dark_page`/`dark` as the page background and
+  elevated-surface dark tones. `positive`/`negative` stay in their own
+  desaturated green/red hue families, deliberately never re-hued gold/silver —
+  the approval dialog's Approve/Reject buttons are the highest-trust screen in
+  the product and must stay unmistakable.
+- `FAVICON_SVG` — an inline SVG string (Elendil's seven-pointed star, gold on
+  the dark base) passed straight to `ui.run(favicon=...)`, which NiceGUI inlines
+  as a data URL — no file, no network request.
+- `font_face_css(font_dir: Path | None = None) -> str` — emits an `@font-face`
+  rule for the vendored Cinzel woff2 (`host/web/assets/fonts/`) only if the file
+  actually exists on disk; returns `""` otherwise, so a missing font is silently
+  a plainer heading, never a 404.
+- `css(font_dir: Path | None = None) -> str` — the one small CSS layer: binds the
+  display typeface (Cinzel, falling back to "Trajan Pro" / "Palatino Linotype" /
+  "Book Antiqua" / Georgia / serif — always present regardless of whether the
+  font file exists) directly onto Quasar's own `.text-h1`...`.text-h6` heading
+  classes, so every existing heading picks it up with no per-component class
+  sprinkling, plus a mandatory contrast fix (`.q-btn.bg-primary { color:
+  #0E1116 !important; }` — Quasar renders a filled `color="primary"` button with
+  white label text by default, and white-on-gold is ~2.2:1 contrast, unreadable).
+- `FONT_DIR`, `FONT_URL_PATH` (`/tc-fonts`) — the static-assets directory and its
+  `app.add_static_files` mount point, both consumed by `run_web()`.
+
+**`host/web/main.py`** (extended by T5/T6/T7/T8) — now shares nicegui-importing duties
 with `host/web/shell.py` (T2). Pages are registered at import time (`@ui.page("/")`,
 `@ui.page("/run/{run_id}")`) but nothing binds a port until `run_web(target: Path |
 None = None)` is called, so importing the module is side-effect-free. Each
@@ -572,10 +600,17 @@ the DOM at `_MAX_LOG_ROWS = 500`, deleting the oldest row once exceeded.
 (previously discarded) so `_render_step_row` can reach `shell.show_detail()`.
 
 `_pick_port()` binds an ephemeral `127.0.0.1` port. `run_web` calls
-`ui.run(host="127.0.0.1", port=port, show=True, reload=False)` — `reload=False` is
-required, not stylistic: `reload=True` forces uvicorn onto a `SelectorEventLoop` on
-Windows, where `asyncio.create_subprocess_exec` (the MCP server subprocess launch)
-raises `NotImplementedError`.
+`ui.run(host="127.0.0.1", port=port, show=True, reload=False, dark=True,
+favicon=theme.FAVICON_SVG)` — `reload=False` is required, not stylistic:
+`reload=True` forces uvicorn onto a `SelectorEventLoop` on Windows, where
+`asyncio.create_subprocess_exec` (the MCP server subprocess launch) raises
+`NotImplementedError`. `dark=True` is likewise load-bearing (T8): Quasar only
+honours the `dark`/`dark_page` palette tokens in dark mode. Before `ui.run()`,
+`run_web` applies the visual identity globally and exactly once: `app.colors(
+**theme.PALETTE)` (never a per-page `ui.colors()`, which would silently
+override this and fragment the identity across routes), `app.add_static_files(
+theme.FONT_URL_PATH, theme.FONT_DIR)` when the vendored-fonts directory exists,
+and `ui.add_css(theme.css(), shared=True)`.
 
 Note: the ROADMAP text for S5 also names `_load_profile_options`, journal reads,
 and `server.tools.undo_last` as blocking calls to move off the event loop, but none

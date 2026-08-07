@@ -379,7 +379,7 @@ Three parts:
   call `execute_plan`, the run ends normally but the final text names the
   unexecuted plan id instead of losing it silently.
 
-### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7)
+### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8)
 
 `host/web/` is a package — the first piece of a planned Textual→NiceGUI web UI
 migration (ROADMAP Phase 18). As of S6, `telcontar --web` (`host/main.py`) launches
@@ -497,13 +497,26 @@ way to use telcontar.
   `needs_loading` support `shell.py`'s expand handler. `list_drive_roots()` wraps
   `os.listdrives()` (3.12+, Windows-only) so the picker can reach outside the home
   directory, degrading to an empty list on any other platform or on error.
-- `host/web/theme.py` (T7) — product-identity helpers, `nicegui`-free (mirrors
-  `session.py`/`bridge.py`/`tree.py`'s plain-pytest-testable invariant).
+- `host/web/theme.py` (T7, extended by T8) — product-identity helpers, `nicegui`-free
+  (mirrors `session.py`/`bridge.py`/`tree.py`'s plain-pytest-testable invariant).
   `window_title(target: Path | None = None) -> str` returns `"telcontar"` with no
   target, or `f"telcontar — {target.name}"` once one is selected, falling back to
   the full path string when `.name` is empty (a Windows drive root has none, so the
-  title never ends in a dangling "— "). This is the designated home for T8's
-  upcoming palette/CSS/favicon work; nothing else lives here yet.
+  title never ends in a dangling "— "). T8 adds telcontar's visual identity — a
+  Númenórean/human-king motif, gold and silver on a dark base — through two pieces
+  consumed by `run_web()`: `PALETTE: dict[str, str]`, exactly the 9 keyword names
+  `nicegui.app.colors()` accepts, with gold `primary`/mithril-silver `secondary` on
+  a dark `dark_page`/`dark` base, while `positive`/`negative` deliberately stay in
+  their own desaturated green/red families rather than being re-hued gold/silver —
+  the approval dialog's Approve/Reject buttons are the highest-trust screen in the
+  product and must stay unmistakable; and `css(font_dir=None) -> str`, one CSS layer
+  binding the vendored Cinzel display face (via `font_face_css()`, emitted only when
+  the woff2 actually exists on disk — otherwise a fallback serif stack, never a 404)
+  onto Quasar's own `.text-h1`...`.text-h6` classes, plus a mandatory
+  `.q-btn.bg-primary` text-colour fix (Quasar's default white button label is
+  ~2.2:1 contrast on the gold primary — unreadable). `FAVICON_SVG` is an inline SVG
+  (Elendil's seven-pointed star) passed to `ui.run(favicon=...)`, which NiceGUI
+  inlines as a data URL with no file or network request.
 - `host/web/main.py` now mounts `app_shell(...)` at the top of both page bodies
   instead of assembling its own layout. The landing page (`/`) first checks
   `config.settings.is_configured()`: if telcontar hasn't been set up yet, it shows
@@ -535,11 +548,18 @@ way to use telcontar.
   `run_page`'s `with app_shell(...) as shell:` now captures the `Shell` handle
   (previously discarded) so it can reach `shell.show_detail()`.
   `run_web(target: Path | None = None)` still binds an ephemeral local port and
-  calls `ui.run(host="127.0.0.1", ..., show=True, reload=False, title=...)` — never
-  `0.0.0.0`, to avoid exposing the approval gate on the LAN. `reload=False` is
-  load-bearing, not a style choice: with `reload=True`, uvicorn forces a
-  `SelectorEventLoop` on Windows, where `asyncio.create_subprocess_exec` (used to
-  launch the MCP server subprocess) raises `NotImplementedError`. The browser tab
+  calls `ui.run(host="127.0.0.1", ..., show=True, reload=False, title=..., dark=True,
+  favicon=theme.FAVICON_SVG)` — never `0.0.0.0`, to avoid exposing the approval gate
+  on the LAN. `reload=False` is load-bearing, not a style choice: with `reload=True`,
+  uvicorn forces a `SelectorEventLoop` on Windows, where
+  `asyncio.create_subprocess_exec` (used to launch the MCP server subprocess) raises
+  `NotImplementedError`. `dark=True` is load-bearing too (T8): Quasar only honours
+  the `dark`/`dark_page` `PALETTE` tokens in dark mode. Before `ui.run()`, `run_web`
+  applies telcontar's visual identity globally and exactly once — `app.colors(
+  **theme.PALETTE)` (never a per-page `ui.colors()`, which would silently override
+  this and fragment the identity across routes), `app.add_static_files(
+  theme.FONT_URL_PATH, theme.FONT_DIR)` to serve the vendored Cinzel woff2 when the
+  fonts directory exists, and `ui.add_css(theme.css(), shared=True)`. The browser tab
   title (T7) comes from `host.web.theme.window_title`: `ui.run(...)`'s `title=`
   supplies the global default (no target yet), and `run_page` separately calls
   `ui.page_title(theme.window_title(session.target))` from inside the page body —

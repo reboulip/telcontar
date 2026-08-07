@@ -60,3 +60,7 @@ uv run mypy .          # type check
 - Every filesystem mutation — renames, moves, quarantines, file writes, folder creation, archiving, and quarantine compression — is staged as a plan op and only takes effect through `execute_plan`; there is no tool that touches the filesystem directly.
 - Every destructive operation is journaled. Undo is a manual, user-only action: press **j** in the Organizer screen to open the operations journal, then **u** to revert the most recent operation — the agent itself has no undo tool.
 - Compressing loose quarantine files into a verified ZIP archive (reclaiming space) is staged the same way and remains fully reversible via undo.
+
+## Credits
+
+- The web UI's display typeface is [Cinzel](https://github.com/NDISCOVER/Cinzel), copyright The Cinzel Project Authors, licensed under the [SIL Open Font License 1.1](host/web/assets/fonts/OFL.txt) (vendored at `host/web/assets/fonts/`).

@@ -322,11 +322,32 @@ def run_web(target: Path | None = None) -> None:
                 )
                 session.resolve_pending(result)
 
+    # Visual identity (T8) — applied globally, once, here: never a per-page
+    # ui.colors() call, which would silently override this and re-fragment
+    # the identity across routes. app.add_static_files() serves the
+    # vendored Cinzel woff2 (if present — theme.css()'s @font-face degrades
+    # to the fallback stack otherwise) at the URL theme.font_face_css()
+    # references.
+    app.colors(**theme.PALETTE)
+    if theme.FONT_DIR.is_dir():
+        app.add_static_files(theme.FONT_URL_PATH, theme.FONT_DIR)
+    ui.add_css(theme.css(), shared=True)
+
     port = _pick_port()
     # reload=False is load-bearing, not a style choice: with reload=True,
     # uvicorn forces a SelectorEventLoop on Windows (its `use_subprocess`
     # flag), where asyncio.create_subprocess_exec raises NotImplementedError
     # — mcp_session's server subprocess launch would be dead on Windows.
     # Never bind 0.0.0.0 either: it triggers a Windows Firewall prompt and
-    # would expose the approval gate on the LAN.
-    ui.run(host="127.0.0.1", port=port, show=True, reload=False, title=theme.window_title())
+    # would expose the approval gate on the LAN. dark=True is load-bearing
+    # too: Quasar only honours the dark/dark_page palette tokens above in
+    # dark mode.
+    ui.run(
+        host="127.0.0.1",
+        port=port,
+        show=True,
+        reload=False,
+        title=theme.window_title(),
+        dark=True,
+        favicon=theme.FAVICON_SVG,
+    )
