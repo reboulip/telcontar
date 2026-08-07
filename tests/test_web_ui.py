@@ -33,13 +33,15 @@ Gotchas learned the hard way (read before adding more tests):
    The `_preserve_dunder_main` fixture below guards this; every test in this
    file depends on it via autouse.
 
-3. **A closed `ui.dialog` is hidden, not removed** (NiceGUI's `Dialog.close()`
-   just clears `.visible`). `ElementFilter(only_visible=True)` — what
-   `should_see`/`should_not_see` use — checks `element.visible`, so this
-   works correctly *if* the dialog code actually flips `.visible` on close.
-   If a `should_not_see` assertion for a dialog button flakes true (still
-   sees it after the dialog "closed"), check whether the dialog was properly
-   closed vs. just abandoned.
+3. **`Dialog.close()`/`.open()` set `.value` (the Quasar `model-value`
+   prop), not `.visible`.** `ElementFilter(only_visible=True)` — what
+   `should_see`/`should_not_see` use — walks `.visible` on the element and
+   its ancestors, which a closed dialog never touches. A `should_not_see`
+   assertion for a dialog's own content therefore **never works**, closed
+   or not — it isn't a flake to chase, it's testing the wrong attribute.
+   Assert the *functional* outcome instead (state that changed, a future
+   that resolved, a file that did/didn't change) rather than the dialog's
+   own visibility.
 
 4. **The 0.5s render-poll timer vs. the 0.3s default `should_see` retry
    budget.** `web_session.REFRESH_INTERVAL` exists specifically so tests can
@@ -52,11 +54,24 @@ Gotchas learned the hard way (read before adding more tests):
    (which changes with copy edits). Use the TUI's existing widget names as
    markers (e.g. `approve-btn`, `refine-btn`, `cost-proceed`,
    `journal-undo`) so the web port is auditable against the TUI 1:1.
+
+6. **A `run.io_bound`/`asyncio.to_thread` await inside a click handler
+   defined on a dialog opened from *another* dialog's own click handler
+   (a "second-order" `background_tasks.create_or_defer` dispatch, one level
+   removed from the page's top-level event handling) never resumes in this
+   test harness** — the executor-callback continuation is silently lost, no
+   exception, no timeout, just a coroutine that never continues past the
+   `await`. Confirmed by direct experiment (host/web/dialogs.py's
+   `build_journal_dialog`). Not an issue in a real browser session — this is
+   specific to the headless simulation. If a nested-dialog handler needs to
+   do blocking I/O, call it synchronously instead (justified when the
+   operation is fast and rare — never for anything on the poll-timer path).
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 from pathlib import Path
 from typing import Iterator
@@ -559,3 +574,125 @@ async def test_cost_dialog_cancel_resolves_rejected(user: User, tmp_path: Path) 
 
     result = await pending.future
     assert result.approved is False
+
+
+# ── Journal dialog (U6) ───────────────────────────────────────────────────────
+
+
+def _write_journal_entry(tmp_path: Path) -> None:
+    journal_dir = tmp_path / ".organizer"
+    journal_dir.mkdir(exist_ok=True)
+    entry = {
+        "op_type": "rename",
+        "src": str(tmp_path / "old.txt"),
+        "dst": "new.txt",
+        "timestamp": "2026-07-01T10:00:00Z",
+    }
+    (journal_dir / "journal.jsonl").write_text(json.dumps(entry) + "\n", encoding="utf-8")
+
+
+async def test_journal_button_shows_entry_count(user: User, tmp_path: Path) -> None:
+    _write_journal_entry(tmp_path)
+    session = web_session.create(tmp_path)
+    session.started = True
+
+    await user.open(f"/run/{session.run_id}")
+
+    await user.should_see("Journal (1)")
+
+
+async def test_journal_button_shows_zero_with_no_entries(user: User, tmp_path: Path) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+
+    await user.open(f"/run/{session.run_id}")
+
+    await user.should_see("Journal (0)")
+
+
+async def test_journal_dialog_lists_entries(user: User, tmp_path: Path) -> None:
+    _write_journal_entry(tmp_path)
+    session = web_session.create(tmp_path)
+    session.started = True
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="btn-open-journal")
+
+    user.find(marker="btn-open-journal").click()
+
+    await user.should_see("new.txt")
+    await user.should_see(marker="journal-undo")
+
+
+async def test_journal_dialog_empty_state(user: User, tmp_path: Path) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="btn-open-journal")
+
+    user.find(marker="btn-open-journal").click()
+
+    await user.should_see("No operations recorded yet.")
+
+
+async def test_journal_undo_requires_confirm_then_bumps_fs_revision(
+    user: User, tmp_path: Path
+) -> None:
+    _write_journal_entry(tmp_path)
+    (tmp_path / "new.txt").write_text("x")
+    session = web_session.create(tmp_path)
+    session.started = True
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="btn-open-journal")
+    user.find(marker="btn-open-journal").click()
+    await user.should_see(marker="journal-undo")
+
+    user.find(marker="journal-undo").click()
+    await user.should_see(marker="journal-undo-confirm")
+    # Not yet undone — confirm step must not have fired anything.
+    assert session.fs_revision == 0
+
+    user.find(marker="journal-undo-confirm").click()
+    await user.should_see("Undone the last operation.")
+
+    assert session.fs_revision == 1
+    assert (tmp_path / "old.txt").exists()
+    assert not (tmp_path / "new.txt").exists()
+
+
+async def test_journal_undo_cancel_does_not_undo(user: User, tmp_path: Path) -> None:
+    _write_journal_entry(tmp_path)
+    (tmp_path / "new.txt").write_text("x")
+    session = web_session.create(tmp_path)
+    session.started = True
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="btn-open-journal")
+    user.find(marker="btn-open-journal").click()
+    await user.should_see(marker="journal-undo")
+
+    user.find(marker="journal-undo").click()
+    await user.should_see(marker="journal-undo-cancel")
+    user.find(marker="journal-undo-cancel").click()
+
+    # Dialog.close() only clears its Quasar model-value, not .visible (see
+    # gotcha #3), so should_not_see can't verify the confirm dialog closed
+    # visually — assert the functional outcome instead: undo never ran.
+    assert session.fs_revision == 0
+    assert (tmp_path / "new.txt").exists()
+
+
+async def test_journal_undo_blocked_while_step_is_open(user: User, tmp_path: Path) -> None:
+    _write_journal_entry(tmp_path)
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.open_step("execute_plan", "execute_plan(plan_id='p1')")
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="btn-open-journal")
+    user.find(marker="btn-open-journal").click()
+
+    await user.should_see(marker="journal-busy")
+    await user.should_not_see(marker="journal-undo")

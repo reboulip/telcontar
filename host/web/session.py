@@ -98,6 +98,13 @@ class RunSession:
         below, rendered in the separate log zone, T5)."""
         self.transcript.append(TranscriptItem(self._next_seq(), speaker, text))
 
+    def has_open_step(self) -> bool:
+        """True while a tool call is still running (U6): undo must be
+        blocked in this state — server.journal.pop_last rewrites the whole
+        journal file while the MCP server subprocess may be appending to
+        it, and racing them can silently drop audit records."""
+        return self._open_step is not None
+
     def open_step(self, tool: str, summary: str, args: dict | None = None) -> StepRecord:
         """Start a new log-stream entry for one tool call (T6). Any
         previously-open step is left as-is — a step that never got closed

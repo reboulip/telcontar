@@ -779,7 +779,7 @@ class ConfigScreen(Screen):
 # ── Journal screen ────────────────────────────────────────────────────────────
 
 
-class JournalScreen(ModalScreen[None]):
+class JournalScreen(ModalScreen[bool]):
     """Read-only view of the full undo journal, newest entries last — and the
     one place ``undo_last`` can be triggered from (S1).
 
@@ -787,6 +787,11 @@ class JournalScreen(ModalScreen[None]):
     ``server.tools.undo_last`` directly (local file/function, same machine)
     rather than through an MCP tool — undo is deliberately an explicit user
     action here, never something the agent can call itself.
+
+    Dismisses with ``True`` if at least one undo succeeded during this
+    screen's lifetime, ``False`` otherwise — the caller (OrganizerScreen)
+    uses this to know whether to refresh the bottom ops-journal strip,
+    which otherwise goes stale after an undo (Phase 20 U6).
     """
 
     DEFAULT_CSS = """
@@ -824,6 +829,7 @@ class JournalScreen(ModalScreen[None]):
         super().__init__()
         self._target = target
         self._status = ""
+        self._undone_any = False
 
     def compose(self) -> ComposeResult:
         from server.journal import all_entries
@@ -848,7 +854,7 @@ class JournalScreen(ModalScreen[None]):
             )
 
     def action_close(self) -> None:
-        self.dismiss(None)
+        self.dismiss(self._undone_any)
 
     async def action_undo(self) -> None:
         from server.tools import undo_last
@@ -858,6 +864,7 @@ class JournalScreen(ModalScreen[None]):
         result = undo_last(journal_path, plans_dir)
         if result.get("undone") is not None:
             self._status = "[green]Undone the last operation.[/green]"
+            self._undone_any = True
         else:
             self._status = f"[red]Undo failed: {result.get('error', 'unknown error')}[/red]"
         await self.recompose()
@@ -1232,7 +1239,16 @@ class OrganizerScreen(Screen):
             self._add_turn("telcontar", f"[dim italic]{phrase}[/dim italic]")
 
     def action_view_journal(self) -> None:
-        self.app.push_screen(JournalScreen(self._target))
+        # push_screen_wait requires a Textual worker context (unlike a
+        # plain key-bound action's own coroutine) — same reason
+        # on_approval_needed/on_cost_approval_needed only work because
+        # they run inside _agent_worker's run_worker(...) call tree.
+        self.run_worker(self._view_journal_worker(), exclusive=False)
+
+    async def _view_journal_worker(self) -> None:
+        undone = await self.app.push_screen_wait(JournalScreen(self._target))
+        if undone:
+            self._refresh_ops_journal()
 
     async def _agent_worker(self, instructions: str | None = None) -> None:
         from config.settings import load as load_settings

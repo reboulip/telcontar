@@ -64,7 +64,7 @@ The setup wizard guides you through entering your API key (stored securely in th
 
 ## Design principles
 
-- **Safety first.** Nothing is ever deleted — clutter goes to a quarantine folder. Every destructive operation is journaled and reversible; undo is a deliberate, user-only action in the TUI, never something the agent itself can trigger.
+- **Safety first.** Nothing is ever deleted — clutter goes to a quarantine folder. Every destructive operation is journaled and reversible; undo is a deliberate, user-only action in the TUI or web UI, never something the agent itself can trigger.
 - **Local execution.** File I/O never leaves the machine; only content snippets go to the model.
 - **Profile-driven.** Swap corpus types (IS/IT project, legal, personal archive…) by pointing at a different TOML file — no code changes.
 - **One language, one toolchain.** Python + uv end to end.

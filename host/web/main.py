@@ -31,12 +31,13 @@ from nicegui import app, run, ui
 
 from host.agent import ApprovalResult, CostApprovalResult
 from host.paths import directory_overview
+from host.web import journal
 from host.web import session as web_session
 from host.web import steplog
 from host.web import theme
 from host.web import tree as web_tree
 from host.web.bridge import AgentBridge
-from host.web.dialogs import build_approval_dialog, build_cost_dialog
+from host.web.dialogs import build_approval_dialog, build_cost_dialog, build_journal_dialog
 from host.web.settings import build_settings_view
 from host.web.shell import app_shell
 from host.web.wizard import build_setup_wizard
@@ -111,6 +112,24 @@ async def run_page(run_id: str) -> None:
         # decoration time and can't see the target directory, which is only
         # known once the URL's run_id resolves to a session (T7).
         ui.page_title(theme.window_title(session.target))
+
+        # Journal toolbar affordance (U6) — placed above starter_column so
+        # it's usable before a run even starts (TUI parity: `j` works from
+        # mount). Count refreshes below whenever fs_revision changes. Reads
+        # the journal synchronously — see build_journal_dialog's docstring
+        # for why this feature doesn't go through run.io_bound.
+        def _open_journal() -> None:
+            build_journal_dialog(session).open()
+
+        journal_button = (
+            ui.button(
+                f"Journal ({len(journal.load_entries(session.target))})",
+                on_click=_open_journal,
+                icon="history",
+            )
+            .props("flat dense")
+            .mark("btn-open-journal")
+        )
 
         starter_column = ui.column().classes("w-full")
         main_column = ui.column().classes("w-full")
@@ -214,11 +233,12 @@ async def run_page(run_id: str) -> None:
                 starter_column.visible = False
                 main_column.visible = True
 
-            # Sidebar tree refresh (U4) — only when a tree-mutating tool
-            # actually closed since the last tick, never on every 0.5s poll.
-            # Expansion state is read from the tree's own Quasar `expanded`
-            # prop (kept in sync by shell.py's on_expand handler) so a
-            # refresh doesn't collapse whatever the user had open.
+            # Sidebar tree + journal count refresh (U4/U6) — only when a
+            # tree-mutating tool (or an undo) actually changed something
+            # since the last tick, never on every 0.5s poll. Expansion state
+            # is read from the tree's own Quasar `expanded` prop (kept in
+            # sync by shell.py's on_expand handler) so a refresh doesn't
+            # collapse whatever the user had open.
             if session.fs_revision != render_state.fs_revision:
                 render_state.fs_revision = session.fs_revision
                 expanded = set(shell.tree.props.get("expanded") or [])
@@ -226,6 +246,7 @@ async def run_page(run_id: str) -> None:
                 if nodes is not None:  # run.io_bound returns None on shutdown/cancel
                     shell.tree.props["nodes"] = nodes
                     shell.tree.update()
+                journal_button.set_text(f"Journal ({len(journal.load_entries(session.target))})")
 
         ui.timer(web_session.REFRESH_INTERVAL, _refresh)
 

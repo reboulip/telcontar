@@ -195,7 +195,7 @@ Because the registry is keyed by checksum, moving or renaming a file does **not*
 
 ### Undoing an operation
 
-Undo is a **manual, user-only action** — the agent has no tool to trigger it. In the Organizer screen, press **j** to open the operations-journal viewer, then **u** to revert the most recent journaled operation. This calls `server.tools.undo_last` directly from the TUI, bypassing the agent entirely.
+Undo is a **manual, user-only action** — the agent has no tool to trigger it. In the Textual TUI's Organizer screen, press **j** to open the operations-journal viewer, then **u** to revert the most recent journaled operation. In the web UI, click the **Journal** button in the toolbar (visible from the moment a run's page loads, before you even start organizing) to open the same viewer, then **Undo last operation** followed by a confirmation step. Both call `server.tools.undo_last` directly, bypassing the agent entirely. In the web UI, the Undo button is disabled — replaced with an explanatory label — while a tool call is actively in progress, since undo rewrites the whole journal file while the agent's own tool call may still be appending to it.
 
 ---
 

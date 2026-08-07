@@ -1,16 +1,20 @@
-"""Approval (U4) / cost estimate (U5) dialog builders — one per
-PendingRequest kind.
+"""Approval (U4) / cost estimate (U5) / journal (U6) dialog builders.
 
-Both dialogs are `.props("persistent")`: no backdrop-click or Esc dismissal.
-The original inline dialog (host/web/main.py, before U4) was a plain
-`ui.dialog()` — closeable without resolving its future, which leaves
-`RunSession.pending` set and the run silently deadlocked with zero visible
-symptom (the same failure mode ROADMAP.md's Break 1 spike found and fixed
-for the reload path; this closes the same door for the dialog-dismissal
-path). Every resolution therefore goes through an explicit button, and every
-resolution is request-scoped (`session.resolve_pending(result,
+The approval and cost dialogs are one per PendingRequest kind, both
+`.props("persistent")`: no backdrop-click or Esc dismissal. The original
+inline dialog (host/web/main.py, before U4) was a plain `ui.dialog()` —
+closeable without resolving its future, which leaves `RunSession.pending`
+set and the run silently deadlocked with zero visible symptom (the same
+failure mode ROADMAP.md's Break 1 spike found and fixed for the reload
+path; this closes the same door for the dialog-dismissal path). Every
+resolution therefore goes through an explicit button, and every resolution
+is request-scoped (`session.resolve_pending(result,
 request_id=pending.request_id)`) so a stale dialog left over in another tab
 or after a reload can't resolve a different, newer pending request.
+
+The journal dialog (U6) is different in kind: it isn't resolving a
+PendingRequest — nothing is waiting on a future — so a normal, dismissible
+`ui.dialog()` is fine there; Esc/backdrop-close just closes the viewer.
 """
 
 from __future__ import annotations
@@ -18,7 +22,8 @@ from __future__ import annotations
 from nicegui import ui
 
 from host.agent import ApprovalResult, CostApprovalResult
-from host.format import fmt_op, render_target_layout
+from host.format import fmt_journal_entry, fmt_op, render_target_layout
+from host.web import journal
 from host.web.session import PendingRequest, RunSession
 
 
@@ -152,5 +157,86 @@ def build_cost_dialog(session: RunSession, pending: PendingRequest) -> ui.dialog
                 on_click=lambda: _resolve(CostApprovalResult(approved=False)),
                 color="negative",
             ).mark("cost-cancel")
+
+    return dialog
+
+
+def build_journal_dialog(session: RunSession) -> ui.dialog:
+    """Journal viewer + undo (U6). Not tied to a PendingRequest — nothing
+    is waiting on a future — so a normal dismissible dialog is used here,
+    unlike the approval/cost gates above; Esc/backdrop-close is safe.
+
+    ``journal.load_entries``/``journal.do_undo`` are called directly
+    (synchronously), not via ``run.io_bound`` — deliberately, unlike every
+    other blocking-I/O call site in host/web/. Both read/write a single
+    small JSONL file and only ever run on an explicit, rare user click (not
+    the poll timer), so a brief synchronous stall is imperceptible — unlike
+    S5's motivating cases (a full directory walk, a Windows keyring
+    round-trip that can take seconds). Wrapping either in `run.io_bound` (or
+    plain `asyncio.to_thread`) breaks under NiceGUI's headless test harness
+    specifically: an executor-callback continuation invoked from inside a
+    click handler on a dialog opened from *another* dialog's handler
+    (`background_tasks.create_or_defer`-dispatched, one level removed from
+    the page's own top-level event dispatch) never resumes — confirmed by
+    direct experiment, not yet filed upstream. A real browser session has
+    no such issue; this is a test-harness limitation, not a correctness
+    concern for this fast, rare operation.
+
+    The confirm step is a separate, sibling dialog built once up front
+    (``confirm_dialog``), not nested inside ``body``'s refreshable, so its
+    buttons are bound once at construction time rather than re-bound on
+    every ``body.refresh()``.
+    """
+    dialog = ui.dialog()
+    state = {"status": ""}
+
+    @ui.refreshable
+    def body() -> None:
+        entries = journal.load_entries(session.target)
+        with ui.column().classes("max-h-96 overflow-auto w-full"):
+            if entries:
+                for entry in entries:
+                    ui.label(fmt_journal_entry(entry, markup=False)).classes(
+                        "whitespace-pre-wrap font-mono text-xs"
+                    )
+            else:
+                ui.label("No operations recorded yet.").classes("text-grey")
+
+        if state["status"]:
+            ui.label(state["status"]).mark("journal-status")
+
+        if session.has_open_step():
+            ui.label("Cannot undo while an operation is in progress.").classes(
+                "text-caption text-grey"
+            ).mark("journal-busy")
+        else:
+            ui.button("Undo last operation", on_click=confirm_dialog.open, color="negative").mark(
+                "journal-undo"
+            )
+
+    confirm_dialog = ui.dialog()
+    with confirm_dialog, ui.card():
+        ui.label("Undo the last operation?").mark("journal-confirm-prompt")
+
+        def _confirm() -> None:
+            result = journal.do_undo(session.target)
+            confirm_dialog.close()
+            if result.get("undone") is not None:
+                state["status"] = "Undone the last operation."
+                session.bump_fs_revision()
+            else:
+                state["status"] = f"Undo failed: {result.get('error', 'unknown error')}"
+            body.refresh()
+
+        with ui.row():
+            ui.button("Confirm undo", on_click=_confirm, color="negative").mark(
+                "journal-undo-confirm"
+            )
+            ui.button("Cancel", on_click=confirm_dialog.close).mark("journal-undo-cancel")
+
+    with dialog, ui.card().classes("w-full max-w-2xl"):
+        ui.label("Operation journal").classes("text-h6")
+        body()
+        ui.button("Close", on_click=dialog.close).mark("journal-close")
 
     return dialog

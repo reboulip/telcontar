@@ -301,9 +301,9 @@ run_web` for `--web` — so launching one UI never pays the other's import cost
 | `SetupScreen` | First-run wizard: welcome → AI service choice → URL + API key → document profile → done. Profile options, credential validation, and the plaintext-keyring warning copy come from `host/configflow.py` (U2, shared with the web UI's `host/web/wizard.py`). Saves via `save_user_config()` / OS keyring. Transitions to `StartupScreen` when complete |
 | `ConfigScreen` | Settings panel accessible at any time from `StartupScreen`. Fields: URL, API key (password input), document profile (Select), approval mode (Select with friendly labels, options from `host/configflow.py`'s `APPROVAL_OPTIONS`, U3, shared with the web UI's `host/web/settings.py`). `_save` validates via `configflow.validate_credentials(..., key_required=False)` and builds its update dict via `configflow.build_settings_updates(...)` (U3) — same blank-key-preserves-existing rule as the web settings view — rather than its own inline logic; its plaintext-keyring warning also now comes from `configflow.plaintext_warning("Save", "cancel")`, no behavior change from before U3. Saves back to `~/.telcontar/config.env` via `save_user_config()` |
 | `StartupScreen` | Lets the user browse and pick the target folder via a `DirectoryTree` (`#target-tree`, rooted at `Path.home()`); the selected path (defaults to home) is shown in a "Selected: …" label and used by "Organize" and "Query". Offers "Organize", "Query", and "⚙ Settings" buttons. Keybinding `s` opens `ConfigScreen` (the app-level `ctrl+s` binding, P9, also opens it from here and every other screen). "Query" (P2) resolves the corpus via `_find_organizer_root(target)`, walking up from the selected folder through its parents until one containing a `.organizer` is found (a subfolder of a previously-organized tree still resolves to that tree's memory), showing an error if none is found |
-| `OrganizerScreen` | Main view. Opens on a **starter pane** (`#starter-pane`, L3) instead of auto-starting the agent: a `Static` rendering `_directory_overview(target)` — a code-generated, deterministic scan of names/structure only (file count, subfolder count, most common extensions; no content read, no LLM), excluding `.organizer` and the quarantine folder (P2, via `_quarantine_basename()`) from its own local `os.walk` the same way `walk_tree` does — plus an `#instructions-input` `Input` for optional free-text steering instructions and a `#proceed-btn` "Start organizing" button (or `Input.Submitted`). `_start_organizing()` hides the starter pane, shows `#main-split` (file-tree sidebar + a single chat-transcript `#conversation-pane`, `VerticalScroll`), and launches `_agent_worker(instructions)` as a Textual worker, passing the typed instructions (if any) through to `run_agent_loop(..., instructions=...)`. `_add_turn(speaker, text)` appends speaker-differentiated turns (`telcontar` / `you`) as styled `Static` widgets — the target line and any typed instructions are shown as the first turns; on each `tool_call` event, `_narrate(tool)` looks up the tool in the module-level `_TOOL_NARRATION` map and, if the macro-task phrase changed, emits a `telcontar` turn (e.g. "Reading documents…", "Planning changes…", "Applying the plan…") — deduping so consecutive calls in the same macro-task collapse to one turn. The raw tool calls/results themselves are appended via `_append_step(line)` into a click-to-expand `Collapsible` ("internal steps") interleaved in the transcript; a new speaker turn closes the currently-open group so the next tool call opens a fresh one. Below `#main-split`, a docked `#ops-journal` `RichLog` (L4, `wrap=False`, horizontally scrollable) renders the file operations recorded in the undo journal — one line per entry, newest last, via `_fmt_journal_entry` (the same formatter `JournalScreen` uses); multi-line hard-stop entries collapse to their summary line. `_refresh_ops_journal()` re-reads `.organizer/journal.jsonl` via `_resolve_journal_path` + `server.journal.all_entries` (swallowing read/config errors so the strip just shows nothing rather than breaking the screen) — `_resolve_journal_path`/`_resolve_plans_dir` (P2) resolve against the run's target directory via `Settings().for_target(target)`, rather than an ad-hoc project-root join; it runs on mount, after any tool in `_JOURNAL_WRITING_TOOLS` (now just `{"execute_plan"}` — the only tool left that can mutate the journal via the agent path, per M1) completes, and again on `done`. Below that, a `#progress-row` (O6, a `#progress-label` plus a Textual `ProgressBar`) renders the O5 `"progress"` event: `_update_progress(data)` reveals the row and updates both widgets, but only once a `total > 0` has been seen (an unknown/`None` total is never shown, avoiding Textual's indeterminate spinner); `_hide_progress()` re-hides it — without first snapping to 100% — on both `"done"` and `"error"`, so it disappears once the ANALYZE phase finishes rather than lingering through ORGANIZE. Status bar shows the current phase plus a running token-usage total (`N in (C cached) / M out`) once the LLM reports it, from a single `_TokenLedger` (R1, GH #27) built once via `_TokenLedger.new(settings)` and threaded through the initial `run_agent_loop` call and every subsequent chat-turn call, so the total accumulates for the screen's whole lifetime instead of resetting each call; keybinding `g` pushes `QueryScreen` once organizing completes, `j` pushes `JournalScreen` (the full modal journal view). **Resumable chat (O7):** `_agent_worker` no longer calls the one-shot `run_agent` convenience wrapper — it opens `mcp_session(...)` itself and calls `run_agent_loop(...)` directly, keeping one MCP session (and one subprocess) open across the initial run and every subsequent chat turn. `self._history: list[dict] | None` carries the conversation returned by each call into the next; `self._messages: asyncio.Queue[str]` bridges the synchronous `Input.Submitted` handler on the bottom-docked `#organize-input` into the queue. Submitting echoes the message as a `user`-speaker turn via `_add_turn` before it is queued. `_note_terminal_state()` fires the "press g / keep chatting" cue and the desktop notification only on the *first* `"done"`/`"error"` event (tracked via `self._done`), not on every subsequent chat-turn completion. **Live mid-run chat (P7):** `#organize-input` is enabled right at the start of `_agent_worker`, before the first `run_agent_loop` call, rather than only once a terminal state is reached — both the initial call and every O7 continuation call pass `message_queue=self._messages`, so `run_agent_loop` itself drains and injects queued messages while it runs (see `host/agent.py` above). The worker's own `while True` loop (`await self._messages.get()` then `run_agent_loop(..., history=self._history, message=message, message_queue=self._messages)`) is unchanged in shape and still runs, but now only ever fires for a message that arrives strictly *after* a `run_agent_loop` call has already returned with nothing left pending in the queue — i.e. the agent is fully idle — rather than for every message regardless of timing |
+| `OrganizerScreen` | Main view. Opens on a **starter pane** (`#starter-pane`, L3) instead of auto-starting the agent: a `Static` rendering `_directory_overview(target)` — a code-generated, deterministic scan of names/structure only (file count, subfolder count, most common extensions; no content read, no LLM), excluding `.organizer` and the quarantine folder (P2, via `_quarantine_basename()`) from its own local `os.walk` the same way `walk_tree` does — plus an `#instructions-input` `Input` for optional free-text steering instructions and a `#proceed-btn` "Start organizing" button (or `Input.Submitted`). `_start_organizing()` hides the starter pane, shows `#main-split` (file-tree sidebar + a single chat-transcript `#conversation-pane`, `VerticalScroll`), and launches `_agent_worker(instructions)` as a Textual worker, passing the typed instructions (if any) through to `run_agent_loop(..., instructions=...)`. `_add_turn(speaker, text)` appends speaker-differentiated turns (`telcontar` / `you`) as styled `Static` widgets — the target line and any typed instructions are shown as the first turns; on each `tool_call` event, `_narrate(tool)` looks up the tool in the module-level `_TOOL_NARRATION` map and, if the macro-task phrase changed, emits a `telcontar` turn (e.g. "Reading documents…", "Planning changes…", "Applying the plan…") — deduping so consecutive calls in the same macro-task collapse to one turn. The raw tool calls/results themselves are appended via `_append_step(line)` into a click-to-expand `Collapsible` ("internal steps") interleaved in the transcript; a new speaker turn closes the currently-open group so the next tool call opens a fresh one. Below `#main-split`, a docked `#ops-journal` `RichLog` (L4, `wrap=False`, horizontally scrollable) renders the file operations recorded in the undo journal — one line per entry, newest last, via `_fmt_journal_entry` (the same formatter `JournalScreen` uses); multi-line hard-stop entries collapse to their summary line. `_refresh_ops_journal()` re-reads `.organizer/journal.jsonl` via `_resolve_journal_path` + `server.journal.all_entries` (swallowing read/config errors so the strip just shows nothing rather than breaking the screen) — `_resolve_journal_path`/`_resolve_plans_dir` (P2) resolve against the run's target directory via `Settings().for_target(target)`, rather than an ad-hoc project-root join; it runs on mount, after any tool in `_JOURNAL_WRITING_TOOLS` (now just `{"execute_plan"}` — the only tool left that can mutate the journal via the agent path, per M1) completes, and again on `done`. Below that, a `#progress-row` (O6, a `#progress-label` plus a Textual `ProgressBar`) renders the O5 `"progress"` event: `_update_progress(data)` reveals the row and updates both widgets, but only once a `total > 0` has been seen (an unknown/`None` total is never shown, avoiding Textual's indeterminate spinner); `_hide_progress()` re-hides it — without first snapping to 100% — on both `"done"` and `"error"`, so it disappears once the ANALYZE phase finishes rather than lingering through ORGANIZE. Status bar shows the current phase plus a running token-usage total (`N in (C cached) / M out`) once the LLM reports it, from a single `_TokenLedger` (R1, GH #27) built once via `_TokenLedger.new(settings)` and threaded through the initial `run_agent_loop` call and every subsequent chat-turn call, so the total accumulates for the screen's whole lifetime instead of resetting each call; keybinding `g` pushes `QueryScreen` once organizing completes, `j` pushes `JournalScreen` (the full modal journal view) via `action_view_journal`, which — as of U6 — runs inside a Textual worker (`self.run_worker(self._view_journal_worker(), exclusive=False)`); `push_screen_wait` requires a worker context and raised `NoActiveWorker` when called directly from the plain key-bound action (a real bug caught by a new test). `_view_journal_worker` awaits the modal and, if it dismissed with `True` (an undo happened), calls `_refresh_ops_journal()` so the bottom strip no longer goes stale after an undo. **Resumable chat (O7):** `_agent_worker` no longer calls the one-shot `run_agent` convenience wrapper — it opens `mcp_session(...)` itself and calls `run_agent_loop(...)` directly, keeping one MCP session (and one subprocess) open across the initial run and every subsequent chat turn. `self._history: list[dict] | None` carries the conversation returned by each call into the next; `self._messages: asyncio.Queue[str]` bridges the synchronous `Input.Submitted` handler on the bottom-docked `#organize-input` into the queue. Submitting echoes the message as a `user`-speaker turn via `_add_turn` before it is queued. `_note_terminal_state()` fires the "press g / keep chatting" cue and the desktop notification only on the *first* `"done"`/`"error"` event (tracked via `self._done`), not on every subsequent chat-turn completion. **Live mid-run chat (P7):** `#organize-input` is enabled right at the start of `_agent_worker`, before the first `run_agent_loop` call, rather than only once a terminal state is reached — both the initial call and every O7 continuation call pass `message_queue=self._messages`, so `run_agent_loop` itself drains and injects queued messages while it runs (see `host/agent.py` above). The worker's own `while True` loop (`await self._messages.get()` then `run_agent_loop(..., history=self._history, message=message, message_queue=self._messages)`) is unchanged in shape and still runs, but now only ever fires for a message that arrives strictly *after* a `run_agent_loop` call has already returned with nothing left pending in the queue — i.e. the agent is fully idle — rather than for every message regardless of timing |
 | `QueryScreen` | Chat-style read-only Q&A screen: `RichLog` output + `Input` bar; keeps one MCP session open for the whole chat and threads conversation history across questions; status bar also shows a running token-usage total (`N in (C cached) / M out`) from a single `_TokenLedger` (R1, GH #27) built once and threaded through every question's `run_query_loop` call, so the total persists across the whole chat; settings are resolved via `load_settings().for_target(self._target)` (R1 fix — previously unrebased, so query-mode paths including the token log resolved relative to the process CWD instead of the corpus's own `.organizer/` directory, unlike the organize path); `Esc` pops back to the previous screen |
-| `JournalScreen` | Modal view of the full undo journal (newest entries last), opened via `j`. Also the **only place `undo_last` can be triggered** (M1, S1): keybinding `u` calls `server.tools.undo_last` directly — bypassing MCP entirely, same pattern already used to read the journal — and shows a success/error status line; `Esc` or `j` closes it |
+| `JournalScreen` | Modal view of the full undo journal (newest entries last), opened via `j`. Also the **only place `undo_last` can be triggered** (M1, S1): keybinding `u` calls `server.tools.undo_last` directly — bypassing MCP entirely, same pattern already used to read the journal — and shows a success/error status line; `Esc` or `j` closes it. `ModalScreen[bool]` (U6, was `ModalScreen[None]`): `action_close` dismisses with `self._undone_any` — whether at least one undo succeeded during this screen's lifetime — so the caller can tell whether the bottom ops-journal strip needs refreshing |
 | `ApprovalModal` | Plan review: renders the plan's `rationale` (if set via `set_plan_rationale`) as `#plan-rationale`, then — if the plan has any `move`/`quarantine` destinations — a "Target layout" tree (`_render_target_layout`, L5) built from the plan's op destinations with each folder's `folder_notes` purpose note beside it (bare nodes for folders with no note; rename-only plans show no tree), then per-op checkboxes, the `ops_json_path` (if present) shown as a `#ops-json-path` label, a free-text `#refine-input` `Input` for natural-language plan editing (L6), and Approve/Refine/Reject buttons; Approve dismisses with `ApprovalResult(approved=True, removed_op_ids=...)`, Refine (button or `Input.Submitted`) dismisses with `ApprovalResult(approved=False, refinement=<text>)` unless the field is blank (no-op, modal stays open), Reject/Escape dismiss with `ApprovalResult(approved=False)` |
 | `CostEstimateModal` | Pre-ANALYZE cost-approval gate (O8/P6/P8): constructor `(new_documents, already_analyzed, estimated_tokens, batch_size=10)`; shows "N new document(s) (M already analyzed, skipped), ~T input tokens estimated, batched in groups of 10 — proceed?" plus a disclaimer that it's a rough file-size estimate, not a real tokenization, and — since R1, GH #27 — that it "Covers analysis only — organizing the corpus afterward adds more", clarifying why this estimate is much smaller than the eventual session-total token count shown on the status bar (the estimate covers only the ANALYZE phase, not the ORGANIZE turn loop that follows). Proceed/Cancel buttons (Escape = Cancel), no op list or refinement. Returns a `CostApprovalResult`. Shown at most once per run, scoped to new documents only, wired via `OrganizerScreen`'s `on_cost_approval_needed` callback |
 
@@ -421,9 +421,16 @@ it was actually shown. `request_id` is optional so the app-shutdown hook (which 
 no dialog and just rejects whatever is pending) keeps working unchanged.
 `bump_fs_revision()` (U4) increments `fs_revision`, a counter signalling "the
 target directory's contents changed on disk" — bumped by `AgentBridge` after a
-tree-mutating tool result (see below) and consumed by `run_page`'s sidebar-tree
-refresh (and, in a later wave, U6's journal strip), so the poll loop can rebuild
-the tree only when something actually changed instead of on every tick.
+tree-mutating tool result (see below) and, as of U6, also called directly by
+the journal dialog's own undo-confirm handler (an undo changes what's on disk
+too) — consumed by `run_page`'s sidebar-tree refresh and journal-count refresh,
+so the poll loop can rebuild the tree/refresh the count only when something
+actually changed instead of on every tick. `has_open_step() -> bool` (U6) reports
+whether `_open_step` is set — true while a tool call is still running — and
+gates `build_journal_dialog`'s Undo button: undo must be blocked in this state,
+since `server.journal.pop_last` rewrites the whole journal file while the MCP
+server subprocess may still be appending to it, and racing them can silently
+drop audit records.
 Module-level registry `create(target) -> RunSession` / `get(run_id)` /
 `close(run_id)` / `all_sessions()`, keyed by a `secrets.token_urlsafe(16)` run id —
 deliberately unit-testable in plain pytest, since a page (`host/web/main.py`) only
@@ -474,7 +481,7 @@ is in the module-level `_TREE_MUTATING_TOOLS = frozenset({"execute_plan",
 these are the only tools that change what's on disk under the target directory.
 This is what drives `run_page`'s sidebar-tree refresh.
 
-**`host/web/dialogs.py`** (U4) — one builder per `PendingRequest` kind, replacing
+**`host/web/dialogs.py`** (U4, extended by U6) — one builder per `PendingRequest` kind, replacing
 the dialog-building code that used to live inline in `run_page`'s
 `_show_pending_dialog` closure. `build_approval_dialog(session, pending) ->
 ui.dialog` is a faithful port of the TUI's `ApprovalModal`: title (plan id +
@@ -505,10 +512,50 @@ its future, permanently deadlocking the run with no visible symptom (the same
 failure class as the reload-orphaning issue ROADMAP.md's "Break 1" spike found,
 closed here for the dialog-dismissal path instead).
 
+`build_journal_dialog(session) -> ui.dialog` (U6) is the toolbar-triggered
+journal viewer — the web UI's counterpart to the TUI's `JournalScreen`. Unlike
+the approval/cost dialogs above, it isn't resolving a `PendingRequest` (nothing
+is waiting on a future), so it's a plain, dismissible `ui.dialog()` — Esc/
+backdrop-close just closes the viewer. Lists entries via
+`host.web.journal.load_entries` rendered through `host.format.fmt_journal_entry`
+inside a `@ui.refreshable body()`, with an "Undo last operation" button gated
+behind a separate sibling confirm dialog (built once up front, not nested
+inside `body`'s refreshable, so its buttons bind once rather than re-binding on
+every `body.refresh()`); confirming calls `host.web.journal.do_undo`, refreshes
+`body`, and — on success — calls `session.bump_fs_revision()` so the sidebar
+tree and the toolbar's own journal count pick up the change. While
+`session.has_open_step()` is true, the Undo button is replaced with an
+explanatory label — undo is blocked while a tree-mutating step is in flight,
+since `server.journal.pop_last` rewrites the whole journal file while the MCP
+server subprocess may be appending to it. `load_entries`/`do_undo` are called
+**synchronously**, not via `run.io_bound` — a deliberate deviation from every
+other blocking-I/O call site in `host/web/`; see `host/web/journal.py` below
+for why.
+
+**`host/web/journal.py`** (U6) — journal load/undo logic, `nicegui`-free,
+mirroring how `host/web/tree.py` relates to `host/web/shell.py`: this module
+owns the filesystem/MCP-adjacent logic, `host/web/dialogs.py` owns the
+rendering. `load_entries(target) -> list[dict]` wraps `server.journal.all_entries`
+via `host.paths.resolve_journal_path`, wrapped in a defensive `try`/`except`
+that returns `[]` on any error — mirrors `host.app.JournalScreen`'s existing
+defensive handling, so a broken `Settings()`/config never blanks the view.
+`do_undo(target) -> dict` wraps `server.tools.undo_last` via
+`host.paths.resolve_journal_path`/`resolve_plans_dir`, returning its raw result
+dict verbatim. Both `server.journal`/`server.tools` imports are late (inside
+the functions), matching the TUI's own existing discipline for these same
+imports — avoids dragging their heavier dependency chains in at module import
+time. Undo stays user-only and out of MCP by design: this module calls
+`server.tools.undo_last` directly (a local function call, same machine), the
+same way `host.app.JournalScreen` does; there is no agent-reachable path to it.
+
 **`host/web/steplog.py`** (U4) — the internal-step log-strip rendering lifted out
-of `run_page`'s closure so later screens (U6's journal view, U7's query view) can
-reuse the same "one compact line per step, toggle opens full detail in the shell's
-drawer" idiom instead of re-deriving it. Still imports `nicegui` (renders
+of `run_page`'s closure, originally intended so later screens (a journal view,
+a query view) could reuse the same "one compact line per step, toggle opens
+full detail in the shell's drawer" idiom instead of re-deriving it. In the
+event, U6's journal dialog (`host/web/dialogs.py`'s `build_journal_dialog`)
+didn't need it — journal entries render as plain formatted lines
+(`host.format.fmt_journal_entry`), not as steps — so this module's reuse case
+is still open, pending U7's query view. Still imports `nicegui` (renders
 `ui.row`/`ui.label`/`ui.button`), unlike `session.py`/`bridge.py`/`tree.py` —
 only `fmt_step_line(step) -> str` (`f"{glyph} {step.summary}"`, `_STEP_GLYPHS` — ▶
 running / · ok / ✗ error) has no framework dependency. `StepLogState` is the
@@ -702,7 +749,7 @@ calling `build_settings_view(on_done=lambda: ui.navigate.back())` inside
 `app_shell()`; the sidebar's Settings button (`host/web/shell.py`) is what
 routes here from any screen.
 
-**`host/web/main.py`** (extended by T5/T6/T7/T8, U2/U3/U4) — now shares nicegui-importing duties
+**`host/web/main.py`** (extended by T5/T6/T7/T8, U2/U3/U4/U6) — now shares nicegui-importing duties
 with `host/web/shell.py` (T2). Pages are registered at import time (`@ui.page("/")`,
 `@ui.page("/run/{run_id}")`) but nothing binds a port until `run_web(target: Path |
 None = None)` is called, so importing the module is side-effect-free. Each
@@ -755,6 +802,17 @@ inline here — it's `host/web/steplog.py`'s `sync_steps`/`StepLogState`, above;
 tick. `run_page`'s `with app_shell(...) as shell:` captures the `Shell` handle so
 `steplog.render_step_row` can reach `shell.show_detail()`.
 
+**Journal toolbar affordance (U6):** `run_page` renders a "Journal (N)" button
+(`.mark("btn-open-journal")`) above `starter_column`, so it's usable before a
+run even starts — TUI parity with the `j` keybinding, which works from the
+moment `OrganizerScreen` mounts. Clicking it opens `host.web.dialogs.build_journal_dialog(session)`.
+Its label's count is read via `host.web.journal.load_entries` — synchronously,
+not via `run.io_bound` (see `host/web/dialogs.py` above) — both on initial
+render and again inside `_refresh()`'s `fs_revision`-changed branch, alongside
+the existing sidebar-tree rebuild, so the count refreshes whenever the target
+directory's contents change (including from an undo, which also bumps
+`fs_revision`).
+
 **Dialogs (U4):** `_show_pending_dialog`'s inline checkbox/button-building code is
 gone too — it now just tracks which `pending.request_id` has already been shown
 (`_RenderState.shown_request_id`) and, on a new one, calls
@@ -792,6 +850,17 @@ Note: the ROADMAP text for S5 also names `_load_profile_options` (now
 `host.configflow.profile_options`), journal reads, and `server.tools.undo_last` as
 blocking calls to move off the event loop. As of U2, `profile_options()`'s one call
 site — `host/web/wizard.py`'s `build_setup_wizard` — goes through
-`await run.io_bound(configflow.profile_options)`, closing that gap. Journal reads
-and `undo_last` still have none (there is no journal panel or Undo button here,
-deferred to Phase 20, item U6).
+`await run.io_bound(configflow.profile_options)`, closing that gap. As of U6,
+journal reads (`host.web.journal.load_entries`) and `undo_last`
+(`host.web.journal.do_undo`) get their first real call sites — the Journal
+toolbar button and its dialog above — but deliberately **do not** go through
+`run.io_bound`/`asyncio.to_thread`: under NiceGUI's headless test harness, an
+executor-callback continuation invoked from inside a click handler on a dialog
+opened from *another* dialog's own click handler never resumes (confirmed by
+direct experiment; documented as gotcha #6 in `tests/test_web_ui.py`'s module
+docstring). Both operations are fast (a single small JSONL file) and rare (an
+explicit, deliberate user click, never the poll timer), so a brief synchronous
+stall is imperceptible — unlike this section's original motivating cases (a
+full directory walk, a Windows keyring round-trip that can take seconds). See
+`build_journal_dialog`'s docstring in `host/web/dialogs.py` for the same
+rationale in place.

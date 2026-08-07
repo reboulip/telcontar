@@ -379,7 +379,7 @@ Three parts:
   call `execute_plan`, the run ends normally but the final text names the
   unexecuted plan id instead of losing it silently.
 
-### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8, U2/U3/U4)
+### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8, U2/U3/U4/U6)
 
 `host/web/` is a package — the first piece of a planned Textual→NiceGUI web UI
 migration (ROADMAP Phase 18). As of S6, `telcontar --web` (`host/main.py`) launches
@@ -391,13 +391,15 @@ OrganizerApp` import on the no-flag path, so neither UI's dependency (`nicegui` 
 meaningful only with `--web`, skips the landing page's directory picker and starts
 a run for that directory immediately. It exists alongside `host/app.py`'s Textual
 TUI, not in place of it — both `textual` and `nicegui` are main dependencies in
-`pyproject.toml`. Feature parity with the TUI isn't fully there yet — no query mode,
-no journal/undo UI (that's Phase 20, items U6/U7) — so the web UI is not (yet) the
-primary way to use telcontar. As of U2, it does have its own first-run setup wizard
-at `/setup`, at parity with the TUI's, so it no longer requires an
-already-configured install to be usable. As of U3, it also has a settings view at
-`/settings`, reachable from every screen via a persistent sidebar button — the
-same parity goal applied to the TUI's `ConfigScreen`.
+`pyproject.toml`. Feature parity with the TUI isn't fully there yet — no query mode
+(deferred to Phase 20, item U7) — so the web UI is not (yet) the primary way to use
+telcontar. As of U2, it does have its own first-run setup wizard at `/setup`, at
+parity with the TUI's, so it no longer requires an already-configured install to be
+usable. As of U3, it also has a settings view at `/settings`, reachable from every
+screen via a persistent sidebar button — the same parity goal applied to the TUI's
+`ConfigScreen`. As of U6, it also has a journal view + undo, with a visible toolbar
+affordance (TUI parity with the keyboard-only `j` then `u`) — see `host/web/journal.py`
+and `host/web/dialogs.py`'s `build_journal_dialog` below.
 
 - `host/web/session.py` — `RunSession`, framework-agnostic per-run state. As of
   T5/T6, the transcript is turns-only: `RunSession.transcript: list[TranscriptItem]`
@@ -423,13 +425,20 @@ same parity goal applied to the TUI's `ConfigScreen`.
   the picker route where no `RunSession` exists yet; `set_sidebar_width` clamps and
   returns the stored value. As of U4, `RunSession` also carries `fs_revision: int`,
   a counter `bump_fs_revision()` increments whenever the target directory's
-  contents change on disk — consumed by the sidebar-tree refresh below. Also as of
+  contents change on disk — consumed by the sidebar-tree refresh below and, as of
+  U6, the journal toolbar button's count refresh too (an undo also calls
+  `bump_fs_revision()`, from the journal dialog's confirm handler). Also as of
   U4, `close_step(result, ok=...)` returns the closed `StepRecord` (`None` if none
   was open) instead of nothing, so a caller can inspect which tool just closed, and
   `resolve_pending(result, *, request_id=None)` takes an optional `request_id` that
   must match the *current* pending request's id or the call is silently ignored —
   stops a stale dialog (another tab, or one left over after a reload) from
-  resolving a different, newer pending request than the one it was shown.
+  resolving a different, newer pending request than the one it was shown. As of U6,
+  `has_open_step() -> bool` reports whether a tool call is still running (the
+  `_open_step` field is non-`None`) — the journal dialog uses it to block undo
+  while a tree-mutating step is in flight, since `server.journal.pop_last`
+  rewrites the whole journal file while the MCP server subprocess may be
+  appending to it.
 - `host/web/bridge.py` — `AgentBridge` wraps a `RunSession` and exposes
   `on_event`/`on_approval_needed`/`on_cost_approval_needed`/`on_ask_user_needed`, the
   same callback contract `host/agent.py`'s `run_agent_loop` already uses for the
@@ -454,7 +463,7 @@ same parity goal applied to the TUI's `ConfigScreen`.
   {"execute_plan", "write_index", "write_summary", "write_folder_readme"}` and the
   result was ok — the only tools that change what's on disk under the target
   directory, and what drives the sidebar-tree refresh below.
-- `host/web/dialogs.py` (U4) — one builder per `PendingRequest` kind, replacing the
+- `host/web/dialogs.py` (U4, extended by U6) — one builder per `PendingRequest` kind, replacing the
   dialog-building code that used to live inline in `run_page`.
   `build_approval_dialog(session, pending)` is a faithful port of the TUI's
   `ApprovalModal`: rationale + disclaimer, target-layout preview + disclaimer,
@@ -469,12 +478,41 @@ same parity goal applied to the TUI's `ConfigScreen`.
   `ui.dialog()` could be dismissed without resolving its future, permanently
   deadlocking the run with no visible symptom: the same failure class as the
   reload-orphaning issue described below ("Reload-safe design"), just a different
-  door into it.
+  door into it. `build_journal_dialog(session)` (U6) is different in kind — it
+  isn't resolving a `PendingRequest`, so it's a plain, dismissible `ui.dialog()`.
+  It lists journal entries (`host.web.journal.load_entries`, rendered via
+  `host.format.fmt_journal_entry`) and an Undo button gated behind a sibling
+  confirm dialog; confirming calls `host.web.journal.do_undo` and, on success,
+  `session.bump_fs_revision()`. The Undo button is replaced with an explanatory
+  label while `session.has_open_step()` is true. Both `load_entries`/`do_undo`
+  are called synchronously (not via `run.io_bound`) — see `host/web/journal.py`
+  below.
+- `host/web/journal.py` (U6) — journal load/undo logic, `nicegui`-free like
+  `session.py`/`bridge.py`/`tree.py`. `load_entries(target) -> list[dict]` wraps
+  `server.journal.all_entries` (defensive `try`/`except`, returns `[]` on any
+  error — mirrors `host.app.JournalScreen`'s existing handling) and
+  `do_undo(target) -> dict` wraps `server.tools.undo_last`, both resolving
+  `journal_path`/`plans_dir` via `host.paths.resolve_journal_path`/
+  `resolve_plans_dir`. Both `server.journal`/`server.tools` imports are late
+  (inside the functions), matching the TUI's own existing discipline. Called
+  synchronously from `host/web/dialogs.py`'s `build_journal_dialog`, not via
+  `run.io_bound`/`asyncio.to_thread` like every other blocking-I/O call site in
+  `host/web/` — under NiceGUI's headless test harness, an executor-callback
+  continuation invoked from a click handler on a dialog opened from *another*
+  dialog's own click handler never resumes (confirmed by direct experiment,
+  documented as gotcha #6 in `tests/test_web_ui.py`'s module docstring). Both
+  operations are fast (one small JSONL file) and rare (an explicit, deliberate
+  user click, never the poll timer), so a brief synchronous stall is
+  imperceptible, unlike this section's motivating cases below (a full directory
+  walk, a Windows keyring round-trip that can take seconds).
 - `host/web/steplog.py` (U4) — the internal-step log-strip rendering
   (`fmt_step_line`, `render_step_row`, `prune_log`, `sync_steps`, `StepLogState`)
-  lifted out of `run_page`'s closure so later screens (U6's journal view, U7's
-  query view) can reuse the same "one compact line per step, toggle opens full
-  detail in the shell's drawer" idiom instead of re-deriving it per screen.
+  lifted out of `run_page`'s closure, originally intended so later screens could
+  reuse the same "one compact line per step, toggle opens full detail in the
+  shell's drawer" idiom instead of re-deriving it per screen. U6's journal
+  dialog didn't end up needing it — journal entries render as plain formatted
+  lines (`host.format.fmt_journal_entry`), not as steps — so the reuse case is
+  still open, pending U7's query view.
 - `host/web/shell.py` (T2, extended by T3, T6, and U3) — `app_shell(*, target=None,
   on_select=None)`, a `@contextmanager` mounted by every `@ui.page` route, including
   the early-return branches (not-configured, run-not-found), so a left-sidebar frame

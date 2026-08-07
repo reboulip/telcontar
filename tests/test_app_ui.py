@@ -242,6 +242,67 @@ async def test_journal_screen_undo_action_reverses_last_op(tmp_path: Path) -> No
     assert not (tmp_path / "new.txt").exists()
 
 
+async def test_journal_undo_via_keybinding_refreshes_ops_journal_strip(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Phase 20 U6: the bottom ops-journal strip used to go stale after an
+    undo triggered from JournalScreen — action_view_journal now awaits the
+    modal's dismissal value and refreshes the strip when something was
+    actually undone."""
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+
+    original = tmp_path / "old.txt"
+    (tmp_path / "new.txt").write_text("x")
+    journal_path = tmp_path / "journal.jsonl"
+    entry = {
+        "op_type": "rename",
+        "src": str(original),
+        "dst": "new.txt",
+        "timestamp": "2026-07-01T10:00:00Z",
+    }
+    journal_path.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+    monkeypatch.setattr("host.app._resolve_journal_path", lambda root: journal_path)
+
+    app = OrganizerApp()
+    async with app.run_test(size=(120, 40)) as pilot:
+        screen = OrganizerScreen(tmp_path)
+        app.push_screen(screen)
+        await pilot.pause()
+
+        journal_log = _richlog_text(app.screen.query_one("#ops-journal", RichLog))
+        assert "new.txt" in journal_log
+
+        # Drive action_view_journal directly rather than via a simulated "j"
+        # keypress — whether "j" actually reaches the screen-level binding
+        # depends on which widget currently has focus (an Input would
+        # capture it as literal text instead), which is Textual's routing
+        # concern, not what this test is verifying. action_view_journal
+        # itself runs push_screen_wait inside a worker (required — it
+        # raises NoActiveWorker otherwise), so it returns immediately; the
+        # worker reaches JournalScreen after a pause.
+        screen.action_view_journal()
+        await pilot.pause()
+        assert isinstance(app.screen, JournalScreen)
+
+        await pilot.press("u")  # undo
+        await pilot.pause()
+        assert original.exists(), "undo did not happen at the filesystem level"
+
+        await pilot.press("escape")  # close JournalScreen (dismiss(True))
+        await pilot.pause(0.2)
+
+        journal_log = _richlog_text(app.screen.query_one("#ops-journal", RichLog))
+        assert "No operations yet." in journal_log
+
+    assert original.exists()
+    assert not (tmp_path / "new.txt").exists()
+
+
 async def test_setup_wizard_compatible_service_sets_model_hint_and_placeholder() -> None:
     app = OrganizerApp()
     async with app.run_test(size=(90, 50)) as pilot:

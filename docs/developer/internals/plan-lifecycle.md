@@ -244,7 +244,7 @@ Ops are staged against the file's original path (`src` at propose time). Within 
 
 Revert the most recent journaled operation.
 
-**Not an MCP tool.** As of the M1 security-hardening pass, `undo_last` is no longer registered with the server, so the agent has no way to call it. It exists purely as a plain function in `server/tools.py`, invoked directly (bypassing MCP) from the TUI's `JournalScreen` — press **j** in the Organizer screen to open it, then **u** to trigger undo. This makes undo a deliberate, user-only action.
+**Not an MCP tool.** As of the M1 security-hardening pass, `undo_last` is no longer registered with the server, so the agent has no way to call it. It exists purely as a plain function in `server/tools.py`, invoked directly (bypassing MCP) from the Textual TUI's `JournalScreen` — press **j** in the Organizer screen to open it, then **u** to trigger undo — or, as of Phase 20 U6, from the NiceGUI web UI's own journal dialog (`host/web/journal.py`'s `do_undo`, opened via the run page's "Journal" toolbar button), which additionally gates the Undo button on `RunSession.has_open_step()`, disabling it while a tool call is in flight since `pop_last` (below) rewrites the whole journal file while the MCP server subprocess may still be appending to it. Either way, this makes undo a deliberate, user-only action.
 
 **Processing:**
 1. Load the journal.
