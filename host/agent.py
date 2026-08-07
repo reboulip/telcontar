@@ -1918,12 +1918,14 @@ async def _handle_cost_approval(
     """
     summary = (
         f"~{doc_count} new document(s) ({already_analyzed} already analyzed, skipped), "
-        f"~{estimated_tokens} input tokens estimated, batched in groups of 10 — proceed?"
+        f"~{estimated_tokens} input tokens estimated, batched in groups of "
+        f"{_ANALYZER_BATCH_SIZE} — proceed?"
     )
     data = {
         "new": doc_count,
         "already_analyzed": already_analyzed,
         "estimated_tokens": estimated_tokens,
+        "batch_size": _ANALYZER_BATCH_SIZE,
     }
     on_event(AgentEvent("cost_estimate", summary, data=data))
 

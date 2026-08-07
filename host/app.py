@@ -1350,6 +1350,7 @@ class OrganizerScreen(Screen):
                     data.get("new", 0),
                     data.get("already_analyzed", 0),
                     data.get("estimated_tokens", 0),
+                    data.get("batch_size", 10),
                 )
             )
             self._add_turn(

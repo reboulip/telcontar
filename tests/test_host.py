@@ -1473,7 +1473,7 @@ async def test_cost_gate_fires_once_before_analysis_for_new_docs_only(tmp_path: 
     summary, data = on_cost_approval.await_args.args
     # Only the 1 NEW document counts — the known one is excluded from the
     # estimate, but its count is still surfaced (P8: "N new, M already analyzed").
-    assert data == {"new": 1, "already_analyzed": 1, "estimated_tokens": 1000}
+    assert data == {"new": 1, "already_analyzed": 1, "estimated_tokens": 1000, "batch_size": 10}
     assert "1 new document" in summary
     assert "1 already analyzed" in summary
     assert any(e.kind == "cost_estimate" for e in events)

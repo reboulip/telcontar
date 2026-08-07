@@ -484,3 +484,78 @@ async def test_sidebar_tree_refreshes_when_fs_revision_changes(user: User, tmp_p
         raise AssertionError(
             f"sidebar tree was not refreshed with new_file.txt; saw {_root_children_labels()}"
         )
+
+
+# ── Cost estimate dialog (U5) ─────────────────────────────────────────────────
+
+
+async def test_cost_dialog_shows_faithful_summary_including_batch_size(
+    user: User, tmp_path: Path
+) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.new_pending(
+        "cost",
+        {
+            "summary": "fallback, should not be shown when data is present",
+            "data": {
+                "new": 42,
+                "already_analyzed": 7,
+                "estimated_tokens": 12345,
+                "batch_size": 10,
+            },
+        },
+    )
+
+    await user.open(f"/run/{session.run_id}")
+
+    await user.should_see("Analyze this corpus?")
+    await user.should_see("42 new document(s)")
+    await user.should_see("7 already analyzed, skipped")
+    await user.should_see("12345 input tokens")
+    await user.should_see("batched in groups of 10.")
+    await user.should_see("A rough estimate from file sizes")
+
+
+async def test_cost_dialog_falls_back_to_summary_when_data_is_empty(
+    user: User, tmp_path: Path
+) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.new_pending("cost", {"summary": "custom fallback summary text", "data": {}})
+
+    await user.open(f"/run/{session.run_id}")
+
+    await user.should_see("custom fallback summary text")
+
+
+async def test_cost_dialog_proceed_resolves_approved(user: User, tmp_path: Path) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    pending = session.new_pending(
+        "cost", {"summary": "est", "data": {"new": 1, "already_analyzed": 0}}
+    )
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="cost-proceed")
+
+    user.find(marker="cost-proceed").click()
+
+    result = await pending.future
+    assert result.approved is True
+
+
+async def test_cost_dialog_cancel_resolves_rejected(user: User, tmp_path: Path) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    pending = session.new_pending(
+        "cost", {"summary": "est", "data": {"new": 1, "already_analyzed": 0}}
+    )
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="cost-cancel")
+
+    user.find(marker="cost-cancel").click()
+
+    result = await pending.future
+    assert result.approved is False

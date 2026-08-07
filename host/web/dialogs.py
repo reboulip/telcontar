@@ -1,7 +1,8 @@
-"""Approval/cost dialog builders (U4) — one per PendingRequest kind.
+"""Approval (U4) / cost estimate (U5) dialog builders — one per
+PendingRequest kind.
 
 Both dialogs are `.props("persistent")`: no backdrop-click or Esc dismissal.
-The previous inline dialog (host/web/main.py, before U4) was a plain
+The original inline dialog (host/web/main.py, before U4) was a plain
 `ui.dialog()` — closeable without resolving its future, which leaves
 `RunSession.pending` set and the run silently deadlocked with zero visible
 symptom (the same failure mode ROADMAP.md's Break 1 spike found and fixed
@@ -10,12 +11,6 @@ path). Every resolution therefore goes through an explicit button, and every
 resolution is request-scoped (`session.resolve_pending(result,
 request_id=pending.request_id)`) so a stale dialog left over in another tab
 or after a reload can't resolve a different, newer pending request.
-
-The cost dialog here is intentionally minimal — its faithful TUI-parity
-content (batch size, disclaimers, exact copy) is Phase 20 U5's job; this
-wave only gives it the same persistent/request-scoped safety the approval
-dialog gets, so the two pending kinds don't end up in an inconsistent state
-for a whole extra wave.
 """
 
 from __future__ import annotations
@@ -113,9 +108,34 @@ def build_approval_dialog(session: RunSession, pending: PendingRequest) -> ui.di
 
 
 def build_cost_dialog(session: RunSession, pending: PendingRequest) -> ui.dialog:
+    """Faithful port of the TUI's CostEstimateModal (U5). Composes its text
+    from the engine-side ``data`` dict (new/already_analyzed/estimated_tokens/
+    batch_size) rather than the pre-rendered ``summary`` string — the
+    ``data`` dict is the source of truth (matches the approval dialog's
+    ``plan_data``-driven approach); ``summary`` is kept only as a fallback
+    for a caller that passes no ``data`` (e.g. an empty dict in a test).
+    """
+    data = pending.payload.get("data") or {}
+
     dialog = ui.dialog().props("persistent")
     with dialog, ui.card():
-        ui.label(pending.payload["summary"]).mark("cost-summary")
+        ui.label("Analyze this corpus?").classes("text-h6")
+
+        if data:
+            summary_text = (
+                f"{data.get('new', 0)} new document(s) "
+                f"({data.get('already_analyzed', 0)} already analyzed, skipped), "
+                f"~{data.get('estimated_tokens', 0)} input tokens estimated, "
+                f"batched in groups of {data.get('batch_size', 10)}."
+            )
+        else:
+            summary_text = pending.payload["summary"]
+        ui.label(summary_text).mark("cost-summary")
+
+        ui.label(
+            "A rough estimate from file sizes, not a real tokenization. "
+            "Covers analysis only — organizing the corpus afterward adds more."
+        ).classes("text-caption text-grey")
 
         def _resolve(result: CostApprovalResult) -> None:
             session.resolve_pending(result, request_id=pending.request_id)
