@@ -36,8 +36,9 @@ from host.web import session as web_session
 from host.web import steplog
 from host.web import theme
 from host.web import tree as web_tree
-from host.web.bridge import AgentBridge
+from host.web.bridge import AgentBridge, QueryBridge
 from host.web.dialogs import build_approval_dialog, build_cost_dialog, build_journal_dialog
+from host.web.query_view import build_query_view
 from host.web.settings import build_settings_view
 from host.web.shell import app_shell
 from host.web.wizard import build_setup_wizard
@@ -174,6 +175,18 @@ async def run_page(run_id: str) -> None:
                 chat_input.on("keydown.enter", lambda _: _send())
                 ui.button("Send", on_click=_send)
 
+            # TUI parity: OrganizerScreen's "g" binding, gated on _done.
+            def _query_corpus() -> None:
+                query_session = web_session.create(session.target, mode="query")
+                ui.navigate.to(f"/query/{query_session.run_id}")
+
+            query_button = (
+                ui.button("Query this corpus", on_click=_query_corpus, icon="chat")
+                .props("flat dense")
+                .mark("btn-query-corpus")
+            )
+            query_button.visible = session.done
+
             # Internal-step log strip (T5/T6) — pinned at the bottom, always
             # visible, distinct from the conversation above: telcontar's own
             # tool activity never renders as a chat bubble. activity_label is
@@ -232,6 +245,7 @@ async def run_page(run_id: str) -> None:
             if session.started:
                 starter_column.visible = False
                 main_column.visible = True
+            query_button.visible = session.done
 
             # Sidebar tree + journal count refresh (U4/U6) — only when a
             # tree-mutating tool (or an undo) actually changed something
@@ -249,6 +263,25 @@ async def run_page(run_id: str) -> None:
                 journal_button.set_text(f"Journal ({len(journal.load_entries(session.target))})")
 
         ui.timer(web_session.REFRESH_INTERVAL, _refresh)
+
+
+@ui.page("/query/{run_id}")
+async def query_page(run_id: str) -> None:
+    session = web_session.get(run_id)
+
+    with app_shell(target=session.target if session is not None else None) as shell:
+        if session is None:
+            ui.label(
+                "Run not found — it may have finished and been cleared, or the link is wrong."
+            ).classes("text-negative")
+            return
+
+        ui.page_title(theme.window_title(session.target))
+
+        if not session.started:
+            QueryBridge(session).start()
+
+        build_query_view(shell, session)
 
 
 def _pick_port() -> int:
@@ -283,6 +316,13 @@ def run_web(target: Path | None = None) -> None:
                     else CostApprovalResult(approved=False)
                 )
                 session.resolve_pending(result)
+            # U7: every organize/query session leaves its MCP server
+            # subprocess running for the process's lifetime (nothing ever
+            # calls web_session.close() today) — a real lifecycle is future
+            # work, but at minimum don't leave the driving task itself
+            # running past shutdown.
+            if session.task is not None:
+                session.task.cancel()
 
     # Visual identity (T8) — applied globally, once, here: never a per-page
     # ui.colors() call, which would silently override this and re-fragment

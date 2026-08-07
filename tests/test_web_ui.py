@@ -80,6 +80,7 @@ import pytest
 from nicegui import ui
 from nicegui.testing import User
 
+from host.agent import AgentEvent
 from host.web import session as web_session
 
 
@@ -696,3 +697,80 @@ async def test_journal_undo_blocked_while_step_is_open(user: User, tmp_path: Pat
 
     await user.should_see(marker="journal-busy")
     await user.should_not_see(marker="journal-undo")
+
+
+# ── Query view (U7) ──────────────────────────────────────────────────────────
+
+
+async def test_query_button_hidden_until_organize_is_done(user: User, tmp_path: Path) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.done = False
+
+    await user.open(f"/run/{session.run_id}")
+
+    await user.should_not_see(marker="btn-query-corpus")
+
+
+async def test_query_button_appears_once_done_and_navigates(user: User, tmp_path: Path) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.done = True
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="btn-query-corpus")
+
+    user.find(marker="btn-query-corpus").click()
+
+    await user.should_see(marker="btn-sidebar-settings")  # a query page rendered
+    query_sessions = [s for s in web_session.all_sessions() if s.mode == "query"]
+    assert len(query_sessions) == 1
+    assert query_sessions[0].target == tmp_path
+
+
+async def test_query_page_not_found_for_unknown_run_id(user: User) -> None:
+    await user.open("/query/does-not-exist")
+
+    await user.should_see("Run not found")
+
+
+async def test_query_page_asks_question_and_shows_answer(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def fake_mcp_session(project_root, target=None):
+        yield object()
+
+    monkeypatch.setattr("host.agent.mcp_session", fake_mcp_session)
+
+    async def fake_run_query_loop(**kwargs):
+        on_event = kwargs["on_event"]
+        on_event(AgentEvent("tool_call", "list_dir(...)", data={"tool": "list_dir"}))
+        on_event(AgentEvent("tool_result", "", data={"result": {"entries": []}}))
+        on_event(AgentEvent("done", "42 documents"))
+        return "42 documents", [{"role": "assistant"}]
+
+    monkeypatch.setattr("host.agent.run_query_loop", fake_run_query_loop)
+
+    session = web_session.create(tmp_path, mode="query")
+
+    await user.open(f"/query/{session.run_id}")
+    await user.should_see("Ready — ask a question.")
+
+    user.find(marker="query-input").type("how many documents?")
+    user.find(marker="btn-query-ask").click()
+
+    await user.should_see("how many documents?")
+    await user.should_see("42 documents")
+    # Rendered exactly once — from the return value, not the "done" event too.
+    answers = [t for t in session.transcript if t.text == "42 documents"]
+    assert len(answers) == 1

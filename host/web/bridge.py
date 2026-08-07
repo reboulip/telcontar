@@ -1,6 +1,7 @@
 """AgentEvent -> RunSession state, the three awaited callbacks, and the run
 driver — no NiceGUI import, so this is unit-testable in plain pytest against
-a real host.agent.run_agent_loop.
+a real host.agent.run_agent_loop. Also QueryBridge (U7), the same shape for
+query-mode sessions, driving run_query_loop instead.
 
 Deliberately kept NiceGUI-free: it only mutates the framework-agnostic
 RunSession/TranscriptItem data. host/web/main.py is the only module that
@@ -210,3 +211,93 @@ class AgentBridge:
             session.add_turn("telcontar", f"Agent error: {fmt_exc(exc)}")
             session.status = "Error"
             session.done = True
+
+
+class QueryBridge:
+    """Bound callback + run driver for one query-mode RunSession, mirroring
+    AgentBridge but driving host.agent.run_query_loop instead of
+    run_agent_loop (U7). Query mode is read-only by construction
+    (QUERY_ALLOWED_TOOLS) — there is no on_approval_needed/
+    on_cost_approval_needed/on_ask_user_needed here; their absence is
+    itself the safety property, not a gap to fill in later.
+    """
+
+    def __init__(self, session: RunSession) -> None:
+        self.session = session
+
+    def on_event(self, event: AgentEvent) -> None:
+        session = self.session
+        match event.kind:
+            case "thinking":
+                session.status = event.text
+            case "tool_call":
+                tool = (event.data or {}).get("tool", "")
+                args = (event.data or {}).get("args") or {}
+                session.open_step(tool, event.text, args)
+            case "tool_result":
+                result = (event.data or {}).get("result")
+                ok = not (isinstance(result, dict) and "error" in result)
+                session.close_step(result, ok=ok)
+            case "tokens":
+                session.tokens = event.text
+            case "warning":
+                session.add_turn("telcontar", f"⚠ {event.text}")
+            case "error":
+                session.add_turn("telcontar", f"✗ {event.text}")
+                session.status = "Error"
+            # "done" is deliberately not handled: run_query_loop both emits
+            # it and returns the answer text, and the TUI's QueryScreen
+            # renders from the return value only (host/app.py's QueryScreen
+            # on_event has no "done" case either) — handling it here too
+            # would render every answer twice. done/error here are also
+            # per-question, not per-session: never set session.done.
+
+    def start(self) -> asyncio.Task:
+        """Kick off the query worker immediately (TUI parity: QueryScreen
+        starts its worker in on_mount, no explicit "start" button)."""
+        self.session.started = True
+        task = asyncio.create_task(self.run())
+        self.session.task = task
+        return task
+
+    async def run(self) -> None:
+        """Near-verbatim port of QueryScreen._query_worker onto a plain
+        asyncio.Task: one MCP session and one _TokenLedger for the whole
+        chat, threading history across questions for multi-turn context."""
+        from config.settings import load as load_settings
+        from host.agent import _TokenLedger, mcp_session, run_query_loop
+        from host.llm import make_client
+
+        session = self.session
+        try:
+            settings = load_settings().for_target(session.target)
+        except Exception as exc:
+            session.add_turn("telcontar", f"Config error: {fmt_exc(exc)}")
+            session.status = "Error — check settings"
+            return
+
+        llm = make_client(settings)
+        ledger = _TokenLedger.new(settings)
+        project_root = Path(__file__).resolve().parent.parent.parent
+
+        try:
+            async with mcp_session(project_root, target=session.target) as mcp:
+                session.status = "Ready — ask a question."
+                while True:
+                    question = await session.messages.get()
+                    session.status = "Thinking…"
+                    answer, session.history = await run_query_loop(
+                        question=question,
+                        settings=settings,
+                        llm=llm,
+                        session=mcp,
+                        on_event=self.on_event,
+                        history=session.history,
+                        project_root=project_root,
+                        ledger=ledger,
+                    )
+                    session.add_turn("telcontar", answer)
+                    session.status = "Ready — ask a question."
+        except Exception as exc:
+            session.add_turn("telcontar", f"Query error: {fmt_exc(exc)}")
+            session.status = "Error"

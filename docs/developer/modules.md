@@ -374,24 +374,33 @@ run_web` for `--web` — so launching one UI never pays the other's import cost
 
 ---
 
-### `host/web/` (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7, Phase 20 U2/U3/U4)
+### `host/web/` (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7, Phase 20 U2-U7)
 
 **Role:** NiceGUI-based web UI package — the first piece of a planned
 Textual→NiceGUI migration. As of S6, `telcontar --web` (`host/main.py`, lazy import)
 launches it in place of the Textual TUI, which stays the default with no flags. As
-of U2 it has its own first-run setup wizard, at parity with the TUI's, U3 a settings
-view reachable from every screen, and U4 a TUI-faithful approval dialog plus a
-sidebar tree that refreshes itself after `execute_plan`; it still does not have
-query mode or a journal/undo UI (deferred to Phase 20, items U6/U7) — see
+of U2 it has its own first-run setup wizard, at parity with the TUI's; U3 a settings
+view reachable from every screen; U4 a TUI-faithful approval dialog plus a
+sidebar tree that refreshes itself after `execute_plan`; U5 a TUI-faithful cost
+estimate dialog; U6 a journal view + undo, with a visible toolbar affordance; and
+U7 a read-only query view (`/query/{run_id}`), reached via a "Query this corpus"
+button on the organize view once a run finishes. It still does not have a
+dedicated startup screen offering direct Organize/Query/Settings entry points the
+way the TUI's `StartupScreen` does (Phase 20 item U1, still open) — see
 `host/main.py`, above.
 
 **`host/web/session.py`** — framework-agnostic per-run state, no `nicegui` import.
-Key types: `RunSession` (`run_id`, `target`, `transcript`, `steps`, `activity`,
-`status`, `tokens`, `progress`, `pending: PendingRequest | None`,
-`messages: asyncio.Queue`, `history: list[dict] | None`, `narrator`, `task`,
-`fs_revision: int`), `TranscriptItem` (`seq`/`speaker`/`text`), `StepRecord`
+Key types: `RunSession` (`run_id`, `target`, `mode: Literal["organize", "query"] =
+"organize"` (U7), `transcript`, `steps`, `activity`, `status`, `tokens`,
+`progress`, `pending: PendingRequest | None`, `messages: asyncio.Queue`,
+`history: list[dict] | None`, `narrator`, `task`, `fs_revision: int`),
+`TranscriptItem` (`seq`/`speaker`/`text`), `StepRecord`
 (`seq`/`tool`/`summary`/`args`/`detail`/`status: "running"|"ok"|"error"`),
-`PendingRequest` (`request_id`/`kind`/`payload`/`future: asyncio.Future`).
+`PendingRequest` (`request_id`/`kind`/`payload`/`future: asyncio.Future`). `mode`
+(U7) is one `RunSession` type/registry serving both organize and query runs
+rather than a parallel `QuerySession` type — query mode needs the exact same
+`add_turn`/`open_step`/`close_step`/`status`/`tokens` primitives, and
+`pending`/`progress` simply stay unused for query sessions.
 
 As of T5/T6, `transcript: list[TranscriptItem]` is turns-only — genuine
 user↔telcontar exchanges (chat, ask_user, approval/cost outcomes, done/error) —
@@ -431,8 +440,9 @@ gates `build_journal_dialog`'s Undo button: undo must be blocked in this state,
 since `server.journal.pop_last` rewrites the whole journal file while the MCP
 server subprocess may still be appending to it, and racing them can silently
 drop audit records.
-Module-level registry `create(target) -> RunSession` / `get(run_id)` /
-`close(run_id)` / `all_sessions()`, keyed by a `secrets.token_urlsafe(16)` run id —
+Module-level registry `create(target, *, mode="organize") -> RunSession` /
+`get(run_id)` / `close(run_id)` / `all_sessions()`, keyed by a
+`secrets.token_urlsafe(16)` run id —
 deliberately unit-testable in plain pytest, since a page (`host/web/main.py`) only
 polls and mutates this data rather than deciding how it's drawn. `get_sidebar_width()
 -> int` / `set_sidebar_width(width: int) -> int` (T4) manage one in-memory
@@ -480,6 +490,25 @@ is in the module-level `_TREE_MUTATING_TOOLS = frozenset({"execute_plan",
 "write_index", "write_summary", "write_folder_readme"})` and the result was ok —
 these are the only tools that change what's on disk under the target directory.
 This is what drives `run_page`'s sidebar-tree refresh.
+
+**`host/web/bridge.py` also exports `QueryBridge(session)`** (U7) — the same shape
+(`on_event`/`start`/`run`) as `AgentBridge`, but driving `host.agent.run_query_loop`
+instead of `run_agent_loop`. It has no `on_approval_needed`/`on_cost_approval_needed`/
+`on_ask_user_needed` methods at all — their absence is itself the safety property,
+since query mode is read-only by construction (`host.agent.QUERY_ALLOWED_TOOLS`).
+`on_event` handles `thinking`/`tool_call`/`tool_result`/`tokens`/`warning`/`error`
+the same way `AgentBridge` does (narration is skipped — `tool_call` just opens a
+step, no `Narrator` call), but deliberately has no `"done"` case: `run_query_loop`
+both emits a `"done"` event and returns the answer text, and the TUI's own
+`QueryScreen.on_event` renders only from the return value — `QueryBridge.run()`
+mirrors that, calling `session.add_turn` with the returned answer after each
+`run_query_loop` call rather than reacting to the event (handling both would
+render every answer twice). `start()` kicks the query worker off immediately (TUI
+parity: `QueryScreen` starts its worker in `on_mount`, no explicit "start"
+button). `run()` is a near-verbatim port of `QueryScreen._query_worker`: one MCP
+session and one `_TokenLedger` for the whole chat, threading `history` across
+questions for multi-turn context. `done`/`error` here are per-question, not
+per-session: `QueryBridge` never sets `session.done`.
 
 **`host/web/dialogs.py`** (U4, extended by U6) — one builder per `PendingRequest` kind, replacing
 the dialog-building code that used to live inline in `run_page`'s
@@ -749,9 +778,25 @@ calling `build_settings_view(on_done=lambda: ui.navigate.back())` inside
 `app_shell()`; the sidebar's Settings button (`host/web/shell.py`) is what
 routes here from any screen.
 
-**`host/web/main.py`** (extended by T5/T6/T7/T8, U2/U3/U4/U6) — now shares nicegui-importing duties
+**`host/web/query_view.py`** (U7) — the query page's UI, `nicegui`-importing (like
+`dialogs.py`/`steplog.py`/`shell.py`). `build_query_view(shell, session)` renders a
+conversation column (`ui.chat_message`, reusing the same idiom `run_page` already
+uses for organize turns) plus a question input/Ask button
+(`.mark("query-input")`/`.mark("btn-query-ask")`) that echoes the question as a
+`user`-speaker turn (`session.add_turn`) and pushes it onto `session.messages` —
+and, below a separator, a step-log strip
+(`host.web.steplog.sync_steps`/`StepLogState`, the same T5/T6 idiom `run_page`
+established) instead of the TUI `QueryScreen`'s side-by-side dual-`RichLog` split.
+Phase 20 is parity with a cleaner surface, not a redesign, and the log strip
+already *is* the web UI's "tool timeline". No approval/cost dialog wiring at all —
+query mode is read-only by construction (`QUERY_ALLOWED_TOOLS`), so there is
+nothing to gate. A `ui.timer` (same `web_session.REFRESH_INTERVAL` cadence as
+`run_page`) drives `_refresh()`, which renders new transcript turns, syncs the
+step log, and updates the status/token line.
+
+**`host/web/main.py`** (extended by T5/T6/T7/T8, U2/U3/U4/U6/U7) — now shares nicegui-importing duties
 with `host/web/shell.py` (T2). Pages are registered at import time (`@ui.page("/")`,
-`@ui.page("/run/{run_id}")`) but nothing binds a port until `run_web(target: Path |
+`@ui.page("/run/{run_id}")`, `@ui.page("/query/{run_id}")` (U7)) but nothing binds a port until `run_web(target: Path |
 None = None)` is called, so importing the module is side-effect-free. Each
 connected browser tab polls `RunSession`/`TranscriptItem`/`StepRecord` state with
 its own `ui.timer`, rather than the bridge touching NiceGUI elements directly —
@@ -771,7 +816,12 @@ checks `config.settings.is_configured()` first: if unconfigured, it navigates to
 `/setup` (`host/web/wizard.py`'s `build_setup_wizard`, U2) instead of any picker,
 rather than the pre-U2 plain message pointing the user at the Textual TUI.
 `/settings` (`host/web/settings.py`'s `build_settings_view`, U3) is registered
-the same thin-shell way, reachable from the sidebar on every route. Once configured, folder selection is the
+the same thin-shell way, reachable from the sidebar on every route. As of U7,
+`/query/{run_id}` is registered the same thin-shell way too: it looks up the
+query-mode `RunSession`, calls `QueryBridge(session).start()` on first mount if
+not already started (TUI parity: `QueryScreen.on_mount` auto-starts its worker
+too, no explicit "start" button), and delegates rendering to
+`host.web.query_view.build_query_view`. Once configured, folder selection is the
 sidebar tree, which now doubles as the collapsible directory picker (T3,
 superseding the flat browse-view half of Phase 20's planned U1 — see the ROADMAP
 note there): clicking a node sets `shell.selected`, which may now be a file since
@@ -813,6 +863,13 @@ the existing sidebar-tree rebuild, so the count refreshes whenever the target
 directory's contents change (including from an undo, which also bumps
 `fs_revision`).
 
+**Query button (U7):** the run page's main view also renders a "Query this
+corpus" button (`.mark("btn-query-corpus")`), hidden until `session.done` —
+mirroring the TUI's `OrganizerScreen`'s `g` keybinding, which is gated the same
+way. Clicking it creates a new query-mode session
+(`web_session.create(session.target, mode="query")`) and navigates to
+`/query/{run_id}`.
+
 **Dialogs (U4):** `_show_pending_dialog`'s inline checkbox/button-building code is
 gone too — it now just tracks which `pending.request_id` has already been shown
 (`_RenderState.shown_request_id`) and, on a new one, calls
@@ -844,7 +901,12 @@ honours the `dark`/`dark_page` palette tokens in dark mode. Before `ui.run()`,
 **theme.PALETTE)` (never a per-page `ui.colors()`, which would silently
 override this and fragment the identity across routes), `app.add_static_files(
 theme.FONT_URL_PATH, theme.FONT_DIR)` when the vendored-fonts directory exists,
-and `ui.add_css(theme.css(), shared=True)`.
+and `ui.add_css(theme.css(), shared=True)`. As of U7, `run_web`'s
+`@app.on_shutdown` hook also calls `session.task.cancel()` for every session,
+alongside its existing pending-future rejection — an organize or query session's
+MCP server subprocess previously had no lifecycle at all past shutdown, since
+nothing ever calls `web_session.close()`. A full lifecycle/reaper is still future
+work; this is minimal hardening only.
 
 Note: the ROADMAP text for S5 also names `_load_profile_options` (now
 `host.configflow.profile_options`), journal reads, and `server.tools.undo_last` as

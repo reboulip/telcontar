@@ -67,6 +67,12 @@ class PendingRequest:
 class RunSession:
     run_id: str
     target: Path
+    # "organize" (default) or "query" (U7) — one session type/registry for
+    # both rather than a parallel QuerySession: query mode needs the exact
+    # same add_turn/open_step/close_step/status/tokens primitives, and a
+    # second dataclass would duplicate all of it. pending/progress simply
+    # stay unused for query sessions.
+    mode: Literal["organize", "query"] = "organize"
     transcript: list[TranscriptItem] = field(default_factory=list)
     steps: list[StepRecord] = field(default_factory=list)
     activity: str = ""
@@ -178,9 +184,9 @@ class RunSession:
 _SESSIONS: dict[str, RunSession] = {}
 
 
-def create(target: Path) -> RunSession:
+def create(target: Path, *, mode: Literal["organize", "query"] = "organize") -> RunSession:
     run_id = secrets.token_urlsafe(16)
-    session = RunSession(run_id=run_id, target=target)
+    session = RunSession(run_id=run_id, target=target, mode=mode)
     _SESSIONS[run_id] = session
     return session
 

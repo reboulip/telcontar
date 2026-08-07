@@ -14,7 +14,7 @@ import pytest
 
 from host.agent import AgentEvent, ApprovalResult, CostApprovalResult
 from host.web import session as web_session
-from host.web.bridge import AgentBridge
+from host.web.bridge import AgentBridge, QueryBridge
 from host.web.session import RunSession
 
 # ── RunSession: registry ────────────────────────────────────────────────────────
@@ -37,6 +37,18 @@ def test_create_assigns_unique_run_ids(tmp_path: Path) -> None:
 
 def test_get_unknown_run_id_returns_none() -> None:
     assert web_session.get("does-not-exist") is None
+
+
+def test_create_defaults_to_organize_mode(tmp_path: Path) -> None:
+    session = web_session.create(tmp_path)
+    assert session.mode == "organize"
+    web_session.close(session.run_id)
+
+
+def test_create_accepts_query_mode(tmp_path: Path) -> None:
+    session = web_session.create(tmp_path, mode="query")
+    assert session.mode == "query"
+    web_session.close(session.run_id)
 
 
 # ── RunSession: transcript building (turns only, T5) ─────────────────────────────
@@ -601,3 +613,157 @@ def test_tool_result_does_not_bump_fs_revision_on_error(tmp_path: Path) -> None:
     bridge.on_event(AgentEvent("tool_result", "", data={"result": {"error": "boom"}}))
 
     assert session.fs_revision == 0
+
+
+# ── QueryBridge (U7) ──────────────────────────────────────────────────────────
+
+
+def test_query_bridge_has_no_approval_cost_ask_user_callbacks(tmp_path: Path) -> None:
+    """Query mode is read-only by construction (QUERY_ALLOWED_TOOLS) — the
+    absence of these callbacks is itself the safety property, not a gap."""
+    bridge = QueryBridge(RunSession(run_id="x", target=tmp_path))
+
+    assert not hasattr(bridge, "on_approval_needed")
+    assert not hasattr(bridge, "on_cost_approval_needed")
+    assert not hasattr(bridge, "on_ask_user_needed")
+
+
+def test_query_bridge_on_event_tool_call_result_open_close_steps(tmp_path: Path) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = QueryBridge(session)
+
+    bridge.on_event(AgentEvent("tool_call", "list_dir(...)", data={"tool": "list_dir", "args": {}}))
+    assert session.steps[-1].status == "running"
+
+    bridge.on_event(AgentEvent("tool_result", "", data={"result": {"entries": []}}))
+    assert session.steps[-1].status == "ok"
+
+
+def test_query_bridge_on_event_done_does_not_set_session_done(tmp_path: Path) -> None:
+    """run_query_loop emits a "done" AgentEvent *and* returns the answer —
+    the TUI's QueryScreen renders from the return value only (no "done" case
+    in its on_event), and this must match: handling "done" here too would
+    render every answer twice, and done/error are per-question here, not
+    per-session."""
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = QueryBridge(session)
+
+    bridge.on_event(AgentEvent("done", "the answer"))
+
+    assert session.done is False
+    assert session.transcript == []
+
+
+def test_query_bridge_on_event_error_does_not_set_session_done(tmp_path: Path) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = QueryBridge(session)
+
+    bridge.on_event(AgentEvent("error", "boom"))
+
+    assert session.done is False
+    assert session.status == "Error"
+
+
+async def test_query_bridge_run_renders_answer_from_return_value_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from contextlib import asynccontextmanager
+
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+
+    @asynccontextmanager
+    async def fake_mcp_session(
+        project_root: Path, target: Path | None = None
+    ) -> AsyncIterator[object]:
+        yield object()
+
+    monkeypatch.setattr("host.agent.mcp_session", fake_mcp_session)
+
+    async def fake_run_query_loop(**kwargs: object) -> tuple[str, list]:
+        on_event = kwargs["on_event"]
+        on_event(AgentEvent("done", "the answer"))  # type: ignore[operator]
+        return "the answer", [{"role": "assistant"}]
+
+    monkeypatch.setattr("host.agent.run_query_loop", fake_run_query_loop)
+
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = QueryBridge(session)
+    task = bridge.start()
+
+    session.messages.put_nowait("what's in here?")
+    await asyncio.sleep(0.05)
+
+    answers = [t.text for t in session.transcript if t.text == "the answer"]
+    assert answers == ["the answer"]  # rendered exactly once, from the return value
+    assert session.status == "Ready — ask a question."
+
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
+async def test_query_bridge_run_threads_same_ledger_across_questions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from contextlib import asynccontextmanager
+
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+
+    @asynccontextmanager
+    async def fake_mcp_session(
+        project_root: Path, target: Path | None = None
+    ) -> AsyncIterator[object]:
+        yield object()
+
+    monkeypatch.setattr("host.agent.mcp_session", fake_mcp_session)
+
+    seen_ledgers: list[object] = []
+
+    async def fake_run_query_loop(**kwargs: object) -> tuple[str, list]:
+        seen_ledgers.append(kwargs["ledger"])
+        return "answer", []
+
+    monkeypatch.setattr("host.agent.run_query_loop", fake_run_query_loop)
+
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = QueryBridge(session)
+    task = bridge.start()
+
+    session.messages.put_nowait("first question")
+    await asyncio.sleep(0.05)
+    session.messages.put_nowait("second question")
+    await asyncio.sleep(0.05)
+
+    assert len(seen_ledgers) == 2
+    assert seen_ledgers[0] is seen_ledgers[1]
+
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
+async def test_query_bridge_run_reports_config_error_without_raising(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _raise() -> None:
+        raise RuntimeError("no endpoint configured")
+
+    monkeypatch.setattr("config.settings.load", _raise)
+
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = QueryBridge(session)
+
+    await bridge.run()
+
+    assert "Config error" in session.transcript[-1].text
+    assert session.done is False  # query-mode sessions never set .done

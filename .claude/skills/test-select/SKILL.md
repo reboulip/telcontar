@@ -73,7 +73,7 @@ Apply these rules in order (first match wins):
 | `host/web/tree.py` only | `tests/test_web_tree.py` |
 | `host/web/theme.py` only | `tests/test_web_theme.py` |
 | `host/web/forms.py`, `host/web/wizard.py`, `host/web/settings.py`, or `host/web/shell.py` only | `tests/test_web_ui.py tests/test_configflow.py` |
-| `host/web/dialogs.py`, `host/web/steplog.py`, `host/web/bridge.py`, `host/web/session.py`, or `host/web/journal.py` only | `tests/test_web_session.py tests/test_web_ui.py` |
+| `host/web/dialogs.py`, `host/web/steplog.py`, `host/web/bridge.py`, `host/web/session.py`, `host/web/journal.py`, or `host/web/query_view.py` only | `tests/test_web_session.py tests/test_web_ui.py` |
 | `host/web/main.py` only | `tests/test_web_ui.py tests/test_web_session.py` |
 | Any file in `host/web/` only | `tests/test_web_session.py tests/test_web_tree.py tests/test_web_theme.py tests/test_web_ui.py` |
 | Any file in `host/` | `tests/test_host.py tests/test_tools_outputs.py tests/test_app_ui.py tests/test_entrypoints.py tests/test_token_log.py tests/test_host_format.py tests/test_host_paths.py tests/test_configflow.py tests/test_web_session.py tests/test_web_tree.py tests/test_web_theme.py tests/test_web_ui.py` |

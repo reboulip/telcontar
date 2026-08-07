@@ -379,7 +379,7 @@ Three parts:
   call `execute_plan`, the run ends normally but the final text names the
   unexecuted plan id instead of losing it silently.
 
-### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8, U2/U3/U4/U6)
+### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8, U2/U3/U4/U6/U7)
 
 `host/web/` is a package — the first piece of a planned Textual→NiceGUI web UI
 migration (ROADMAP Phase 18). As of S6, `telcontar --web` (`host/main.py`) launches
@@ -391,15 +391,21 @@ OrganizerApp` import on the no-flag path, so neither UI's dependency (`nicegui` 
 meaningful only with `--web`, skips the landing page's directory picker and starts
 a run for that directory immediately. It exists alongside `host/app.py`'s Textual
 TUI, not in place of it — both `textual` and `nicegui` are main dependencies in
-`pyproject.toml`. Feature parity with the TUI isn't fully there yet — no query mode
-(deferred to Phase 20, item U7) — so the web UI is not (yet) the primary way to use
-telcontar. As of U2, it does have its own first-run setup wizard at `/setup`, at
-parity with the TUI's, so it no longer requires an already-configured install to be
-usable. As of U3, it also has a settings view at `/settings`, reachable from every
-screen via a persistent sidebar button — the same parity goal applied to the TUI's
-`ConfigScreen`. As of U6, it also has a journal view + undo, with a visible toolbar
-affordance (TUI parity with the keyboard-only `j` then `u`) — see `host/web/journal.py`
-and `host/web/dialogs.py`'s `build_journal_dialog` below.
+`pyproject.toml`. Feature parity with the TUI is close but not complete — the web
+UI still has no dedicated startup screen offering direct Organize/Query/Settings
+entry points the way the TUI's `StartupScreen` does (Phase 20 item U1, still open),
+so it is not (yet) the primary way to use telcontar. As of U2, it does have its own
+first-run setup wizard at `/setup`, at parity with the TUI's, so it no longer
+requires an already-configured install to be usable. As of U3, it also has a
+settings view at `/settings`, reachable from every screen via a persistent sidebar
+button — the same parity goal applied to the TUI's `ConfigScreen`. As of U6, it
+also has a journal view + undo, with a visible toolbar affordance (TUI parity with
+the keyboard-only `j` then `u`) — see `host/web/journal.py` and
+`host/web/dialogs.py`'s `build_journal_dialog` below. As of U7, it also has a
+read-only query view at `/query/{run_id}`, reached via a "Query this corpus" button
+on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with the
+`g` keybinding — see `host/web/query_view.py` and `host/web/bridge.py`'s
+`QueryBridge` below.
 
 - `host/web/session.py` — `RunSession`, framework-agnostic per-run state. As of
   T5/T6, the transcript is turns-only: `RunSession.transcript: list[TranscriptItem]`
@@ -416,10 +422,14 @@ and `host/web/dialogs.py`'s `build_journal_dialog` below.
   "running" forever by design — it shows exactly where things stopped, not a bug.
   `transcript` and `steps` share the same `_seq` counter for a stable relative
   ordering. Also holds status, tokens, progress, a `pending` approval/cost request
-  keyed to an `asyncio.Future`, a chat `messages` queue, conversation `history`,
-  plus a module-level registry (`create`/`get`/`close`/`all_sessions`) keyed by a
-  `secrets.token_urlsafe(16)` run id. Deliberately has no `nicegui` import, so it is
-  unit-testable in plain pytest. `get_sidebar_width()`/`set_sidebar_width(width)`
+  keyed to an `asyncio.Future`, a chat `messages` queue, conversation `history`, and
+  (U7) a `mode: Literal["organize", "query"] = "organize"` field — one `RunSession`
+  type/registry serves both kinds of run rather than a parallel `QuerySession` type,
+  since query mode needs the exact same `add_turn`/`open_step`/`close_step`/
+  `status`/`tokens` primitives (`pending`/`progress` simply stay unused for query
+  sessions) — plus a module-level registry (`create(target, *, mode="organize")`/
+  `get`/`close`/`all_sessions`) keyed by a `secrets.token_urlsafe(16)` run id.
+  Deliberately has no `nicegui` import, so it is unit-testable in plain pytest. `get_sidebar_width()`/`set_sidebar_width(width)`
   (T4) manage one in-memory sidebar-width preference (240-720px, default 380) for
   the process's lifetime, rather than a `RunSession` field, since it also applies on
   the picker route where no `RunSession` exists yet; `set_sidebar_width` clamps and
@@ -462,7 +472,18 @@ and `host/web/dialogs.py`'s `build_journal_dialog` below.
   step's tool is one of the module-level `_TREE_MUTATING_TOOLS =
   {"execute_plan", "write_index", "write_summary", "write_folder_readme"}` and the
   result was ok — the only tools that change what's on disk under the target
-  directory, and what drives the sidebar-tree refresh below.
+  directory, and what drives the sidebar-tree refresh below. As of U7,
+  `host/web/bridge.py` also exports `QueryBridge(session)` — the same shape
+  (`on_event`/`start`/`run`) as `AgentBridge`, but driving `host.agent.run_query_loop`
+  instead of `run_agent_loop`. It has no `on_approval_needed`/`on_cost_approval_needed`/
+  `on_ask_user_needed` at all — their absence is itself the safety property, since
+  query mode is read-only by construction (`host.agent.QUERY_ALLOWED_TOOLS`). Its
+  `on_event` deliberately has no `"done"` case: `run_query_loop` both emits a
+  `"done"` event and returns the answer text, and the TUI's own
+  `QueryScreen.on_event` renders only from the return value — `QueryBridge.run()`
+  mirrors that, calling `session.add_turn` with the returned answer after each
+  `run_query_loop` call rather than reacting to the event. `done`/`error` here are
+  per-question, not per-session: `QueryBridge` never sets `session.done`.
 - `host/web/dialogs.py` (U4, extended by U6) — one builder per `PendingRequest` kind, replacing the
   dialog-building code that used to live inline in `run_page`.
   `build_approval_dialog(session, pending)` is a faithful port of the TUI's
@@ -650,12 +671,24 @@ and `host/web/dialogs.py`'s `build_journal_dialog` below.
   `main.py`'s `@ui.page` decorators stay thin shells: `@ui.page("/setup")` just
   calls `build_setup_wizard(on_finish=lambda: ui.navigate.to("/"))` inside
   `app_shell()`.
+- `host/web/query_view.py` (U7) — the query page's UI: `build_query_view(shell,
+  session)` renders a conversation column (`ui.chat_message`, the same idiom
+  `run_page` uses for organize turns) plus a step-log strip
+  (`host.web.steplog.sync_steps`, the same T5/T6 idiom `run_page` already
+  established) instead of the TUI `QueryScreen`'s side-by-side dual-`RichLog`
+  split — Phase 20 is parity with a cleaner surface, not a redesign, and the log
+  strip already is the web UI's "tool timeline". No approval/cost dialog wiring at
+  all — query mode is read-only by construction, so there is nothing to gate.
 - `host/web/main.py` now mounts `app_shell(...)` at the top of both page bodies
   instead of assembling its own layout. The landing page (`/`) first checks
   `config.settings.is_configured()`: if telcontar hasn't been set up yet, it
   navigates to `/setup` (the wizard above) instead of showing any picker. `/settings`
   (the settings view above, U3) is registered the same thin-shell way, reachable
-  from the sidebar's Settings button on every route. Once configured, folder selection is the
+  from the sidebar's Settings button on every route. As of U7, `/query/{run_id}`
+  is registered the same thin-shell way too — a page that looks up the query-mode
+  `RunSession`, starts `QueryBridge(session)` on first mount if not already started
+  (TUI parity: `QueryScreen.on_mount` also auto-starts its worker, no explicit
+  "start" button), and delegates rendering to `build_query_view`. Once configured, folder selection is the
   sidebar tree, which now doubles as the directory picker (T3, superseding the
   browse-view half of Phase 20's planned U1): clicking a node sets `shell.selected`
   (which may now be a file, since the tree shows files too), and a "Use selected
@@ -668,7 +701,11 @@ and `host/web/dialogs.py`'s `build_journal_dialog` below.
   version started the run immediately on directory selection. Once started
   (`session.started`), the starter pane hides and the main view (status/progress
   bar/chat input/approval-cost-dialogs, now via `host/web/dialogs.py`, U4) takes
-  over. As of T5/T6, that main view is two independent zones instead of one
+  over. As of U7, the main view also shows a "Query this corpus" button, hidden
+  until `session.done` — mirroring the TUI's `OrganizerScreen`'s `g` keybinding,
+  gated the same way — that creates a new query-mode session
+  (`web_session.create(session.target, mode="query")`) and navigates to
+  `/query/{run_id}`. As of T5/T6, that main view is two independent zones instead of one
   interleaved stream: a
   `conversation_column` (turns only, `ui.chat_message`, rendering `session.transcript`)
   and, below a separator, a pinned-bottom `activity_label` (the current narration
@@ -710,7 +747,13 @@ and `host/web/dialogs.py`'s `build_journal_dialog` below.
   **theme.PALETTE)` (never a per-page `ui.colors()`, which would silently override
   this and fragment the identity across routes), `app.add_static_files(
   theme.FONT_URL_PATH, theme.FONT_DIR)` to serve the vendored Cinzel woff2 when the
-  fonts directory exists, and `ui.add_css(theme.css(), shared=True)`. The browser tab
+  fonts directory exists, and `ui.add_css(theme.css(), shared=True)`. As of U7,
+  `run_web`'s `@app.on_shutdown` hook also cancels every session's driving task
+  (`session.task.cancel()`), alongside its existing pending-future rejection — an
+  organize or query session's MCP server subprocess previously had no lifecycle at
+  all past shutdown; a full lifecycle/reaper (nothing ever calls
+  `web_session.close()` today) is still future work, this is minimal hardening
+  only. The browser tab
   title (T7) comes from `host.web.theme.window_title`: `ui.run(...)`'s `title=`
   supplies the global default (no target yet), and `run_page` separately calls
   `ui.page_title(theme.window_title(session.target))` from inside the page body —
@@ -833,6 +876,9 @@ can't resolve a pending request it was never actually shown.
 
 ```
 1. User opens QueryScreen (from StartupScreen "Query" button, or "g" in OrganizerScreen)
+   — or, in the web UI (U7), the `/query/{run_id}` page (from the "Query this
+   corpus" button on the organize view, `host/web/query_view.py`'s `QueryBridge`
+   driving the same `run_query_loop` below)
 2. Host launches server subprocess (stdio) — same MCP server, same registry
 3. Host calls session.list_tools() → filters to QUERY_ALLOWED_TOOLS (read-only subset)
 4. Host sends query-mode system prompt (built from active profile) + user's first question
