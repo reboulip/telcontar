@@ -356,7 +356,7 @@ run_web` for `--web` — so launching one UI never pays the other's import cost
 
 ---
 
-### `host/web/` (Phase 18)
+### `host/web/` (Phase 18, extended by Phase 19 T2)
 
 **Role:** NiceGUI-based web UI package — the first piece of a planned
 Textual→NiceGUI migration. As of S6, `telcontar --web` (`host/main.py`, lazy import)
@@ -391,24 +391,51 @@ O7-style follow-up continuations, threading one `_TokenLedger` across all of the
 only to the first `run_agent_loop` call, never to a continuation, matching
 `host/app.py`'s `_agent_worker(instructions=...)` contract.
 
-**`host/web/main.py`** — the only module in the package importing `nicegui`. Pages
-are registered at import time (`@ui.page("/")`, `@ui.page("/run/{run_id}")`) but
-nothing binds a port until `run_web(target: Path | None = None)` is called, so
-importing the module is side-effect-free. Each connected browser tab polls
-`RunSession`/`TranscriptItem` state with its own `ui.timer`, rather than the bridge
-touching NiceGUI elements directly — this is what lets a page reload re-attach to
-an in-flight approval/cost dialog (via `session.pending`) instead of orphaning it.
+**`host/web/shell.py`** (Phase 19 T2, new) — `app_shell(*, target: Path | None =
+None, on_select: Callable[[Path], None] | None = None) -> Iterator[Shell]`, a
+`@contextmanager` mounted by every `@ui.page` route in `host/web/main.py`,
+including the early-return branches (not-configured, run-not-found), so the
+sidebar is visible on every screen instead of being assembled per-page. Builds a
+`ui.left_drawer` as a direct child of the page body — NiceGUI's
+`require_top_level_layout` raises `RuntimeError` if the drawer is nested inside
+another container — containing a `ui.tree` sourced from `host.web.tree.build_nodes`,
+plus the page's main content column, and yields a `Shell` dataclass (`drawer`,
+`tree`, `content`, `target`, `selected`). Clicking a tree node sets `shell.selected`
+and calls the optional `on_select` callback. `refresh_tree()` is a documented no-op
+today — Phase 20's U4 and Phase 21's V7 give it real node-rebuilding logic once ops
+execute. `app_shell`'s signature is frozen: later Phase 20/21 work is expected to
+mount through it unchanged. `_apply_theme()` is a deliberately empty hook for
+T7/T8's future `host/web/theme.py`. `host/web/shell.py` now shares
+nicegui-importing duties with `host/web/main.py`.
 
-The landing page (`/`, S5) checks `config.settings.is_configured()` first: if
-unconfigured, it shows a plain message directing the user to run the Textual TUI
-(`telcontar`) once to complete first-time setup, rather than any picker. Once
-configured, it renders a server-side directory browser (`_list_subdirs`, a
-`Path.iterdir()` walk filtering to subdirectories and dropping dotfiles) letting
-the user navigate into subfolders and confirm with "Use this directory" — replacing
-S4's bare directory-path text input. `_list_subdirs` is blocking disk I/O, so every
-call goes through NiceGUI's `run.io_bound`, per S5's rule that a page handler must
-never block the shared event loop (a stall here freezes every connected tab, not
-just one, unlike the Textual TUI where a blocking call only stalled one terminal).
+**`host/web/tree.py`** (Phase 19 T2, new) — NiceGUI-free, mirroring
+`session.py`/`bridge.py`'s invariant so it stays testable in plain pytest.
+`build_nodes(root: Path) -> list[dict]` builds the node list `ui.tree` expects
+(`{"id": <absolute path str>, "label": <basename>, "children": [...]}`, id always an
+absolute path string so it's a stable key across a page reload). As of T2 it
+returns a single, childless root node — a functional stub so the shell has
+something valid to mount; T3 replaces it with real (lazily-loaded) directory
+traversal.
+
+**`host/web/main.py`** — now shares nicegui-importing duties with
+`host/web/shell.py` (T2). Pages are registered at import time (`@ui.page("/")`,
+`@ui.page("/run/{run_id}")`) but nothing binds a port until `run_web(target: Path |
+None = None)` is called, so importing the module is side-effect-free. Each
+connected browser tab polls `RunSession`/`TranscriptItem` state with its own
+`ui.timer`, rather than the bridge touching NiceGUI elements directly — this is
+what lets a page reload re-attach to an in-flight approval/cost dialog (via
+`session.pending`) instead of orphaning it.
+
+Both page bodies now open with `with app_shell(...) as shell:` (T2), mounting the
+persistent sidebar before any page-specific content. The landing page (`/`, S5)
+checks `config.settings.is_configured()` first: if unconfigured, it shows a plain
+message directing the user to run the Textual TUI (`telcontar`) once to complete
+first-time setup, rather than any picker. Once configured, folder selection is now
+the T2 sidebar tree rather than a page-body picker: clicking a node sets
+`shell.selected`, and a "Use selected directory" button starts the run. This
+replaces S4/S5's flat one-button-per-folder `_list_subdirs` browser (a
+`Path.iterdir()` walk offloaded via `run.io_bound`), which T2 removed outright — a
+real collapsible tree is Phase 19's T3.
 
 The run page (`/run/{run_id}`, S5) opens on a starter pane — hidden once
 `session.started` — showing a directory overview (`host.paths.directory_overview`,
