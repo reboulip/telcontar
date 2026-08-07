@@ -33,6 +33,7 @@ from host.agent import ApprovalResult, CostApprovalResult
 from host.format import fmt_op
 from host.paths import directory_overview
 from host.web import session as web_session
+from host.web import theme
 from host.web.bridge import AgentBridge
 from host.web.shell import app_shell
 
@@ -100,6 +101,11 @@ async def run_page(run_id: str) -> None:
                 "Run not found — it may have finished and been cleared, or the link is wrong."
             ).classes("text-negative")
             return
+
+        # Dynamic per-request title — ui.page(title=...) is bound at
+        # decoration time and can't see the target directory, which is only
+        # known once the URL's run_id resolves to a session (T7).
+        ui.page_title(theme.window_title(session.target))
 
         starter_column = ui.column().classes("w-full")
         main_column = ui.column().classes("w-full")
@@ -323,4 +329,4 @@ def run_web(target: Path | None = None) -> None:
     # — mcp_session's server subprocess launch would be dead on Windows.
     # Never bind 0.0.0.0 either: it triggers a Windows Firewall prompt and
     # would expose the approval gate on the LAN.
-    ui.run(host="127.0.0.1", port=port, show=True, reload=False)
+    ui.run(host="127.0.0.1", port=port, show=True, reload=False, title=theme.window_title())

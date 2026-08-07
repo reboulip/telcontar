@@ -11,8 +11,12 @@ so the sidebar stays visible everywhere.
 
 `app_shell()`'s signature is frozen: Phase 20's U1-U7 and Phase 21's V7 live
 tree refresh all mount through it. `_apply_theme()` is a deliberately empty
-hook — T7/T8 wire `host/web/theme.py` in here without needing to touch this
-module's structure.
+hook, kept in reserve for anything from `host/web/theme.py` that turns out to
+need per-mount (not just once-per-process) application. T7's tab title
+(`ui.page_title()`/`ui.run(title=...)`) didn't need it — both call sites
+naturally live in `host/web/main.py` instead — and T8's palette/CSS/favicon
+are also applied once in `run_web()`, not here. If nothing ever needs this
+hook, it can be dropped.
 
 The sidebar tree doubles as the directory picker (T3) — the "go up" /
 drive-root controls below the header are shown only when ``on_select`` is

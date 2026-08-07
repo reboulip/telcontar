@@ -356,7 +356,7 @@ run_web` for `--web` — so launching one UI never pays the other's import cost
 
 ---
 
-### `host/web/` (Phase 18, extended by Phase 19 T2/T3/T5/T6)
+### `host/web/` (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7)
 
 **Role:** NiceGUI-based web UI package — the first piece of a planned
 Textual→NiceGUI migration. As of S6, `telcontar --web` (`host/main.py`, lazy import)
@@ -508,14 +508,28 @@ node still carries the placeholder rather than real children — both support
 home directory, returning an empty list (never raising) on any other platform,
 Python version, or enumeration error.
 
-**`host/web/main.py`** (extended by T5/T6) — now shares nicegui-importing duties
+**`host/web/theme.py`** (T7) — product-identity helpers, `nicegui`-free like
+`session.py`/`bridge.py`/`tree.py`. `window_title(target: Path | None = None) ->
+str` returns `"telcontar"` with no target, or `f"telcontar — {target.name}"` once
+one is selected, falling back to the full path string when `.name` is empty (a
+Windows drive root, e.g. `Path("C:\\")`, so the title never ends in a dangling
+"— "). Designated home for T8's upcoming palette/CSS/favicon work.
+
+**`host/web/main.py`** (extended by T5/T6/T7) — now shares nicegui-importing duties
 with `host/web/shell.py` (T2). Pages are registered at import time (`@ui.page("/")`,
 `@ui.page("/run/{run_id}")`) but nothing binds a port until `run_web(target: Path |
 None = None)` is called, so importing the module is side-effect-free. Each
 connected browser tab polls `RunSession`/`TranscriptItem`/`StepRecord` state with
 its own `ui.timer`, rather than the bridge touching NiceGUI elements directly —
 this is what lets a page reload re-attach to an in-flight approval/cost dialog (via
-`session.pending`) instead of orphaning it.
+`session.pending`) instead of orphaning it. The browser tab title (T7) comes from
+`host.web.theme.window_title`: `run_web`'s `ui.run(...)` call passes it (with no
+target) as the global default title, and `run_page` calls
+`ui.page_title(theme.window_title(session.target))` from inside the page body —
+not via `@ui.page(title=...)`, which is bound at decoration/import time and can't
+see the per-request session's target — so the run's target directory lands in the
+title of the very first HTML response. `index_page` (the picker route) never calls
+`ui.page_title()`, since no directory is "selected" until a run exists.
 
 Both page bodies now open with `with app_shell(...) as shell:` (T2), mounting the
 persistent sidebar before any page-specific content. The landing page (`/`, S5)
