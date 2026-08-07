@@ -67,6 +67,11 @@ class AgentBridge:
                 session.status = "Done"
                 session.progress = {}
                 session.done = True
+            case "warning":
+                # Non-terminal — e.g. a single analysis batch failed and was
+                # skipped, but the run continues. Never touch status/progress
+                # or session.done here.
+                session.add_turn("telcontar", f"⚠ {event.text}")
             case "error":
                 session.add_turn("telcontar", f"✗ {event.text}")
                 session.status = "Error"

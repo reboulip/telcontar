@@ -40,6 +40,7 @@ EventKind = Literal[
     "cost_estimate",
     "tokens",
     "done",
+    "warning",
     "error",
 ]
 
@@ -1038,7 +1039,7 @@ async def _analyze_batch(
             response = None
 
     if response is None:
-        on_event(AgentEvent("error", f"Analysis batch failed, skipping: {last_error}"))
+        on_event(AgentEvent("warning", f"Analysis batch failed, skipping: {last_error}"))
         return [], [
             {"path": doc["path"], "checksum": doc["checksum"], "error": str(last_error)}
             for doc in batch
@@ -2077,6 +2078,12 @@ class _TokenLedger:
     run_id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     calls: int = 0
     totals: dict[str, int] = field(default_factory=lambda: {"in": 0, "out": 0, "cached_in": 0})
+    # Split accumulators behind totals["in"] (U8, ROADMAP.md Phase 20) — see
+    # the policy comment in record() for why analyze and conversation phases
+    # fold in differently. totals["in"] is always their sum; nothing else
+    # writes to it directly.
+    analyze_in: int = 0
+    conversation_in: int = 0
 
     @classmethod
     def new(cls, settings: Settings) -> "_TokenLedger":
@@ -2116,20 +2123,24 @@ class _TokenLedger:
             cached = 0
 
         self.calls += 1
-        # Single isolated policy line: how this call's `prompt` folds into the
-        # running "in" total (R1, GH #27). Confirmed against a real API
-        # journal: within one growing ORGANIZE/QUERY conversation, the
-        # endpoint's `usage.prompt_tokens` is already a cumulative
-        # session-wide total (the whole resent history so far), so summing it
-        # across turns compounds an already-cumulative number — replace
-        # instead. ANALYZE-phase batches are independent, throwaway
-        # conversations with no shared history between batches, so their
-        # (small, correct) prompt_tokens values are still genuinely additive
-        # across batches.
+        # Two separate accumulators behind totals["in"] (R1 + U8, GH #27,
+        # ROADMAP.md Phase 20): how this call's `prompt` folds in depends on
+        # its phase. Confirmed against a real API journal: within one growing
+        # ORGANIZE/QUERY conversation, the endpoint's `usage.prompt_tokens` is
+        # already a cumulative session-wide total (the whole resent history so
+        # far), so summing it across turns compounds an already-cumulative
+        # number — replace instead. ANALYZE-phase batches are independent,
+        # throwaway conversations with no shared history between batches, so
+        # their (small, correct) prompt_tokens values are genuinely additive
+        # across batches. Keeping these in two separate fields (rather than
+        # one shared `totals["in"]` that analyze accumulates and the first
+        # organize/query call replaces) is what stops the visible collapse at
+        # the analyze→organize seam: the analyze contribution survives.
         if phase == "analyze":
-            self.totals["in"] += prompt
+            self.analyze_in += prompt
         else:
-            self.totals["in"] = prompt
+            self.conversation_in = prompt
+        self.totals["in"] = self.analyze_in + self.conversation_in
         self.totals["out"] += completion
         self.totals["cached_in"] += cached
 

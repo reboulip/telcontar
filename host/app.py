@@ -1334,6 +1334,11 @@ class OrganizerScreen(Screen):
                     self._set_status("Done")
                     self._hide_progress()
                     self._note_terminal_state()
+                case "warning":
+                    # Non-terminal — e.g. a single analysis batch failed and was
+                    # skipped, but the run continues. Never touch status/progress
+                    # or the terminal-state guard here.
+                    self._add_turn("telcontar", f"[yellow]⚠ {event.text}[/yellow]")
                 case "error":
                     self._add_turn(
                         "telcontar",
@@ -1603,6 +1608,8 @@ class QueryScreen(Screen):
                     self._log_tool(f"[dim]  {event.text}[/dim]")
                 case "tokens":
                     self._set_tokens(event.text)
+                case "warning":
+                    self._log(f"[yellow]⚠ {event.text}[/yellow]")
                 case "error":
                     self._log(f"[bold red]✗ {event.text}[/bold red]")
 

@@ -2512,7 +2512,7 @@ async def test_analyze_batch_retries_once_then_skips_on_failure(tmp_path: Path) 
     assert llm.chat.completions.create.await_count == 2
     assert result["recorded"] == []
     assert result["errors"] == [{"path": a, "checksum": "c-a", "error": "boom again"}]
-    assert any(e.kind == "error" for e in events)
+    assert any(e.kind == "warning" for e in events)
     # A failed batch is skipped, never retried a second time (record_document_batch
     # is never reached).
     called_tools = {c.args[0] for c in session.call_tool.await_args_list}
