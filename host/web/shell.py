@@ -13,6 +13,12 @@ so the sidebar stays visible everywhere.
 tree refresh all mount through it. `_apply_theme()` is a deliberately empty
 hook — T7/T8 wire `host/web/theme.py` in here without needing to touch this
 module's structure.
+
+The sidebar tree doubles as the directory picker (T3) — the "go up" /
+drive-root controls below the header are shown only when ``on_select`` is
+wired in (i.e. only on the picker route), since re-rooting the tree away
+from a run's target directory would be confusing on `/run/{run_id}`, where
+the tree's only job is letting the user verify files actually moved.
 """
 
 from __future__ import annotations
@@ -22,7 +28,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
-from nicegui import ui
+from nicegui import run, ui
 from nicegui.events import ValueChangeEventArguments
 
 from host.web import tree as web_tree
@@ -39,9 +45,13 @@ class Shell:
     target: Path | None = None
     selected: Path | None = None
 
-    def refresh_tree(self) -> None:
-        """No-op today — T3 gives this real node-rebuilding logic; Phase 20's
-        U4 and Phase 21's V7 call it after ops execute."""
+    def refresh_tree(self, root: Path) -> None:
+        """Re-root the sidebar tree at ``root`` — used by the picker's "go
+        up" / drive controls (T3), and available for Phase 20's U4 and Phase
+        21's V7 (live refresh after ops execute) to call later."""
+        self.target = root
+        self.tree.props["nodes"] = web_tree.build_nodes(root)
+        self.tree.update()
 
 
 def _apply_theme() -> None:
@@ -64,20 +74,52 @@ def app_shell(
     root = target or Path.home()
     with ui.left_drawer().classes("tc-sidebar") as drawer:
         ui.label("telcontar").classes("text-subtitle2 q-pa-sm")
+
+        if on_select is not None:
+            with ui.row().classes("w-full items-center q-px-sm q-gutter-xs"):
+
+                def _go_up() -> None:
+                    parent = shell.target.parent if shell.target else root.parent
+                    if shell.target is not None and parent != shell.target:
+                        shell.refresh_tree(parent)
+
+                ui.button(icon="arrow_upward", on_click=_go_up).props("flat dense").tooltip(
+                    "Up one level"
+                )
+                drives = web_tree.list_drive_roots()
+                if drives:
+                    ui.select(
+                        {str(d): str(d) for d in drives},
+                        on_change=lambda e: shell.refresh_tree(Path(e.value)),
+                    ).props("dense borderless").classes("flex-grow")
+
         nodes = web_tree.build_nodes(root)
-        tree_widget = ui.tree(nodes, node_key="id", label_key="label", children_key="children")
+        tree_widget = ui.tree(
+            nodes, node_key="id", label_key="label", children_key="children"
+        ).props("dense no-connectors")
 
     content = ui.column().classes("w-full")
-    shell = Shell(drawer=drawer, tree=tree_widget, content=content, target=target)
+    shell = Shell(drawer=drawer, tree=tree_widget, content=content, target=root)
 
     def _handle_select(e: ValueChangeEventArguments) -> None:
-        if not e.value:
+        if not e.value or e.value.endswith(web_tree.PLACEHOLDER_SUFFIX):
             return
         shell.selected = Path(e.value)
         if on_select is not None:
             on_select(shell.selected)
 
+    async def _handle_expand(e: ValueChangeEventArguments) -> None:
+        for node_id in e.value or []:
+            if node_id.endswith(web_tree.PLACEHOLDER_SUFFIX):
+                continue
+            node = web_tree.find_node(tree_widget.props["nodes"], node_id)
+            if node is None or not web_tree.needs_loading(node):
+                continue
+            node["children"] = await run.io_bound(web_tree.load_children, Path(node_id))
+        tree_widget.update()
+
     tree_widget.on_select(_handle_select)
+    tree_widget.on_expand(_handle_expand)
 
     with content:
         yield shell

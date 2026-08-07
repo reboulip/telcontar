@@ -379,7 +379,7 @@ Three parts:
   call `execute_plan`, the run ends normally but the final text names the
   unexecuted plan id instead of losing it silently.
 
-### NiceGUI web UI foundations (S4-S6, extended by T2)
+### NiceGUI web UI foundations (S4-S6, extended by T2/T3)
 
 `host/web/` is a package — the first piece of a planned Textual→NiceGUI web UI
 migration (ROADMAP Phase 18). As of S6, `telcontar --web` (`host/main.py`) launches
@@ -411,36 +411,55 @@ way to use telcontar.
   Both `start()` and `run()` take an optional `instructions: str | None = None`,
   threaded into the *first* `run_agent_loop` call only — never into an O7
   continuation — mirroring the Textual TUI's `OrganizerScreen._agent_worker`.
-- `host/web/shell.py` (T2, new) — `app_shell(*, target=None, on_select=None)`, a
-  `@contextmanager` mounted by every `@ui.page` route, including the early-return
-  branches (not-configured, run-not-found), so a left-sidebar frame is visible on
-  every screen rather than being assembled per-page. It creates the `ui.left_drawer`
-  as a direct child of the page body — NiceGUI's `require_top_level_layout` raises
-  `RuntimeError` if a drawer is nested inside another container — mounts a
-  `ui.tree` inside it from `host.web.tree.build_nodes`, and yields a `Shell`
-  dataclass (`drawer`, `tree`, `content`, `target`, `selected`) that the page body
-  builds into via `with app_shell(...) as shell:`. Clicking a tree node sets
-  `shell.selected` and invokes the optional `on_select` callback. `refresh_tree()`
-  is a documented no-op today — Phase 20's U4 and Phase 21's V7 give it real
-  node-rebuilding logic once ops execute. `app_shell`'s signature is frozen: later
-  Phase 20/21 work is expected to mount through it unchanged. `host/web/shell.py`
-  now shares nicegui-importing duties with `host/web/main.py`.
-- `host/web/tree.py` (T2, new) — NiceGUI-free, mirroring `session.py`/`bridge.py`'s
-  invariant so it stays testable in plain pytest. `build_nodes(root: Path) ->
-  list[dict]` builds the node list `ui.tree` expects
-  (`{"id": <absolute path str>, "label": <basename>, "children": [...]}`). As of
-  T2 it returns a single, childless root node — a functional stub so the shell has
-  something valid to mount; Phase 19's T3 replaces it with real (lazily-loaded)
-  directory traversal.
+- `host/web/shell.py` (T2, extended by T3) — `app_shell(*, target=None,
+  on_select=None)`, a `@contextmanager` mounted by every `@ui.page` route, including
+  the early-return branches (not-configured, run-not-found), so a left-sidebar frame
+  is visible on every screen rather than being assembled per-page. It creates the
+  `ui.left_drawer` as a direct child of the page body — NiceGUI's
+  `require_top_level_layout` raises `RuntimeError` if a drawer is nested inside
+  another container — mounts a `ui.tree` inside it from `host.web.tree.build_nodes`
+  (`.props("dense no-connectors")` for a denser vertical rhythm), and yields a
+  `Shell` dataclass (`drawer`, `tree`, `content`, `target`, `selected`) that the page
+  body builds into via `with app_shell(...) as shell:`. The tree's `on_select`
+  handler ignores clicks on lazy-load placeholder nodes and otherwise sets
+  `shell.selected` and invokes the optional `on_select` callback; its `on_expand`
+  handler is async and, the first time a real directory node is expanded, calls
+  `host.web.tree.load_children` via `run.io_bound`, splices the result into
+  `tree.props["nodes"]` in place, and calls `tree.update()` — S5's blocking-I/O
+  rule means that listing must happen off the event loop. `Shell.refresh_tree(root)`
+  (T3) re-roots the sidebar tree at `root`, used by the picker's "go up one level"
+  button and (Windows-only) drive-root dropdown — both rendered only when
+  `on_select` is wired in (i.e. only on the picker route, `/`; `/run/{run_id}`'s
+  tree is for verification only, not re-rooting). `app_shell`'s signature is frozen:
+  later Phase 20/21 work is expected to mount through it unchanged.
+  `host/web/shell.py` now shares nicegui-importing duties with `host/web/main.py`.
+- `host/web/tree.py` (T2, fleshed out by T3) — NiceGUI-free, mirroring
+  `session.py`/`bridge.py`'s invariant so it stays testable in plain pytest.
+  `build_nodes(root: Path) -> list[dict]` builds the top-level node `ui.tree`
+  expects (`{"id": <absolute path str>, "label": <basename>, "children": [...]}`),
+  loading the root's immediate children eagerly (one directory listing) while
+  deeper levels stay lazy behind a placeholder-child scheme (a node id ending in
+  `PLACEHOLDER_SUFFIX`, a null-byte + ellipsis sentinel that's never a real path) —
+  so a page load never walks the whole tree. `load_children(path)` lists one
+  directory's immediate entries, both files and folders (the sidebar's job is
+  letting the user verify files actually moved/renamed, not just browsing folders),
+  sorted folders-then-files then alphabetically; it hides dotfiles but deliberately
+  *not* `_quarantine` (the only removal path — the user must be able to see what
+  landed there), never follows symlinks/junctions (Windows profile directories like
+  "Application Data" can loop), and never raises — a permission error or a vanished
+  directory yields an empty list rather than blanking the tree. `find_node` and
+  `needs_loading` support `shell.py`'s expand handler. `list_drive_roots()` wraps
+  `os.listdrives()` (3.12+, Windows-only) so the picker can reach outside the home
+  directory, degrading to an empty list on any other platform or on error.
 - `host/web/main.py` now mounts `app_shell(...)` at the top of both page bodies
   instead of assembling its own layout. The landing page (`/`) first checks
   `config.settings.is_configured()`: if telcontar hasn't been set up yet, it shows
   a short message pointing the user at the Textual TUI (`telcontar`) to complete
-  first-time setup instead of any picker. Once configured, folder selection is now
-  the T2 sidebar tree rather than a page-body picker: clicking a node sets
-  `shell.selected`, and a "Use selected directory" button starts the run — this
-  replaces S4/S5's flat one-button-per-folder `_list_subdirs` browser, which T2
-  removed outright (a real collapsible tree is Phase 19's T3). The organizer view (`/run/{run_id}`) now opens on a
+  first-time setup instead of any picker. Once configured, folder selection is the
+  sidebar tree, which now doubles as the directory picker (T3, superseding the
+  browse-view half of Phase 20's planned U1): clicking a node sets `shell.selected`
+  (which may now be a file, since the tree shows files too), and a "Use selected
+  directory" button starts the run only if `shell.selected.is_dir()`. The organizer view (`/run/{run_id}`) now opens on a
   **starter pane** shown before the run begins: a directory overview (reusing
   `host.paths.directory_overview`, also offloaded via `run.io_bound`) plus an
   optional free-text steering-instructions input (mirrors the Textual TUI's

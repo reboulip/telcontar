@@ -77,7 +77,7 @@ async def index_page() -> None:
         ui.label("Pick a directory in the sidebar, then start organizing:")
 
         def _select() -> None:
-            if shell.selected is None:
+            if shell.selected is None or not shell.selected.is_dir():
                 return
             session = _start_run(shell.selected)
             ui.navigate.to(f"/run/{session.run_id}")
