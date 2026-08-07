@@ -37,11 +37,6 @@ from host.web import theme
 from host.web.bridge import AgentBridge
 from host.web.shell import app_shell
 
-# Set by run_web() before ui.run() starts; read by the landing page so a
-# `telcontar --web --target DIR` launch skips straight to a run instead of
-# showing the directory browser. None means "show the browser".
-_default_target: Path | None = None
-
 
 @dataclass
 class _RenderState:
@@ -74,8 +69,9 @@ async def index_page() -> None:
             )
             return
 
-        if _default_target is not None:
-            session = _start_run(_default_target)
+        default_target = web_session.get_default_target()
+        if default_target is not None:
+            session = _start_run(default_target)
             ui.navigate.to(f"/run/{session.run_id}")
             return
 
@@ -285,7 +281,7 @@ async def run_page(run_id: str) -> None:
                 starter_column.visible = False
                 main_column.visible = True
 
-        ui.timer(0.5, _refresh)
+        ui.timer(web_session.REFRESH_INTERVAL, _refresh)
 
 
 def _pick_port() -> int:
@@ -308,8 +304,7 @@ def _pick_port() -> int:
 
 def run_web(target: Path | None = None) -> None:
     """Launch the NiceGUI web UI. Blocks until the server stops."""
-    global _default_target
-    _default_target = target
+    web_session.set_default_target(target)
 
     @app.on_shutdown
     def _reject_pending_on_shutdown() -> None:
@@ -351,3 +346,15 @@ def run_web(target: Path | None = None) -> None:
         dark=True,
         favicon=theme.FAVICON_SVG,
     )
+
+
+# NiceGUI's headless `user` test fixture (pyproject.toml's `main_file` ini)
+# runpy-executes this file with __name__ == "__main__", the same convention
+# a NiceGUI "main file" script uses when run directly. Under
+# nicegui.testing.user_simulation, ui.run() detects the simulation and
+# returns immediately after registering its run config — it never binds a
+# port or opens a browser (see nicegui.ui_run.run's `is_user_simulation()`
+# branch) — so this guard is inert outside tests (host/web/main.py is always
+# imported, never executed as a script, in normal use) and safe inside them.
+if __name__ in {"__main__", "__mp_main__"}:
+    run_web()

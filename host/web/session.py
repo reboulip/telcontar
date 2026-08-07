@@ -165,6 +165,39 @@ def all_sessions() -> list[RunSession]:
     return list(_SESSIONS.values())
 
 
+# ── Default target (T7 / U9 test-seam) ───────────────────────────────────────
+#
+# Set by run_web() before ui.run() starts; read by the landing page so a
+# `telcontar --web --target DIR` launch skips straight to a run instead of
+# showing the directory browser. None means "show the browser". Lives here
+# rather than in host/web/main.py so it's patchable from tests: the NiceGUI
+# `user` fixture runpy-executes main.py as a second, separate module object
+# (run_name="__main__"), so a patch on host.web.main.* never reaches the page
+# code that fixture drives — host.web.session stays the one cached module
+# both the test and the runpy copy of main.py actually share.
+
+_default_target: Path | None = None
+
+
+def set_default_target(target: Path | None) -> None:
+    global _default_target
+    _default_target = target
+
+
+def get_default_target() -> Path | None:
+    return _default_target
+
+
+# ── Render refresh interval (U9 test-seam) ──────────────────────────────────
+#
+# Read by run_page's ui.timer at page-build time instead of a hardcoded
+# literal, so tests can shrink it: the `user` fixture's should_see() retries
+# 3x over ~0.3s total, which races the real UI's 0.5s poll cadence and either
+# times out or forces every assertion to raise its retry count.
+
+REFRESH_INTERVAL: float = 0.5
+
+
 # ── Sidebar width (T4) ───────────────────────────────────────────────────────
 #
 # One in-memory preference for the process's lifetime rather than a field on
