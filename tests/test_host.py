@@ -2615,3 +2615,330 @@ def test_new_docs_cost_estimate_counts_only_new_docs() -> None:
 
 def test_new_docs_cost_estimate_empty_new_docs_is_zero() -> None:
     assert _new_docs_cost_estimate([], {}, max_snippet_chars=4000) == (0, 0)
+
+
+# ── T1: plan-completion guard ───────────────────────────────────────────────
+
+
+def test_system_prompt_frames_execute_plan_as_presentation() -> None:
+    from config.settings import load
+
+    from host.agent import _build_system_prompt
+
+    prompt = _build_system_prompt(_PROJECT_ROOT, load())
+
+    # execute_plan is described as the presentation act itself, not something
+    # that happens after approval (Break 2: the model waited for an approval
+    # it thought came first).
+    assert "is how the plan is presented" in prompt or "IS how the plan" in prompt
+    assert "never end your turn with a plan" in prompt.lower()
+    assert "never use ask_user to ask whether to proceed" in prompt.lower()
+
+
+def test_seed_last_plan_id_scans_tool_call_args() -> None:
+    from host.agent import _seed_last_plan_id
+
+    messages = [
+        {"role": "system", "content": "..."},
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "tc1",
+                    "function": {
+                        "name": "propose_rename",
+                        "arguments": json.dumps({"path": "a", "new_name": "b", "plan_id": "abc"}),
+                    },
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "tc1", "content": json.dumps({"op_id": "1"})},
+    ]
+
+    assert _seed_last_plan_id(messages) == "abc"
+
+
+def test_seed_last_plan_id_scans_tool_result_content() -> None:
+    from host.agent import _seed_last_plan_id
+
+    messages = [
+        {
+            "role": "assistant",
+            "tool_calls": [{"id": "tc1", "function": {"name": "create_plan", "arguments": "{}"}}],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "tc1",
+            "content": json.dumps({"plan_id": "p9", "ops": [], "state": "pending"}),
+        },
+    ]
+
+    assert _seed_last_plan_id(messages) == "p9"
+
+
+def test_seed_last_plan_id_returns_none_when_no_plan_seen() -> None:
+    from host.agent import _seed_last_plan_id
+
+    assert _seed_last_plan_id([{"role": "user", "content": "hi"}]) is None
+    assert _seed_last_plan_id([]) is None
+
+
+async def test_peek_pending_plan_returns_none_on_transport_error() -> None:
+    from host.agent import _peek_pending_plan
+
+    s = AsyncMock()
+    s.call_tool.side_effect = RuntimeError("boom")
+
+    assert await _peek_pending_plan(s, "p1") is None
+
+
+async def test_peek_pending_plan_returns_none_when_ops_empty(tmp_path: Path) -> None:
+    from host.agent import _peek_pending_plan
+
+    s = _session(["get_plan"], {"get_plan": {"plan_id": "p1", "ops": [], "state": "pending"}})
+
+    assert await _peek_pending_plan(s, "p1") is None
+
+
+async def test_peek_pending_plan_returns_plan_when_pending_with_ops() -> None:
+    from host.agent import _peek_pending_plan
+
+    plan_data = {"plan_id": "p1", "ops": [{"op_id": "1"}], "state": "pending"}
+    s = _session(["get_plan"], {"get_plan": plan_data})
+
+    result = await _peek_pending_plan(s, "p1")
+
+    assert result is not None
+    assert result["plan_id"] == "p1"
+
+
+async def test_dispatch_adds_next_step_hint_to_review_plan_result(tmp_path: Path) -> None:
+    from host.agent import _dispatch
+
+    s = _session(["review_plan"], {"review_plan": {"plan_id": "p1", "is_valid": True}})
+
+    result = await _dispatch(
+        name="review_plan",
+        args={"plan_id": "p1"},
+        session=s,
+        settings=_settings(tmp_path),
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(),
+    )
+
+    assert "execute_plan" in result["next_step"]
+
+
+async def test_dispatch_adds_next_step_hint_to_set_plan_folder_notes_result(
+    tmp_path: Path,
+) -> None:
+    from host.agent import _dispatch
+
+    s = _session(
+        ["set_plan_folder_notes"], {"set_plan_folder_notes": {"plan_id": "p1", "notes": {}}}
+    )
+
+    result = await _dispatch(
+        name="set_plan_folder_notes",
+        args={"plan_id": "p1", "notes": {}},
+        session=s,
+        settings=_settings(tmp_path),
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(),
+    )
+
+    assert "execute_plan" in result["next_step"]
+
+
+async def test_plan_completion_guard_reprompts_once_before_execute_plan(
+    tmp_path: Path,
+) -> None:
+    """T1 / Break 2: a plan built but never submitted must not end the run
+    silently — the loop re-prompts once, and the model calling execute_plan
+    afterward proves the nudge reached it."""
+    plan_data = {"plan_id": "p1", "ops": [{"op_id": "1"}], "state": "pending"}
+    s = _session(
+        ["create_plan", "get_plan", "execute_plan"],
+        {"create_plan": {"plan_id": "p1", "ops": [], "state": "pending"}, "get_plan": plan_data},
+    )
+
+    captured_messages: list[list[dict]] = []
+    responses = [
+        _tool_response("create_plan", {}),
+        _text_response("All set."),
+        _tool_response("execute_plan", {"plan_id": "p1"}),
+        _text_response("Done for real."),
+    ]
+
+    async def _create(**kwargs: Any) -> Any:
+        captured_messages.append(list(kwargs.get("messages", [])))
+        return responses.pop(0)
+
+    llm = AsyncMock()
+    llm.chat.completions.create.side_effect = _create
+
+    text, _ = await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=llm,
+        session=s,
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+    )
+
+    assert text == "Done for real."
+    assert len(captured_messages) == 4
+    nudge_call_messages = captured_messages[2]
+    assert any(
+        m.get("role") == "user" and "execute_plan" in m.get("content", "")
+        for m in nudge_call_messages
+    )
+
+
+async def test_plan_completion_guard_surfaces_unexecuted_plan_after_one_reprompt(
+    tmp_path: Path,
+) -> None:
+    """If the one re-prompt doesn't get the model to call execute_plan, the
+    run still ends — but the final text names the stuck plan instead of
+    losing it silently (resolved sprint question)."""
+    plan_data = {"plan_id": "p1", "ops": [{"op_id": "1"}], "state": "pending"}
+
+    text = await _run(
+        tmp_path,
+        tool_names=["create_plan", "get_plan"],
+        call_results={
+            "create_plan": {"plan_id": "p1", "ops": [], "state": "pending"},
+            "get_plan": plan_data,
+        },
+        llm_responses=[
+            _tool_response("create_plan", {}),
+            _text_response("All set."),
+            _text_response("Still not calling it."),
+        ],
+    )
+
+    assert "p1" in text
+    assert "never presented" in text
+
+
+async def test_plan_completion_guard_inert_after_execute_plan_dispatched(
+    tmp_path: Path,
+) -> None:
+    """Once execute_plan has been dispatched this call — approved, rejected,
+    or refined — the guard must never fire again, even though a rejection
+    leaves the plan 'pending' server-side."""
+    plan_data = {"plan_id": "p1", "ops": [{"op_id": "1"}], "state": "pending"}
+
+    text = await _run(
+        tmp_path,
+        tool_names=["execute_plan", "get_plan"],
+        call_results={"get_plan": plan_data},
+        llm_responses=[
+            _tool_response("execute_plan", {"plan_id": "p1"}),
+            _text_response("Understood, revising later."),
+        ],
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(approved=False)),
+    )
+
+    assert text == "Understood, revising later."
+
+
+async def test_plan_completion_guard_skips_plan_with_no_ops(tmp_path: Path) -> None:
+    text = await _run(
+        tmp_path,
+        tool_names=["create_plan", "get_plan"],
+        call_results={
+            "create_plan": {"plan_id": "p1", "ops": [], "state": "pending"},
+            "get_plan": {"plan_id": "p1", "ops": [], "state": "pending"},
+        },
+        llm_responses=[
+            _tool_response("create_plan", {}),
+            _text_response("Nothing to do yet."),
+        ],
+    )
+
+    assert text == "Nothing to do yet."
+
+
+async def test_message_queue_wins_over_plan_completion_guard(tmp_path: Path) -> None:
+    """A live chat message arriving right as the run would end takes priority
+    over the T1 re-prompt guard — P7's drain check runs first (Rules: never
+    starve a live user message behind a host-generated nudge)."""
+    plan_data = {"plan_id": "p1", "ops": [{"op_id": "1"}], "state": "pending"}
+    queue: asyncio.Queue[str] = asyncio.Queue()
+
+    s = _session(
+        ["create_plan", "get_plan", "execute_plan"],
+        {"create_plan": {"plan_id": "p1", "ops": [], "state": "pending"}, "get_plan": plan_data},
+    )
+
+    responses = [
+        _tool_response("create_plan", {}),
+        _text_response("All set."),
+        _tool_response("execute_plan", {"plan_id": "p1"}),
+        _text_response("Done."),
+    ]
+    call_count = 0
+    captured_messages: list[list[dict]] = []
+
+    async def _create(**kwargs: Any) -> Any:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            await queue.put("actually, wait")
+        captured_messages.append(list(kwargs.get("messages", [])))
+        return responses.pop(0)
+
+    llm = AsyncMock()
+    llm.chat.completions.create.side_effect = _create
+
+    await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=llm,
+        session=s,
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+        message_queue=queue,
+    )
+
+    # The 3rd call (right after the queued message was drained) must carry
+    # the queued text as the latest turn, not a guard nudge.
+    assert captured_messages[2][-1] == {"role": "user", "content": "actually, wait"}
+
+
+async def test_plan_completion_guard_seeds_from_resumed_history(tmp_path: Path) -> None:
+    """O7 resumed conversation: a plan built in an earlier call must still be
+    seen by the guard even though this call's own tool traffic never touches
+    it — seeded from history's tool-result content."""
+    plan_data = {"plan_id": "p9", "ops": [{"op_id": "1"}], "state": "pending"}
+    s = _session(["get_plan"], {"get_plan": plan_data})
+
+    history: list[dict[str, Any]] = [
+        {"role": "system", "content": "..."},
+        {"role": "user", "content": "organize it"},
+        {
+            "role": "assistant",
+            "tool_calls": [{"id": "tc1", "function": {"name": "create_plan", "arguments": "{}"}}],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "tc1",
+            "content": json.dumps({"plan_id": "p9", "ops": [], "state": "pending"}),
+        },
+        {"role": "assistant", "content": "I've built the plan."},
+    ]
+
+    text, _ = await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=_llm(_text_response("Anything else?"), _text_response("Still nothing.")),
+        session=s,
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+        history=history,
+        message="any updates?",
+    )
+
+    assert "p9" in text
+    assert "never presented" in text

@@ -23,6 +23,8 @@ executing → stopped (if >3 ops fail in a single run)
 **pending**
 Initial state after propose_* calls. The plan contains a list of proposed operations but has not been approved by the user. Multiple proposals may accumulate in a single pending plan via repeated propose_* calls with the same plan_id.
 
+A pending plan only ever reaches the user when the agent calls execute_plan — that call is what triggers the host's approval UI, not something that happens after approval. If the agent's turn ends with a plan still pending and execute_plan was never called this run (the T1 bug: the plan was fully staged/reviewed but the turn ended anyway), the host's agent loop (`host/agent.py::run_agent_loop`) detects this by live-checking the plan's state and re-prompts the agent once to call execute_plan, rather than leaving the plan invisible to the user. This is a host-side reliability guard, not a plan-engine state transition — the plan itself stays in pending exactly as before.
+
 **approved**
 User has reviewed the plan and explicitly approved it. Only plans in approved state may be executed. Approval is recorded but not persisted in this design—the host manages it in memory.
 

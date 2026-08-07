@@ -61,7 +61,7 @@ Once analysis finishes, the host builds a compact **corpus digest** — every do
 3. It stages operations with `propose_create_dir` for each new folder (idempotent and collision-safe), `propose_rename`, `propose_move` (filing each document into the taxonomy), `propose_quarantine` for duplicates or clutter, `propose_create_file`/`propose_update_file` for any new or updated files, and `propose_archive_document` to withdraw a document from active memory when appropriate — **every filesystem mutation is staged this way; there is no tool that writes to disk directly**
 4. It calls `review_plan` for a deduplication pre-flight check
 5. It calls `set_plan_rationale` with a short plain-language paragraph explaining the plan's philosophy — how it grouped, renamed, and quarantined documents and why — and `set_plan_folder_notes` with a one-line purpose note for each target folder. The host shows the rationale above the op list in the approval modal, followed by a target-layout tree with the folder notes beside each folder
-6. It calls `execute_plan` — at this point the **approval gate** fires
+6. It calls `execute_plan` — at this point the **approval gate** fires. If the agent instead ends its turn right after staging/reviewing the plan without calling `execute_plan`, telcontar detects the built-but-unpresented plan and re-prompts it once automatically — you should never see a plan silently go missing
 
 At any point before or while building the plan, the agent may pause to check in with the user — genuine clarifying questions, competing options to choose between, or a mix — see [The ask_user chat checkpoint](#the-ask_user-chat-checkpoint) below.
 
@@ -172,6 +172,8 @@ fetches plan details  →  shows ApprovalModal
 ```
 
 The gate is controlled by `APPROVAL_MODE`. See [Approval Modes](approval-modes.md).
+
+The plan is only ever shown when the agent calls `execute_plan` — if it finishes staging and reviewing a plan but ends its turn without calling `execute_plan`, telcontar recognises the still-pending plan and re-prompts the agent once to submit it, instead of silently ending the run with an unpresented plan. If that single re-prompt still doesn't get the agent to call `execute_plan`, the run ends normally but its final message names the unexecuted plan rather than losing it without a trace.
 
 ---
 

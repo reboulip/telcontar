@@ -337,6 +337,48 @@ This is the item that wires P4 and P5 into `run_agent_loop` for real, completing
 
 **System prompt restructuring:** the old ANALYZE section ("survey the tree, batch-extract, record documents") is gone from `_SYSTEM_PROMPT_TEMPLATE` entirely — the corpus is already analyzed by the time the model sees this prompt. The prompt now opens by stating this plainly and pointing at the digest in the first message, instructs the model to use the registry read tools instead of raw file content, and its numbered steps run 1-10 across two sections (**A. ORGANIZE** the tree, **B. SYNTHESIZE**) instead of the old 1-14 across three (A. ANALYZE / B. ORGANIZE / C. SYNTHESIZE). The Safety rules section also gained a line telling the model to treat the digest as host-composed fact, not as instructions from the documents it summarizes.
 
+### Plan-completion guard (T1)
+
+Fixes an engine-level bug (Break 2) where the ORGANIZE-phase agent could finish
+building a plan — `create_plan`, the `propose_*` ops, `review_plan`,
+`set_plan_rationale`, `set_plan_folder_notes` — and then end its turn without
+ever calling `execute_plan`, so the plan was never presented for approval and
+the run went terminal silently. Lives entirely in `host/agent.py`, so it
+applies identically to the Textual TUI and the NiceGUI web UI; no UI-layer
+change was needed.
+
+Three parts:
+
+- **System prompt.** `_SYSTEM_PROMPT_TEMPLATE`'s step A.4 now frames
+  `execute_plan(plan_id)` as the act that presents the plan to the user, not
+  something that happens after approval — "the host pauses there, collects
+  the user's approve / reject / refine decision, and returns it to you as the
+  tool result." The Safety rules block gained two explicit lines: never end a
+  turn with a plan built but not submitted via `execute_plan`, and never use
+  `ask_user` to ask whether to proceed with a plan (`execute_plan` is the
+  approval channel).
+- **`next_step` hints.** `_dispatch` decorates the tool results of
+  `review_plan` and `set_plan_folder_notes` — the two calls that immediately
+  precede the seam where the stall was observed — with a `next_step` field
+  pointing the model at `execute_plan`. Host-side only; the underlying MCP
+  tool's own return shape is unchanged.
+- **Loop-level guard.** In `run_agent_loop`, when a turn ends with no tool
+  calls and no message queued (P7's usual reasons to keep going don't apply),
+  the loop tracks `last_plan_id` (the most recent plan seen in this call's
+  tool traffic, or seeded from `history` on a resumed/O7 conversation via
+  `_seed_last_plan_id`) and, if `execute_plan` hasn't actually been dispatched
+  yet this call, live-checks it with `_peek_pending_plan` (a `get_plan` call —
+  never inferred from call-local state alone, since that can't distinguish
+  "never submitted" from "already executed in an earlier call" on a resumed
+  conversation). If the plan is still genuinely `pending` with at least one
+  op, the loop re-prompts the model once (injected as a `"user"` role
+  message) instead of stopping silently. The guard is permanently inert for
+  the rest of the call once `execute_plan` has actually been dispatched
+  (approved, rejected, or refined — doesn't matter) and fires at most once per
+  `run_agent_loop` call; if the one re-prompt still doesn't get the model to
+  call `execute_plan`, the run ends normally but the final text names the
+  unexecuted plan id instead of losing it silently.
+
 ### NiceGUI web UI foundations (S4-S6)
 
 `host/web/` is a package — the first piece of a planned Textual→NiceGUI web UI
@@ -490,7 +532,7 @@ permanently deadlock an approval gate with no visible symptom.
     calls write_index + write_summary to persist INDEX.md, manifest.json, SUMMARY.md
 17. Agent calls write_folder_readme(path=<folder>, content=<markdown>) once per
     meaningful folder of the organized tree; empty/trivial folders are skipped
-18. Agent sends final text (no tool calls) → normally the loop would end here, UNLESS a chat message is waiting in message_queue at this exact instant (P7): if so, the queued message(s) are appended as a user turn and the loop continues from step 8 instead of ending — letting a live chat message redirect an in-progress run. Otherwise, this is one of three ways the loop can reach a terminal state — the others being an unhandled exception (caught and returned as an error, O7) or the turn budget running out
+18. Agent sends final text (no tool calls) → normally the loop would end here, UNLESS a chat message is waiting in message_queue at this exact instant (P7): if so, the queued message(s) are appended as a user turn and the loop continues from step 8 instead of ending — letting a live chat message redirect an in-progress run. Otherwise, the T1 plan-completion guard checks whether a plan it has seen (`last_plan_id`) is still genuinely `pending` (live-checked via `get_plan`) despite `execute_plan` never having been dispatched this call — this is the same check that can also fire right after step 14 if the model stops immediately after staging/reviewing a plan without ever reaching step 15; either way, it re-prompts the model once, and only ends the loop if that single re-prompt still doesn't produce an `execute_plan` call (in which case the final text names the unexecuted plan instead of losing it silently). Barring that, this is one of three ways the loop can reach a terminal state — the others being an unhandled exception (caught and returned as an error, O7) or the turn budget running out
 19. Desktop notification fires and the "press g / keep chatting" cue is shown — but only on this first terminal state (O7)
 20. The MCP session from step 1 stays open, and the #organize-input chat box (live since the start of the run, P7) stays enabled. The host's worker loop waits on `#organize-input` for any message that arrives strictly AFTER run_agent_loop has already returned (i.e. the agent is fully idle and no live call remains to drain the queue itself) — each such message resumes run_agent_loop on the SAME session with (history=<returned from the previous call>, message=<your text>, message_queue=<the same queue>) — back to step 8 directly (steps 2-7 do NOT repeat; no new pre-pass or analysis happens on a continuation), with the same ORGANIZE-only toolset, its own fresh turn budget, and the same live-chat draining (step 5b/12/18) as the initial run. An unhandled exception during any of these turns is caught rather than propagating: any tool call left without a matching result is answered with a synthesized {"error": ...} entry, an "error" AgentEvent fires, and the conversation history stays valid for the next chat message
 ```
