@@ -42,7 +42,7 @@ A chat box at the bottom of the Organizer screen is live for the whole run, not 
 | `--web` | Launch the web UI (NiceGUI, runs in a local browser tab) instead of the Textual TUI. The TUI is still the default when no flags are passed. |
 | `--target PATH` | Only meaningful with `--web` — skip the landing page's directory picker and start a run for `PATH` immediately. Ignored otherwise. |
 
-The web UI is a foundational, still-in-progress alternative to the TUI — it doesn't yet have first-time setup, query mode, or a journal/undo view, so those still require the Textual TUI. It is not yet the recommended way to run telcontar.
+The web UI now has its own first-run setup wizard (opened automatically at `/setup` if telcontar isn't configured yet), at parity with the TUI's. It's still a foundational, in-progress alternative to the TUI — it doesn't yet have query mode or a journal/undo view, so those still require the Textual TUI. It is not yet the recommended way to run telcontar.
 
 ## Development
 

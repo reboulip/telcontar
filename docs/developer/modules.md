@@ -298,7 +298,7 @@ run_web` for `--web` — so launching one UI never pays the other's import cost
 | Class | Role |
 |---|---|
 | `OrganizerApp` | Root `App`; calls `is_configured()` on mount and routes to `SetupScreen` (first run) or `StartupScreen` (returning user). App-level `Binding("ctrl+s", "open_settings", "Settings", priority=True)` (P9) opens `ConfigScreen` from any screen via `action_open_settings`; no-op if `ConfigScreen` or `SetupScreen` is already the current screen. `priority=True` is required — Textual's non-priority binding-resolution chain stops at the first `ModalScreen` it encounters, so a plain-tuple binding would silently not fire while `ApprovalModal`/`CostEstimateModal` is on screen |
-| `SetupScreen` | First-run wizard: welcome → AI service choice → URL + API key → document profile → done. Saves via `save_user_config()` / OS keyring. Transitions to `StartupScreen` when complete |
+| `SetupScreen` | First-run wizard: welcome → AI service choice → URL + API key → document profile → done. Profile options, credential validation, and the plaintext-keyring warning copy come from `host/configflow.py` (U2, shared with the web UI's `host/web/wizard.py`). Saves via `save_user_config()` / OS keyring. Transitions to `StartupScreen` when complete |
 | `ConfigScreen` | Settings panel accessible at any time from `StartupScreen`. Fields: URL, API key (password input), document profile (Select), approval mode (Select with friendly labels). Saves back to `~/.telcontar/config.env` via `save_user_config()` |
 | `StartupScreen` | Lets the user browse and pick the target folder via a `DirectoryTree` (`#target-tree`, rooted at `Path.home()`); the selected path (defaults to home) is shown in a "Selected: …" label and used by "Organize" and "Query". Offers "Organize", "Query", and "⚙ Settings" buttons. Keybinding `s` opens `ConfigScreen` (the app-level `ctrl+s` binding, P9, also opens it from here and every other screen). "Query" (P2) resolves the corpus via `_find_organizer_root(target)`, walking up from the selected folder through its parents until one containing a `.organizer` is found (a subfolder of a previously-organized tree still resolves to that tree's memory), showing an error if none is found |
 | `OrganizerScreen` | Main view. Opens on a **starter pane** (`#starter-pane`, L3) instead of auto-starting the agent: a `Static` rendering `_directory_overview(target)` — a code-generated, deterministic scan of names/structure only (file count, subfolder count, most common extensions; no content read, no LLM), excluding `.organizer` and the quarantine folder (P2, via `_quarantine_basename()`) from its own local `os.walk` the same way `walk_tree` does — plus an `#instructions-input` `Input` for optional free-text steering instructions and a `#proceed-btn` "Start organizing" button (or `Input.Submitted`). `_start_organizing()` hides the starter pane, shows `#main-split` (file-tree sidebar + a single chat-transcript `#conversation-pane`, `VerticalScroll`), and launches `_agent_worker(instructions)` as a Textual worker, passing the typed instructions (if any) through to `run_agent_loop(..., instructions=...)`. `_add_turn(speaker, text)` appends speaker-differentiated turns (`telcontar` / `you`) as styled `Static` widgets — the target line and any typed instructions are shown as the first turns; on each `tool_call` event, `_narrate(tool)` looks up the tool in the module-level `_TOOL_NARRATION` map and, if the macro-task phrase changed, emits a `telcontar` turn (e.g. "Reading documents…", "Planning changes…", "Applying the plan…") — deduping so consecutive calls in the same macro-task collapse to one turn. The raw tool calls/results themselves are appended via `_append_step(line)` into a click-to-expand `Collapsible` ("internal steps") interleaved in the transcript; a new speaker turn closes the currently-open group so the next tool call opens a fresh one. Below `#main-split`, a docked `#ops-journal` `RichLog` (L4, `wrap=False`, horizontally scrollable) renders the file operations recorded in the undo journal — one line per entry, newest last, via `_fmt_journal_entry` (the same formatter `JournalScreen` uses); multi-line hard-stop entries collapse to their summary line. `_refresh_ops_journal()` re-reads `.organizer/journal.jsonl` via `_resolve_journal_path` + `server.journal.all_entries` (swallowing read/config errors so the strip just shows nothing rather than breaking the screen) — `_resolve_journal_path`/`_resolve_plans_dir` (P2) resolve against the run's target directory via `Settings().for_target(target)`, rather than an ad-hoc project-root join; it runs on mount, after any tool in `_JOURNAL_WRITING_TOOLS` (now just `{"execute_plan"}` — the only tool left that can mutate the journal via the agent path, per M1) completes, and again on `done`. Below that, a `#progress-row` (O6, a `#progress-label` plus a Textual `ProgressBar`) renders the O5 `"progress"` event: `_update_progress(data)` reveals the row and updates both widgets, but only once a `total > 0` has been seen (an unknown/`None` total is never shown, avoiding Textual's indeterminate spinner); `_hide_progress()` re-hides it — without first snapping to 100% — on both `"done"` and `"error"`, so it disappears once the ANALYZE phase finishes rather than lingering through ORGANIZE. Status bar shows the current phase plus a running token-usage total (`N in (C cached) / M out`) once the LLM reports it, from a single `_TokenLedger` (R1, GH #27) built once via `_TokenLedger.new(settings)` and threaded through the initial `run_agent_loop` call and every subsequent chat-turn call, so the total accumulates for the screen's whole lifetime instead of resetting each call; keybinding `g` pushes `QueryScreen` once organizing completes, `j` pushes `JournalScreen` (the full modal journal view). **Resumable chat (O7):** `_agent_worker` no longer calls the one-shot `run_agent` convenience wrapper — it opens `mcp_session(...)` itself and calls `run_agent_loop(...)` directly, keeping one MCP session (and one subprocess) open across the initial run and every subsequent chat turn. `self._history: list[dict] | None` carries the conversation returned by each call into the next; `self._messages: asyncio.Queue[str]` bridges the synchronous `Input.Submitted` handler on the bottom-docked `#organize-input` into the queue. Submitting echoes the message as a `user`-speaker turn via `_add_turn` before it is queued. `_note_terminal_state()` fires the "press g / keep chatting" cue and the desktop notification only on the *first* `"done"`/`"error"` event (tracked via `self._done`), not on every subsequent chat-turn completion. **Live mid-run chat (P7):** `#organize-input` is enabled right at the start of `_agent_worker`, before the first `run_agent_loop` call, rather than only once a terminal state is reached — both the initial call and every O7 continuation call pass `message_queue=self._messages`, so `run_agent_loop` itself drains and injects queued messages while it runs (see `host/agent.py` above). The worker's own `while True` loop (`await self._messages.get()` then `run_agent_loop(..., history=self._history, message=message, message_queue=self._messages)`) is unchanged in shape and still runs, but now only ever fires for a message that arrives strictly *after* a `run_agent_loop` call has already returned with nothing left pending in the queue — i.e. the agent is fully idle — rather than for every message regardless of timing |
@@ -356,13 +356,31 @@ run_web` for `--web` — so launching one UI never pays the other's import cost
 
 ---
 
-### `host/web/` (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7)
+### `host/configflow.py`
+
+**Role:** Framework-agnostic (no `nicegui`, no `textual`) configuration-flow logic shared by the Textual TUI's `SetupScreen`/`ConfigScreen` and the NiceGUI web UI's setup wizard (U2) — one source of truth for profile options, per-service hints, credential validation, and the plaintext-keyring-fallback warning copy.
+
+**Key functions:**
+
+| Function | Description |
+|---|---|
+| `profile_options() -> list[tuple[str, str]]` | `[(display_label, profile_id), ...]` for a Select/dropdown; reads TOML files from `profiles/`, falling back to `[("General documents", "is_it_project")]` if the directory can't be found. Moved here from `host/app.py`'s old `_load_profile_options`/`_PROFILE_LABELS` (now gone from that module); `host/app.py` imports it aliased as `_load_profile_options` at its two existing call sites. |
+| `validate_credentials(url, key, model, *, key_required) -> str \| None` | Validates url → key → model in that frozen order, returning the first error message or `None`. `key_required=True` is the wizard's stricter first-run case (a blank key is itself an error); a future `key_required=False` (U3, settings) means "keep the saved key," which also changes the URL error's wording to match each screen's existing, test-pinned copy. |
+| `build_wizard_updates(url, key, model, profile, service) -> dict[str, str]` | Builds the settings-update dict for the wizard's save step; always includes the API key (the wizard requires one). Adds `llm_api_version` when `service == "azure"`. |
+| `plaintext_warning(button_label, recovery_action="go back") -> str` | The shared, plain-text (no Rich/HTML markup — this module is UI-agnostic) warning shown when the OS keyring is unavailable and the user must explicitly confirm a plaintext fallback. `button_label` must match the actual button the user is told to press again — fixes U8's copy bug, where the TUI wizard said `Press "Finish" again` while its button read "Save & continue →". |
+
+**Other exports:** `AZURE_API_VERSION` (`"2025-01-01-preview"`); `SERVICE_HINTS: dict[str, dict[str, str]]` — per-service URL/model hint and placeholder text for `"openai_compatible"` vs `"azure"`, consumed by both the TUI's API-details step and the web wizard's API-details step.
+
+---
+
+### `host/web/` (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7, Phase 20 U2)
 
 **Role:** NiceGUI-based web UI package — the first piece of a planned
 Textual→NiceGUI migration. As of S6, `telcontar --web` (`host/main.py`, lazy import)
-launches it in place of the Textual TUI, which stays the default with no flags. It
-does not yet have feature parity with the TUI — no setup wizard, no query mode, no
-journal/undo UI (deferred to Phase 20, item U6) — see `host/main.py`, above.
+launches it in place of the Textual TUI, which stays the default with no flags. As
+of U2 it has its own first-run setup wizard, at parity with the TUI's; it still
+does not have query mode or a journal/undo UI (deferred to Phase 20, item U6) —
+see `host/main.py`, above.
 
 **`host/web/session.py`** — framework-agnostic per-run state, no `nicegui` import.
 Key types: `RunSession` (`run_id`, `target`, `transcript`, `steps`, `activity`,
@@ -543,7 +561,41 @@ base:
 - `FONT_DIR`, `FONT_URL_PATH` (`/tc-fonts`) — the static-assets directory and its
   `app.add_static_files` mount point, both consumed by `run_web()`.
 
-**`host/web/main.py`** (extended by T5/T6/T7/T8) — now shares nicegui-importing duties
+**`host/web/forms.py`** (U2) — shared NiceGUI form fragments for the setup wizard
+and a future settings view (U3); unlike `session.py`/`bridge.py`/`tree.py`/
+`theme.py` it does import `nicegui`, since it renders actual UI elements.
+`credential_inputs(...) -> CredentialInputs` renders the URL / API-key / model
+input triple, with optional per-service hint text above the URL and model fields
+(empty hint text renders as nothing rather than an empty caption), each element
+`.mark()`ed (`input-url`/`input-key`/`input-model`) for NiceGUI's headless `user`
+test fixture. `save_with_plaintext_guard(build_updates, *, plaintext_confirmed,
+button_label, recovery_action="go back") -> tuple[bool, str]` calls
+`config.settings.save_user_config` via `run.io_bound` (so the file write + OS
+keyring round-trip never blocks the event loop) using a *fresh* dict from
+`build_updates()` on every call — never a cached one, since `save_user_config` pops
+the API key out of its argument dict before raising `PlaintextKeyFallbackNeeded`,
+so a caller reusing the same dict object across a retry would silently save without
+the key. Returns `(success, warning_text)` — `""` on success, or
+`host.configflow.plaintext_warning(...)`'s text on the fallback path; the caller
+owns re-rendering and tracking `plaintext_confirmed` for the next call.
+
+**`host/web/wizard.py`** (U2) — the setup wizard itself: `build_setup_wizard(*,
+on_finish)`, a 1:1 port of `host/app.py`'s `SetupScreen` — same 5 steps (welcome,
+service choice, API details, document profile, done), same validation
+order/strings (via `host/configflow.py`), same plaintext-keyring
+warn-then-confirm flow (via `forms.save_with_plaintext_guard`). State is a
+page-closure `_WizardState` dataclass, never `app.storage` or a URL param — the
+API key must never touch either. A `@ui.refreshable` `steps()` function keyed on
+`state.step` renders only the active step and rebuilds on transition — real
+per-step routing, NiceGUI's natural equivalent of the TUI's
+mount-all-five-and-toggle-`.display` approach (`_show_step` in `host/app.py`).
+Deliberately lives outside `host/web/main.py` — `main.py`'s `@ui.page` decorators
+stay thin shells; the view-building logic lives in per-screen modules like this
+one. `host/web/main.py` mounts it at `@ui.page("/setup")`, calling
+`build_setup_wizard(on_finish=lambda: ui.navigate.to("/"))`, through the existing
+`app_shell()`.
+
+**`host/web/main.py`** (extended by T5/T6/T7/T8, U2) — now shares nicegui-importing duties
 with `host/web/shell.py` (T2). Pages are registered at import time (`@ui.page("/")`,
 `@ui.page("/run/{run_id}")`) but nothing binds a port until `run_web(target: Path |
 None = None)` is called, so importing the module is side-effect-free. Each
@@ -561,9 +613,9 @@ title of the very first HTML response. `index_page` (the picker route) never cal
 
 Both page bodies now open with `with app_shell(...) as shell:` (T2), mounting the
 persistent sidebar before any page-specific content. The landing page (`/`, S5)
-checks `config.settings.is_configured()` first: if unconfigured, it shows a plain
-message directing the user to run the Textual TUI (`telcontar`) once to complete
-first-time setup, rather than any picker. Once configured, folder selection is the
+checks `config.settings.is_configured()` first: if unconfigured, it navigates to
+`/setup` (`host/web/wizard.py`'s `build_setup_wizard`, U2) instead of any picker,
+rather than the pre-U2 plain message pointing the user at the Textual TUI. Once configured, folder selection is the
 sidebar tree, which now doubles as the collapsible directory picker (T3,
 superseding the flat browse-view half of Phase 20's planned U1 — see the ROADMAP
 note there): clicking a node sets `shell.selected`, which may now be a file since
@@ -612,8 +664,10 @@ override this and fragment the identity across routes), `app.add_static_files(
 theme.FONT_URL_PATH, theme.FONT_DIR)` when the vendored-fonts directory exists,
 and `ui.add_css(theme.css(), shared=True)`.
 
-Note: the ROADMAP text for S5 also names `_load_profile_options`, journal reads,
-and `server.tools.undo_last` as blocking calls to move off the event loop, but none
-have a call site in this view yet — there is no profile selector, journal panel, or
-Undo button here (that UI is deferred to Phase 20, item U6). Only the directory
-listing and `directory_overview` needed, and got, `run.io_bound` treatment so far.
+Note: the ROADMAP text for S5 also names `_load_profile_options` (now
+`host.configflow.profile_options`), journal reads, and `server.tools.undo_last` as
+blocking calls to move off the event loop. As of U2, `profile_options()`'s one call
+site — `host/web/wizard.py`'s `build_setup_wizard` — goes through
+`await run.io_bound(configflow.profile_options)`, closing that gap. Journal reads
+and `undo_last` still have none (there is no journal panel or Undo button here,
+deferred to Phase 20, item U6).

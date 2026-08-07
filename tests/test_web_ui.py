@@ -129,3 +129,101 @@ async def test_landing_page_shows_picker_prompt_with_no_default_target(user: Use
     await user.open("/")
 
     await user.should_see("Pick a directory in the sidebar")
+
+
+# ── Setup wizard (U2) ────────────────────────────────────────────────────────
+
+
+async def test_index_redirects_to_setup_when_not_configured(
+    user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("config.settings.is_configured", lambda: False)
+
+    await user.open("/")
+
+    await user.should_see("Welcome!")
+
+
+async def test_wizard_full_flow_saves_and_reaches_done_step(
+    user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    saved: list[dict] = []
+
+    def fake_save_user_config(updates: dict, allow_plaintext_fallback: bool = False) -> None:
+        saved.append(dict(updates))
+
+    monkeypatch.setattr("config.settings.save_user_config", fake_save_user_config)
+
+    await user.open("/setup")
+    user.find(marker="btn-welcome-next").click()
+    await user.should_see(marker="btn-svc-compatible")
+
+    user.find(marker="btn-svc-compatible").click()
+    await user.should_see(marker="input-url")
+
+    user.find(marker="input-url").type("https://example.com")
+    user.find(marker="input-key").type("sk-test")
+    user.find(marker="input-model").type("gpt-5")
+    user.find(marker="btn-api-next").click()
+    await user.should_see(marker="select-profile")
+
+    user.find(marker="btn-profile-next").click()
+    await user.should_see("You're all set!")
+
+    assert saved == [
+        {
+            "llm_base_url": "https://example.com",
+            "llm_api_key": "sk-test",
+            "llm_model": "gpt-5",
+            "profile": "is_it_project",
+        }
+    ]
+
+
+async def test_wizard_api_step_validates_url_before_key_before_model(user: User) -> None:
+    await user.open("/setup")
+    user.find(marker="btn-welcome-next").click()
+    await user.should_see(marker="btn-svc-compatible")
+    user.find(marker="btn-svc-compatible").click()
+    await user.should_see(marker="btn-api-next")
+
+    # Every field blank — the URL error must win (frozen order/string, ports
+    # the TUI's SetupScreen validation verbatim).
+    user.find(marker="btn-api-next").click()
+    await user.should_see("Please enter the web address of your AI service.")
+
+
+async def test_wizard_warns_before_plaintext_key_fallback(
+    user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from config.settings import PlaintextKeyFallbackNeeded
+
+    calls: list[bool] = []
+
+    def flaky_save_user_config(updates: dict, allow_plaintext_fallback: bool = False) -> None:
+        calls.append(allow_plaintext_fallback)
+        if not allow_plaintext_fallback:
+            raise PlaintextKeyFallbackNeeded("keyring unavailable")
+
+    monkeypatch.setattr("config.settings.save_user_config", flaky_save_user_config)
+
+    await user.open("/setup")
+    user.find(marker="btn-welcome-next").click()
+    await user.should_see(marker="btn-svc-compatible")
+    user.find(marker="btn-svc-compatible").click()
+    await user.should_see(marker="input-url")
+    user.find(marker="input-url").type("https://example.com")
+    user.find(marker="input-key").type("sk-test")
+    user.find(marker="input-model").type("gpt-5")
+    user.find(marker="btn-api-next").click()
+    await user.should_see(marker="btn-profile-next")
+
+    user.find(marker="btn-profile-next").click()
+    await user.should_see('"Save & continue →"')
+    await user.should_not_see("You're all set!")
+
+    # Second press, now with the warning acknowledged — must succeed.
+    user.find(marker="btn-profile-next").click()
+    await user.should_see("You're all set!")
+
+    assert calls == [False, True]

@@ -179,6 +179,13 @@ def save_user_config(updates: dict[str, str], allow_plaintext_fallback: bool = F
     """
     _USER_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Defense in depth: never mutate the caller's dict. A caller that reused
+    # the same dict object across a PlaintextKeyFallbackNeeded retry would
+    # otherwise find llm_api_key already popped on the second call — and
+    # since that's silent (no KeyError, .pop has a default), the retry would
+    # save without the API key. Every caller in this codebase already builds
+    # a fresh dict per attempt, but this makes the function safe regardless.
+    updates = dict(updates)
     api_key = updates.pop("llm_api_key", None)
 
     if api_key is not None:

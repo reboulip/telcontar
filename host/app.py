@@ -21,7 +21,6 @@ same as any other live chat exchange.
 from __future__ import annotations
 
 import asyncio
-import tomllib
 from pathlib import Path
 
 from textual import on
@@ -52,6 +51,8 @@ from host.agent import (
     AskUserResult,
     CostApprovalResult,
 )
+from host.configflow import plaintext_warning
+from host.configflow import profile_options as _load_profile_options
 from host.format import fmt_exc as _fmt_exc
 from host.format import fmt_journal_entry as _fmt_journal_entry
 from host.format import fmt_op as _fmt_op
@@ -65,40 +66,9 @@ from host.paths import resolve_plans_dir as _resolve_plans_dir
 # Package root: host/app.py → host/ → project root (or site-packages/).
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-
-# ── Profile helpers ───────────────────────────────────────────────────────────
-
-# Human-readable labels for built-in profiles.
-_PROFILE_LABELS: dict[str, str] = {
-    "is_it_project": "IS/IT project — technical and business documents",
-    "personal_files": "Personal files — invoices, contracts, administrative",
-    "research_papers": "Research papers — academic and scientific articles",
-}
-
-
-def _load_profile_options() -> list[tuple[str, str]]:
-    """Return [(display_label, profile_id), ...] for the Select widget.
-
-    Reads TOML files from the bundled profiles/ directory.  Falls back to a
-    single safe default if the directory cannot be found.
-    """
-    profiles_dir = _PROJECT_ROOT / "profiles"
-    options: list[tuple[str, str]] = []
-    try:
-        for path in sorted(profiles_dir.glob("*.toml")):
-            stem = path.stem
-            label = _PROFILE_LABELS.get(stem)
-            if label is None:
-                try:
-                    data = tomllib.loads(path.read_text(encoding="utf-8"))
-                    desc = data.get("description") or data.get("name") or stem
-                    label = desc
-                except Exception:
-                    label = stem
-            options.append((label, stem))
-    except Exception:
-        pass
-    return options or [("General documents", "is_it_project")]
+# _load_profile_options is host.configflow.profile_options (imported above,
+# aliased) — moved there so the web UI's setup wizard (Phase 20 U2) reads
+# from the same source of truth instead of duplicating the TOML-glob logic.
 
 
 # ── Approval modal ────────────────────────────────────────────────────────────
@@ -630,11 +600,7 @@ class SetupScreen(Screen):
             save_user_config(updates, allow_plaintext_fallback=self._plaintext_confirmed)
         except PlaintextKeyFallbackNeeded:
             self._plaintext_confirmed = True
-            error.update(
-                '[bold]Your OS keyring is unavailable.[/bold] Press "Finish" again to '
-                "store your API key in PLAINTEXT at ~/.telcontar/config.env, or go back "
-                "and fix your keyring first."
-            )
+            error.update(f"[bold]{plaintext_warning('Save & continue →')}[/bold]")
             return
         error.update("")
         self._show_step(4)

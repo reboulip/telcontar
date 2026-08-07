@@ -36,6 +36,7 @@ from host.web import session as web_session
 from host.web import theme
 from host.web.bridge import AgentBridge
 from host.web.shell import app_shell
+from host.web.wizard import build_setup_wizard
 
 
 @dataclass
@@ -62,11 +63,7 @@ async def index_page() -> None:
 
     with app_shell() as shell:
         if not is_configured():
-            ui.label("telcontar isn't configured yet").classes("text-h5")
-            ui.label(
-                "Run `telcontar` once (the Textual TUI) to complete first-time setup, "
-                "then reload this page."
-            )
+            ui.navigate.to("/setup")
             return
 
         default_target = web_session.get_default_target()
@@ -85,6 +82,12 @@ async def index_page() -> None:
             ui.navigate.to(f"/run/{session.run_id}")
 
         ui.button("Use selected directory", on_click=_select, color="primary").classes("mt-2")
+
+
+@ui.page("/setup")
+async def setup_page() -> None:
+    with app_shell():
+        await build_setup_wizard(on_finish=lambda: ui.navigate.to("/"))
 
 
 @ui.page("/run/{run_id}")

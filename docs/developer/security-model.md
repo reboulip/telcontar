@@ -450,7 +450,12 @@ first with the least behavioural disruption.
     time — an explicit, deliberate re-click — before the plaintext fallback actually
     happens. The "keep keys out of any CWD `.env`" clause was already satisfied
     before this item: `save_user_config` only ever writes to `~/.telcontar/config.env`,
-    never a CWD `.env`, and `.env`/`.envrc` are already gitignored.
+    never a CWD `.env`, and `.env`/`.envrc` are already gitignored. As of U2
+    (2026-08-07), the same catch/warn/re-confirm behaviour is shared via
+    `host/configflow.py`'s `plaintext_warning()` and exercised by a third caller —
+    the NiceGUI web UI's setup wizard (`host/web/wizard.py`, through
+    `host/web/forms.py`'s `save_with_plaintext_guard`) — so the guard is no longer
+    TUI-only.
 12. **[Done — 2026-07-09]** ~~Log egress (S8): record which files' contents were sent
     to the endpoint so an operator can audit what left the machine.~~ `read_file`,
     `extract_text`, and `compare_documents` now append an entry (path, size in

@@ -391,10 +391,11 @@ OrganizerApp` import on the no-flag path, so neither UI's dependency (`nicegui` 
 meaningful only with `--web`, skips the landing page's directory picker and starts
 a run for that directory immediately. It exists alongside `host/app.py`'s Textual
 TUI, not in place of it — both `textual` and `nicegui` are main dependencies in
-`pyproject.toml`. Feature parity with the TUI isn't there yet — no setup wizard, no
-query mode, no journal/undo UI (that's Phase 20, item U6) — so the web UI is an
-alternative launch mode for an already-configured install, not (yet) the primary
-way to use telcontar.
+`pyproject.toml`. Feature parity with the TUI isn't fully there yet — no query mode,
+no journal/undo UI (that's Phase 20, item U6) — so the web UI is not (yet) the
+primary way to use telcontar. As of U2, it does have its own first-run setup wizard
+at `/setup`, at parity with the TUI's, so it no longer requires an
+already-configured install to be usable.
 
 - `host/web/session.py` — `RunSession`, framework-agnostic per-run state. As of
   T5/T6, the transcript is turns-only: `RunSession.transcript: list[TranscriptItem]`
@@ -517,11 +518,41 @@ way to use telcontar.
   ~2.2:1 contrast on the gold primary — unreadable). `FAVICON_SVG` is an inline SVG
   (Elendil's seven-pointed star) passed to `ui.run(favicon=...)`, which NiceGUI
   inlines as a data URL with no file or network request.
+- `host/configflow.py` (U2) — framework-agnostic (no `nicegui`, no `textual`)
+  configuration-flow logic factored out of the TUI's `SetupScreen`/`ConfigScreen`
+  so the web UI's setup wizard reads from the same source of truth: `profile_options()`
+  (moved here from `host/app.py`'s old `_load_profile_options`/`_PROFILE_LABELS`),
+  `SERVICE_HINTS` (per-service URL/model hint and placeholder text),
+  `validate_credentials(url, key, model, *, key_required)` (url → key → model,
+  first-error-wins), `build_wizard_updates(...)`, and `plaintext_warning(button_label,
+  recovery_action="go back")` — the shared warning-message builder that fixes U8's
+  copy bug (the TUI wizard used to say "Press \"Finish\" again" while its button
+  read "Save & continue →"). `host/app.py` now imports from here instead of owning
+  this logic itself.
+- `host/web/forms.py` (U2) — shared NiceGUI form fragments: `credential_inputs(...)`
+  renders the URL/API-key/model input triple (each `.mark()`ed for NiceGUI's headless
+  `user` test fixture), and `save_with_plaintext_guard(build_updates, *,
+  plaintext_confirmed, button_label, recovery_action="go back")` calls
+  `config.settings.save_user_config` via `run.io_bound`, always from a *fresh* dict
+  built by `build_updates()` — never a cached one, since `save_user_config` pops the
+  API key out of its argument before raising `PlaintextKeyFallbackNeeded`, so reusing
+  a dict across a retry would silently drop the key.
+- `host/web/wizard.py` (U2) — `build_setup_wizard(*, on_finish)`, a 1:1 port of
+  `host/app.py`'s `SetupScreen`: the same 5 steps (welcome, service choice, API
+  details, document profile, done), same validation order/strings (via
+  `host/configflow.py`), same plaintext-keyring warn-then-confirm flow (via
+  `forms.save_with_plaintext_guard`). Routes between steps with a `ui.refreshable`
+  function keyed on a page-closure `_WizardState.step` — real per-step routing, the
+  NiceGUI-native equivalent of the TUI's mount-all-five-and-toggle-`.display`
+  approach. State lives only in that closure, never `app.storage` or a URL param —
+  the API key must never touch either. Lives outside `host/web/main.py` on purpose:
+  `main.py`'s `@ui.page` decorators stay thin shells: `@ui.page("/setup")` just
+  calls `build_setup_wizard(on_finish=lambda: ui.navigate.to("/"))` inside
+  `app_shell()`.
 - `host/web/main.py` now mounts `app_shell(...)` at the top of both page bodies
   instead of assembling its own layout. The landing page (`/`) first checks
-  `config.settings.is_configured()`: if telcontar hasn't been set up yet, it shows
-  a short message pointing the user at the Textual TUI (`telcontar`) to complete
-  first-time setup instead of any picker. Once configured, folder selection is the
+  `config.settings.is_configured()`: if telcontar hasn't been set up yet, it
+  navigates to `/setup` (the wizard above) instead of showing any picker. Once configured, folder selection is the
   sidebar tree, which now doubles as the directory picker (T3, superseding the
   browse-view half of Phase 20's planned U1): clicking a node sets `shell.selected`
   (which may now be a file, since the tree shows files too), and a "Use selected

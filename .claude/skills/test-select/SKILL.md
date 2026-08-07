@@ -69,11 +69,13 @@ Apply these rules in order (first match wins):
 | `host/main.py` only | `tests/test_entrypoints.py` |
 | `host/tokenlog.py` only | `tests/test_token_log.py` |
 | `host/format.py`, `host/paths.py`, or `host/narration.py` only | `tests/test_host_format.py tests/test_host_paths.py tests/test_app_ui.py` |
+| `host/configflow.py` only | `tests/test_configflow.py tests/test_app_ui.py tests/test_web_ui.py` |
 | `host/web/tree.py` only | `tests/test_web_tree.py` |
 | `host/web/theme.py` only | `tests/test_web_theme.py` |
+| `host/web/forms.py` or `host/web/wizard.py` only | `tests/test_web_ui.py tests/test_configflow.py` |
 | `host/web/main.py` only | `tests/test_web_ui.py tests/test_web_session.py` |
 | Any file in `host/web/` only | `tests/test_web_session.py tests/test_web_tree.py tests/test_web_theme.py tests/test_web_ui.py` |
-| Any file in `host/` | `tests/test_host.py tests/test_tools_outputs.py tests/test_app_ui.py tests/test_entrypoints.py tests/test_token_log.py tests/test_host_format.py tests/test_host_paths.py tests/test_web_session.py tests/test_web_tree.py tests/test_web_theme.py tests/test_web_ui.py` |
+| Any file in `host/` | `tests/test_host.py tests/test_tools_outputs.py tests/test_app_ui.py tests/test_entrypoints.py tests/test_token_log.py tests/test_host_format.py tests/test_host_paths.py tests/test_configflow.py tests/test_web_session.py tests/test_web_tree.py tests/test_web_theme.py tests/test_web_ui.py` |
 | Changes span `server/` + `host/` | Full suite |
 | Cross-cutting refactor or interface change | Full suite |
 | When in doubt | Full suite |
