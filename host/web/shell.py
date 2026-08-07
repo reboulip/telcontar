@@ -153,6 +153,13 @@ def app_shell(
         )
         ui.label("telcontar").classes("text-subtitle2 q-pa-sm")
 
+        # Persistent Settings link — reachable from every route (T2), not
+        # just the picker/startup page, mirroring the TUI's global
+        # priority=True Settings keybinding (host/app.py).
+        ui.button("Settings", icon="settings", on_click=lambda: ui.navigate.to("/settings")).props(
+            "flat dense align=left"
+        ).classes("w-full justify-start").mark("btn-sidebar-settings")
+
         if on_select is not None:
             with ui.row().classes("w-full items-center q-px-sm q-gutter-xs"):
 

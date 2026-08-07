@@ -227,3 +227,102 @@ async def test_wizard_warns_before_plaintext_key_fallback(
     await user.should_see("You're all set!")
 
     assert calls == [False, True]
+
+
+# ── Settings view (U3) ───────────────────────────────────────────────────────
+#
+# read_user_config() reads ~/.telcontar/config.env — a real per-machine file
+# that may hold real values from manual testing. Every settings test below
+# needs a blank slate, so this section's tests always patch it explicitly
+# except where a test overrides it with its own fixture values (see
+# test_settings_prefills_from_saved_config).
+
+
+@pytest.fixture(autouse=True)
+def _blank_saved_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("config.settings.read_user_config", lambda: {})
+
+
+async def test_settings_link_is_reachable_from_the_landing_page(user: User) -> None:
+    await user.open("/")
+
+    user.find(marker="btn-sidebar-settings").click()
+    await user.should_see(marker="btn-settings-save")
+
+
+async def test_settings_prefills_from_saved_config(
+    user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "config.settings.read_user_config",
+        lambda: {"llm_base_url": "https://saved.example", "llm_model": "gpt-4"},
+    )
+
+    await user.open("/")
+    user.find(marker="btn-sidebar-settings").click()
+    await user.should_see(marker="input-url")
+
+    assert user.find(marker="input-url").elements.pop().value == "https://saved.example"
+    assert user.find(marker="input-model").elements.pop().value == "gpt-4"
+    assert user.find(marker="input-key").elements.pop().value == ""
+
+
+async def test_settings_blank_key_preserves_existing_key(
+    user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    saved: list[dict] = []
+
+    def fake_save_user_config(updates: dict, allow_plaintext_fallback: bool = False) -> None:
+        saved.append(dict(updates))
+
+    monkeypatch.setattr("config.settings.save_user_config", fake_save_user_config)
+
+    await user.open("/")
+    user.find(marker="btn-sidebar-settings").click()
+    await user.should_see(marker="input-url")
+
+    user.find(marker="input-url").type("https://example.com")
+    # The model field defaults to "gpt-5" when unset — clear before typing,
+    # since .type() appends rather than replaces.
+    user.find(marker="input-model").clear().type("gpt-5")
+    # API key left blank — must not appear in the saved dict at all.
+    user.find(marker="btn-settings-save").click()
+    await user.should_not_see(marker="btn-settings-save")
+
+    assert saved == [
+        {
+            "llm_base_url": "https://example.com",
+            "llm_model": "gpt-5",
+            "profile": "is_it_project",
+            "approval_mode": "always",
+        }
+    ]
+    assert "llm_api_key" not in saved[0]
+
+
+async def test_settings_validation_requires_url_before_model(user: User) -> None:
+    await user.open("/")
+    user.find(marker="btn-sidebar-settings").click()
+    await user.should_see(marker="btn-settings-save")
+
+    user.find(marker="input-model").type("gpt-5")
+    user.find(marker="btn-settings-save").click()
+
+    await user.should_see("Please enter the web address.")
+
+
+async def test_settings_cancel_does_not_save(user: User, monkeypatch: pytest.MonkeyPatch) -> None:
+    saved: list[dict] = []
+    monkeypatch.setattr(
+        "config.settings.save_user_config",
+        lambda updates, allow_plaintext_fallback=False: saved.append(updates),
+    )
+
+    await user.open("/")
+    user.find(marker="btn-sidebar-settings").click()
+    await user.should_see(marker="btn-settings-cancel")
+
+    user.find(marker="btn-settings-cancel").click()
+    await user.should_not_see(marker="btn-settings-cancel")
+
+    assert saved == []

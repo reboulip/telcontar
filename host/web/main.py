@@ -35,6 +35,7 @@ from host.paths import directory_overview
 from host.web import session as web_session
 from host.web import theme
 from host.web.bridge import AgentBridge
+from host.web.settings import build_settings_view
 from host.web.shell import app_shell
 from host.web.wizard import build_setup_wizard
 
@@ -88,6 +89,12 @@ async def index_page() -> None:
 async def setup_page() -> None:
     with app_shell():
         await build_setup_wizard(on_finish=lambda: ui.navigate.to("/"))
+
+
+@ui.page("/settings")
+async def settings_page() -> None:
+    with app_shell():
+        await build_settings_view(on_done=lambda: ui.navigate.back())
 
 
 @ui.page("/run/{run_id}")

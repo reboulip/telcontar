@@ -379,7 +379,7 @@ Three parts:
   call `execute_plan`, the run ends normally but the final text names the
   unexecuted plan id instead of losing it silently.
 
-### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8)
+### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8, U2/U3)
 
 `host/web/` is a package — the first piece of a planned Textual→NiceGUI web UI
 migration (ROADMAP Phase 18). As of S6, `telcontar --web` (`host/main.py`) launches
@@ -392,10 +392,12 @@ meaningful only with `--web`, skips the landing page's directory picker and star
 a run for that directory immediately. It exists alongside `host/app.py`'s Textual
 TUI, not in place of it — both `textual` and `nicegui` are main dependencies in
 `pyproject.toml`. Feature parity with the TUI isn't fully there yet — no query mode,
-no journal/undo UI (that's Phase 20, item U6) — so the web UI is not (yet) the
+no journal/undo UI (that's Phase 20, items U6/U7) — so the web UI is not (yet) the
 primary way to use telcontar. As of U2, it does have its own first-run setup wizard
 at `/setup`, at parity with the TUI's, so it no longer requires an
-already-configured install to be usable.
+already-configured install to be usable. As of U3, it also has a settings view at
+`/settings`, reachable from every screen via a persistent sidebar button — the
+same parity goal applied to the TUI's `ConfigScreen`.
 
 - `host/web/session.py` — `RunSession`, framework-agnostic per-run state. As of
   T5/T6, the transcript is turns-only: `RunSession.transcript: list[TranscriptItem]`
@@ -439,10 +441,13 @@ already-configured install to be usable.
   `result` dict contains an `"error"` key (the same 5 sites now carry
   `data={"result": result}`, previously no data at all — additive only, no
   `run_agent_loop`/`run_query_loop` signature change).
-- `host/web/shell.py` (T2, extended by T3, and T6) — `app_shell(*, target=None,
+- `host/web/shell.py` (T2, extended by T3, T6, and U3) — `app_shell(*, target=None,
   on_select=None)`, a `@contextmanager` mounted by every `@ui.page` route, including
   the early-return branches (not-configured, run-not-found), so a left-sidebar frame
-  is visible on every screen rather than being assembled per-page. It creates the
+  is visible on every screen rather than being assembled per-page. As of U3 the
+  drawer always renders a persistent "Settings" button navigating to `/settings`,
+  reachable from every route — the web UI's counterpart to the TUI's app-level
+  `ctrl+s` binding (`host/app.py`'s `action_open_settings`). It creates the
   `ui.left_drawer` as a direct child of the page body — NiceGUI's
   `require_top_level_layout` raises `RuntimeError` if a drawer is nested inside
   another container — mounts a `ui.tree` inside it from `host.web.tree.build_nodes`
@@ -518,25 +523,43 @@ already-configured install to be usable.
   ~2.2:1 contrast on the gold primary — unreadable). `FAVICON_SVG` is an inline SVG
   (Elendil's seven-pointed star) passed to `ui.run(favicon=...)`, which NiceGUI
   inlines as a data URL with no file or network request.
-- `host/configflow.py` (U2) — framework-agnostic (no `nicegui`, no `textual`)
-  configuration-flow logic factored out of the TUI's `SetupScreen`/`ConfigScreen`
-  so the web UI's setup wizard reads from the same source of truth: `profile_options()`
+- `host/configflow.py` (U2, extended by U3) — framework-agnostic (no `nicegui`, no
+  `textual`) configuration-flow logic factored out of the TUI's
+  `SetupScreen`/`ConfigScreen` so both the web UI's setup wizard and settings view
+  read from the same source of truth: `profile_options()`
   (moved here from `host/app.py`'s old `_load_profile_options`/`_PROFILE_LABELS`),
   `SERVICE_HINTS` (per-service URL/model hint and placeholder text),
   `validate_credentials(url, key, model, *, key_required)` (url → key → model,
-  first-error-wins), `build_wizard_updates(...)`, and `plaintext_warning(button_label,
-  recovery_action="go back")` — the shared warning-message builder that fixes U8's
-  copy bug (the TUI wizard used to say "Press \"Finish\" again" while its button
-  read "Save & continue →"). `host/app.py` now imports from here instead of owning
-  this logic itself.
-- `host/web/forms.py` (U2) — shared NiceGUI form fragments: `credential_inputs(...)`
-  renders the URL/API-key/model input triple (each `.mark()`ed for NiceGUI's headless
-  `user` test fixture), and `save_with_plaintext_guard(build_updates, *,
+  first-error-wins; `key_required=False`, U3, is the settings view's blank-key-
+  preserves-existing case), `build_wizard_updates(...)`, `build_settings_updates(url,
+  key, model, profile, approval_mode)` (U3 — omits `llm_api_key` entirely when `key`
+  is blank, instead of the wizard's always-include-the-key behaviour),
+  `APPROVAL_OPTIONS` (U3, moved out of `host/app.py`'s `ConfigScreen`), and
+  `plaintext_warning(button_label, recovery_action="go back")` — the shared
+  warning-message builder that fixes U8's copy bug (the TUI wizard used to say
+  "Press \"Finish\" again" while its button read "Save & continue →"). `host/app.py`
+  now imports from here instead of owning this logic itself.
+- `host/web/forms.py` (U2, extended by U3) — shared NiceGUI form fragments:
+  `credential_inputs(...)` renders the URL/API-key/model input triple (each
+  `.mark()`ed for NiceGUI's headless `user` test fixture); as of U3 it takes a
+  `key_placeholder` parameter so the settings view can show "Paste a new key, or
+  leave empty to keep the current one" in place of the wizard's generic
+  placeholder. `save_with_plaintext_guard(build_updates, *,
   plaintext_confirmed, button_label, recovery_action="go back")` calls
   `config.settings.save_user_config` via `run.io_bound`, always from a *fresh* dict
   built by `build_updates()` — never a cached one, since `save_user_config` pops the
   API key out of its argument before raising `PlaintextKeyFallbackNeeded`, so reusing
   a dict across a retry would silently drop the key.
+- `host/web/settings.py` (U3) — the settings view, a NiceGUI port of
+  `host/app.py`'s `ConfigScreen` at parity with it, including the
+  blank-key-preserves-existing rule. `build_settings_view(*, on_done)` fetches
+  `configflow.profile_options()` and `config.settings.read_user_config()` via
+  `run.io_bound`, then renders a single-page form (URL/API-key/model, document
+  profile, approval mode, Save/Cancel) through one `@ui.refreshable` — unlike the
+  wizard, there's no multi-step routing to do. Saves through the same
+  `forms.save_with_plaintext_guard` as the wizard. Mounted at `@ui.page("/settings")`
+  in `host/web/main.py`, reached from any screen via the sidebar's Settings button
+  (`host/web/shell.py`, above).
 - `host/web/wizard.py` (U2) — `build_setup_wizard(*, on_finish)`, a 1:1 port of
   `host/app.py`'s `SetupScreen`: the same 5 steps (welcome, service choice, API
   details, document profile, done), same validation order/strings (via
@@ -552,7 +575,9 @@ already-configured install to be usable.
 - `host/web/main.py` now mounts `app_shell(...)` at the top of both page bodies
   instead of assembling its own layout. The landing page (`/`) first checks
   `config.settings.is_configured()`: if telcontar hasn't been set up yet, it
-  navigates to `/setup` (the wizard above) instead of showing any picker. Once configured, folder selection is the
+  navigates to `/setup` (the wizard above) instead of showing any picker. `/settings`
+  (the settings view above, U3) is registered the same thin-shell way, reachable
+  from the sidebar's Settings button on every route. Once configured, folder selection is the
   sidebar tree, which now doubles as the directory picker (T3, superseding the
   browse-view half of Phase 20's planned U1): clicking a node sets `shell.selected`
   (which may now be a file, since the tree shows files too), and a "Use selected

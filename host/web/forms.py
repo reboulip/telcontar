@@ -27,6 +27,7 @@ def credential_inputs(
     url_hint: str = "",
     url_placeholder: str = "https://…",
     url_value: str = "",
+    key_placeholder: str = "Paste your key here",
     key_value: str = "",
     model_hint: str = "",
     model_placeholder: str = "e.g. gpt-5",
@@ -35,7 +36,9 @@ def credential_inputs(
     """Render the URL / API key / model input triple with optional hint text
     above the URL and model fields. A caller with no per-service hints (the
     settings view has no service picker) simply leaves the hint text empty
-    — an empty ui.label renders as nothing.
+    — an empty ui.label renders as nothing. ``key_placeholder`` lets the
+    settings view explain its blank-key-preserves-existing-key rule inline
+    (the wizard has no existing key to preserve, so it uses the default).
     """
     if url_hint:
         ui.label(url_hint).classes("text-caption text-grey")
@@ -46,7 +49,7 @@ def credential_inputs(
     key = (
         ui.input(
             value=key_value,
-            placeholder="Paste your key here",
+            placeholder=key_placeholder,
             password=True,
             password_toggle_button=True,
         )

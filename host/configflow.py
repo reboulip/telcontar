@@ -100,7 +100,7 @@ def build_wizard_updates(
 ) -> dict[str, str]:
     """Build the settings-update dict for the first-run wizard's save step.
     Always includes the API key (the wizard requires one) — settings' own
-    blank-key-preserves-existing rule is a separate builder for U3."""
+    blank-key-preserves-existing rule is a separate builder, below."""
     updates: dict[str, str] = {
         "llm_base_url": url,
         "llm_api_key": key,
@@ -109,6 +109,30 @@ def build_wizard_updates(
     }
     if service == "azure":
         updates["llm_api_version"] = AZURE_API_VERSION
+    return updates
+
+
+APPROVAL_OPTIONS: list[tuple[str, str]] = [
+    ("Always ask before any changes", "always"),
+    ("Only ask before moving or quarantining files", "destructive_only"),
+    ("Never ask — full automatic mode", "never"),
+]
+
+
+def build_settings_updates(
+    url: str, key: str, model: str, profile: str, approval_mode: str
+) -> dict[str, str]:
+    """Build the settings-update dict for the settings view's save step.
+    Unlike ``build_wizard_updates``, ``key`` is only included when non-empty
+    — the blank-key-preserves-existing-key rule (U3's literal requirement)."""
+    updates: dict[str, str] = {
+        "llm_base_url": url,
+        "llm_model": model,
+        "profile": profile,
+        "approval_mode": approval_mode,
+    }
+    if key:
+        updates["llm_api_key"] = key
     return updates
 
 

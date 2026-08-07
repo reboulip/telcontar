@@ -455,7 +455,10 @@ first with the least behavioural disruption.
     `host/configflow.py`'s `plaintext_warning()` and exercised by a third caller —
     the NiceGUI web UI's setup wizard (`host/web/wizard.py`, through
     `host/web/forms.py`'s `save_with_plaintext_guard`) — so the guard is no longer
-    TUI-only.
+    TUI-only. As of U3 (2026-08-07), the web UI's settings view (`host/web/settings.py`)
+    is a fourth caller of the same shared guard (`forms.save_with_plaintext_guard`),
+    keeping the blank-key-preserves-existing-key save path on the identical
+    warn-then-confirm flow.
 12. **[Done — 2026-07-09]** ~~Log egress (S8): record which files' contents were sent
     to the endpoint so an operator can audit what left the machine.~~ `read_file`,
     `extract_text`, and `compare_documents` now append an entry (path, size in

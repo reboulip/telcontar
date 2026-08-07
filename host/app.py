@@ -51,8 +51,9 @@ from host.agent import (
     AskUserResult,
     CostApprovalResult,
 )
-from host.configflow import plaintext_warning
+from host.configflow import APPROVAL_OPTIONS, build_settings_updates, plaintext_warning
 from host.configflow import profile_options as _load_profile_options
+from host.configflow import validate_credentials
 from host.format import fmt_exc as _fmt_exc
 from host.format import fmt_journal_entry as _fmt_journal_entry
 from host.format import fmt_op as _fmt_op
@@ -671,11 +672,7 @@ class ConfigScreen(Screen):
 
         current = read_user_config()
         profile_options = _load_profile_options()
-        approval_options: list[tuple[str, str]] = [
-            ("Always ask before any changes", "always"),
-            ("Only ask before moving or quarantining files", "destructive_only"),
-            ("Never ask — full automatic mode", "never"),
-        ]
+        approval_options: list[tuple[str, str]] = APPROVAL_OPTIONS
 
         current_profile = current.get("profile", "is_it_project")
         current_approval = current.get("approval_mode", "always")
@@ -747,30 +744,22 @@ class ConfigScreen(Screen):
         model = self.query_one("#cfg-model", Input).value.strip()
         profile_select = self.query_one("#cfg-profile", Select)
         approval_select = self.query_one("#cfg-approval", Select)
+        error = self.query_one("#cfg-error", Label)
 
-        if not url:
-            self.query_one("#cfg-error", Label).update("Please enter the web address.")
-            return
-        if not model:
-            self.query_one("#cfg-error", Label).update("Please enter the model name.")
+        validation_error = validate_credentials(url, key, model, key_required=False)
+        if validation_error:
+            error.update(validation_error)
             return
 
-        updates: dict[str, str] = {
-            "llm_base_url": url,
-            "llm_model": model,
-            "profile": (
-                str(profile_select.value)
-                if profile_select.value is not Select.BLANK
-                else "is_it_project"
-            ),
-            "approval_mode": (
-                str(approval_select.value)
-                if approval_select.value is not Select.BLANK
-                else "always"
-            ),
-        }
-        if key:
-            updates["llm_api_key"] = key
+        profile = (
+            str(profile_select.value)
+            if profile_select.value is not Select.BLANK
+            else "is_it_project"
+        )
+        approval_mode = (
+            str(approval_select.value) if approval_select.value is not Select.BLANK else "always"
+        )
+        updates = build_settings_updates(url, key, model, profile, approval_mode)
 
         from config.settings import PlaintextKeyFallbackNeeded, save_user_config
 
@@ -778,11 +767,7 @@ class ConfigScreen(Screen):
             save_user_config(updates, allow_plaintext_fallback=self._plaintext_confirmed)
         except PlaintextKeyFallbackNeeded:
             self._plaintext_confirmed = True
-            self.query_one("#cfg-error", Label).update(
-                '[bold]Your OS keyring is unavailable.[/bold] Press "Save" again to '
-                "store your API key in PLAINTEXT at ~/.telcontar/config.env, or cancel "
-                "and fix your keyring first."
-            )
+            error.update(f"[bold]{plaintext_warning('Save', 'cancel')}[/bold]")
             return
         self.app.pop_screen()
 

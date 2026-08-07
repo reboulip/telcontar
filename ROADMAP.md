@@ -106,7 +106,7 @@ work.
 
 - [ ] U1 · Startup view — Organize / Query / Settings entry points. The folder-picker half is superseded by Phase 19's T3 sidebar tree (built once, in the shell) — check before rebuilding. A browser can't return a real filesystem path from a native picker, so selection stays a server-side browse over the existing `list_dir` tool.
 - [x] U2 · Setup wizard — 5 steps with real routing (the TUI mounts all five and toggles `.display`). Preserve `PlaintextKeyFallbackNeeded` → warn → explicit second confirmation.
-- [ ] U3 · Settings view — same behaviour as the wizard, including the blank-key-preserves-existing rule.
+- [x] U3 · Settings view — same behaviour as the wizard, including the blank-key-preserves-existing rule.
 - [ ] U4 · Approval dialog — faithful: per-op toggles returning `removed_op_ids`, refinement text, reject, both disclaimers; refinement takes priority over approval. While here: refresh the Phase 19 T3 sidebar tree on `execute_plan` result (it currently never updates as the agent moves files).
 - [ ] U5 · Cost estimate dialog — faithful. While here: fix `batch_size` never being passed (it always claims "groups of 10").
 - [ ] U6 · Journal view + undo, with a visible affordance (currently keyboard-only: `j` then `u`) — user-only, the agent still has no undo tool. While here: refresh the ops-journal strip after an undo (it currently goes stale). This is also where Phase 18's deferred `run.io_bound` offloads for journal reads and `server.tools.undo_last` finally get a real call site.
