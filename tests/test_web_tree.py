@@ -12,6 +12,7 @@ from host.web.tree import (
     list_drive_roots,
     load_children,
     needs_loading,
+    rebuild_nodes,
 )
 
 
@@ -158,3 +159,64 @@ def test_list_drive_roots_returns_empty_or_paths() -> None:
 
     assert isinstance(result, list)
     assert all(isinstance(p, Path) for p in result)
+
+
+# ── rebuild_nodes (U4) ────────────────────────────────────────────────────────
+
+
+def test_rebuild_nodes_matches_build_nodes_with_no_expanded_ids(tmp_path: Path) -> None:
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "file.txt").write_text("x")
+
+    assert rebuild_nodes(tmp_path, set()) == build_nodes(tmp_path)
+
+
+def test_rebuild_nodes_eagerly_loads_an_expanded_directory(tmp_path: Path) -> None:
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "nested.txt").write_text("x")
+
+    [root] = rebuild_nodes(tmp_path, {str(sub)})
+
+    [sub_node] = [c for c in root["children"] if c["id"] == str(sub)]
+    assert sub_node["children"] == [
+        {"id": str(sub / "nested.txt"), "label": "nested.txt", "children": []}
+    ]
+
+
+def test_rebuild_nodes_leaves_unexpanded_directories_as_placeholders(tmp_path: Path) -> None:
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    (sub / "nested.txt").write_text("x")
+
+    [root] = rebuild_nodes(tmp_path, set())
+
+    [sub_node] = [c for c in root["children"] if c["id"] == str(sub)]
+    assert needs_loading(sub_node)
+
+
+def test_rebuild_nodes_recurses_into_nested_expanded_directories(tmp_path: Path) -> None:
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    nested = sub / "nested"
+    nested.mkdir()
+    (nested / "deep.txt").write_text("x")
+
+    [root] = rebuild_nodes(tmp_path, {str(sub), str(nested)})
+
+    [sub_node] = [c for c in root["children"] if c["id"] == str(sub)]
+    [nested_node] = [c for c in sub_node["children"] if c["id"] == str(nested)]
+    assert nested_node["children"] == [
+        {"id": str(nested / "deep.txt"), "label": "deep.txt", "children": []}
+    ]
+
+
+def test_rebuild_nodes_tolerates_a_stale_expanded_id_for_a_path_that_no_longer_exists(
+    tmp_path: Path,
+) -> None:
+    # A directory the user had expanded may have been renamed/moved away by
+    # the very op that triggered this refresh — its id in expanded_ids no
+    # longer matches anything under root, and must not raise.
+    nodes = rebuild_nodes(tmp_path, {str(tmp_path / "renamed-away")})
+
+    assert nodes

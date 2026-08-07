@@ -379,7 +379,7 @@ Three parts:
   call `execute_plan`, the run ends normally but the final text names the
   unexecuted plan id instead of losing it silently.
 
-### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8, U2/U3)
+### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8, U2/U3/U4)
 
 `host/web/` is a package — the first piece of a planned Textual→NiceGUI web UI
 migration (ROADMAP Phase 18). As of S6, `telcontar --web` (`host/main.py`) launches
@@ -421,7 +421,15 @@ same parity goal applied to the TUI's `ConfigScreen`.
   (T4) manage one in-memory sidebar-width preference (240-720px, default 380) for
   the process's lifetime, rather than a `RunSession` field, since it also applies on
   the picker route where no `RunSession` exists yet; `set_sidebar_width` clamps and
-  returns the stored value.
+  returns the stored value. As of U4, `RunSession` also carries `fs_revision: int`,
+  a counter `bump_fs_revision()` increments whenever the target directory's
+  contents change on disk — consumed by the sidebar-tree refresh below. Also as of
+  U4, `close_step(result, ok=...)` returns the closed `StepRecord` (`None` if none
+  was open) instead of nothing, so a caller can inspect which tool just closed, and
+  `resolve_pending(result, *, request_id=None)` takes an optional `request_id` that
+  must match the *current* pending request's id or the call is silently ignored —
+  stops a stale dialog (another tab, or one left over after a reload) from
+  resolving a different, newer pending request than the one it was shown.
 - `host/web/bridge.py` — `AgentBridge` wraps a `RunSession` and exposes
   `on_event`/`on_approval_needed`/`on_cost_approval_needed`/`on_ask_user_needed`, the
   same callback contract `host/agent.py`'s `run_agent_loop` already uses for the
@@ -440,7 +448,33 @@ same parity goal applied to the TUI's `ConfigScreen`.
   `session.close_step(result, ok=...)`, inferring `ok` from whether `event.data`'s
   `result` dict contains an `"error"` key (the same 5 sites now carry
   `data={"result": result}`, previously no data at all — additive only, no
-  `run_agent_loop`/`run_query_loop` signature change).
+  `run_agent_loop`/`run_query_loop` signature change). As of U4, `on_event`'s
+  `tool_result` case also calls `session.bump_fs_revision()` when the just-closed
+  step's tool is one of the module-level `_TREE_MUTATING_TOOLS =
+  {"execute_plan", "write_index", "write_summary", "write_folder_readme"}` and the
+  result was ok — the only tools that change what's on disk under the target
+  directory, and what drives the sidebar-tree refresh below.
+- `host/web/dialogs.py` (U4) — one builder per `PendingRequest` kind, replacing the
+  dialog-building code that used to live inline in `run_page`.
+  `build_approval_dialog(session, pending)` is a faithful port of the TUI's
+  `ApprovalModal`: rationale + disclaimer, target-layout preview + disclaimer,
+  per-op checkboxes defaulting checked, the `ops_json_path` label, a free-text
+  refine input, and Approve/Refine/Reject buttons — Refine only resolves on
+  non-blank input and always takes priority over Approve, since they're mutually
+  exclusive button clicks. `build_cost_dialog(session, pending)` is intentionally
+  minimal for now (summary text, Proceed/Cancel) — its TUI-faithful content is
+  U5's job. Both dialogs are `.props("persistent")` (no backdrop-click or Esc
+  dismissal) and resolve via `session.resolve_pending(result,
+  request_id=pending.request_id)` — this closes a live bug where the prior plain
+  `ui.dialog()` could be dismissed without resolving its future, permanently
+  deadlocking the run with no visible symptom: the same failure class as the
+  reload-orphaning issue described below ("Reload-safe design"), just a different
+  door into it.
+- `host/web/steplog.py` (U4) — the internal-step log-strip rendering
+  (`fmt_step_line`, `render_step_row`, `prune_log`, `sync_steps`, `StepLogState`)
+  lifted out of `run_page`'s closure so later screens (U6's journal view, U7's
+  query view) can reuse the same "one compact line per step, toggle opens full
+  detail in the shell's drawer" idiom instead of re-deriving it per screen.
 - `host/web/shell.py` (T2, extended by T3, T6, and U3) — `app_shell(*, target=None,
   on_select=None)`, a `@contextmanager` mounted by every `@ui.page` route, including
   the early-return branches (not-configured, run-not-found), so a left-sidebar frame
@@ -500,7 +534,13 @@ same parity goal applied to the TUI's `ConfigScreen`.
   landed there), never follows symlinks/junctions (Windows profile directories like
   "Application Data" can loop), and never raises — a permission error or a vanished
   directory yields an empty list rather than blanking the tree. `find_node` and
-  `needs_loading` support `shell.py`'s expand handler. `list_drive_roots()` wraps
+  `needs_loading` support `shell.py`'s expand handler. `rebuild_nodes(root,
+  expanded_ids)` (U4) is a non-destructive alternative to `build_nodes`: it eagerly
+  loads real children, recursively, for every directory id in `expanded_ids`
+  instead of leaving the lazy-load placeholder, so refreshing the sidebar after a
+  tree-mutating tool call doesn't collapse whatever the user had expanded; a
+  directory that no longer exists (moved/renamed away by the very op that
+  triggered the refresh) is silently dropped. `list_drive_roots()` wraps
   `os.listdrives()` (3.12+, Windows-only) so the picker can reach outside the home
   directory, degrading to an empty list on any other platform or on error.
 - `host/web/theme.py` (T7, extended by T8) — product-identity helpers, `nicegui`-free
@@ -589,20 +629,37 @@ same parity goal applied to the TUI's `ConfigScreen`.
   button constructs the `AgentBridge` and calls `start(instructions=...)` — S4's
   version started the run immediately on directory selection. Once started
   (`session.started`), the starter pane hides and the main view (status/progress
-  bar/chat input/approval-cost-dialogs unchanged from S4) takes over. As of T5/T6,
-  that main view is two independent zones instead of one interleaved stream: a
+  bar/chat input/approval-cost-dialogs, now via `host/web/dialogs.py`, U4) takes
+  over. As of T5/T6, that main view is two independent zones instead of one
+  interleaved stream: a
   `conversation_column` (turns only, `ui.chat_message`, rendering `session.transcript`)
   and, below a separator, a pinned-bottom `activity_label` (the current narration
   line, `session.activity`) plus a scrolling `log_column` (~25vh) rendering
   `session.steps` as one compact line each — a status glyph (▶ running / · ok /
   ✗ error) plus the step's summary — with a small "code" icon button per row that
   calls `shell.show_detail(step.summary, step.detail)` to open the full payload in
-  the right-side detail drawer (T6). A per-client `_RenderState.step_rows` dict
-  (keyed by seq) caps the DOM at `_MAX_LOG_ROWS = 500` (oldest row deleted first)
-  and lets an already-rendered "running" step's line update in place once it
-  closes — unlike `TranscriptItem`s, `StepRecord`s mutate after creation.
-  `run_page`'s `with app_shell(...) as shell:` now captures the `Shell` handle
-  (previously discarded) so it can reach `shell.show_detail()`.
+  the right-side detail drawer (T6). As of U4 this rendering is
+  `host/web/steplog.py`'s `sync_steps`/`StepLogState` (above), not inline: `run_page`
+  owns one `steplog.StepLogState()` and calls `steplog.sync_steps(log_column, shell,
+  step_log_state, session.steps)` once per tick, which caps the DOM at
+  `_MAX_LOG_ROWS = 500` (oldest row deleted first) and lets an already-rendered
+  "running" step's line update in place once it closes — unlike `TranscriptItem`s,
+  `StepRecord`s mutate after creation.
+  `run_page`'s `with app_shell(...) as shell:` captures the `Shell` handle so
+  `steplog.render_step_row` can reach `shell.show_detail()`.
+
+  **Sidebar tree refresh (U4):** `_refresh()` is now `async`. On each tick, if
+  `session.fs_revision` has changed since the render cursor last saw it, `run_page`
+  reads the tree's currently-expanded node ids off its Quasar `expanded` prop (kept
+  in sync by `shell.py`'s `on_expand` handler), rebuilds the node list via `await
+  run.io_bound(web_tree.rebuild_nodes, session.target, expanded)`, and replaces
+  `shell.tree.props["nodes"]` before calling `shell.tree.update()` — guarding
+  against `run.io_bound` returning `None` on shutdown/cancel. This only fires when
+  a tree-mutating tool actually closed since the last tick (see `bridge.py`'s
+  `_TREE_MUTATING_TOOLS` above), never on every 0.5s poll, and never collapses
+  whatever the user had expanded — closing the gap where the sidebar tree
+  (Phase 19 T3) never updated as the agent moved/renamed/quarantined files.
+
   `run_web(target: Path | None = None)` still binds an ephemeral local port and
   calls `ui.run(host="127.0.0.1", ..., show=True, reload=False, title=..., dark=True,
   favicon=theme.FAVICON_SVG)` — never `0.0.0.0`, to avoid exposing the approval gate
@@ -632,7 +689,13 @@ instead of orphaning it. This was validated in a pre-implementation spike (see
 ROADMAP.md's "Break 1" note ahead of Phase 18), which found that a bare reload does
 **not** kill the background run — it silently orphans it, and any UI element the
 run's task then tries to touch afterward targets a dead client, which can
-permanently deadlock an approval gate with no visible symptom.
+permanently deadlock an approval gate with no visible symptom. As of U4, the
+approval/cost dialogs themselves (`host/web/dialogs.py`) close the same failure
+class's other door: they're `.props("persistent")` (no backdrop-click or Esc
+dismissal) and resolve through `session.resolve_pending(result,
+request_id=pending.request_id)`, so a dismissed-without-resolving dialog can no
+longer deadlock a run, and a stale dialog from another tab or a pre-reload client
+can't resolve a pending request it was never actually shown.
 
 ---
 

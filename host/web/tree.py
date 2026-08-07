@@ -65,6 +65,37 @@ def build_nodes(root: Path) -> list[dict]:
     ]
 
 
+def _rebuild_children(path: Path, expanded_ids: set[str]) -> list[dict]:
+    children = load_children(path)
+    for child in children:
+        child_id = child["id"]
+        if child_id in expanded_ids:
+            child_path = Path(child_id)
+            if child_path.is_dir():
+                child["children"] = _rebuild_children(child_path, expanded_ids)
+    return children
+
+
+def rebuild_nodes(root: Path, expanded_ids: set[str]) -> list[dict]:
+    """Rebuild the top-level node list like `build_nodes`, but eagerly loads
+    real children — recursively — for every directory id in ``expanded_ids``
+    instead of leaving the lazy-load placeholder in place.
+
+    Used to refresh the sidebar tree after a tree-mutating tool call
+    (execute_plan, ...) without collapsing whatever the user had expanded.
+    A directory that no longer exists (renamed/moved away by the op that
+    triggered this refresh) is silently dropped — `load_children` never
+    raises, the same tolerance `build_nodes` already has for the root.
+    """
+    return [
+        {
+            "id": str(root),
+            "label": root.name or str(root),
+            "children": _rebuild_children(root, expanded_ids),
+        }
+    ]
+
+
 def find_node(nodes: list[dict], node_id: str) -> dict | None:
     """Depth-first search for a node by id within a `ui.tree`-shaped nested
     node list — used by shell.py's expand handler to locate the node whose

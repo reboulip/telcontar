@@ -23,6 +23,13 @@ from host.agent import (
 from host.format import fmt_exc
 from host.web.session import RunSession
 
+# Tools whose successful result changes what's on disk under the target
+# directory — closing one of these bumps RunSession.fs_revision (U4), which
+# drives both the sidebar tree refresh and (U6) the journal strip refresh.
+_TREE_MUTATING_TOOLS = frozenset(
+    {"execute_plan", "write_index", "write_summary", "write_folder_readme"}
+)
+
 
 class AgentBridge:
     """Bound callbacks for one RunSession, mirroring
@@ -51,7 +58,9 @@ class AgentBridge:
             case "tool_result":
                 result = (event.data or {}).get("result")
                 ok = not (isinstance(result, dict) and "error" in result)
-                session.close_step(result, ok=ok)
+                step = session.close_step(result, ok=ok)
+                if step is not None and ok and step.tool in _TREE_MUTATING_TOOLS:
+                    session.bump_fs_revision()
             case "plan_ready":
                 session.status = "Waiting for plan approval…"
             case "ask_user":

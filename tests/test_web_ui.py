@@ -56,11 +56,13 @@ Gotchas learned the hard way (read before adding more tests):
 
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 from typing import Iterator
 
 import pytest
+from nicegui import ui
 from nicegui.testing import User
 
 from host.web import session as web_session
@@ -325,4 +327,160 @@ async def test_settings_cancel_does_not_save(user: User, monkeypatch: pytest.Mon
     user.find(marker="btn-settings-cancel").click()
     await user.should_not_see(marker="btn-settings-cancel")
 
-    assert saved == []
+
+# ── Approval dialog (U4) ─────────────────────────────────────────────────────
+
+
+def _plan_data(**overrides: object) -> dict:
+    base = {
+        "ops": [
+            {
+                "op_id": "op1",
+                "op_type": "move",
+                "src": "a.txt",
+                "dst": "b/a.txt",
+            }
+        ],
+        "rationale": "",
+        "folder_notes": {},
+        "ops_json_path": "",
+    }
+    base.update(overrides)
+    return base
+
+
+async def test_approval_dialog_shows_rationale_and_disclaimer_when_present(
+    user: User, tmp_path: Path
+) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.new_pending(
+        "approval",
+        {"plan_id": "plan-12345678", "plan_data": _plan_data(rationale="Group invoices together")},
+    )
+
+    await user.open(f"/run/{session.run_id}")
+
+    await user.should_see("Plan Review · plan-123 · 1 op(s)")
+    await user.should_see("Group invoices together")
+    await user.should_see("Model-generated rationale — not verified fact")
+
+
+async def test_approval_dialog_omits_rationale_section_when_blank(
+    user: User, tmp_path: Path
+) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.new_pending("approval", {"plan_id": "plan-1", "plan_data": _plan_data(rationale="")})
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="approve-btn")
+
+    await user.should_not_see("Model-generated rationale")
+
+
+async def test_approval_dialog_approve_returns_unchecked_ops_as_removed(
+    user: User, tmp_path: Path
+) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    pending = session.new_pending(
+        "approval",
+        {
+            "plan_id": "plan-1",
+            "plan_data": _plan_data(
+                ops=[
+                    {"op_id": "op1", "op_type": "move", "src": "a.txt", "dst": "b/a.txt"},
+                    {"op_id": "op2", "op_type": "move", "src": "c.txt", "dst": "d/c.txt"},
+                ]
+            ),
+        },
+    )
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="op-op2")
+
+    user.find(marker="op-op2").click()  # uncheck the second op
+    user.find(marker="approve-btn").click()
+
+    result = await pending.future
+    assert result.approved is True
+    assert result.removed_op_ids == ["op2"]
+
+
+async def test_approval_dialog_refine_with_blank_text_is_a_noop(user: User, tmp_path: Path) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    pending = session.new_pending("approval", {"plan_id": "plan-1", "plan_data": _plan_data()})
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="refine-btn")
+
+    user.find(marker="refine-btn").click()  # blank input — must not resolve
+
+    assert not pending.future.done()
+    await user.should_see(marker="approve-btn")  # dialog is still open
+
+
+async def test_approval_dialog_refine_with_text_sends_refinement(
+    user: User, tmp_path: Path
+) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    pending = session.new_pending("approval", {"plan_id": "plan-1", "plan_data": _plan_data()})
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="refine-input")
+
+    user.find(marker="refine-input").type("don't touch b.txt")
+    user.find(marker="refine-btn").click()
+
+    result = await pending.future
+    assert result.approved is False
+    assert result.refinement == "don't touch b.txt"
+
+
+async def test_approval_dialog_reject_sends_bare_rejection(user: User, tmp_path: Path) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    pending = session.new_pending("approval", {"plan_id": "plan-1", "plan_data": _plan_data()})
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="reject-btn")
+
+    user.find(marker="reject-btn").click()
+
+    result = await pending.future
+    assert result.approved is False
+    assert result.refinement is None
+    assert result.removed_op_ids == []
+
+
+async def test_sidebar_tree_refreshes_when_fs_revision_changes(user: User, tmp_path: Path) -> None:
+    # Asserts against the tree's underlying `nodes` prop data directly
+    # rather than should_see(content=...): Quasar's QTree only renders a
+    # child as *visible* once its parent is expanded in the UI, regardless
+    # of whether the data is already loaded — should_see's visibility-based
+    # matching can't see it either way, so it isn't the right tool here.
+    session = web_session.create(tmp_path)
+    session.started = True
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="btn-sidebar-settings")  # page has rendered
+
+    (tmp_path / "new_file.txt").write_text("x")
+    session.bump_fs_revision()
+
+    def _root_children_labels() -> set[str]:
+        [tree] = user.find(kind=ui.tree).elements
+        root_children = tree.props["nodes"][0].get("children", [])
+        return {child.get("label") for child in root_children}
+
+    for _ in range(20):
+        if "new_file.txt" in _root_children_labels():
+            break
+        await asyncio.sleep(0.05)
+    else:
+        raise AssertionError(
+            f"sidebar tree was not refreshed with new_file.txt; saw {_root_children_labels()}"
+        )

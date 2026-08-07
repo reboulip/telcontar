@@ -24,17 +24,19 @@ sidebar stays visible while the user browses or waits.
 from __future__ import annotations
 
 import socket
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 from nicegui import app, run, ui
 
 from host.agent import ApprovalResult, CostApprovalResult
-from host.format import fmt_op
 from host.paths import directory_overview
 from host.web import session as web_session
+from host.web import steplog
 from host.web import theme
+from host.web import tree as web_tree
 from host.web.bridge import AgentBridge
+from host.web.dialogs import build_approval_dialog, build_cost_dialog
 from host.web.settings import build_settings_view
 from host.web.shell import app_shell
 from host.web.wizard import build_setup_wizard
@@ -42,16 +44,13 @@ from host.web.wizard import build_setup_wizard
 
 @dataclass
 class _RenderState:
-    """Per-client render cursor for run_page. ``step_rows`` holds each
-    rendered step's (row, label) elements, keyed by seq, so a step that was
-    "running" when first rendered can have its glyph/summary updated in
-    place once it closes — StepRecords mutate after creation, unlike
-    TranscriptItems."""
+    """Per-client render cursor for run_page — transcript/dialog/tree-refresh
+    bookkeeping. The step log's own cursor lives in a separate
+    steplog.StepLogState (shared with U6/U7's screens)."""
 
     turn_seq: int = 0
-    step_seq: int = 0
     shown_request_id: str | None = None
-    step_rows: dict[int, tuple[ui.row, ui.label]] = field(default_factory=dict)
+    fs_revision: int = 0
 
 
 def _start_run(target: Path) -> web_session.RunSession:
@@ -171,38 +170,11 @@ async def run_page(run_id: str) -> None:
             )
 
         render_state = _RenderState()
+        step_log_state = steplog.StepLogState()
 
         def _render_turn(item: web_session.TranscriptItem) -> None:
             with conversation_column:
                 ui.chat_message(item.text, name=item.speaker, sent=item.speaker == "user")
-
-        _STEP_GLYPHS = {"running": "▶", "ok": "·", "error": "✗"}
-
-        def _fmt_step_line(step: web_session.StepRecord) -> str:
-            return f"{_STEP_GLYPHS[step.status]} {step.summary}"
-
-        def _render_step_row(step: web_session.StepRecord) -> tuple[ui.row, ui.label]:
-            with log_column:
-                row = ui.row().classes("w-full items-center q-gutter-xs no-wrap")
-                with row:
-                    label = ui.label(_fmt_step_line(step)).classes(
-                        "whitespace-pre font-mono text-xs ellipsis flex-grow"
-                    )
-                    ui.button(
-                        icon="code",
-                        on_click=lambda: shell.show_detail(
-                            step.summary, step.detail or "(pending…)"
-                        ),
-                    ).props("flat dense size=xs")
-            return row, label
-
-        _MAX_LOG_ROWS = 500
-
-        def _prune_log() -> None:
-            while len(render_state.step_rows) > _MAX_LOG_ROWS:
-                oldest_seq = next(iter(render_state.step_rows))
-                row, _label = render_state.step_rows.pop(oldest_seq)
-                row.delete()
 
         def _show_pending_dialog() -> None:
             pending = session.pending
@@ -210,68 +182,19 @@ async def run_page(run_id: str) -> None:
                 return
             render_state.shown_request_id = pending.request_id
 
-            dialog = ui.dialog()
-            with dialog, ui.card():
-                if pending.kind == "approval":
-                    plan_data = pending.payload["plan_data"]
-                    ops = plan_data.get("ops", [])
-                    ui.label(f"Plan ready for review — {len(ops)} op(s)")
-                    with ui.column().classes("max-h-64 overflow-auto"):
-                        for op in ops:
-                            ui.label(fmt_op(op, session.target, markup=False))
-                    refine_input = ui.input("Refine instead of approving (optional)").classes(
-                        "w-full"
-                    )
+            if pending.kind == "approval":
+                build_approval_dialog(session, pending).open()
+            else:
+                build_cost_dialog(session, pending).open()
 
-                    def _approve() -> None:
-                        session.resolve_pending(ApprovalResult(approved=True))
-                        dialog.close()
-
-                    def _reject() -> None:
-                        text = refine_input.value.strip()
-                        result = (
-                            ApprovalResult(approved=False, refinement=text)
-                            if text
-                            else ApprovalResult(approved=False)
-                        )
-                        session.resolve_pending(result)
-                        dialog.close()
-
-                    with ui.row():
-                        ui.button("Approve", on_click=_approve, color="positive")
-                        ui.button("Reject / Refine", on_click=_reject, color="negative")
-                else:
-                    ui.label(pending.payload["summary"])
-
-                    def _proceed() -> None:
-                        session.resolve_pending(CostApprovalResult(approved=True))
-                        dialog.close()
-
-                    def _cancel() -> None:
-                        session.resolve_pending(CostApprovalResult(approved=False))
-                        dialog.close()
-
-                    with ui.row():
-                        ui.button("Proceed", on_click=_proceed, color="positive")
-                        ui.button("Cancel", on_click=_cancel, color="negative")
-            dialog.open()
-
-        def _refresh() -> None:
+        async def _refresh() -> None:
             for item in session.transcript:
                 if item.seq > render_state.turn_seq:
                     _render_turn(item)
                     render_state.turn_seq = item.seq
 
             activity_label.set_text(session.activity)
-            for step in session.steps:
-                if step.seq > render_state.step_seq:
-                    render_state.step_rows[step.seq] = _render_step_row(step)
-                    render_state.step_seq = step.seq
-                    _prune_log()
-                else:
-                    entry = render_state.step_rows.get(step.seq)
-                    if entry is not None:
-                        entry[1].set_text(_fmt_step_line(step))
+            steplog.sync_steps(log_column, shell, step_log_state, session.steps)
 
             line = session.status
             if session.tokens:
@@ -290,6 +213,19 @@ async def run_page(run_id: str) -> None:
             if session.started:
                 starter_column.visible = False
                 main_column.visible = True
+
+            # Sidebar tree refresh (U4) — only when a tree-mutating tool
+            # actually closed since the last tick, never on every 0.5s poll.
+            # Expansion state is read from the tree's own Quasar `expanded`
+            # prop (kept in sync by shell.py's on_expand handler) so a
+            # refresh doesn't collapse whatever the user had open.
+            if session.fs_revision != render_state.fs_revision:
+                render_state.fs_revision = session.fs_revision
+                expanded = set(shell.tree.props.get("expanded") or [])
+                nodes = await run.io_bound(web_tree.rebuild_nodes, session.target, expanded)
+                if nodes is not None:  # run.io_bound returns None on shutdown/cancel
+                    shell.tree.props["nodes"] = nodes
+                    shell.tree.update()
 
         ui.timer(web_session.REFRESH_INTERVAL, _refresh)
 

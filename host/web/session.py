@@ -81,6 +81,10 @@ class RunSession:
     history: list[dict] | None = None
     narrator: Narrator = field(default_factory=Narrator)
     task: asyncio.Task | None = None
+    # Bumped whenever a tree-mutating tool result closes (U4) — the sidebar
+    # tree refresh and (U6) the journal strip both key their refresh off
+    # this one counter rather than rebuilding on every render tick.
+    fs_revision: int = 0
     _open_step: StepRecord | None = field(default=None, repr=False)
     _seq: int = field(default=0, repr=False)
 
@@ -105,8 +109,11 @@ class RunSession:
         self._open_step = step
         return step
 
-    def close_step(self, result: object, *, ok: bool) -> None:
-        """Close the currently-open step (if any) with its tool result.
+    def close_step(self, result: object, *, ok: bool) -> StepRecord | None:
+        """Close the currently-open step (if any) with its tool result and
+        return the closed StepRecord (None if none was open) — the caller
+        (AgentBridge) uses ``.tool`` to decide whether this call mutated the
+        tree and the sidebar/journal refresh counter should bump (U4).
 
         The detail payload pairs the call's args with its result — useful for
         seeing what was actually asked for, not just what came back — pretty-
@@ -116,7 +123,7 @@ class RunSession:
         """
         step = self._open_step
         if step is None:
-            return
+            return None
         payload = {"args": step.args, "result": result}
         detail = json.dumps(payload, indent=2, default=str, ensure_ascii=False)
         if len(detail) > _MAX_STEP_DETAIL_CHARS:
@@ -124,6 +131,12 @@ class RunSession:
         step.status = "ok" if ok else "error"
         step.detail = detail
         self._open_step = None
+        return step
+
+    def bump_fs_revision(self) -> None:
+        """Signal that the target directory's contents changed — consumed by
+        the sidebar tree refresh (U4) and the journal strip refresh (U6)."""
+        self.fs_revision += 1
 
     def new_pending(self, kind: PendingKind, payload: dict) -> PendingRequest:
         request = PendingRequest(
@@ -135,11 +148,23 @@ class RunSession:
         self.pending = request
         return request
 
-    def resolve_pending(self, result: object) -> None:
-        """Resolve the current pending request's future, if any — safe to call
-        more than once (e.g. a stale client retrying a click)."""
-        if self.pending is not None and not self.pending.future.done():
-            self.pending.future.set_result(result)
+    def resolve_pending(self, result: object, *, request_id: str | None = None) -> None:
+        """Resolve the current pending request's future, if any — safe to
+        call more than once (e.g. a stale client retrying a click).
+
+        ``request_id``, when given, must match the *current* pending
+        request's id or the call is ignored — a stale dialog (another
+        browser tab, or one left over after a reload) can otherwise resolve
+        a request it was never shown, silently approving/rejecting the
+        wrong plan. Optional so existing callers (the app-shutdown hook,
+        which has no dialog and just wants to reject whatever is pending)
+        keep working unchanged.
+        """
+        if self.pending is None or self.pending.future.done():
+            return
+        if request_id is not None and request_id != self.pending.request_id:
+            return
+        self.pending.future.set_result(result)
         self.pending = None
 
 

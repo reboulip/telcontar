@@ -500,3 +500,104 @@ def test_set_sidebar_width_accepts_exact_bounds(monkeypatch: pytest.MonkeyPatch)
 
     assert web_session.set_sidebar_width(web_session.SIDEBAR_WIDTH_MIN) == 240
     assert web_session.set_sidebar_width(web_session.SIDEBAR_WIDTH_MAX) == 720
+
+
+# ── RunSession: close_step return value, fs_revision (U4) ────────────────────
+
+
+def test_close_step_returns_the_closed_step(tmp_path: Path) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+    opened = session.open_step("execute_plan", "execute_plan(plan_id='p1')")
+
+    closed = session.close_step({"ok": True}, ok=True)
+
+    assert closed is opened
+    assert closed.status == "ok"
+
+
+def test_close_step_without_open_step_returns_none(tmp_path: Path) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+
+    assert session.close_step({"ok": True}, ok=True) is None
+
+
+def test_bump_fs_revision_increments(tmp_path: Path) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+    assert session.fs_revision == 0
+
+    session.bump_fs_revision()
+    session.bump_fs_revision()
+
+    assert session.fs_revision == 2
+
+
+# ── RunSession: request-scoped resolve_pending (U4) ──────────────────────────
+
+
+def test_resolve_pending_with_matching_request_id_resolves(tmp_path: Path) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = AgentBridge(session)
+
+    async def _run() -> ApprovalResult:
+        task = asyncio.create_task(bridge.on_approval_needed("plan-1", {"ops": []}))
+        await asyncio.sleep(0)
+        request_id = session.pending.request_id  # type: ignore[union-attr]
+        session.resolve_pending(ApprovalResult(approved=True), request_id=request_id)
+        return await task
+
+    result = asyncio.run(_run())
+    assert result.approved is True
+
+
+def test_resolve_pending_with_stale_request_id_is_ignored(tmp_path: Path) -> None:
+    """A stale dialog (another tab, or one left over after a reload) must
+    not be able to resolve a *different* pending request than the one it
+    was actually shown — a mismatched request_id is silently ignored."""
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = AgentBridge(session)
+
+    async def _run() -> None:
+        task = asyncio.create_task(bridge.on_approval_needed("plan-1", {"ops": []}))
+        await asyncio.sleep(0)
+
+        session.resolve_pending(ApprovalResult(approved=True), request_id="stale-id")
+        assert session.pending is not None  # ignored — still pending
+
+        session.resolve_pending(ApprovalResult(approved=False))  # no request_id — always applies
+        result = await task
+        assert result.approved is False
+
+    asyncio.run(_run())
+
+
+# ── AgentBridge: fs_revision bump on tree-mutating tool results (U4) ─────────
+
+
+def test_tool_result_bumps_fs_revision_for_execute_plan(tmp_path: Path) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = AgentBridge(session)
+
+    bridge.on_event(AgentEvent("tool_call", "execute_plan(...)", data={"tool": "execute_plan"}))
+    bridge.on_event(AgentEvent("tool_result", "", data={"result": {"moved": 3}}))
+
+    assert session.fs_revision == 1
+
+
+def test_tool_result_does_not_bump_fs_revision_for_read_only_tools(tmp_path: Path) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = AgentBridge(session)
+
+    bridge.on_event(AgentEvent("tool_call", "list_dir(...)", data={"tool": "list_dir"}))
+    bridge.on_event(AgentEvent("tool_result", "", data={"result": {"entries": []}}))
+
+    assert session.fs_revision == 0
+
+
+def test_tool_result_does_not_bump_fs_revision_on_error(tmp_path: Path) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = AgentBridge(session)
+
+    bridge.on_event(AgentEvent("tool_call", "execute_plan(...)", data={"tool": "execute_plan"}))
+    bridge.on_event(AgentEvent("tool_result", "", data={"result": {"error": "boom"}}))
+
+    assert session.fs_revision == 0
