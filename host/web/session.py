@@ -116,3 +116,29 @@ def close(run_id: str) -> None:
 
 def all_sessions() -> list[RunSession]:
     return list(_SESSIONS.values())
+
+
+# ── Sidebar width (T4) ───────────────────────────────────────────────────────
+#
+# One in-memory preference for the process's lifetime rather than a field on
+# RunSession: it needs to apply on the picker route too, where no RunSession
+# exists yet, and telcontar is a single-user local tool — there's no other
+# viewer whose preference it could clobber.
+
+SIDEBAR_WIDTH_DEFAULT = 380
+SIDEBAR_WIDTH_MIN = 240
+SIDEBAR_WIDTH_MAX = 720
+
+_sidebar_width = SIDEBAR_WIDTH_DEFAULT
+
+
+def get_sidebar_width() -> int:
+    return _sidebar_width
+
+
+def set_sidebar_width(width: int) -> int:
+    """Clamp ``width`` to [SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX], persist it,
+    and return the clamped value actually stored."""
+    global _sidebar_width
+    _sidebar_width = max(SIDEBAR_WIDTH_MIN, min(SIDEBAR_WIDTH_MAX, width))
+    return _sidebar_width

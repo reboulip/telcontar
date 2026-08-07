@@ -401,7 +401,11 @@ way to use telcontar.
   an `asyncio.Future`, a chat `messages` queue, conversation `history`), plus a
   module-level registry (`create`/`get`/`close`/`all_sessions`) keyed by a
   `secrets.token_urlsafe(16)` run id. Deliberately has no `nicegui` import, so it is
-  unit-testable in plain pytest.
+  unit-testable in plain pytest. `get_sidebar_width()`/`set_sidebar_width(width)`
+  (T4) manage one in-memory sidebar-width preference (240-720px, default 380) for
+  the process's lifetime, rather than a `RunSession` field, since it also applies on
+  the picker route where no `RunSession` exists yet; `set_sidebar_width` clamps and
+  returns the stored value.
 - `host/web/bridge.py` — `AgentBridge` wraps a `RunSession` and exposes
   `on_event`/`on_approval_needed`/`on_cost_approval_needed`/`on_ask_user_needed`, the
   same callback contract `host/agent.py`'s `run_agent_loop` already uses for the
@@ -433,6 +437,14 @@ way to use telcontar.
   tree is for verification only, not re-rooting). `app_shell`'s signature is frozen:
   later Phase 20/21 work is expected to mount through it unchanged.
   `host/web/shell.py` now shares nicegui-importing duties with `host/web/main.py`.
+  The drawer's width (T4) is set from `web_session.get_sidebar_width()` via the
+  Quasar `width` prop (never raw CSS, since Quasar also offsets
+  `.q-page-container` from that prop), and a 6px drag handle on the drawer's
+  right edge — wired by a small injected JS snippet tracking
+  mousedown/mousemove/mouseup on `document` — live-resizes the drawer in the DOM
+  during the drag and, only on mouseup, emits a `tc_sidebar_resized` event that
+  the Python side clamps, persists via `web_session.set_sidebar_width()`, and
+  re-applies as the real `width` prop.
 - `host/web/tree.py` (T2, fleshed out by T3) — NiceGUI-free, mirroring
   `session.py`/`bridge.py`'s invariant so it stays testable in plain pytest.
   `build_nodes(root: Path) -> list[dict]` builds the top-level node `ui.tree`

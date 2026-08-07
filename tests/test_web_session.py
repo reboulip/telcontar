@@ -350,3 +350,40 @@ async def test_run_reports_config_error_without_raising(
 
     assert session.done is True
     assert "Config error" in session.transcript[-1].text
+
+
+# ── Sidebar width (T4) ───────────────────────────────────────────────────────
+
+
+def test_get_sidebar_width_defaults_to_380(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(web_session, "_sidebar_width", web_session.SIDEBAR_WIDTH_DEFAULT)
+
+    assert web_session.get_sidebar_width() == 380
+
+
+def test_set_sidebar_width_persists_within_bounds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(web_session, "_sidebar_width", web_session.SIDEBAR_WIDTH_DEFAULT)
+
+    assert web_session.set_sidebar_width(500) == 500
+    assert web_session.get_sidebar_width() == 500
+
+
+def test_set_sidebar_width_clamps_below_minimum(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(web_session, "_sidebar_width", web_session.SIDEBAR_WIDTH_DEFAULT)
+
+    assert web_session.set_sidebar_width(100) == web_session.SIDEBAR_WIDTH_MIN
+    assert web_session.get_sidebar_width() == web_session.SIDEBAR_WIDTH_MIN
+
+
+def test_set_sidebar_width_clamps_above_maximum(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(web_session, "_sidebar_width", web_session.SIDEBAR_WIDTH_DEFAULT)
+
+    assert web_session.set_sidebar_width(900) == web_session.SIDEBAR_WIDTH_MAX
+    assert web_session.get_sidebar_width() == web_session.SIDEBAR_WIDTH_MAX
+
+
+def test_set_sidebar_width_accepts_exact_bounds(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(web_session, "_sidebar_width", web_session.SIDEBAR_WIDTH_DEFAULT)
+
+    assert web_session.set_sidebar_width(web_session.SIDEBAR_WIDTH_MIN) == 240
+    assert web_session.set_sidebar_width(web_session.SIDEBAR_WIDTH_MAX) == 720

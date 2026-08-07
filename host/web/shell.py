@@ -19,6 +19,12 @@ drive-root controls below the header are shown only when ``on_select`` is
 wired in (i.e. only on the picker route), since re-rooting the tree away
 from a run's target directory would be confusing on `/run/{run_id}`, where
 the tree's only job is letting the user verify files actually moved.
+
+Sidebar width (T4) is a single in-memory preference in
+`host/web/session.py`, not a per-page setting — see that module's docstring
+for why. The drag handle only updates the DOM live in JS; the width is only
+persisted (and the Quasar `width` prop re-applied) once, on mouseup, via a
+custom `tc_sidebar_resized` event.
 """
 
 from __future__ import annotations
@@ -29,9 +35,49 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from nicegui import run, ui
-from nicegui.events import ValueChangeEventArguments
+from nicegui.events import GenericEventArguments, ValueChangeEventArguments
 
+from host.web import session as web_session
 from host.web import tree as web_tree
+
+# Wired once per page build against this client's freshly-rendered DOM
+# (`data-wired` guards a page that somehow runs this twice). Drags are
+# tracked on `document`, not just the 6px handle, so the pointer can leave
+# the handle mid-drag without breaking the resize. The live width during the
+# drag is DOM-only — nothing is persisted until mouseup, when the actual
+# Quasar `width` prop is set via the `tc_sidebar_resized` event below (never
+# raw CSS: Quasar also offsets `.q-page-container` from that same prop, so a
+# CSS-only width would leave the page content overlapped).
+_RESIZE_JS = """
+() => {
+  const drawer = document.querySelector('.tc-sidebar');
+  const handle = document.querySelector('.tc-sidebar-resize');
+  if (!drawer || !handle || handle.dataset.wired) return;
+  handle.dataset.wired = '1';
+  let dragging = false;
+  let startX = 0;
+  let startWidth = 0;
+  handle.addEventListener('mousedown', (e) => {
+    dragging = true;
+    startX = e.clientX;
+    startWidth = drawer.offsetWidth;
+    document.body.style.cursor = 'ew-resize';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const width = Math.max(240, Math.min(720, startWidth + (e.clientX - startX)));
+    drawer.style.width = width + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.cursor = '';
+    const width = Math.round(drawer.getBoundingClientRect().width);
+    emitEvent('tc_sidebar_resized', width);
+  });
+}
+"""
 
 
 @dataclass
@@ -72,7 +118,12 @@ def app_shell(
     _apply_theme()
 
     root = target or Path.home()
-    with ui.left_drawer().classes("tc-sidebar") as drawer:
+    width = web_session.get_sidebar_width()
+    with ui.left_drawer().classes("tc-sidebar").props(f"width={width}") as drawer:
+        ui.element("div").classes("tc-sidebar-resize").style(
+            "position:absolute; top:0; right:0; width:6px; height:100%; "
+            "cursor:ew-resize; z-index:10;"
+        )
         ui.label("telcontar").classes("text-subtitle2 q-pa-sm")
 
         if on_select is not None:
@@ -118,8 +169,17 @@ def app_shell(
             node["children"] = await run.io_bound(web_tree.load_children, Path(node_id))
         tree_widget.update()
 
+    def _handle_resize(e: GenericEventArguments) -> None:
+        try:
+            new_width = int(e.args)
+        except (TypeError, ValueError):
+            return
+        drawer.props(f"width={web_session.set_sidebar_width(new_width)}")
+
     tree_widget.on_select(_handle_select)
     tree_widget.on_expand(_handle_expand)
+    ui.on("tc_sidebar_resized", _handle_resize, throttle=0.05)
+    ui.run_javascript(_RESIZE_JS)
 
     with content:
         yield shell

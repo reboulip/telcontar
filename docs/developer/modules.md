@@ -375,7 +375,14 @@ Key types: `RunSession` (`run_id`, `target`, `transcript`, `status`, `tokens`,
 session. Module-level registry `create(target) -> RunSession` / `get(run_id)` /
 `close(run_id)` / `all_sessions()`, keyed by a `secrets.token_urlsafe(16)` run id —
 deliberately unit-testable in plain pytest, since a page (`host/web/main.py`) only
-polls and mutates this data rather than deciding how it's drawn.
+polls and mutates this data rather than deciding how it's drawn. `get_sidebar_width()
+-> int` / `set_sidebar_width(width: int) -> int` (T4) manage one in-memory
+sidebar-width preference (`SIDEBAR_WIDTH_DEFAULT`/`_MIN`/`_MAX` = 380/240/720px) for
+the process's lifetime — a module-level global rather than a `RunSession` field,
+since it must also apply on the picker route where no `RunSession` exists yet, and
+telcontar is single-user so there's no other viewer's preference it could clobber.
+`set_sidebar_width` clamps to `[SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX]` and returns
+the clamped value actually stored.
 
 **`host/web/bridge.py`** — `AgentBridge(session)`, also `nicegui`-free. Implements
 the same callback contract `host.app.OrganizerScreen` uses:
@@ -414,6 +421,21 @@ for verification only). `app_shell`'s signature is frozen: later Phase 20/21 wor
 is expected to mount through it unchanged. `_apply_theme()` is a deliberately empty
 hook for T7/T8's future `host/web/theme.py`. `host/web/shell.py` now shares
 nicegui-importing duties with `host/web/main.py`.
+
+The drawer's width (T4) comes from `web_session.get_sidebar_width()` and is applied
+via the Quasar `width` prop (`drawer.props(f"width={width}")`), never raw CSS,
+because Quasar also offsets `.q-page-container` from that same prop — a CSS-only
+width would leave the page content overlapped. A 6px `div.tc-sidebar-resize` handle
+on the drawer's right edge is wired, once per page build, by a small injected JS
+snippet (`_RESIZE_JS`, run via `ui.run_javascript`) that tracks
+mousedown/mousemove/mouseup on `document` rather than just the handle (so the
+pointer can leave the 6px strip mid-drag) and live-resizes the drawer's CSS width
+for visual feedback. Only on mouseup does it emit a custom `tc_sidebar_resized`
+event (via NiceGUI's `emitEvent`/`ui.on` bus) carrying the final pixel width; the
+Python-side `_handle_resize` (registered with `ui.on("tc_sidebar_resized", ...,
+throttle=0.05)`) is the only point that actually persists the preference, via
+`web_session.set_sidebar_width()`, and re-applies the real Quasar `width` prop. The
+drag itself is DOM-only and writes nothing to `session.py` until mouseup.
 
 **`host/web/tree.py`** (Phase 19 T2, fleshed out by T3) — NiceGUI-free, mirroring
 `session.py`/`bridge.py`'s invariant so it stays testable in plain pytest.
