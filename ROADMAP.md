@@ -104,7 +104,7 @@ work.
 
 *(Web UI gains everything the TUI does and becomes the default `telcontar` entrypoint; the TUI survives as `telcontar --tui` until Phase 22. Safety-critical paths — approval, cost, undo — are ported faithfully; everything else gets a cleaner surface but no redesign. Everything here is built inside the Phase 19 shell.)*
 
-- [ ] U1 · Startup view — Organize / Query / Settings entry points. The folder-picker half is superseded by Phase 19's T3 sidebar tree (built once, in the shell) — check before rebuilding. A browser can't return a real filesystem path from a native picker, so selection stays a server-side browse over the existing `list_dir` tool.
+- [x] U1 · Startup view — Organize / Query / Settings entry points. The folder-picker half is superseded by Phase 19's T3 sidebar tree (built once, in the shell) — check before rebuilding. A browser can't return a real filesystem path from a native picker, so selection stays a server-side browse over the existing `list_dir` tool.
 - [x] U2 · Setup wizard — 5 steps with real routing (the TUI mounts all five and toggles `.display`). Preserve `PlaintextKeyFallbackNeeded` → warn → explicit second confirmation.
 - [x] U3 · Settings view — same behaviour as the wizard, including the blank-key-preserves-existing rule.
 - [x] U4 · Approval dialog — faithful: per-op toggles returning `removed_op_ids`, refinement text, reject, both disclaimers; refinement takes priority over approval. While here: refresh the Phase 19 T3 sidebar tree on `execute_plan` result (it currently never updates as the agent moves files).

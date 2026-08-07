@@ -379,7 +379,7 @@ Three parts:
   call `execute_plan`, the run ends normally but the final text names the
   unexecuted plan id instead of losing it silently.
 
-### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8, U2/U3/U4/U6/U7)
+### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8, U1/U2/U3/U4/U6/U7)
 
 `host/web/` is a package — the first piece of a planned Textual→NiceGUI web UI
 migration (ROADMAP Phase 18). As of S6, `telcontar --web` (`host/main.py`) launches
@@ -391,10 +391,19 @@ OrganizerApp` import on the no-flag path, so neither UI's dependency (`nicegui` 
 meaningful only with `--web`, skips the landing page's directory picker and starts
 a run for that directory immediately. It exists alongside `host/app.py`'s Textual
 TUI, not in place of it — both `textual` and `nicegui` are main dependencies in
-`pyproject.toml`. Feature parity with the TUI is close but not complete — the web
-UI still has no dedicated startup screen offering direct Organize/Query/Settings
-entry points the way the TUI's `StartupScreen` does (Phase 20 item U1, still open),
-so it is not (yet) the primary way to use telcontar. As of U2, it does have its own
+`pyproject.toml`. Feature parity with the TUI is close but not complete —
+`telcontar` (no flags) still launches the TUI by default, and the web UI only
+becomes the default once Phase 20's U10 flips it, so it is not (yet) the
+primary way to use telcontar. As of U1, the landing page itself offers direct
+Organize/Query/Settings entry points, at parity with the TUI's `StartupScreen`:
+Settings was already reachable via U3's persistent sidebar button and the
+folder picker via Phase 19's T3 sidebar tree, so U1's remaining work was adding
+a Query button next to Organize's — it validates the sidebar selection and
+resolves it to the nearest `.organizer` ancestor via
+`host.paths.find_organizer_root` (TUI parity with `StartupScreen._query`)
+before starting a query-mode session, and both buttons now surface a real
+error message instead of silently no-op'ing on an invalid or missing
+selection. As of U2, it does have its own
 first-run setup wizard at `/setup`, at parity with the TUI's, so it no longer
 requires an already-configured install to be usable. As of U3, it also has a
 settings view at `/settings`, reachable from every screen via a persistent sidebar
@@ -690,9 +699,19 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   (TUI parity: `QueryScreen.on_mount` also auto-starts its worker, no explicit
   "start" button), and delegates rendering to `build_query_view`. Once configured, folder selection is the
   sidebar tree, which now doubles as the directory picker (T3, superseding the
-  browse-view half of Phase 20's planned U1): clicking a node sets `shell.selected`
+  browse-view half of Phase 20's U1): clicking a node sets `shell.selected`
   (which may now be a file, since the tree shows files too), and a "Use selected
-  directory" button starts the run only if `shell.selected.is_dir()`. The organizer view (`/run/{run_id}`) now opens on a
+  directory" button starts the run only if `shell.selected.is_dir()`. As of U1, a
+  second "Query" button sits next to it: it applies the same `is_dir()` check,
+  then resolves the selection to the nearest `.organizer` ancestor via
+  `host.paths.find_organizer_root` (TUI parity with `StartupScreen._query` — a
+  picked folder may be a subfolder of what was actually organized, so the query
+  session is rooted at the found ancestor, not the raw selection) and creates a
+  query-mode session there; if no ancestor has a `.organizer`, it reports "No
+  analyzed corpus found ... Run Organize first." instead of starting one. Both
+  buttons now show a real message in a shared error label
+  (`.mark("startup-error")`) instead of silently no-op'ing when nothing valid is
+  selected. The organizer view (`/run/{run_id}`) now opens on a
   **starter pane** shown before the run begins: a directory overview (reusing
   `host.paths.directory_overview`, also offloaded via `run.io_bound`) plus an
   optional free-text steering-instructions input (mirrors the Textual TUI's

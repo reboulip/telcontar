@@ -149,6 +149,74 @@ async def test_landing_page_shows_picker_prompt_with_no_default_target(user: Use
     await user.should_see("Pick a directory in the sidebar")
 
 
+# ── Startup view (U1) ────────────────────────────────────────────────────────
+
+
+async def test_startup_organize_button_shows_error_with_no_selection(user: User) -> None:
+    await user.open("/")
+    await user.should_see(marker="btn-startup-organize")
+
+    user.find(marker="btn-startup-organize").click()
+
+    await user.should_see("Please choose a folder to organize.")
+
+
+async def test_startup_query_button_shows_error_with_no_selection(user: User) -> None:
+    await user.open("/")
+    await user.should_see(marker="btn-startup-query")
+
+    user.find(marker="btn-startup-query").click()
+
+    await user.should_see("Please choose a folder to query.")
+
+
+async def test_startup_query_button_shows_error_when_no_corpus_found(
+    user: User, tmp_path: Path
+) -> None:
+    await user.open("/")
+    await user.should_see(marker="btn-startup-query")
+
+    user.find(kind=ui.tree).trigger("update:selected", args=str(tmp_path))
+    user.find(marker="btn-startup-query").click()
+
+    await user.should_see("No analyzed corpus found")
+
+
+async def test_startup_query_button_navigates_to_query_page_for_valid_corpus(
+    user: User, tmp_path: Path
+) -> None:
+    (tmp_path / ".organizer").mkdir()
+
+    await user.open("/")
+    await user.should_see(marker="btn-startup-query")
+
+    user.find(kind=ui.tree).trigger("update:selected", args=str(tmp_path))
+    user.find(marker="btn-startup-query").click()
+
+    # Just confirms navigation + session creation — QueryBridge.run() itself
+    # (settings/MCP session/LLM) is covered separately in test_web_session.py
+    # with fakes; letting it run for real here would try to spawn a real
+    # MCP server subprocess.
+    await user.should_see(marker="query-input")
+    query_sessions = [s for s in web_session.all_sessions() if s.mode == "query"]
+    assert len(query_sessions) == 1
+    assert query_sessions[0].target == tmp_path.resolve()
+
+
+async def test_startup_organize_button_navigates_for_valid_selection(
+    user: User, tmp_path: Path
+) -> None:
+    await user.open("/")
+    await user.should_see(marker="btn-startup-organize")
+
+    user.find(kind=ui.tree).trigger("update:selected", args=str(tmp_path))
+    user.find(marker="btn-startup-organize").click()
+
+    await user.should_see("Here's what I found")
+    organize_sessions = [s for s in web_session.all_sessions() if s.mode == "organize"]
+    assert len(organize_sessions) == 1
+
+
 # ── Setup wizard (U2) ────────────────────────────────────────────────────────
 
 

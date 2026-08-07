@@ -30,7 +30,7 @@ from pathlib import Path
 from nicegui import app, run, ui
 
 from host.agent import ApprovalResult, CostApprovalResult
-from host.paths import directory_overview
+from host.paths import directory_overview, find_organizer_root
 from host.web import journal
 from host.web import session as web_session
 from host.web import steplog
@@ -75,15 +75,35 @@ async def index_page() -> None:
             return
 
         ui.label("telcontar").classes("text-h5")
-        ui.label("Pick a directory in the sidebar, then start organizing:")
+        ui.label("Pick a directory in the sidebar, then organize or query it:")
+        error_label = ui.label().classes("text-negative").mark("startup-error")
 
-        def _select() -> None:
+        def _organize() -> None:
             if shell.selected is None or not shell.selected.is_dir():
+                error_label.set_text("Please choose a folder to organize.")
                 return
             session = _start_run(shell.selected)
             ui.navigate.to(f"/run/{session.run_id}")
 
-        ui.button("Use selected directory", on_click=_select, color="primary").classes("mt-2")
+        def _query() -> None:
+            if shell.selected is None or not shell.selected.is_dir():
+                error_label.set_text("Please choose a folder to query.")
+                return
+            organizer_root = find_organizer_root(shell.selected)
+            if organizer_root is None:
+                error_label.set_text(
+                    f"No analyzed corpus found in {shell.selected} or any parent folder. "
+                    "Run Organize first."
+                )
+                return
+            session = web_session.create(organizer_root, mode="query")
+            ui.navigate.to(f"/query/{session.run_id}")
+
+        with ui.row().classes("mt-2"):
+            ui.button("Use selected directory", on_click=_organize, color="primary").mark(
+                "btn-startup-organize"
+            )
+            ui.button("Query", on_click=_query, color="positive").mark("btn-startup-query")
 
 
 @ui.page("/setup")

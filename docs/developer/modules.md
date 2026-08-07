@@ -374,7 +374,7 @@ run_web` for `--web` — so launching one UI never pays the other's import cost
 
 ---
 
-### `host/web/` (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7, Phase 20 U2-U7)
+### `host/web/` (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7, Phase 20 U1-U7)
 
 **Role:** NiceGUI-based web UI package — the first piece of a planned
 Textual→NiceGUI migration. As of S6, `telcontar --web` (`host/main.py`, lazy import)
@@ -384,10 +384,12 @@ view reachable from every screen; U4 a TUI-faithful approval dialog plus a
 sidebar tree that refreshes itself after `execute_plan`; U5 a TUI-faithful cost
 estimate dialog; U6 a journal view + undo, with a visible toolbar affordance; and
 U7 a read-only query view (`/query/{run_id}`), reached via a "Query this corpus"
-button on the organize view once a run finishes. It still does not have a
-dedicated startup screen offering direct Organize/Query/Settings entry points the
-way the TUI's `StartupScreen` does (Phase 20 item U1, still open) — see
-`host/main.py`, above.
+button on the organize view once a run finishes. As of U1, the landing page itself
+also offers direct Organize/Query/Settings entry points at parity with the TUI's
+`StartupScreen` — Settings (U3's sidebar button) and the folder picker (Phase
+19's T3 sidebar tree) were already in place, so U1's remaining piece was a Query
+button beside Organize's, both now reporting real validation errors instead of
+silently no-op'ing — see `host/main.py`, above.
 
 **`host/web/session.py`** — framework-agnostic per-run state, no `nicegui` import.
 Key types: `RunSession` (`run_id`, `target`, `mode: Literal["organize", "query"] =
@@ -794,7 +796,7 @@ nothing to gate. A `ui.timer` (same `web_session.REFRESH_INTERVAL` cadence as
 `run_page`) drives `_refresh()`, which renders new transcript turns, syncs the
 step log, and updates the status/token line.
 
-**`host/web/main.py`** (extended by T5/T6/T7/T8, U2/U3/U4/U6/U7) — now shares nicegui-importing duties
+**`host/web/main.py`** (extended by T5/T6/T7/T8, U1/U2/U3/U4/U6/U7) — now shares nicegui-importing duties
 with `host/web/shell.py` (T2). Pages are registered at import time (`@ui.page("/")`,
 `@ui.page("/run/{run_id}")`, `@ui.page("/query/{run_id}")` (U7)) but nothing binds a port until `run_web(target: Path |
 None = None)` is called, so importing the module is side-effect-free. Each
@@ -823,12 +825,29 @@ not already started (TUI parity: `QueryScreen.on_mount` auto-starts its worker
 too, no explicit "start" button), and delegates rendering to
 `host.web.query_view.build_query_view`. Once configured, folder selection is the
 sidebar tree, which now doubles as the collapsible directory picker (T3,
-superseding the flat browse-view half of Phase 20's planned U1 — see the ROADMAP
+superseding the flat browse-view half of Phase 20's U1 — see the ROADMAP
 note there): clicking a node sets `shell.selected`, which may now be a file since
 the tree lists files as well as folders, so the "Use selected directory" button
 only starts a run when `shell.selected.is_dir()`. This replaced S4/S5's flat
 one-button-per-folder `_list_subdirs` browser (a `Path.iterdir()` walk offloaded
 via `run.io_bound`), which T2 had already removed outright pending T3's real tree.
+
+**Startup Query entry point (U1):** `index_page` renders a "Query"
+button (`.mark("btn-startup-query")`) beside "Use selected directory"
+(`.mark("btn-startup-organize")`). Both now validate `shell.selected` first and,
+on an invalid or missing selection, set a shared `error_label`
+(`.mark("startup-error")`) instead of silently doing nothing — TUI parity with
+`StartupScreen`'s own validation message ("Please choose a folder to organize."
+/ "Please choose a folder to query."). The Query button additionally resolves the
+selection through `host.paths.find_organizer_root` — mirroring
+`StartupScreen._query()` — since per-directory memory means the picked folder
+may be a subfolder of what was actually organized, so the query session must be
+rooted at the found ancestor, not the raw selection; if no ancestor has a
+`.organizer`, it reports "No analyzed corpus found in {path} or any parent
+folder. Run Organize first." On success it calls `web_session.create(
+organizer_root, mode="query")` and navigates to `/query/{run_id}`, the same
+transition the run page's "Query this corpus" button (U7, below) makes once a
+run finishes.
 
 The run page (`/run/{run_id}`, S5) opens on a starter pane — hidden once
 `session.started` — showing a directory overview (`host.paths.directory_overview`,
