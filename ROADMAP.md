@@ -30,7 +30,7 @@ on open work.
 #### Delivery & packaging
 
 - [x] V1 · Native window — `ui.run(native=True)` via pywebview, with `telcontar --browser` as the escape hatch. Restores "one command, one window".
-- [ ] V2 · Security hardening pass — confirm `127.0.0.1` binding, a per-launch token in the opened URL, Origin check, `storage_secret`; have doc-keeper record the new local-server trust boundary in `docs/developer/security-model.md` (still unrecorded there as of Phase 18 — `telcontar` binds a loopback TCP socket and serves the approval gate over HTTP, which the audit's trust-boundary and capability-surface sections don't yet reflect). (requires: V1)
+- [x] V2 · Security hardening pass — confirm `127.0.0.1` binding, a per-launch token in the opened URL, Origin check, `storage_secret`; have doc-keeper record the new local-server trust boundary in `docs/developer/security-model.md` (still unrecorded there as of Phase 18 — `telcontar` binds a loopback TCP socket and serves the approval gate over HTTP, which the audit's trust-boundary and capability-surface sections don't yet reflect). (requires: V1)
 
 #### Plan-approval trust surface — `host/web/dialogs.py::build_approval_dialog`
 

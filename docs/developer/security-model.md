@@ -49,6 +49,33 @@ Three boundaries matter:
    beyond) this same `check_within_root` floor, for the tools that consult it
    (`read_file`/`extract_text`/`compare_documents`, and the batch forms
    `read_file_batch`/`extract_text_batch` added in O1).
+4. **The web UI's local HTTP server is reachable by any local process, not just
+   the browser tab that opened it.** `telcontar` binds `127.0.0.1` only (never
+   `0.0.0.0` — see §7's operator checklist), which keeps it off the LAN, but
+   loopback-only binding does not mean single-consumer: any other program
+   running as the same OS user can still open a socket to that port and drive
+   the app — browse the file tree, start a run, reach the approval gate. **As of
+   V2 (2026-08-08)**, this is treated as a real boundary with its own guard, not
+   an implicit trust extension of "it's just localhost." `host/web/security.py`'s
+   `authorize()` — a pure, NiceGUI-free decision function — and a pure-ASGI
+   middleware wired around the entire app (`host/web/main.py`'s
+   `_AuthMiddleware`, covering the socket.io `/_nicegui_ws/` upgrade too, not
+   just the initial page load) check, per request: the `Host` header (must be
+   `127.0.0.1:<port>` or `localhost:<port>` — this closes a DNS-rebinding gap an
+   Origin check alone would leave open, since a page served from an
+   attacker-controlled domain that resolves to `127.0.0.1` is same-origin as far
+   as the browser's Origin header is concerned), the `Origin` header (if
+   present, must match; a top-level browser navigation often omits it entirely,
+   so absence is allowed rather than denied), and a per-launch token
+   (`secrets.token_urlsafe(32)`, regenerated every launch — never persisted,
+   never configurable — delivered via the opened URL's query string on first
+   navigation, then via an `HttpOnly; SameSite=Strict` cookie for every request
+   after). A denied HTTP request gets `403`; a denied websocket upgrade is
+   closed with code `1008`. Every response also carries
+   `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'`,
+   closing a clickjacking path against the approval dialog specifically — the
+   highest-trust screen in the product. See finding **S9** below for what this
+   does and does not close.
 
 ---
 
@@ -278,6 +305,7 @@ single-user deployment.
 | **S6** | **Medium** | **System-prompt injection via unsigned config**: profile free-text fields and `.organizer/NAMING.md` are injected verbatim into the system prompt; `PROFILE` is used in a path with no traversal guard. |
 | **S7** | **Medium** | **`compress_quarantine` performs the only real delete, ungated**, and its reversibility depends on artifacts S1 can corrupt. |
 | **S8** | **Low** | **[Partially remediated — 2026-07-09, see P3 #11, #12]** Credential & endpoint trust: ~~the API key falls back to plaintext `~/.telcontar/config.env` when the OS keyring is unavailable~~ — that fallback is no longer silent; it now requires an explicit, warned, second confirmation (`PlaintextKeyFallbackNeeded`, P3 #11). What actually left the machine is now auditable: every `read_file`/`extract_text`/`compare_documents` call (and, since O1, every successful file in a `read_file_batch`/`extract_text_batch` call) is logged to `.organizer/egress.jsonl` with path, size, tool, and timestamp (P3 #12). Still open: the key is also read from a CWD `.env` (a legitimate dev-workflow input path, but one an operator might not realize is being consulted), and egress goes to any user-set `base_url` (a third party in dev, e.g. Mammouth) — neither is addressed by these items. Worth stating explicitly as a trust boundary. |
+| **S9** | **Medium** | **[Mitigated — 2026-08-08, see V2]** The web UI's local HTTP server (`host/web/main.py`) had no per-request authentication: `127.0.0.1`-only binding keeps it off the LAN, but any other local process — any other program running as the same OS user — could reach the port, browse the file tree, start a run, and drive the approval gate to completion. A per-launch token (cookie/query-string, checked by `host/web/security.py`'s `authorize()` via a pure-ASGI middleware covering both HTTP and the socket.io websocket upgrade), a Host-header check (closes a DNS-rebinding gap an Origin check alone leaves open), an Origin check, and anti-clickjacking response headers (`X-Frame-Options: DENY`, `frame-ancestors 'none'`) now gate every request. This is a mitigation, not a sandbox: the auth cookie is scoped by name, not by port, at the browser level, so it is sent to any local HTTP server on `127.0.0.1` the user's browser separately visits — `HttpOnly` stops a JS read but not another local server simply receiving it; a native-window (pywebview) launch mostly sidesteps this by using its own browser profile. `storage_secret` is also now set per launch (`secrets.token_urlsafe(32)`) — `telcontar` doesn't use `app.storage.*` today, so this is enablement plus defence-in-depth rather than closing an existing gap. |
 
 ### What already works (defence that is in place)
 
@@ -474,6 +502,22 @@ first with the least behavioural disruption.
     batch (under the `read_file_batch`/`extract_text_batch` tool name), so a batched
     fetch is exactly as auditable as the same files fetched one at a time.
 
+### P4 — local-server hardening (Phase 21, 2026-08-08)
+
+13. **[Done — 2026-08-08, V2]** Add authentication to the web UI's local HTTP
+    server (S9): confirm `127.0.0.1`-only binding, add a per-launch token
+    checked on every request, add an Origin check, and set `storage_secret`.
+    New `host/web/security.py` (NiceGUI-free, pure `authorize()` decision
+    function) and a pure-ASGI `_AuthMiddleware` (`host/web/main.py`, wraps the
+    whole app including the socket.io websocket upgrade, not just the initial
+    page load) check, per request: the `Host` header, the `Origin` header (if
+    present), and a per-launch token (cookie-or-query-string,
+    `secrets.token_urlsafe(32)`, regenerated every launch). Denied HTTP
+    requests get `403`; denied websocket upgrades close with code `1008`.
+    Every response also carries `X-Frame-Options: DENY` and
+    `Content-Security-Policy: frame-ancestors 'none'`. `ui.run(...)` now also
+    sets `storage_secret=secrets.token_urlsafe(32)` per launch. See S9.
+
 ---
 
 ## 7. Operator hardening checklist (how to run it safely today)
@@ -501,6 +545,7 @@ Until the remaining P1/P2 items land, an operator can materially reduce exposure
 
 ---
 
-*This page reflects a static review of the code as of the `feat/phase-11-interactive-ux`
-branch. It should be revisited whenever a new tool is added to the MCP server or the
-approval flow changes.*
+*This page was last revised 2026-08-08 (`feat/phase-21-experience-delivery`, item V2),
+adding the web UI's local-server auth boundary (§1 #4, S9, P4 #13). It should be
+revisited whenever a new tool is added to the MCP server, the approval flow changes, or
+a new local-network-reachable surface is introduced.*

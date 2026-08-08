@@ -24,16 +24,22 @@ sidebar stays visible while the user browses or waits.
 from __future__ import annotations
 
 import importlib.util
+import os
+import secrets
 import socket
 import sys
+from collections.abc import MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from nicegui import app, run, ui
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from host.agent import ApprovalResult, CostApprovalResult
 from host.paths import directory_overview, find_organizer_root
 from host.web import journal
+from host.web import security
 from host.web import session as web_session
 from host.web import steplog
 from host.web import theme
@@ -349,6 +355,84 @@ def _pick_port() -> int:
     raise OSError("Could not find a free port on 127.0.0.1")
 
 
+_DENY_BODY = (
+    b"telcontar: this local server requires the launch token -- "
+    b"close this window and relaunch telcontar."
+)
+
+
+def _header(headers: dict[bytes, bytes], name: bytes) -> str | None:
+    value = headers.get(name)
+    return value.decode("latin-1") if value is not None else None
+
+
+class _AuthMiddleware:
+    """Pure-ASGI (V2) — not ``BaseHTTPMiddleware``: that base class only
+    forwards ``http``-type scopes, and NiceGUI's socket.io upgrade at
+    ``/_nicegui_ws/`` is a ``websocket``-type scope that must be covered
+    too, or the auth check would only ever apply to the initial page load
+    and never to the connection actually driving the UI.
+
+    Registered on ``app`` only when NOT running under NiceGUI's headless
+    test fixture (see run_web()) — that fixture drives the app through a
+    raw ASGI transport with no token/cookie and a ``Host: test`` header,
+    so an unconditionally-registered middleware would 403 every test in
+    tests/test_web_ui.py.
+    """
+
+    def __init__(self, asgi_app: ASGIApp) -> None:
+        self._app = asgi_app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] not in ("http", "websocket"):
+            await self._app(scope, receive, send)
+            return
+
+        headers = dict(scope.get("headers") or [])
+        decision = security.authorize(
+            host_header=_header(headers, b"host"),
+            origin_header=_header(headers, b"origin"),
+            cookie_header=_header(headers, b"cookie"),
+            query_string=(scope.get("query_string") or b"").decode("latin-1"),
+        )
+
+        if not decision.allowed:
+            if scope["type"] == "websocket":
+                await send({"type": "websocket.close", "code": 1008})
+            else:
+                await send(
+                    {
+                        "type": "http.response.start",
+                        "status": 403,
+                        "headers": [(b"content-type", b"text/plain; charset=utf-8")],
+                    }
+                )
+                await send({"type": "http.response.body", "body": _DENY_BODY})
+            return
+
+        if scope["type"] != "http":
+            await self._app(scope, receive, send)
+            return
+
+        async def _send_wrapper(message: MutableMapping[str, Any]) -> None:
+            if message["type"] == "http.response.start":
+                # The approval gate is the highest-trust screen in the
+                # product; these two headers close the one browser-borne
+                # attack a valid token doesn't stop (framing the app inside
+                # an attacker page that guesses the port).
+                extra = [
+                    (b"x-frame-options", b"DENY"),
+                    (b"content-security-policy", b"frame-ancestors 'none'"),
+                ]
+                if decision.set_cookie:
+                    cookie = security.build_cookie_header()
+                    extra.append((b"set-cookie", cookie.encode("latin-1")))
+                message = {**message, "headers": [*message.get("headers", []), *extra]}
+            await send(message)
+
+        await self._app(scope, receive, _send_wrapper)
+
+
 def run_web(target: Path | None = None, *, native: bool = True) -> None:
     """Launch the NiceGUI web UI. Blocks until the server stops.
 
@@ -406,6 +490,27 @@ def run_web(target: Path | None = None, *, native: bool = True) -> None:
     ui.add_css(theme.css(), shared=True)
 
     port = _pick_port()
+
+    # V2 — local-server hardening. 127.0.0.1-only binding (below) keeps the
+    # server off the LAN, but any other local process can still reach a
+    # loopback port; the token/Origin/Host checks in host/web/security.py
+    # are the defense-in-depth layer for that. Skipped only under NiceGUI's
+    # headless test fixture, which drives the app through a raw ASGI
+    # transport with no token and a `Host: test` header — see
+    # _AuthMiddleware's docstring for why an unconditional registration
+    # would break every test in tests/test_web_ui.py.
+    token = security.new_token()
+    security.configure(token, port)
+    if os.environ.get("NICEGUI_USER_SIMULATION") != "true":
+        app.add_middleware(_AuthMiddleware)
+
+    if effective_native:
+        # Picked up by native_mode._open_window(), which spreads
+        # app.native.window_args after its own default `url` key — an
+        # explicit `url` here wins. Must be set before ui.run() spawns the
+        # native-window process (window_args needs to survive the pickle).
+        app.native.window_args["url"] = f"http://127.0.0.1:{port}/?token={token}"
+
     # reload=False is load-bearing, not a style choice: with reload=True,
     # uvicorn forces a SelectorEventLoop on Windows (its `use_subprocess`
     # flag), where asyncio.create_subprocess_exec raises NotImplementedError
@@ -413,17 +518,20 @@ def run_web(target: Path | None = None, *, native: bool = True) -> None:
     # Never bind 0.0.0.0 either: it triggers a Windows Firewall prompt and
     # would expose the approval gate on the LAN. dark=True is load-bearing
     # too: Quasar only honours the dark/dark_page palette tokens above in
-    # dark mode.
+    # dark mode. storage_secret is a fresh value per launch (V2) — this app
+    # uses no app.storage.* today, so this is enablement + defence-in-depth,
+    # not a fix for an existing read.
     ui.run(
         host="127.0.0.1",
         port=port,
-        show=False if effective_native else True,
+        show=False if effective_native else f"/?token={token}",
         reload=False,
         title=theme.window_title(),
         dark=True,
         favicon=str(_ICON_PATH) if effective_native and _ICON_PATH.is_file() else theme.FAVICON_SVG,
         native=effective_native,
         window_size=(1280, 860) if effective_native else None,
+        storage_secret=secrets.token_urlsafe(32),
     )
 
 

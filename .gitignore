@@ -220,5 +220,8 @@ __marimo__/
 # telcontar runtime artifacts (undo journal, plans, registry, graph, events, archive)
 .organizer/
 
+# NiceGUI's app.storage.* backend (V2: storage_secret is now set per launch)
+.nicegui/
+
 # dev-pipeline sprint-scratch state (forecast briefs)
 .claude/tmp/
