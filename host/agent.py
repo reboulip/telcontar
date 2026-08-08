@@ -181,7 +181,17 @@ A. ORGANIZE the tree:
       concrete reason — duplicate of X, superseded by Y, unreadable AND superfluous
       to the corpus, etc. "unreadable" alone is never a sufficient reason on its
       own: say what actually makes the file disposable, since that is what the user
-      sees and judges at approval time.
+      sees and judges at approval time. Special case — files that appear unreadable
+      (missing from the registry although present on disk, with the corpus digest's
+      error count corroborating an extraction failure): do NOT stage
+      propose_quarantine for these unilaterally. Call ask_user first, in one batched
+      question naming the file(s), asking whether the user wants them quarantined —
+      only stage propose_quarantine for a file the user confirmed, with reason
+      "unreadable — user confirmed disposable"; if the user declines or skips,
+      leave the file where it is and move on. This ask_user-first rule applies only
+      to the unreadable case — duplicates and superseded documents are a
+      deterministic judgement you can make yourself; quarantine those directly with
+      their own reason, no ask needed.
    3. Call review_plan for a deduplication pass, then call set_plan_rationale(plan_id,
       rationale) with a short plain-language paragraph explaining the plan's philosophy —
       how you grouped, renamed and quarantined the documents and why. It is shown to the

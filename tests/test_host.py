@@ -746,6 +746,24 @@ def test_system_prompt_mandates_a_concrete_quarantine_reason() -> None:
     assert "propose_quarantine" in prompt
     assert "concrete reason" in prompt.lower()
     assert '"unreadable" alone is never a sufficient reason' in prompt
+
+
+def test_system_prompt_requires_ask_user_before_quarantining_unreadable_files() -> None:
+    """V17: an unreadable file must not be quarantined unilaterally — the
+    model must ask_user first and only quarantine on confirmation. Scoped to
+    the unreadable case only; duplicates/superseded files stay a direct,
+    no-ask quarantine (deterministic, not a judgement call)."""
+    from config.settings import load
+
+    from host.agent import _build_system_prompt
+
+    prompt = _build_system_prompt(_PROJECT_ROOT, load())
+
+    assert "do NOT stage" in prompt
+    assert "propose_quarantine for these unilaterally" in prompt
+    assert "Call ask_user first" in prompt
+    assert "user confirmed disposable" in prompt
+    assert "duplicates and superseded documents are a" in prompt.lower()
     assert "Synthèse du projet" in prompt
     # synthesis tools are referenced in the workflow
     assert "build_graph" in prompt
