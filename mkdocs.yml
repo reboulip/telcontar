@@ -4,6 +4,14 @@ repo_url: https://github.com/reboulip/telcontar
 repo_name: telcontar
 docs_dir: docs
 
+# ROADMAP-ARCHIVE.md lives under docs/ so a single copy can be linked from
+# both ROADMAP.md and here, but it's an internal planning record, not user
+# documentation — exclude it so it's never built/indexed into the published
+# site (mkdocs builds every .md under docs_dir by default, nav: alone does
+# not stop that).
+exclude_docs: |
+  ROADMAP-ARCHIVE.md
+
 theme:
   name: material
   features:
