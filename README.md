@@ -23,10 +23,10 @@ For developer / contributor setup (clone + `uv sync`), see [docs/getting-started
 ## Usage
 
 ```bash
-telcontar
+telcontar --tui
 ```
 
-The Textual TUI opens. On first run the **setup wizard** appears; returning users land on the **startup screen**, which offers three actions:
+The Textual TUI opens (bare `telcontar`, with no flags, opens the web UI instead — see **CLI flags** below). On first run the **setup wizard** appears; returning users land on the **startup screen**, which offers three actions:
 
 - **Organize** — opens on a starter pane showing a code-generated directory overview (file/subfolder counts, common file types — no LLM call yet) plus an optional field for steering instructions (e.g. "group by workstream", "don't quarantine drafts"); press **Start organizing** to launch the run. Telcontar first recursively surveys nested subfolders (not just the top level) and analyzes any documents it hasn't seen before — a document already known from a previous run is never re-read or re-sent to the model; before fetching content for the new ones it pauses once to show a rough cost estimate scoped to just those new documents (new document count, already-analyzed count, estimated input tokens, from file sizes alone) and waits for you to proceed or cancel. The agent then designs and stages the reorganization — free to redesign the existing layout entirely — and may pause at any point before or while building the plan to check in with you in chat: genuine clarifying questions, a few competing options to pick between (e.g. how to group a set of documents), or a mix — reply in the chat box and it continues; not capped at once, since it's a normal chat exchange rather than a modal, so it can check in again later if a new ambiguity comes up.
 - **Query** — open an interactive read-only chat over the already-analyzed corpus (requires the selected folder, or one of its parent folders, to contain a `.organizer/` from a previous Organize run — memory is per-directory, stored inside the organized tree itself).
@@ -39,10 +39,10 @@ A chat box at the bottom of the Organizer screen is live for the whole run, not 
 | Flag | Description |
 |---|---|
 | `--version` | Print the installed version and exit. |
-| `--web` | Launch the web UI (NiceGUI, runs in a local browser tab) instead of the Textual TUI. The TUI is still the default when no flags are passed. |
-| `--target PATH` | Only meaningful with `--web` — skip the landing page's directory picker and start a run for `PATH` immediately. Ignored otherwise. |
+| `--tui` | Launch the Textual TUI instead of the NiceGUI web UI (which runs in a local browser tab). The web UI is the default when no flags are passed. |
+| `--target PATH` | Skip the landing page's directory picker and start a run for `PATH` immediately. Ignored when `--tui` is passed. |
 
-The web UI now has its own first-run setup wizard (opened automatically at `/setup` if telcontar isn't configured yet), a settings view (`/settings`, reachable from every screen via the sidebar), a journal/undo view, and a read-only query mode — reachable via the "Query this corpus" button once an organize run finishes — all at parity with the TUI's. It's still a foundational, in-progress alternative to the TUI — it doesn't yet have a startup screen that lets you jump straight into Query mode for an already-organized directory without running Organize again. It is not yet the recommended way to run telcontar.
+The web UI now has its own first-run setup wizard (opened automatically at `/setup` if telcontar isn't configured yet), a settings view (`/settings`, reachable from every screen via the sidebar), a journal/undo view, and a startup screen with its own **Organize** / **Query** / **Settings** entry points — Query jumps straight into read-only query mode for an already-organized directory without running Organize again — all at parity with the TUI's. It's now the default way to run telcontar (bare `telcontar`, no flags); `--tui` remains available for the Textual TUI walkthrough above.
 
 ## Development
 

@@ -113,7 +113,7 @@ work.
 - [x] U7 · Query view — answer pane + tool timeline. While here: fix it calling `load()` without `.for_target()`, unlike the organizer.
 - [x] U8 · Fix the remaining warts found during planning: `error` AgentEvents are wrongly treated as terminal (an analysis-batch failure emits `error` but the run continues — only `done`, max-turns, and the loop's own exception path should end a run); the token counter resets to 0 per continuation (`token_totals` is per-call) — accumulate across calls in the UI, coordinating with Phase 17 R1's fix rather than re-deriving it; the wizard's "Press Finish again" message doesn't match its "Save & continue →" button label.
 - [x] U9 · Replace the Textual Pilot test suite (`tests/test_app_ui.py`, 67 tests) with NiceGUI's headless `user` fixture, reserving the real-browser `screen` fixture for a handful of genuine end-to-end paths; delete the 5 tests that are thin wrappers over `_fmt_op`/`_render_target_layout` now that S2 covers that logic directly.
-- [ ] U10 · Flip the default: `telcontar` opens the web UI, `telcontar --tui` becomes the Textual escape hatch. Update README + docs.
+- [x] U10 · Flip the default: `telcontar` opens the web UI, `telcontar --tui` becomes the Textual escape hatch. Update README + docs.
 
 > #### ◆ Break 3 — choose where the UX budget goes
 >
@@ -132,7 +132,7 @@ work.
 *(Scope beyond the two fixed items below is chosen once Phase 20 has seen daily use — pick 3–4 of the candidates below at that point; they're marked `[deferred]` until chosen.)*
 
 - [ ] V1 · Native window — `ui.run(native=True)` via pywebview, with `telcontar --browser` as the escape hatch. Restores "one command, one window".
-- [ ] V2 · Security hardening pass — confirm `127.0.0.1` binding, a per-launch token in the opened URL, Origin check, `storage_secret`; have doc-keeper record the new local-server trust boundary in `docs/developer/security-model.md` (still unrecorded there as of Phase 18 — `telcontar --web` binds a loopback TCP socket and serves the approval gate over HTTP, which the audit's trust-boundary and capability-surface sections don't yet reflect).
+- [ ] V2 · Security hardening pass — confirm `127.0.0.1` binding, a per-launch token in the opened URL, Origin check, `storage_secret`; have doc-keeper record the new local-server trust boundary in `docs/developer/security-model.md` (still unrecorded there as of Phase 18 — `telcontar` binds a loopback TCP socket and serves the approval gate over HTTP, which the audit's trust-boundary and capability-surface sections don't yet reflect).
 - [ ] V3 · [deferred] Plan review as a before/after tree — the approval gate is the highest-trust screen; a checkbox list is a terminal-era compromise.
 - [ ] V4 · [deferred] Document preview pane — click a file, see the PDF/text inline.
 - [ ] V5 · [deferred] Corpus browser — a sortable, filterable table over `.organizer/registry.json` (title, type, date, summary, entities), today only reachable by asking the agent.

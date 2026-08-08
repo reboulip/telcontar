@@ -21,16 +21,16 @@ def main() -> None:
     )
     parser.add_argument("--version", action="version", version=f"telcontar {_version()}")
     parser.add_argument(
-        "--web",
+        "--tui",
         action="store_true",
-        help="Launch the NiceGUI web UI instead of the Textual TUI (default: the TUI).",
+        help="Launch the Textual TUI instead of the NiceGUI web UI (default: the web UI).",
     )
     parser.add_argument(
         "--target",
         type=Path,
         default=None,
-        help="Directory to organize. With --web, skips the landing page's directory picker. "
-        "Ignored otherwise.",
+        help="Directory to organize. Skips the web landing page's directory picker. "
+        "Ignored with --tui.",
     )
     # Tolerate unrecognized args so bare launch keeps working; --help/--version
     # are handled here and exit before either UI starts.
@@ -41,18 +41,18 @@ def main() -> None:
     # that ~1s load.
     print("Loading telcontar…", flush=True)
 
-    if args.web:
-        # Lazy import, same discipline as the TUI import below: the other
-        # UI's dependency (nicegui vs. textual) is never paid for unless that
+    if args.tui:
+        # Lazy import, same discipline as the web import below: the other
+        # UI's dependency (textual vs. nicegui) is never paid for unless that
         # UI is actually launched.
-        from host.web.main import run_web
+        from host.app import OrganizerApp
 
-        run_web(target=args.target)
+        OrganizerApp().run()
         return
 
-    from host.app import OrganizerApp
+    from host.web.main import run_web
 
-    OrganizerApp().run()
+    run_web(target=args.target)
 
 
 if __name__ == "__main__":

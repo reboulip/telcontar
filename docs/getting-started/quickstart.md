@@ -7,8 +7,10 @@ This walkthrough organizes a sample directory from scratch. It assumes you have 
 ## 1. Launch telcontar
 
 ```bash
-telcontar
+telcontar --tui
 ```
+
+This walkthrough covers the Textual TUI. Bare `telcontar` (no flags) now opens the web UI by default instead — see the note at the end of this page.
 
 ---
 
@@ -193,5 +195,5 @@ A desktop notification fires when the agent is done. The chat box at the bottom 
 - Understand the output files: [Outputs](../user-guide/outputs.md).
 - Learn how to create a profile for your own document corpus: [Adding a Profile](../developer/adding-profiles.md).
 
-!!! note "Also available: the web UI"
-    `telcontar --web` opens the same organize experience in a local browser tab instead of the Textual TUI, including its own first-run setup wizard at `/setup`, a settings view at `/settings` (reachable from every screen via the sidebar), a journal/undo view, and a read-only query mode — reached via the "Query this corpus" button once an organize run finishes. It's a foundational, still-in-progress alternative (ROADMAP Phase 18) — unlike the TUI's startup screen, it doesn't yet let you jump straight into query mode for an already-organized directory without running Organize again in the same session. `telcontar --web --target PATH` skips its landing page's directory picker and jumps straight to a run for `PATH`.
+!!! note "The web UI is the default; this page walks through the Textual TUI"
+    Bare `telcontar` (no flags) now opens the web UI in a local browser tab instead — the same organize experience walked through on this page, but with its own first-run setup wizard at `/setup`, a settings view at `/settings` (reachable from every screen via the sidebar), a journal/undo view, and a startup screen with direct Organize/Query/Settings entry points at parity with the TUI's. Pass `--tui` to launch the Textual TUI walkthrough shown on this page, and `--target PATH` to skip the landing page's directory picker and jump straight into a run for `PATH` (ignored together with `--tui`).

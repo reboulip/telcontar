@@ -1,6 +1,6 @@
 """F4 — verify the packaged console-script entry points resolve and run.
 
-`telcontar` (host TUI) and `telcontar-server` (MCP stdio server) both block when
+`telcontar` (host web UI) and `telcontar-server` (MCP stdio server) both block when
 invoked bare, so these tests exercise them non-blockingly:
 
 - the ``[project.scripts]`` wiring is resolved through the *installed* package
@@ -74,45 +74,45 @@ class TestEntryPointsRunAndExitClean:
         assert prog in r.stdout
 
 
-# ── S6: --web routes to the NiceGUI entrypoint instead of the Textual TUI ────────
+# ── U10: bare launch routes to the NiceGUI web UI, --tui is the escape hatch ──
 
 
 class TestWebFlagRouting:
     """In-process (not subprocess) so run_web can be mocked out — actually
     starting the web server isn't something a unit test should do."""
 
-    def test_web_flag_routes_to_run_web(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_bare_launch_routes_to_run_web(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from host.main import main
 
         calls: list[Path | None] = []
         monkeypatch.setattr("host.web.main.run_web", lambda target=None: calls.append(target))
-        monkeypatch.setattr(sys, "argv", ["telcontar", "--web"])
+        monkeypatch.setattr(sys, "argv", ["telcontar"])
 
         main()
 
         assert calls == [None]
 
-    def test_web_flag_with_target_passes_it_through(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_bare_launch_with_target_passes_it_through(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from host.main import main
 
         calls: list[Path | None] = []
         monkeypatch.setattr("host.web.main.run_web", lambda target=None: calls.append(target))
-        monkeypatch.setattr(sys, "argv", ["telcontar", "--web", "--target", "/tmp/some-dir"])
+        monkeypatch.setattr(sys, "argv", ["telcontar", "--target", "/tmp/some-dir"])
 
         main()
 
         assert calls == [Path("/tmp/some-dir")]
 
-    def test_no_web_flag_launches_the_tui_not_the_web_ui(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_tui_flag_launches_the_tui_not_the_web_ui(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from host.main import main
 
         web_calls = []
         tui_calls = []
         monkeypatch.setattr("host.web.main.run_web", lambda target=None: web_calls.append(target))
         monkeypatch.setattr("host.app.OrganizerApp.run", lambda self: tui_calls.append(True))
-        monkeypatch.setattr(sys, "argv", ["telcontar"])
+        monkeypatch.setattr(sys, "argv", ["telcontar", "--tui"])
 
         main()
 

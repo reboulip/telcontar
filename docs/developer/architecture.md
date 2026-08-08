@@ -379,22 +379,23 @@ Three parts:
   call `execute_plan`, the run ends normally but the final text names the
   unexecuted plan id instead of losing it silently.
 
-### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8, U1/U2/U3/U4/U6/U7)
+### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8, U1/U2/U3/U4/U6/U7/U10)
 
 `host/web/` is a package — the first piece of a planned Textual→NiceGUI web UI
-migration (ROADMAP Phase 18). As of S6, `telcontar --web` (`host/main.py`) launches
-it in place of the Textual TUI; the TUI remains the default when no flags are
-passed, and `--web`'s `from host.web.main import run_web` import is lazy — scoped
-to that branch only — mirroring the existing lazy `from host.app import
-OrganizerApp` import on the no-flag path, so neither UI's dependency (`nicegui` vs.
-`textual`) is paid for unless that UI is actually launched. A `--target PATH` flag,
-meaningful only with `--web`, skips the landing page's directory picker and starts
-a run for that directory immediately. It exists alongside `host/app.py`'s Textual
-TUI, not in place of it — both `textual` and `nicegui` are main dependencies in
-`pyproject.toml`. Feature parity with the TUI is close but not complete —
-`telcontar` (no flags) still launches the TUI by default, and the web UI only
-becomes the default once Phase 20's U10 flips it, so it is not (yet) the
-primary way to use telcontar. As of U1, the landing page itself offers direct
+migration (ROADMAP Phase 18). As of S6, `telcontar --web` (`host/main.py`) launched
+it in place of the Textual TUI, which stayed the default with no flags; as of U10,
+that flag is gone and the relationship is inverted — bare `telcontar` (no flags)
+now launches the web UI by default, and `--tui` is the escape hatch back to the
+Textual TUI. The web UI's `from host.web.main import run_web` import is lazy —
+scoped to the default (no-`--tui`) branch — mirroring the existing lazy `from
+host.app import OrganizerApp` import on the `--tui` branch, so neither UI's
+dependency (`nicegui` vs. `textual`) is paid for unless that UI is actually
+launched. A `--target PATH` flag, ignored when `--tui` is passed, skips the
+landing page's directory picker and starts a run for that directory immediately.
+It exists alongside `host/app.py`'s Textual TUI, not in place of it — both
+`textual` and `nicegui` are main dependencies in `pyproject.toml`. Feature parity
+with the TUI is close but not complete, even though the web UI is now the default
+entry point as of U10. As of U1, the landing page itself offers direct
 Organize/Query/Settings entry points, at parity with the TUI's `StartupScreen`:
 Settings was already reachable via U3's persistent sidebar button and the
 folder picker via Phase 19's T3 sidebar tree, so U1's remaining work was adding

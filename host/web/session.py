@@ -206,7 +206,7 @@ def all_sessions() -> list[RunSession]:
 # ── Default target (T7 / U9 test-seam) ───────────────────────────────────────
 #
 # Set by run_web() before ui.run() starts; read by the landing page so a
-# `telcontar --web --target DIR` launch skips straight to a run instead of
+# `telcontar --target DIR` launch skips straight to a run instead of
 # showing the directory browser. None means "show the browser". Lives here
 # rather than in host/web/main.py so it's patchable from tests: the NiceGUI
 # `user` fixture runpy-executes main.py as a second, separate module object

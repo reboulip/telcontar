@@ -210,16 +210,16 @@ The MCP host package. Drives the agent loop and presents the Textual TUI.
 
 **Entry point:** `main()` is registered as the `telcontar` script in `pyproject.toml`.
 
-**Flags:** `--version` (prints the installed version and exits); `--web` (`store_true` —
-launches the NiceGUI web UI instead of the Textual TUI; the TUI remains the default
-with no flags); `--target PATH` (only meaningful together with `--web` — skips the
+**Flags:** `--version` (prints the installed version and exits); `--tui` (`store_true` —
+launches the Textual TUI instead of the NiceGUI web UI; as of Phase 20's U10, the web
+UI is the default with no flags); `--target PATH` (skips the
 landing page's directory picker and starts a run for that directory immediately;
-ignored otherwise). Unrecognized args are tolerated (`parse_known_args`) so a bare
+ignored when `--tui` is passed). Unrecognized args are tolerated (`parse_known_args`) so a bare
 launch keeps working.
 
 **Design note:** As of S6, each UI's dependency import is lazy and scoped to its own
-branch — `from host.app import OrganizerApp` for the TUI, `from host.web.main import
-run_web` for `--web` — so launching one UI never pays the other's import cost
+branch — `from host.app import OrganizerApp` for `--tui`, `from host.web.main import
+run_web` for the default (no-flag) path — so launching one UI never pays the other's import cost
 (`textual` vs. `nicegui`).
 
 ---
@@ -374,11 +374,13 @@ run_web` for `--web` — so launching one UI never pays the other's import cost
 
 ---
 
-### `host/web/` (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7, Phase 20 U1-U7)
+### `host/web/` (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7, Phase 20 U1-U7/U10)
 
 **Role:** NiceGUI-based web UI package — the first piece of a planned
 Textual→NiceGUI migration. As of S6, `telcontar --web` (`host/main.py`, lazy import)
-launches it in place of the Textual TUI, which stays the default with no flags. As
+launched it in place of the Textual TUI, which stayed the default with no flags;
+as of U10, that flag is gone and the default is inverted — bare `telcontar` now
+launches the web UI, and `--tui` is the escape hatch back to the Textual TUI. As
 of U2 it has its own first-run setup wizard, at parity with the TUI's; U3 a settings
 view reachable from every screen; U4 a TUI-faithful approval dialog plus a
 sidebar tree that refreshes itself after `execute_plan`; U5 a TUI-faithful cost
