@@ -298,11 +298,14 @@ run instead of adding a serial leg. Go straight on to Step 5 after firing it.
 by nearly every wave. A fresh agent re-reads them from cold every time, which is why doc
 updates lag far behind the ~63s test run. So:
 
-- **Wave 1** — spawn it with `Agent` and remember the returned agent id/name.
-- **Waves 2..N** — continue that **same** agent with `SendMessage`, passing the same prompt
-  body. Its context still holds the big docs, so later waves skip the cold read entirely.
-- Only spawn a fresh `doc-keeper` if the sprint was interrupted and the earlier agent is
-  gone, or if it reports that its in-context copy of a doc no longer matches disk.
+- **Wave 1** — spawn it with `Agent`.
+- **Waves 2..N** — continue that **same** agent with `SendMessage`, addressed **by name**
+  (`to: "doc-keeper"`), passing the same prompt body. A send resumes the agent from its
+  transcript, so its context still holds the big docs and later waves skip the cold read
+  entirely. Addressing by name also works after a context compaction or a sprint resume —
+  do not persist or print a raw agent id.
+- Spawn a fresh `doc-keeper` only if the send fails to reach one, or if it reports that its
+  in-context copy of a doc no longer matches disk.
 
 **Give it the diff and the targets — do not make it search.** The main session already read
 the source and already knows which docs the change lands in. Passing that removes a whole
@@ -326,7 +329,11 @@ Agent({
 })
 
 # Waves 2..N — same agent, context still warm
-SendMessage({ agent: "[doc-keeper id from wave 1]", message: "[same prompt body, this wave's values]" })
+SendMessage({
+  to: "doc-keeper",
+  summary: "docs for [milestone] wave [N]",
+  message: "[same prompt body, this wave's values]"
+})
 ```
 
 If the diff is very large (a wide refactor), pass the diff for the behaviour-bearing files
@@ -352,6 +359,10 @@ was spawned with `Agent` (wave 1) or continued with `SendMessage` (later waves).
 docs it updated/created to the commit's file list; if it reports "None — internal/test-only,"
 proceed with no doc changes. Never commit while it is still in flight — that's how doc
 changes get orphaned into the next wave's commit.
+
+If a *continued* doc-keeper never reports, do not block the sprint indefinitely: run
+`git status -- README.md docs mkdocs.yml`, commit whatever doc changes are actually on
+disk, and spawn a fresh `doc-keeper` for the next wave instead of sending to the old one.
 
 **Commit — one commit per wave**, covering every item in it plus the doc changes, run
 directly in the main session:
