@@ -38,7 +38,7 @@ def build_approval_dialog(session: RunSession, pending: PendingRequest) -> ui.di
     dialog = ui.dialog().props("persistent")
     with dialog, ui.card().classes("w-full max-w-3xl"):
         ui.label(f"Plan Review · {pending.payload['plan_id'][:8]} · {len(ops)} op(s)").classes(
-            "text-h6"
+            "text-h6 tc-display"
         )
 
         if rationale:

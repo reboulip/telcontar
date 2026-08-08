@@ -55,6 +55,28 @@ def fmt_journal_entry(entry: dict, *, markup: bool = True) -> str:
     return f"{ts_part}  {op_type:<10}  {src}{target}"
 
 
+def fmt_progress(progress: dict) -> str:
+    """Format a ``"progress"`` AgentEvent's data dict as a short status string.
+
+    Expects the ``{"analyzed": int, "total": int, "current": list[str]}`` shape
+    emitted by ``host.agent``'s pre-pass/analyzer progress events (V8a). All
+    keys are read defensively via ``.get`` — ``current`` may be absent (older
+    progress events, e.g. the pre-pass snapshot, don't carry it) or empty
+    (between batches, or the batch-completion event) — so a partial dict still
+    renders a reasonable ``"analyzed/total"`` string instead of raising.
+    When ``current`` has entries, the first filename is appended, with a
+    ``"+N"`` suffix if more than one file is in flight.
+    """
+    analyzed = progress.get("analyzed", 0)
+    total = progress.get("total", 0)
+    label = f"{analyzed}/{total}"
+    current = progress.get("current") or []
+    if not current:
+        return label
+    extra = f" +{len(current) - 1}" if len(current) > 1 else ""
+    return f"{label} — {current[0]}{extra}"
+
+
 def fmt_op(op: dict, target: Path | None = None, *, markup: bool = True) -> str:
     op_type = op.get("op_type", "?")
     src = Path(op.get("src", "")).name

@@ -27,7 +27,7 @@ the tree's only job is letting the user verify files actually moved.
 Sidebar width (T4) is a single in-memory preference in
 `host/web/session.py`, not a per-page setting — see that module's docstring
 for why. The drag handle only updates the DOM live in JS; the width is only
-persisted (and the Quasar `width` prop re-applied) once, on mouseup, via a
+persisted (and the Quasar `width` prop re-applied) once, on pointerup, via a
 custom `tc_sidebar_resized` event.
 
 The internal-step detail zone (T6) is a `ui.right_drawer`, created here
@@ -50,43 +50,57 @@ from nicegui.events import GenericEventArguments, ValueChangeEventArguments
 from host.web import session as web_session
 from host.web import tree as web_tree
 
-# Wired once per page build against this client's freshly-rendered DOM
-# (`data-wired` guards a page that somehow runs this twice). Drags are
-# tracked on `document`, not just the 6px handle, so the pointer can leave
-# the handle mid-drag without breaking the resize. The live width during the
-# drag is DOM-only — nothing is persisted until mouseup, when the actual
-# Quasar `width` prop is set via the `tc_sidebar_resized` event below (never
-# raw CSS: Quasar also offsets `.q-page-container` from that same prop, so a
-# CSS-only width would leave the page content overlapped).
+# Wired once per page build via a `window.__tcSidebarResizeWired` guard —
+# NOT a `dataset` flag on the handle element, because `run_javascript` can be
+# evaluated before the drawer/handle exist in the freshly-rendered DOM.
+# Listeners are therefore delegated to `document` rather than queried up
+# front: pointerdown is matched with `e.target.closest('.tc-sidebar-resize')`
+# and the drawer itself is looked up fresh (not cached from page-load time)
+# at the start of each drag. Pointer events (not mouse events) are used so
+# pen/touch input works too. Drags are tracked on `document`, not just the
+# 6px handle, so the pointer can leave the handle mid-drag without breaking
+# the resize. The live width during the drag is DOM-only — nothing is
+# persisted until pointerup, when the actual Quasar `width` prop is set via
+# the `tc_sidebar_resized` event below (never raw CSS: Quasar also offsets
+# `.q-page-container` from that same prop, so a CSS-only width would leave
+# the page content overlapped). Must be an invoked IIFE — `run_javascript`
+# evaluates this string with `eval`, and a bare arrow-function expression
+# would just be constructed and discarded, never called (this was V15's bug:
+# the handlers below were never bound, in any browser).
 _RESIZE_JS = """
-() => {
-  const drawer = document.querySelector('.tc-sidebar');
-  const handle = document.querySelector('.tc-sidebar-resize');
-  if (!drawer || !handle || handle.dataset.wired) return;
-  handle.dataset.wired = '1';
+(() => {
+  if (window.__tcSidebarResizeWired) return;
+  window.__tcSidebarResizeWired = true;
   let dragging = false;
   let startX = 0;
   let startWidth = 0;
-  handle.addEventListener('mousedown', (e) => {
+  let drawer = null;
+  document.addEventListener('pointerdown', (e) => {
+    if (!e.target.closest('.tc-sidebar-resize')) return;
+    drawer = document.querySelector('.tc-sidebar');
+    if (!drawer) return;
     dragging = true;
     startX = e.clientX;
     startWidth = drawer.offsetWidth;
     document.body.style.cursor = 'ew-resize';
+    document.body.style.userSelect = 'none';
     e.preventDefault();
   });
-  document.addEventListener('mousemove', (e) => {
-    if (!dragging) return;
+  document.addEventListener('pointermove', (e) => {
+    if (!dragging || !drawer) return;
     const width = Math.max(240, Math.min(720, startWidth + (e.clientX - startX)));
     drawer.style.width = width + 'px';
   });
-  document.addEventListener('mouseup', () => {
-    if (!dragging) return;
+  document.addEventListener('pointerup', () => {
+    if (!dragging || !drawer) return;
     dragging = false;
     document.body.style.cursor = '';
+    document.body.style.userSelect = '';
     const width = Math.round(drawer.getBoundingClientRect().width);
     emitEvent('tc_sidebar_resized', width);
+    drawer = null;
   });
-}
+})()
 """
 
 
@@ -151,7 +165,7 @@ def app_shell(
             "position:absolute; top:0; right:0; width:6px; height:100%; "
             "cursor:ew-resize; z-index:10;"
         )
-        ui.label("telcontar").classes("text-subtitle2 q-pa-sm")
+        ui.label("telcontar").classes("text-subtitle2 tc-display q-pa-sm")
 
         # Persistent Settings link — reachable from every route (T2), not
         # just the picker/startup page, mirroring the TUI's global

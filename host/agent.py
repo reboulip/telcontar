@@ -1115,8 +1115,13 @@ async def _analyze_new_documents(
     `record_document_batch`. A batch whose LLM call fails is retried once, then
     skipped — its documents surface in `errors`, never silently dropped.
 
-    Emits a `"progress"` event after each successfully recorded batch (Q2) so
-    the TUI progress bar advances incrementally instead of jumping at the end.
+    Emits a `"progress"` event at the START of each batch (before its LLM
+    call) carrying the in-progress batch's filenames (basenames only) under
+    `"current"` (V8a), and another `"progress"` event after each successfully
+    recorded batch (Q2) so the TUI progress bar advances incrementally instead
+    of jumping at the end — the completion event's `"current"` is always `[]`
+    so a finished batch doesn't leave a stale filename visible to whatever UI
+    renders this later.
 
     Returns `{"recorded": [record_dict, ...], "errors": [...]}`, matching
     `record_document_batch`'s own shape across all batches combined.
@@ -1126,6 +1131,24 @@ async def _analyze_new_documents(
 
     for i in range(0, len(new_docs), _ANALYZER_BATCH_SIZE):
         batch = new_docs[i : i + _ANALYZER_BATCH_SIZE]
+
+        # V8a: emit a progress event BEFORE this batch's LLM call, carrying
+        # basenames only (never full paths — that would leak directory layout
+        # to any UI) so a batch's current file(s) are visible while it's in
+        # flight, not just once it completes.
+        batch_start = tracker.counts()
+        on_event(
+            AgentEvent(
+                "progress",
+                f"Analyzing {len(batch)} document(s)…",
+                data={
+                    "analyzed": batch_start[0],
+                    "total": batch_start[1],
+                    "current": [Path(d["path"]).name for d in batch],
+                },
+            )
+        )
+
         documents, batch_errors = await _analyze_batch(
             session=session,
             llm=llm,
@@ -1164,7 +1187,7 @@ async def _analyze_new_documents(
                 AgentEvent(
                     "progress",
                     f"Analyzed {progress[0]} / {progress[1]} documents",
-                    data={"analyzed": progress[0], "total": progress[1]},
+                    data={"analyzed": progress[0], "total": progress[1], "current": []},
                 )
             )
 

@@ -79,13 +79,21 @@ class TestEntryPointsRunAndExitClean:
 
 class TestWebFlagRouting:
     """In-process (not subprocess) so run_web can be mocked out — actually
-    starting the web server isn't something a unit test should do."""
+    starting the web server isn't something a unit test should do.
+
+    Fakes accept ``**kwargs`` (not just ``target=None``) because host.main's
+    bare/`--target` call now always also passes ``native=`` (V1) — an
+    explicit-signature fake with no **kwargs would raise TypeError on that
+    extra keyword.
+    """
 
     def test_bare_launch_routes_to_run_web(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from host.main import main
 
         calls: list[Path | None] = []
-        monkeypatch.setattr("host.web.main.run_web", lambda target=None: calls.append(target))
+        monkeypatch.setattr(
+            "host.web.main.run_web", lambda target=None, **kwargs: calls.append(target)
+        )
         monkeypatch.setattr(sys, "argv", ["telcontar"])
 
         main()
@@ -98,19 +106,25 @@ class TestWebFlagRouting:
         from host.main import main
 
         calls: list[Path | None] = []
-        monkeypatch.setattr("host.web.main.run_web", lambda target=None: calls.append(target))
+        monkeypatch.setattr(
+            "host.web.main.run_web", lambda target=None, **kwargs: calls.append(target)
+        )
         monkeypatch.setattr(sys, "argv", ["telcontar", "--target", "/tmp/some-dir"])
 
         main()
 
         assert calls == [Path("/tmp/some-dir")]
 
-    def test_tui_flag_launches_the_tui_not_the_web_ui(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_tui_flag_launches_the_tui_not_the_web_ui(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from host.main import main
 
         web_calls = []
         tui_calls = []
-        monkeypatch.setattr("host.web.main.run_web", lambda target=None: web_calls.append(target))
+        monkeypatch.setattr(
+            "host.web.main.run_web", lambda target=None, **kwargs: web_calls.append(target)
+        )
         monkeypatch.setattr("host.app.OrganizerApp.run", lambda self: tui_calls.append(True))
         monkeypatch.setattr(sys, "argv", ["telcontar", "--tui"])
 
@@ -118,3 +132,52 @@ class TestWebFlagRouting:
 
         assert tui_calls == [True]
         assert web_calls == []
+
+
+# ── V1: --browser is the escape hatch from the native-window default ──────────
+
+
+class TestBrowserFlagRouting:
+    """In-process, same rationale as TestWebFlagRouting above."""
+
+    def test_bare_launch_defaults_to_native_mode(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from host.main import main
+
+        calls: list[object] = []
+        monkeypatch.setattr(
+            "host.web.main.run_web",
+            lambda target=None, **kwargs: calls.append(kwargs.get("native")),
+        )
+        monkeypatch.setattr(sys, "argv", ["telcontar"])
+
+        main()
+
+        assert calls == [True]
+
+    def test_browser_flag_disables_native_mode(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from host.main import main
+
+        calls: list[object] = []
+        monkeypatch.setattr(
+            "host.web.main.run_web",
+            lambda target=None, **kwargs: calls.append(kwargs.get("native")),
+        )
+        monkeypatch.setattr(sys, "argv", ["telcontar", "--browser"])
+
+        main()
+
+        assert calls == [False]
+
+    def test_browser_flag_combines_with_target(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from host.main import main
+
+        calls: list[tuple[Path | None, object]] = []
+        monkeypatch.setattr(
+            "host.web.main.run_web",
+            lambda target=None, **kwargs: calls.append((target, kwargs.get("native"))),
+        )
+        monkeypatch.setattr(sys, "argv", ["telcontar", "--target", "/tmp/some-dir", "--browser"])
+
+        main()
+
+        assert calls == [(Path("/tmp/some-dir"), False)]

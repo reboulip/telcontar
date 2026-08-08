@@ -39,10 +39,11 @@ A chat box at the bottom of the Organizer screen is live for the whole run, not 
 | Flag | Description |
 |---|---|
 | `--version` | Print the installed version and exit. |
-| `--tui` | Launch the Textual TUI instead of the NiceGUI web UI (which runs in a local browser tab). The web UI is the default when no flags are passed. |
+| `--tui` | Launch the Textual TUI instead of the NiceGUI web UI. The web UI is the default when no flags are passed. |
 | `--target PATH` | Skip the landing page's directory picker and start a run for `PATH` immediately. Ignored when `--tui` is passed. |
+| `--browser` | Launch the web UI in the system browser instead of a native window. Ignored when `--tui` is passed. |
 
-The web UI now has its own first-run setup wizard (opened automatically at `/setup` if telcontar isn't configured yet), a settings view (`/settings`, reachable from every screen via the sidebar), a journal/undo view, and a startup screen with its own **Organize** / **Query** / **Settings** entry points — Query jumps straight into read-only query mode for an already-organized directory without running Organize again — all at parity with the TUI's. It's now the default way to run telcontar (bare `telcontar`, no flags); `--tui` remains available for the Textual TUI walkthrough above.
+The web UI now has its own first-run setup wizard (opened automatically at `/setup` if telcontar isn't configured yet), a settings view (`/settings`, reachable from every screen via the sidebar), a journal/undo view, and a startup screen with its own **Organize** / **Query** / **Settings** entry points — Query jumps straight into read-only query mode for an already-organized directory without running Organize again — all at parity with the TUI's. It's now the default way to run telcontar (bare `telcontar`, no flags), opening in its own native window (via `pywebview`, Windows only) rather than a browser tab — pass `--browser` to use the system browser instead, or telcontar falls back to it automatically (with a warning) if `pywebview` isn't installed or the platform isn't Windows; `--tui` remains available for the Textual TUI walkthrough above.
 
 ## Development
 

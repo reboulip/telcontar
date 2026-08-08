@@ -90,14 +90,17 @@ def font_face_css(font_dir: Path | None = None) -> str:
 def css(font_dir: Path | None = None) -> str:
     """The one small CSS layer T8 calls for — display typeface bound to
     Quasar's own heading classes (so every existing `text-hN` label picks it
-    up automatically, no per-component sprinkling) plus a mandatory
+    up automatically, no per-component sprinkling), the `.tc-display`
+    utility class, and Quasar's `.q-message-name` (chat sender-name slot) —
+    a couple of further deliberate spots (V13c) — plus a mandatory
     contrast fix: Quasar renders a filled `color="primary"` button with a
     white label, and white-on-gold (`PALETTE["primary"]`) is roughly a
     2.2:1 contrast ratio — unreadable, and this is the approval dialog's
     button family, the highest-trust screen in the product.
     """
     return (
-        font_face_css(font_dir) + ".text-h1, .text-h2, .text-h3, .text-h4, .text-h5, .text-h6 {\n"
+        font_face_css(font_dir) + ".text-h1, .text-h2, .text-h3, .text-h4, .text-h5, .text-h6,\n"
+        ".tc-display, .q-message-name {\n"
         f"  font-family: 'Cinzel', {_FALLBACK_FONT_STACK};\n"
         "  letter-spacing: 0.02em;\n"
         "}\n"

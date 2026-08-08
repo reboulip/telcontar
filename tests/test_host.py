@@ -1161,12 +1161,15 @@ async def test_progress_event_reflects_known_and_newly_analyzed_docs(tmp_path: P
     )
 
     # run_prepass emits the pre-analysis snapshot (1 known / 2 total), then
-    # run_agent_loop emits a second one once analysis brings the new doc in —
-    # a genuine change, not a duplicate.
+    # _analyze_new_documents emits a batch-start event (V8a) carrying the
+    # in-flight filename under "current" before its LLM call, followed by the
+    # completion event once analysis brings the new doc in — a genuine change,
+    # not a duplicate — with "current" cleared back to [] now that it's done.
     progress = [e for e in events if e.kind == "progress"]
     assert [p.data for p in progress] == [
         {"analyzed": 1, "total": 2},
-        {"analyzed": 2, "total": 2},
+        {"analyzed": 1, "total": 2, "current": ["new.txt"]},
+        {"analyzed": 2, "total": 2, "current": []},
     ]
 
 
@@ -2453,11 +2456,50 @@ async def test_analyze_new_documents_emits_progress_per_batch(tmp_path: Path) ->
         tracker=_ProgressTracker(),
     )
 
+    # Each batch now emits two progress events (V8a): one at batch-start
+    # carrying the in-flight filenames under "current", one at completion
+    # with "current" cleared back to [].
     progress = [e for e in events if e.kind == "progress"]
     assert [p.data for p in progress] == [
-        {"analyzed": 10, "total": 10},
-        {"analyzed": 15, "total": 15},
+        {"analyzed": 0, "total": 0, "current": [f"{i}.txt" for i in range(10)]},
+        {"analyzed": 10, "total": 10, "current": []},
+        {"analyzed": 10, "total": 10, "current": [f"{i}.txt" for i in range(10, 15)]},
+        {"analyzed": 15, "total": 15, "current": []},
     ]
+
+
+async def test_analyze_new_documents_batch_start_current_uses_basenames_only(
+    tmp_path: Path,
+) -> None:
+    """V8a: "current" must carry basenames only — never full paths, which
+    would leak directory layout to any UI rendering progress events."""
+    nested = tmp_path / "deeply" / "nested" / "dir"
+    doc_path = str(nested / "secret_plan.txt")
+    docs = [{"path": doc_path, "checksum": "c0"}]
+    session = _analyzer_session(read_result={doc_path: "content"})
+    llm = _llm(
+        _submit_records_response(
+            [{"title": "T", "type": "notes", "summary": "s", "provenance": "p"}]
+        )
+    )
+    events: list[AgentEvent] = []
+
+    await _analyze_new_documents(
+        session=session,
+        llm=llm,
+        settings=_settings(tmp_path),
+        profile=None,
+        new_docs=docs,
+        ledger=_TokenLedger(),
+        on_event=events.append,
+        tracker=_ProgressTracker(),
+    )
+
+    progress = [e for e in events if e.kind == "progress"]
+    batch_start_current = progress[0].data["current"]
+    assert batch_start_current == ["secret_plan.txt"]
+    assert "deeply" not in batch_start_current[0]
+    assert str(nested) not in batch_start_current[0]
 
 
 async def test_analyze_batch_reports_error_for_unmatched_tail(tmp_path: Path) -> None:

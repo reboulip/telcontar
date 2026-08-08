@@ -202,11 +202,13 @@ These tools exist to cut MCP round trips: fetching N files one at a time costs N
 
 Because it mutates the registry, it is *not* added to `QUERY_ALLOWED_TOOLS` (query mode stays strictly read-only). Its path-confinement behaviour also diverges from the O1 read-only batch tools: the `server/main.py` wrapper runs `_check_within_root` on every document's `path` before delegating to `server.tools`, and — unlike `read_file_batch`/`extract_text_batch`/`compute_checksum_batch`, which turn a disallowed path into that entry's `{"error": ...}` — a `PermissionError` here propagates and aborts the whole call, since registry validation errors and confinement errors are handled at different layers (`server.tools` vs. the `server.main` wrapper).
 
-### Document-analysis progress tracking (O5, updated by P6, Q2)
+### Document-analysis progress tracking (O5, updated by P6, Q2, V8a)
 
-`host/agent.py` tracks how many documents have been discovered versus analyzed over a run and emits a `"progress"` `AgentEvent` (text `"Analyzed {analyzed} / {total} documents"`, `data={"analyzed": int, "total": int}`) whenever those counts change. A `_ProgressTracker` dataclass accumulates two path sets, `discovered` and `analyzed` (`total` is their union, so a document recorded without ever surfacing via `walk_tree` still counts, and the total only grows monotonically).
+`host/agent.py` tracks how many documents have been discovered versus analyzed over a run and emits a `"progress"` `AgentEvent` (text `"Analyzed {analyzed} / {total} documents"`, `data={"analyzed": int, "total": int}`, plus `"current": list[str]` on the analyzer's batch events as of V8a — see below) whenever those counts change. A `_ProgressTracker` dataclass accumulates two path sets, `discovered` and `analyzed` (`total` is their union, so a document recorded without ever surfacing via `walk_tree` still counts, and the total only grows monotonically).
 
 As of P6, both sets are populated **before the ORGANIZE turn loop starts**, from the pre-pass + analyzer results, rather than incrementally from live tool calls during the loop: `discovered` from every file `run_prepass` found (skipping telcontar's own output artifacts, dotfiles, OS junk, `.organizer`, and the configured quarantine directory — mirroring the `_SKIP` precedent in `server/tools.py`'s `write_index`), `analyzed` from `PrepassResult.known` plus whichever new documents the analyzer successfully recorded. As of Q2, `_analyze_new_documents` takes the `_ProgressTracker` directly via a required keyword-only `tracker` parameter and updates `analyzed` — emitting a fresh `"progress"` event right there — **once per analysis batch**, immediately after that batch's `record_document_batch` call returns, rather than accumulating silently across the whole analyzer loop and computing/emitting one snapshot at the end (the old post-loop tracking/emission block in `run_agent_loop`, and the `progress_after_prepass` snapshot variable it compared against, are both gone). So progress now fires once from `run_prepass` (the pre-analysis snapshot of `known`/`total-so-far`), plus once per `_ANALYZER_BATCH_SIZE`-sized batch of newly-recorded documents — giving the TUI's progress bar incremental movement through analysis instead of jumping straight from the pre-pass snapshot to ~100% at the end. Since the ORGANIZE-phase model's toolset structurally excludes `record_document`/`record_document_batch` (`ORGANIZE_DENIED_TOOLS`, see "ORGANIZE-only agent loop + corpus digest (P6)" below), the ORGANIZE turn loop itself still never drives progress incrementally on its own.
+
+As of V8a, `data` also carries `"current": list[str]` — the basename(s) (never full paths, which would leak directory layout) of whichever document(s) the in-flight analyzer batch is currently processing. `_analyze_new_documents` now emits a `"progress"` event at the *start* of each batch, before its LLM call, with `current` populated from that batch's filenames, in addition to the existing post-batch event (Q2), whose `current` is always `[]` so a just-finished batch doesn't leave a stale filename on screen. The pre-pass's own one-shot snapshot event does not carry `current` at all — there is no "current" file during a deterministic walk, and `data.get("current")` throughout consumers is expected to handle its absence. `host/format.py`'s new `fmt_progress(progress: dict) -> str` renders any of these shapes defensively into a short status string (e.g. `"3/47 — report.pdf +2"`); this is agent-side plumbing only — no UI wires it in yet (planned for a later wave).
 
 This is purely additive to the event stream — no MCP tool signature or tool list changed. As of O6, `host/app.py`'s `OrganizerScreen` consumes the `"progress"` event: a `#progress-row` (a numeric `#progress-label` plus a Textual `ProgressBar`) sits between `#ops-journal` and the status bar, hidden until the first progress event carrying a known `total > 0` arrives (an unknown/`None` total is never shown, since that would trigger Textual's indeterminate spinning-bar mode), and hidden again — without snapping to 100% first — once the run reaches `"done"` or `"error"`.
 
@@ -379,7 +381,7 @@ Three parts:
   call `execute_plan`, the run ends normally but the final text names the
   unexecuted plan id instead of losing it silently.
 
-### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8, U1/U2/U3/U4/U6/U7/U10)
+### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8, U1/U2/U3/U4/U6/U7/U10, V1/V13c/V15)
 
 `host/web/` is a package — the first piece of a planned Textual→NiceGUI web UI
 migration (ROADMAP Phase 18). As of S6, `telcontar --web` (`host/main.py`) launched
@@ -392,7 +394,11 @@ host.app import OrganizerApp` import on the `--tui` branch, so neither UI's
 dependency (`nicegui` vs. `textual`) is paid for unless that UI is actually
 launched. A `--target PATH` flag, ignored when `--tui` is passed, skips the
 landing page's directory picker and starts a run for that directory immediately.
-It exists alongside `host/app.py`'s Textual TUI, not in place of it — both
+As of V1, the web UI also opens in a native `pywebview` window by default
+(Windows only — falls back to the system browser, with a stderr warning, if
+`pywebview` isn't installed or the platform isn't Windows) rather than a browser
+tab; a `--browser` flag, likewise ignored when `--tui` is passed, forces the
+browser instead — see `run_web()` below. It exists alongside `host/app.py`'s Textual TUI, not in place of it — both
 `textual` and `nicegui` are main dependencies in `pyproject.toml`. Feature parity
 with the TUI is close but not complete, even though the web UI is now the default
 entry point as of U10. As of U1, the landing page itself offers direct
@@ -583,11 +589,18 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   The drawer's width (T4) is set from `web_session.get_sidebar_width()` via the
   Quasar `width` prop (never raw CSS, since Quasar also offsets
   `.q-page-container` from that prop), and a 6px drag handle on the drawer's
-  right edge — wired by a small injected JS snippet tracking
-  mousedown/mousemove/mouseup on `document` — live-resizes the drawer in the DOM
-  during the drag and, only on mouseup, emits a `tc_sidebar_resized` event that
-  the Python side clamps, persists via `web_session.set_sidebar_width()`, and
-  re-applies as the real `width` prop.
+  right edge — wired by a small injected JS snippet (`_RESIZE_JS`) tracking
+  pointerdown/pointermove/pointerup on `document` rather than just the handle
+  (so the pointer can leave the 6px strip mid-drag without breaking the resize)
+  — live-resizes the drawer in the DOM during the drag and, only on pointerup,
+  emits a `tc_sidebar_resized` event that the Python side clamps, persists via
+  `web_session.set_sidebar_width()`, and re-applies as the real `width` prop. As
+  of V15, `_RESIZE_JS` must be a self-invoking IIFE, not a bare arrow-function
+  expression: `ui.run_javascript` evaluates the string via `eval`, which
+  constructs but never calls a bare function literal, so the handle's listeners
+  were never actually bound in any browser (not an Edge-specific regression, as
+  first suspected) until this fix. A `window.__tcSidebarResizeWired` guard makes
+  the wiring idempotent if the snippet ever runs more than once.
 - `host/web/tree.py` (T2, fleshed out by T3) — NiceGUI-free, mirroring
   `session.py`/`bridge.py`'s invariant so it stays testable in plain pytest.
   `build_nodes(root: Path) -> list[dict]` builds the top-level node `ui.tree`
@@ -612,7 +625,7 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   triggered the refresh) is silently dropped. `list_drive_roots()` wraps
   `os.listdrives()` (3.12+, Windows-only) so the picker can reach outside the home
   directory, degrading to an empty list on any other platform or on error.
-- `host/web/theme.py` (T7, extended by T8) — product-identity helpers, `nicegui`-free
+- `host/web/theme.py` (T7, extended by T8/V13c) — product-identity helpers, `nicegui`-free
   (mirrors `session.py`/`bridge.py`/`tree.py`'s plain-pytest-testable invariant).
   `window_title(target: Path | None = None) -> str` returns `"telcontar"` with no
   target, or `f"telcontar — {target.name}"` once one is selected, falling back to
@@ -627,11 +640,17 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   product and must stay unmistakable; and `css(font_dir=None) -> str`, one CSS layer
   binding the vendored Cinzel display face (via `font_face_css()`, emitted only when
   the woff2 actually exists on disk — otherwise a fallback serif stack, never a 404)
-  onto Quasar's own `.text-h1`...`.text-h6` classes, plus a mandatory
+  onto Quasar's own `.text-h1`...`.text-h6` classes, plus — as of V13c — a new
+  `.tc-display` utility class (applied explicitly via `.classes(...)` at two call
+  sites, the sidebar's brand label and the approval dialog's title) and Quasar's
+  own `.q-message-name` (chat sender-name) slot, which — like the heading classes —
+  picks up the display face automatically with no code changes at any
+  `ui.chat_message(...)` call site, plus a mandatory
   `.q-btn.bg-primary` text-colour fix (Quasar's default white button label is
   ~2.2:1 contrast on the gold primary — unreadable). `FAVICON_SVG` is an inline SVG
   (Elendil's seven-pointed star) passed to `ui.run(favicon=...)`, which NiceGUI
-  inlines as a data URL with no file or network request.
+  inlines as a data URL with no file or network request — the browser-mode
+  favicon, untouched by V1's native-window icon (see `run_web()` below).
 - `host/configflow.py` (U2, extended by U3) — framework-agnostic (no `nicegui`, no
   `textual`) configuration-flow logic factored out of the TUI's
   `SetupScreen`/`ConfigScreen` so both the web UI's setup wizard and settings view
@@ -755,10 +774,28 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   whatever the user had expanded — closing the gap where the sidebar tree
   (Phase 19 T3) never updated as the agent moved/renamed/quarantined files.
 
-  `run_web(target: Path | None = None)` still binds an ephemeral local port and
-  calls `ui.run(host="127.0.0.1", ..., show=True, reload=False, title=..., dark=True,
-  favicon=theme.FAVICON_SVG)` — never `0.0.0.0`, to avoid exposing the approval gate
-  on the LAN. `reload=False` is load-bearing, not a style choice: with `reload=True`,
+  `run_web(target: Path | None = None, *, native: bool = True)` (V1 added the
+  keyword-only `native` parameter) still binds an ephemeral local port and calls
+  `ui.run(host="127.0.0.1", ..., show=False if effective_native else True,
+  reload=False, title=..., dark=True, favicon=..., native=effective_native,
+  window_size=(1280, 860) if effective_native else None)` — never `0.0.0.0`, to
+  avoid exposing the approval gate on the LAN. `native` (default `True` — "one
+  command, one window") requests a native `pywebview` window instead of the
+  system browser; `host/main.py`'s `--browser` flag is the escape hatch that
+  passes `False`. Rather than trust the argument blindly, `run_web` re-checks
+  actual availability itself: `effective_native = native and sys.platform ==
+  "win32" and importlib.util.find_spec("webview") is not None` — `pywebview` is a
+  Windows-only dependency (gated `; sys_platform == 'win32'` in
+  `pyproject.toml`) and may still be missing even on Windows. If native was
+  requested but isn't usable, `run_web` prints a warning to stderr and falls back
+  to the browser instead of hard-exiting — NiceGUI's own native-mode path calls
+  `sys.exit(1)` on a missing `webview`, unacceptable now that this is the default
+  entry point (U10). `favicon=` is `str(_ICON_PATH)` (the vendored
+  `host/web/assets/telcontar.ico`) when `effective_native` and that file exists,
+  else `theme.FAVICON_SVG` unchanged — NiceGUI's `favicon=` kwarg is dual-purpose:
+  in native mode, a local file path is also applied as the native window/taskbar
+  icon (there is no separate "icon" kwarg), while the browser-mode favicon is
+  untouched. `reload=False` is load-bearing, not a style choice: with `reload=True`,
   uvicorn forces a `SelectorEventLoop` on Windows, where
   `asyncio.create_subprocess_exec` (used to launch the MCP server subprocess) raises
   `NotImplementedError`. `dark=True` is load-bearing too (T8): Quasar only honours
@@ -773,7 +810,7 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   organize or query session's MCP server subprocess previously had no lifecycle at
   all past shutdown; a full lifecycle/reaper (nothing ever calls
   `web_session.close()` today) is still future work, this is minimal hardening
-  only. The browser tab
+  only. The browser tab/native window
   title (T7) comes from `host.web.theme.window_title`: `ui.run(...)`'s `title=`
   supplies the global default (no target yet), and `run_page` separately calls
   `ui.page_title(theme.window_title(session.target))` from inside the page body —

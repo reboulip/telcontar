@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from host.format import fmt_journal_entry, fmt_op, render_target_layout
+from host.format import fmt_journal_entry, fmt_op, fmt_progress, render_target_layout
 
 # ── fmt_op ────────────────────────────────────────────────────────────────────
 
@@ -138,6 +138,32 @@ def test_fmt_journal_entry_markup_false_strips_rich_tags() -> None:
     formatted_hard_stop = fmt_journal_entry(hard_stop, markup=False)
     assert "[bold red]" not in formatted_hard_stop
     assert "[red]" not in formatted_hard_stop
+
+
+# ── fmt_progress ─────────────────────────────────────────────────────────────
+
+
+def test_fmt_progress_basic_counts_only() -> None:
+    assert fmt_progress({"analyzed": 3, "total": 10, "current": []}) == "3/10"
+
+
+def test_fmt_progress_single_current_file_appended() -> None:
+    progress = {"analyzed": 3, "total": 10, "current": ["report.pdf"]}
+    assert fmt_progress(progress) == "3/10 — report.pdf"
+
+
+def test_fmt_progress_multiple_current_files_shows_count_suffix() -> None:
+    progress = {"analyzed": 3, "total": 10, "current": ["a.pdf", "b.pdf", "c.pdf"]}
+    assert fmt_progress(progress) == "3/10 — a.pdf +2"
+
+
+def test_fmt_progress_missing_current_key_defaults_to_no_suffix() -> None:
+    # Older/other progress events (e.g. run_prepass's) don't carry "current".
+    assert fmt_progress({"analyzed": 1, "total": 2}) == "1/2"
+
+
+def test_fmt_progress_missing_keys_default_to_zero() -> None:
+    assert fmt_progress({}) == "0/0"
 
 
 # ── Narrator (narration collapse rule) ───────────────────────────────────────────

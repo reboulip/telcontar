@@ -214,13 +214,18 @@ The MCP host package. Drives the agent loop and presents the Textual TUI.
 launches the Textual TUI instead of the NiceGUI web UI; as of Phase 20's U10, the web
 UI is the default with no flags); `--target PATH` (skips the
 landing page's directory picker and starts a run for that directory immediately;
-ignored when `--tui` is passed). Unrecognized args are tolerated (`parse_known_args`) so a bare
+ignored when `--tui` is passed); `--browser` (`store_true`, V1 — launches the web
+UI in the system browser instead of a native window; ignored when `--tui` is
+passed). Unrecognized args are tolerated (`parse_known_args`) so a bare
 launch keeps working.
 
 **Design note:** As of S6, each UI's dependency import is lazy and scoped to its own
 branch — `from host.app import OrganizerApp` for `--tui`, `from host.web.main import
 run_web` for the default (no-flag) path — so launching one UI never pays the other's import cost
-(`textual` vs. `nicegui`).
+(`textual` vs. `nicegui`). As of V1, `main()` passes `native=not args.browser` to
+`run_web`, which opens a native `pywebview` window by default (Windows only,
+falling back to the system browser otherwise or if `pywebview` isn't installed —
+see `host/web/main.py` below).
 
 ---
 
@@ -244,7 +249,7 @@ run_web` for the default (no-flag) path — so launching one UI never pays the o
 **Role:** The async agent loop — both organize and query modes. Fully decoupled from Textual — callers supply callbacks for events and approval so the module can be tested without a TUI.
 
 **Key types:**
-- `AgentEvent` — `{kind: EventKind, text, data}` emitted at each step; `EventKind` includes `"ask_user"` (P8) for the chat checkpoint — merges the former `"question"`/`"options"` kinds — `"progress"` for the O5 document-analysis progress tracker (`data={"analyzed": int, "total": int}`; drives the O6 `OrganizerScreen` progress bar), `"cost_estimate"` for the pre-analysis cost-approval gate (O8/P6), and `"tokens"` for running LLM token-usage updates, alongside `"thinking"`, `"tool_call"`, `"tool_result"`, `"plan_ready"`, `"done"`, `"warning"`, `"error"`. `"warning"` (U8) is non-terminal — currently emitted only when `_analyze_batch` retries once, still fails, and skips a batch: the run continues, unlike the three genuinely-terminal `"error"` emitters (the agent loop's own exception path, and the organize/query max-turns backstops). `"tool_call"` events carry `data={"tool": name}` in both the organize and query loops, so callers can key off the tool name (e.g. `OrganizerScreen._narrate`, F10) without parsing `text`
+- `AgentEvent` — `{kind: EventKind, text, data}` emitted at each step; `EventKind` includes `"ask_user"` (P8) for the chat checkpoint — merges the former `"question"`/`"options"` kinds — `"progress"` for the O5 document-analysis progress tracker (`data={"analyzed": int, "total": int, "current": list[str]}`; drives the O6 `OrganizerScreen` progress bar — `"current"` added V8a, basename(s) of the document(s) the in-flight analyzer batch is currently processing, `[]` when nothing is in flight or on the pre-pass's own snapshot event, which omits the key entirely; `host.format.fmt_progress` renders the dict to a short status string but isn't wired into either UI yet), `"cost_estimate"` for the pre-analysis cost-approval gate (O8/P6), and `"tokens"` for running LLM token-usage updates, alongside `"thinking"`, `"tool_call"`, `"tool_result"`, `"plan_ready"`, `"done"`, `"warning"`, `"error"`. `"warning"` (U8) is non-terminal — currently emitted only when `_analyze_batch` retries once, still fails, and skips a batch: the run continues, unlike the three genuinely-terminal `"error"` emitters (the agent loop's own exception path, and the organize/query max-turns backstops). `"tool_call"` events carry `data={"tool": name}` in both the organize and query loops, so callers can key off the tool name (e.g. `OrganizerScreen._narrate`, F10) without parsing `text`
 - `ApprovalResult` — `{approved: bool, removed_op_ids: list[str], refinement: str | None}`. `refinement` (L6) carries free-text plan-editing feedback from the `ApprovalModal`'s Refine button; when set, the plan is not executed even though `approved` is `False` — see `_handle_execute_plan` below
 - `AskUserResult` (P8) — `{reply: str, provided: bool}`; the user's raw chat reply to an `ask_user` checkpoint call — however many questions/options were asked, the whole reply is one free-text string. `provided` is `False` when no reply was captured (degenerate/no-callback case), in which case the agent proceeds with its own best judgement. Replaces K1's `ClarificationResult` (`{answers: dict[str, str], provided: bool}`) and L7's `OptionsResult` (`{selections: dict[str, str], provided: bool}`)
 - `CostApprovalResult` — `{approved: bool}`; the user's yes/no on the pre-ANALYZE cost-estimate gate (O8)
@@ -374,13 +379,17 @@ run_web` for the default (no-flag) path — so launching one UI never pays the o
 
 ---
 
-### `host/web/` (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7, Phase 20 U1-U7/U10)
+### `host/web/` (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7, Phase 20 U1-U7/U10, Phase 21 V1/V13c/V15)
 
 **Role:** NiceGUI-based web UI package — the first piece of a planned
 Textual→NiceGUI migration. As of S6, `telcontar --web` (`host/main.py`, lazy import)
 launched it in place of the Textual TUI, which stayed the default with no flags;
 as of U10, that flag is gone and the default is inverted — bare `telcontar` now
 launches the web UI, and `--tui` is the escape hatch back to the Textual TUI. As
+of V1, that launch opens in a native `pywebview` window by default rather than a
+browser tab (Windows only; falls back to the browser, with a stderr warning, if
+`pywebview` isn't installed or the platform isn't Windows) — `--browser` forces
+the browser tab. As
 of U2 it has its own first-run setup wizard, at parity with the TUI's; U3 a settings
 view reachable from every screen; U4 a TUI-faithful approval dialog plus a
 sidebar tree that refreshes itself after `execute_plan`; U5 a TUI-faithful cost
@@ -644,16 +653,22 @@ The drawer's width (T4) comes from `web_session.get_sidebar_width()` and is appl
 via the Quasar `width` prop (`drawer.props(f"width={width}")`), never raw CSS,
 because Quasar also offsets `.q-page-container` from that same prop — a CSS-only
 width would leave the page content overlapped. A 6px `div.tc-sidebar-resize` handle
-on the drawer's right edge is wired, once per page build, by a small injected JS
-snippet (`_RESIZE_JS`, run via `ui.run_javascript`) that tracks
-mousedown/mousemove/mouseup on `document` rather than just the handle (so the
+on the drawer's right edge is wired, once per page build (guarded by a
+`window.__tcSidebarResizeWired` flag so re-running the snippet is a no-op), by a
+small injected JS snippet (`_RESIZE_JS`, run via `ui.run_javascript`) that tracks
+pointerdown/pointermove/pointerup on `document` rather than just the handle (so the
 pointer can leave the 6px strip mid-drag) and live-resizes the drawer's CSS width
-for visual feedback. Only on mouseup does it emit a custom `tc_sidebar_resized`
+for visual feedback. Only on pointerup does it emit a custom `tc_sidebar_resized`
 event (via NiceGUI's `emitEvent`/`ui.on` bus) carrying the final pixel width; the
 Python-side `_handle_resize` (registered with `ui.on("tc_sidebar_resized", ...,
 throttle=0.05)`) is the only point that actually persists the preference, via
 `web_session.set_sidebar_width()`, and re-applies the real Quasar `width` prop. The
-drag itself is DOM-only and writes nothing to `session.py` until mouseup.
+drag itself is DOM-only and writes nothing to `session.py` until pointerup. As of
+V15, `_RESIZE_JS` must be a self-invoking IIFE, not a bare arrow-function
+expression: `run_javascript` evaluates the string via `eval`, which constructs but
+never calls a bare function literal, so the handle's listeners were never actually
+bound in any browser (not an Edge-specific regression, as first suspected) until
+this fix.
 
 **`host/web/tree.py`** (Phase 19 T2, fleshed out by T3) — NiceGUI-free, mirroring
 `session.py`/`bridge.py`'s invariant so it stays testable in plain pytest.
@@ -689,7 +704,7 @@ the refresh) is silently dropped, the same tolerance `load_children` already has
 home directory, returning an empty list (never raising) on any other platform,
 Python version, or enumeration error.
 
-**`host/web/theme.py`** (T7, extended by T8) — product-identity helpers,
+**`host/web/theme.py`** (T7, extended by T8/V13c) — product-identity helpers,
 `nicegui`-free like `session.py`/`bridge.py`/`tree.py`. `window_title(target: Path
 | None = None) -> str` returns `"telcontar"` with no target, or `f"telcontar —
 {target.name}"` once one is selected, falling back to the full path string when
@@ -718,7 +733,11 @@ base:
   "Book Antiqua" / Georgia / serif — always present regardless of whether the
   font file exists) directly onto Quasar's own `.text-h1`...`.text-h6` heading
   classes, so every existing heading picks it up with no per-component class
-  sprinkling, plus a mandatory contrast fix (`.q-btn.bg-primary { color:
+  sprinkling, plus — as of V13c — a new `.tc-display` utility class (applied
+  explicitly via `.classes(...)` at two call sites, the sidebar's brand label
+  and the approval dialog's title) and Quasar's own `.q-message-name` (chat
+  sender-name) slot, which picks up the face the same no-code-changes way the
+  heading classes do, plus a mandatory contrast fix (`.q-btn.bg-primary { color:
   #0E1116 !important; }` — Quasar renders a filled `color="primary"` button with
   white label text by default, and white-on-gold is ~2.2:1 contrast, unreadable).
 - `FONT_DIR`, `FONT_URL_PATH` (`/tc-fonts`) — the static-assets directory and its
@@ -798,14 +817,14 @@ nothing to gate. A `ui.timer` (same `web_session.REFRESH_INTERVAL` cadence as
 `run_page`) drives `_refresh()`, which renders new transcript turns, syncs the
 step log, and updates the status/token line.
 
-**`host/web/main.py`** (extended by T5/T6/T7/T8, U1/U2/U3/U4/U6/U7) — now shares nicegui-importing duties
+**`host/web/main.py`** (extended by T5/T6/T7/T8, U1/U2/U3/U4/U6/U7, V1) — now shares nicegui-importing duties
 with `host/web/shell.py` (T2). Pages are registered at import time (`@ui.page("/")`,
 `@ui.page("/run/{run_id}")`, `@ui.page("/query/{run_id}")` (U7)) but nothing binds a port until `run_web(target: Path |
-None = None)` is called, so importing the module is side-effect-free. Each
-connected browser tab polls `RunSession`/`TranscriptItem`/`StepRecord` state with
+None = None, *, native: bool = True)` (V1 added `native`) is called, so importing the module is side-effect-free. Each
+connected browser tab or native-window client polls `RunSession`/`TranscriptItem`/`StepRecord` state with
 its own `ui.timer`, rather than the bridge touching NiceGUI elements directly —
 this is what lets a page reload re-attach to an in-flight approval/cost dialog (via
-`session.pending`) instead of orphaning it. The browser tab title (T7) comes from
+`session.pending`) instead of orphaning it. The browser tab/native window title (T7) comes from
 `host.web.theme.window_title`: `run_web`'s `ui.run(...)` call passes it (with no
 target) as the global default title, and `run_page` calls
 `ui.page_title(theme.window_title(session.target))` from inside the page body —
@@ -911,9 +930,26 @@ runs when a tree-mutating tool actually closed since the last tick (see
 `bridge.py`'s `_TREE_MUTATING_TOOLS` above), never on every 0.5s poll, and never
 collapses whatever the user had expanded.
 
-`_pick_port()` binds an ephemeral `127.0.0.1` port. `run_web` calls
-`ui.run(host="127.0.0.1", port=port, show=True, reload=False, dark=True,
-favicon=theme.FAVICON_SVG)` — `reload=False` is required, not stylistic:
+`_pick_port()` binds an ephemeral `127.0.0.1` port. As of V1, `run_web(target:
+Path | None = None, *, native: bool = True)` gained the keyword-only `native`
+parameter (default `True` — "one command, one window"); `host/main.py` passes
+`native=not args.browser`. Rather than trust the argument blindly, `run_web`
+re-derives `effective_native = native and sys.platform == "win32" and
+importlib.util.find_spec("webview") is not None` — `pywebview` is a Windows-only
+dependency (`pyproject.toml`'s `; sys_platform == 'win32'` marker) and may still
+be missing even on Windows. If native was requested but isn't actually usable, a
+warning is printed to stderr and the call falls back to the browser rather than
+hard-exiting — NiceGUI's own native-mode path calls `sys.exit(1)` on a missing
+`webview`, unacceptable now that this is the default entry point (U10). `run_web`
+calls `ui.run(host="127.0.0.1", port=port, show=False if effective_native else
+True, reload=False, dark=True, favicon=..., native=effective_native,
+window_size=(1280, 860) if effective_native else None)`. `favicon=` is
+`str(_ICON_PATH)` — the vendored `host/web/assets/telcontar.ico` — when
+`effective_native` and that file exists, else `theme.FAVICON_SVG` unchanged;
+NiceGUI's `favicon=` kwarg is dual-purpose, also applying a local file path as
+the native window/taskbar icon in native mode (there is no separate "icon"
+kwarg), while the browser-mode favicon is untouched. `reload=False` is required,
+not stylistic:
 `reload=True` forces uvicorn onto a `SelectorEventLoop` on Windows, where
 `asyncio.create_subprocess_exec` (the MCP server subprocess launch) raises
 `NotImplementedError`. `dark=True` is likewise load-bearing (T8): Quasar only

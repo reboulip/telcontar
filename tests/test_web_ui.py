@@ -82,6 +82,7 @@ from nicegui.testing import User
 
 from host.agent import AgentEvent
 from host.web import session as web_session
+from host.web import shell as web_shell
 
 
 @pytest.fixture(autouse=True)
@@ -842,3 +843,23 @@ async def test_query_page_asks_question_and_shows_answer(
     # Rendered exactly once — from the return value, not the "done" event too.
     answers = [t for t in session.transcript if t.text == "42 documents"]
     assert len(answers) == 1
+
+
+def test_sidebar_resize_js_is_an_invoked_iife() -> None:
+    """V15: `_RESIZE_JS` used to be a bare arrow-function *expression*.
+    NiceGUI's `run_javascript` evaluates the string via `eval`, and `eval` of
+    a bare `() => { ... }` just constructs a function object and discards
+    it — it never calls it, so the drag handlers never bound, in any
+    browser, ever (not an Edge-specific regression).
+
+    This can't be a behavioral test: the headless `user` fixture used
+    throughout this file never executes JavaScript at all (see the module
+    docstring's gotchas), so there's no way to actually simulate a drag here.
+    A string-shape assertion — the snippet is now a self-invoking IIFE,
+    `(() => { ... })()`, not a bare literal — is the only coverage possible
+    from this suite. Real drag-to-resize behavior still needs manual
+    verification in an actual browser.
+    """
+    code = web_shell._RESIZE_JS.strip()
+    assert code.startswith("("), "must be an expression, not a bare statement"
+    assert code.endswith(")()"), "must be self-invoking (IIFE) so eval() actually calls it"

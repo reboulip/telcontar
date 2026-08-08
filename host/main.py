@@ -32,6 +32,12 @@ def main() -> None:
         help="Directory to organize. Skips the web landing page's directory picker. "
         "Ignored with --tui.",
     )
+    parser.add_argument(
+        "--browser",
+        action="store_true",
+        help="Launch the web UI in the system browser instead of a native window. "
+        "Ignored with --tui.",
+    )
     # Tolerate unrecognized args so bare launch keeps working; --help/--version
     # are handled here and exit before either UI starts.
     args, _unknown = parser.parse_known_args()
@@ -52,7 +58,7 @@ def main() -> None:
 
     from host.web.main import run_web
 
-    run_web(target=args.target)
+    run_web(target=args.target, native=not args.browser)
 
 
 if __name__ == "__main__":

@@ -74,12 +74,12 @@ uv run --group test pytest -q
 
 | Command | What it does |
 |---|---|
-| `telcontar` | Launches the NiceGUI web UI in a local browser tab (the normal way to use telcontar) |
+| `telcontar` | Launches the NiceGUI web UI, by default in its own native window (via `pywebview`, Windows only — falls back to a browser tab automatically if unavailable) — the normal way to use telcontar |
 | `telcontar-server` | Starts the MCP server over stdio (usually invoked automatically by the host) |
 
 Both accept `--help` and `--version`, which print and exit immediately without launching either UI or the server.
 
-`telcontar` also accepts `--tui` (launches the Textual TUI instead of the web UI — has its own setup wizard, settings view, journal/undo view, and read-only query mode at parity with the web UI's, including a startup screen with direct Organize/Query/Settings entry points) and `--target PATH` (skips the web UI's landing page directory picker and jumps straight to a run for `PATH`; ignored together with `--tui`).
+`telcontar` also accepts `--tui` (launches the Textual TUI instead of the web UI — has its own setup wizard, settings view, journal/undo view, and read-only query mode at parity with the web UI's, including a startup screen with direct Organize/Query/Settings entry points), `--browser` (launches the web UI in the system browser instead of a native window; ignored together with `--tui`), and `--target PATH` (skips the web UI's landing page directory picker and jumps straight to a run for `PATH`; ignored together with `--tui`).
 
 ---
 

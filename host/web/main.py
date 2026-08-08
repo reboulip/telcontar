@@ -23,7 +23,9 @@ sidebar stays visible while the user browses or waits.
 
 from __future__ import annotations
 
+import importlib.util
 import socket
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -42,6 +44,15 @@ from host.web.query_view import build_query_view
 from host.web.settings import build_settings_view
 from host.web.shell import app_shell
 from host.web.wizard import build_setup_wizard
+
+# Native window/taskbar icon (V1) — only used when native mode is actually
+# active; the browser favicon (theme.FAVICON_SVG, an inline SVG constant)
+# is untouched and stays the favicon in browser mode. NiceGUI's `favicon=`
+# kwarg is dual-purpose: in native mode, if it resolves to an existing local
+# file, that file is also applied as the native window/taskbar icon (see
+# nicegui.ui_run.run's `native_favicon` handling) — there is no separate
+# "icon" kwarg.
+_ICON_PATH = Path(__file__).resolve().parent / "assets" / "telcontar.ico"
 
 
 @dataclass
@@ -322,9 +333,32 @@ def _pick_port() -> int:
     raise OSError("Could not find a free port on 127.0.0.1")
 
 
-def run_web(target: Path | None = None) -> None:
-    """Launch the NiceGUI web UI. Blocks until the server stops."""
+def run_web(target: Path | None = None, *, native: bool = True) -> None:
+    """Launch the NiceGUI web UI. Blocks until the server stops.
+
+    ``native`` (default True — "one command, one window") opens a native
+    pywebview window instead of the system browser; host/main.py's
+    ``--browser`` flag is the escape hatch that passes False. Actual native
+    availability is re-checked here rather than trusted blindly: pywebview
+    is a Windows-only dependency (see pyproject.toml's platform marker), and
+    even on Windows it may not be installed in a given environment. If
+    native was requested but isn't usable, this falls back to the browser
+    with a stderr warning instead of hard-exiting — NiceGUI's own
+    native-mode path calls sys.exit(1) on a missing `webview`, which would
+    be unacceptable now that this is the default entrypoint (U10).
+    """
     web_session.set_default_target(target)
+
+    effective_native = (
+        native and sys.platform == "win32" and importlib.util.find_spec("webview") is not None
+    )
+    if native and not effective_native:
+        print(
+            "Native window mode isn't available here (pywebview not installed, or not "
+            "on Windows) — falling back to the browser. Pass --browser to skip this "
+            "check next time.",
+            file=sys.stderr,
+        )
 
     @app.on_shutdown
     def _reject_pending_on_shutdown() -> None:
@@ -367,11 +401,13 @@ def run_web(target: Path | None = None) -> None:
     ui.run(
         host="127.0.0.1",
         port=port,
-        show=True,
+        show=False if effective_native else True,
         reload=False,
         title=theme.window_title(),
         dark=True,
-        favicon=theme.FAVICON_SVG,
+        favicon=str(_ICON_PATH) if effective_native and _ICON_PATH.is_file() else theme.FAVICON_SVG,
+        native=effective_native,
+        window_size=(1280, 860) if effective_native else None,
     )
 
 

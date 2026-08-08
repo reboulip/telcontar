@@ -126,6 +126,16 @@ def test_css_binds_display_font_to_quasar_heading_classes() -> None:
     assert "Cinzel" in result
 
 
+def test_css_binds_display_font_to_tc_display_and_chat_message_name() -> None:
+    # V13c: a couple of deliberate, non-heading spots also get the display
+    # face — the `.tc-display` utility class and Quasar's chat-message
+    # sender-name slot (`.q-message-name`) — without a broad selector change.
+    result = css()
+
+    assert ".tc-display" in result
+    assert ".q-message-name" in result
+
+
 def test_css_includes_font_face_when_file_present(tmp_path: Path) -> None:
     (tmp_path / "cinzel-latin-600.woff2").write_bytes(b"fake-woff2-bytes")
 

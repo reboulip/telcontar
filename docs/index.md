@@ -56,7 +56,7 @@ uv tool install git+https://github.com/reboulip/telcontar.git
 telcontar
 ```
 
-The setup wizard guides you through entering your API key (stored securely in the OS credential store). The web UI then asks for a target directory, analyses it, and shows a plan of file operations for your approval before anything is moved.
+The setup wizard guides you through entering your API key (stored securely in the OS credential store). Telcontar opens in its own native window by default (falling back to a browser tab if that's not available, or pass `--browser` to always use one), then asks for a target directory, analyses it, and shows a plan of file operations for your approval before anything is moved.
 
 `telcontar --tui` opens the same experience in the Textual TUI instead — the original interface, still available as an alternative to the (now default) web UI, with its own setup wizard, journal/undo view, and read-only query mode.
 
