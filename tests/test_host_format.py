@@ -10,7 +10,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from host.format import fmt_journal_entry, fmt_op, fmt_progress, render_target_layout
+from host.format import (
+    fmt_journal_entry,
+    fmt_op,
+    fmt_progress,
+    quarantine_reason,
+    render_target_layout,
+)
 
 # ── fmt_op ────────────────────────────────────────────────────────────────────
 
@@ -61,6 +67,60 @@ def test_fmt_op_markup_false_strips_rich_tags() -> None:
     formatted = fmt_op(op, markup=False)
     assert "[dim]" not in formatted
     assert "(overwrite)" in formatted
+
+
+# ── quarantine_reason / fmt_op quarantine (V10) ─────────────────────────────────
+
+
+def test_quarantine_reason_returns_stated_reason() -> None:
+    op = {"op_type": "quarantine", "params": {"reason": "duplicate of report.pdf"}}
+    assert quarantine_reason(op) == "duplicate of report.pdf"
+
+
+def test_quarantine_reason_no_reason_given_when_blank() -> None:
+    assert quarantine_reason({"op_type": "quarantine", "params": {"reason": ""}}) == (
+        "no reason given"
+    )
+
+
+def test_quarantine_reason_no_reason_given_when_params_missing() -> None:
+    assert quarantine_reason({"op_type": "quarantine"}) == "no reason given"
+
+
+def test_quarantine_reason_caps_long_text() -> None:
+    op = {"op_type": "quarantine", "params": {"reason": "x" * 200}}
+    formatted = quarantine_reason(op)
+    assert len(formatted) == 120
+    assert formatted.endswith("…")
+
+
+def test_fmt_op_quarantine_shows_reason() -> None:
+    op = {
+        "op_type": "quarantine",
+        "src": "/in/junk.txt",
+        "dst": "/t/_quarantine/junk.txt",
+        "params": {"reason": "superseded by v2.txt"},
+    }
+    formatted = fmt_op(op)
+    assert "junk.txt" in formatted
+    assert "superseded by v2.txt" in formatted
+
+
+def test_fmt_op_quarantine_shows_no_reason_given_when_blank() -> None:
+    op = {"op_type": "quarantine", "src": "/in/junk.txt", "dst": "", "params": {"reason": ""}}
+    assert "no reason given" in fmt_op(op)
+
+
+def test_fmt_op_quarantine_markup_false_strips_rich_tags() -> None:
+    op = {
+        "op_type": "quarantine",
+        "src": "/in/junk.txt",
+        "dst": "",
+        "params": {"reason": "duplicate"},
+    }
+    formatted = fmt_op(op, markup=False)
+    assert "[dim]" not in formatted
+    assert "duplicate" in formatted
 
 
 # ── render_target_layout ────────────────────────────────────────────────────────

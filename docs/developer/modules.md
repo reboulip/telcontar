@@ -64,6 +64,8 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 
 **Design note (O1):** `read_file_batch`/`extract_text_batch`/`compute_checksum_batch` are the batch counterparts of `read_file`/`extract_text`/`compute_checksum` — each loops over its `paths` list, calling the singular function per path and catching any exception into that path's `{"error": str(exc)}` entry rather than letting one bad path abort the whole batch. `server/main.py`'s wrappers apply the same guard sequence per path *before* delegating here, so a guard rejection (allowlist/confinement) also surfaces as a per-path error rather than raising.
 
+**Design note (V10):** `propose_quarantine` takes a new optional `reason: str = ""`, stored stripped in the op's `params` (`{"reason": ...}`) rather than validated — an empty string is accepted the same as any other. The concrete-reason requirement ("duplicate of X", not "unreadable" alone) is enforced only by the ORGANIZE system prompt in `host/agent.py`, not by the server. `host/format.py`'s `quarantine_reason(op)`/`fmt_op` render it at approval time, defaulting to "no reason given" when blank.
+
 ---
 
 ### `server/plan.py`
@@ -73,7 +75,7 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 **Key types:**
 - `PlanState` — `Literal["pending", "approved", "executing", "done", "failed", "stopped"]`
 - `OpType` — `Literal["rename", "move", "quarantine", "create_file", "update_file", "create_dir", "archive_document", "compress_quarantine"]`
-- `PlanOp` — dataclass with `op_id` (UUID), `op_type`, `src`, `dst`, `status`, `error`, `retries`, `params: dict | None` (op-specific data that doesn't fit `src`/`dst` — e.g. `{"content": ...}` for `create_file`/`update_file`, `{"checksum": ..., "reason": ...}` for `archive_document`, `{"delete_originals": ...}` for `compress_quarantine`)
+- `PlanOp` — dataclass with `op_id` (UUID), `op_type`, `src`, `dst`, `status`, `error`, `retries`, `params: dict | None` (op-specific data that doesn't fit `src`/`dst` — e.g. `{"content": ...}` for `create_file`/`update_file`, `{"reason": ...}` for `quarantine` (V10), `{"checksum": ..., "reason": ...}` for `archive_document`, `{"delete_originals": ...}` for `compress_quarantine`)
 - `Plan` — dataclass with `plan_id`, `state`, `ops: list[PlanOp]`, timestamps, `rationale: str = ""` (agent's plain-language explanation, set via `set_plan_rationale`), `folder_notes: dict[str, str] = {}` (agent-supplied per-folder purpose notes for the approval-view target-layout preview, set via `set_plan_folder_notes`) — both round-trip through `to_dict`/`from_dict`, backward-compatible with older plan files via `d.get`
 
 **State machine:** `_VALID_TRANSITIONS` dict enforces which state transitions are legal. `Plan.transition()` validates and applies.

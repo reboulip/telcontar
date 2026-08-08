@@ -177,7 +177,11 @@ A. ORGANIZE the tree:
       taxonomy, propose_quarantine for useless or duplicate documents (never delete
       them), propose_create_file/propose_update_file for any new or updated files
       you need to write, and propose_archive_document to withdraw a document from
-      active memory when appropriate.
+      active memory when appropriate. Every propose_quarantine call MUST pass a
+      concrete reason — duplicate of X, superseded by Y, unreadable AND superfluous
+      to the corpus, etc. "unreadable" alone is never a sufficient reason on its
+      own: say what actually makes the file disposable, since that is what the user
+      sees and judges at approval time.
    3. Call review_plan for a deduplication pass, then call set_plan_rationale(plan_id,
       rationale) with a short plain-language paragraph explaining the plan's philosophy —
       how you grouped, renamed and quarantined the documents and why. It is shown to the

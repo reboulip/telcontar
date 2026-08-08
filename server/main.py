@@ -322,11 +322,14 @@ def propose_move(path: str, dest_dir: str, plan_id: str) -> dict:
 
 
 @mcp.tool()
-def propose_quarantine(path: str, plan_id: str) -> dict:
-    """Stage a quarantine operation in the named plan."""
+def propose_quarantine(path: str, plan_id: str, reason: str = "") -> dict:
+    """Stage a quarantine operation in the named plan. ``reason`` is a short,
+    concrete justification shown to the user at approval time — duplicate of X,
+    superseded by Y, unreadable and superfluous, etc. "unreadable" alone is not
+    a sufficient reason on its own; say what actually makes the file disposable."""
     cfg = _get_settings()
     _check_within_root(path, cfg)
-    return tools.propose_quarantine(path, plan_id, cfg.plans_dir, cfg.quarantine_dir)
+    return tools.propose_quarantine(path, plan_id, cfg.plans_dir, cfg.quarantine_dir, reason)
 
 
 @mcp.tool()

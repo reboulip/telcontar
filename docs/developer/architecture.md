@@ -93,6 +93,8 @@ The host can only call `execute_plan` on a plan in `approved` state. The `approv
 
 The MCP server has no delete tool. The `propose_quarantine` / `quarantine` path is the only way to remove files from the working tree. Quarantined files are moved to `QUARANTINE_DIR` and journaled — they can be recovered manually or via `undo_last` (see below).
 
+As of V10, every `propose_quarantine` call also carries a `reason` — a short, concrete justification (duplicate of X, superseded by Y, unreadable *and* superfluous, etc.) stored on the op (`PlanOp.params["reason"]`) and shown beside the file in the approval view (`host.format.quarantine_reason`/`fmt_op`, capped at 120 chars for display — the full text is always in `plan_ops.json`). The server itself does not enforce this: an empty string is accepted like any other. The requirement lives entirely in the ORGANIZE system prompt (`host/agent.py`), which now mandates a concrete reason on every quarantine and explicitly rejects "unreadable" alone as sufficient, since the reason is what the user actually judges at approval time.
+
 `compress_quarantine` is the only other operation that removes bytes from disk (the original loose files in `QUARANTINE_DIR`, after a verified archive is produced) — staged via `propose_compress_quarantine` and applied only through `execute_plan`, like every other mutation. It is still fully reversible: `undo_last` restores each original from the archive and deletes the zip. No bytes leave the machine — compression only reclaims space within the local quarantine folder.
 
 ### Every mutation goes through the plan flow (M1)

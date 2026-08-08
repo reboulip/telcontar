@@ -190,6 +190,38 @@ class TestProposeQuarantine:
         assert result["status"] == "pending"
         assert result["ops_count"] == 1
 
+    def test_stores_reason_in_op_params(
+        self, tmp_path: Path, plans_dir: Path, pending_plan: Plan
+    ) -> None:
+        src = tmp_path / "junk.txt"
+        src.write_text("x")
+        q_dir = tmp_path / "_quarantine"
+        propose_quarantine(
+            str(src), pending_plan.plan_id, plans_dir, q_dir, reason="duplicate of report.pdf"
+        )
+        reloaded = load(pending_plan.plan_id, plans_dir)
+        assert reloaded.ops[0].params == {"reason": "duplicate of report.pdf"}
+
+    def test_reason_defaults_to_empty_string_when_omitted(
+        self, tmp_path: Path, plans_dir: Path, pending_plan: Plan
+    ) -> None:
+        src = tmp_path / "junk.txt"
+        src.write_text("x")
+        q_dir = tmp_path / "_quarantine"
+        propose_quarantine(str(src), pending_plan.plan_id, plans_dir, q_dir)
+        reloaded = load(pending_plan.plan_id, plans_dir)
+        assert reloaded.ops[0].params == {"reason": ""}
+
+    def test_reason_is_stripped(self, tmp_path: Path, plans_dir: Path, pending_plan: Plan) -> None:
+        src = tmp_path / "junk.txt"
+        src.write_text("x")
+        q_dir = tmp_path / "_quarantine"
+        propose_quarantine(
+            str(src), pending_plan.plan_id, plans_dir, q_dir, reason="  unreadable, no content  "
+        )
+        reloaded = load(pending_plan.plan_id, plans_dir)
+        assert reloaded.ops[0].params == {"reason": "unreadable, no content"}
+
     def test_creates_quarantine_dir_if_missing(
         self, tmp_path: Path, plans_dir: Path, pending_plan: Plan
     ) -> None:

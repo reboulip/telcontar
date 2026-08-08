@@ -732,6 +732,20 @@ def test_system_prompt_includes_synthesis_template() -> None:
 
     # the profile's synthesis template is injected
     assert "Project synthesis" in prompt
+
+
+def test_system_prompt_mandates_a_concrete_quarantine_reason() -> None:
+    """V10: a bare "unreadable" must not be enough to justify a quarantine —
+    the model must say what actually makes the file disposable."""
+    from config.settings import load
+
+    from host.agent import _build_system_prompt
+
+    prompt = _build_system_prompt(_PROJECT_ROOT, load())
+
+    assert "propose_quarantine" in prompt
+    assert "concrete reason" in prompt.lower()
+    assert '"unreadable" alone is never a sufficient reason' in prompt
     assert "Synthèse du projet" in prompt
     # synthesis tools are referenced in the workflow
     assert "build_graph" in prompt

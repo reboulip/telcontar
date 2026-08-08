@@ -325,10 +325,10 @@ Stage moving `path` into `dest_dir`. Raises `FileExistsError` if `dest_dir/filen
 ### `propose_quarantine`
 
 ```python
-propose_quarantine(path: str, plan_id: str) -> dict
+propose_quarantine(path: str, plan_id: str, reason: str = "") -> dict
 ```
 
-Stage moving `path` to `QUARANTINE_DIR`. Unlike `propose_rename` and `propose_move`, collision is handled by **suffixing** the destination name (e.g. `report_1.pdf`, `report_2.pdf`) rather than raising — quarantine should never block.
+Stage moving `path` to `QUARANTINE_DIR`. Unlike `propose_rename` and `propose_move`, collision is handled by **suffixing** the destination name (e.g. `report_1.pdf`, `report_2.pdf`) rather than raising — quarantine should never block. `reason` (V10) is a short, concrete justification — duplicate of X, superseded by Y, unreadable *and* superfluous, etc.; the system prompt no longer accepts "unreadable" alone as sufficient. It is stored on the op and shown beside the file at approval time (a blank reason renders as "no reason given" rather than looking indistinguishable from a justified one); the server itself does not validate or require it.
 
 ---
 

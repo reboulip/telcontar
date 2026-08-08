@@ -77,6 +77,23 @@ def fmt_progress(progress: dict) -> str:
     return f"{label} — {current[0]}{extra}"
 
 
+_MAX_QUARANTINE_REASON_CHARS = 120
+
+
+def quarantine_reason(op: dict) -> str:
+    """Format a quarantine op's stated reason (V10) for display, capped at
+    ``_MAX_QUARANTINE_REASON_CHARS`` — the full text is always available
+    verbatim in ``plan_ops.json`` via ``ops_json_path``. A blank/missing
+    reason renders as an explicit "no reason given" rather than silently
+    looking indistinguishable from a properly-justified quarantine."""
+    reason = ((op.get("params") or {}).get("reason") or "").strip()
+    if not reason:
+        return "no reason given"
+    if len(reason) > _MAX_QUARANTINE_REASON_CHARS:
+        return reason[: _MAX_QUARANTINE_REASON_CHARS - 1] + "…"
+    return reason
+
+
 def fmt_op(op: dict, target: Path | None = None, *, markup: bool = True) -> str:
     op_type = op.get("op_type", "?")
     src = Path(op.get("src", "")).name
@@ -87,7 +104,9 @@ def fmt_op(op: dict, target: Path | None = None, *, markup: bool = True) -> str:
         case "move":
             label = f"MOVE     {src}  →  {dst}"
         case "quarantine":
-            label = f"QUARANTINE  {src}"
+            reason = quarantine_reason(op)
+            reason_part = f"  [dim]— {reason}[/dim]" if markup else f"  — {reason}"
+            label = f"QUARANTINE  {src}{reason_part}"
         case "update_file":
             # Subtle, not alarming (M4's discreet-styling convention): the
             # overwrite flag matters to the approver but isn't a red-banner risk.

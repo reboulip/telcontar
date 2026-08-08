@@ -95,7 +95,7 @@ Fields:
   - src: Absolute path to the source file or directory.
   - new_name (rename only): New name for the file (not a path).
   - dest_dir (move only): Absolute path to the destination directory.
-  - params: Op-specific data that doesn't fit src/dst — e.g. `{"content": ...}` for create_file/update_file, `{"content": ..., "overwrite": ...}` for update_file, `{"checksum": ..., "reason": ...}` for archive_document, `{"delete_originals": ...}` for compress_quarantine. `null` for op types that carry no extra data (rename, move, quarantine, create_dir).
+  - params: Op-specific data that doesn't fit src/dst — e.g. `{"content": ...}` for create_file/update_file, `{"content": ..., "overwrite": ...}` for update_file, `{"reason": ...}` for quarantine (V10 — a user-facing justification such as "duplicate of X"; empty string if the agent supplied none), `{"checksum": ..., "reason": ...}` for archive_document, `{"delete_originals": ...}` for compress_quarantine. `null` for op types that carry no extra data (rename, move, create_dir).
   - proposed_at: ISO 8601 timestamp when the operation was proposed.
   - status: Current status of the operation within the plan. May be pending, completed, or failed.
 
@@ -185,17 +185,18 @@ Propose moving a file to a different directory.
 3. Append the operation to the plan.
 4. Write the plan file.
 
-### propose_quarantine(path: str) -> dict
+### propose_quarantine(path: str, reason: str = "") -> dict
 
 Propose moving a file to the quarantine directory.
 
 **Inputs:**
 - path: Absolute path to the file.
+- reason (V10): Short, concrete justification for quarantining the file — duplicate of X, superseded by Y, unreadable *and* superfluous, etc. Not validated or required by the server (an empty string is accepted), but the host's ORGANIZE system prompt instructs the agent to always supply one and no longer accepts "unreadable" alone as sufficient; a blank reason displays to the user as "no reason given" at approval time.
 
 **Processing:**
 1. Validate that path is a file.
 2. Generate a safe destination path in QUARANTINE_DIR using safe_quarantine_path (handles collisions by suffixing).
-3. Append the operation to the plan.
+3. Append the operation to the plan, storing `reason` (stripped of surrounding whitespace) in `params.reason`.
 4. Write the plan file.
 
 ### propose_create_file(path, content, plan_id) -> dict / propose_update_file(path, content, plan_id, overwrite=False) -> dict / propose_create_dir(path, plan_id) -> dict / propose_archive_document(checksum, plan_id, reason="") -> dict / propose_compress_quarantine(plan_id, delete_originals=True) -> dict

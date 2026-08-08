@@ -405,7 +405,9 @@ def propose_move(path: str, dest_dir: str, plan_id: str, plans_dir: Path) -> dic
     }
 
 
-def propose_quarantine(path: str, plan_id: str, plans_dir: Path, quarantine_dir: Path) -> dict:
+def propose_quarantine(
+    path: str, plan_id: str, plans_dir: Path, quarantine_dir: Path, reason: str = ""
+) -> dict:
     """Append a quarantine op to an existing pending plan; picks collision-safe dest."""
     src = Path(path)
     if not src.is_file():
@@ -415,7 +417,7 @@ def propose_quarantine(path: str, plan_id: str, plans_dir: Path, quarantine_dir:
     p = _plan.load(plan_id, plans_dir)
     if p.state != "pending":
         raise ValueError(f"Plan must be in 'pending' state to add ops; current state: {p.state!r}")
-    op = _plan.PlanOp.new("quarantine", str(src), str(safe_dest))
+    op = _plan.PlanOp.new("quarantine", str(src), str(safe_dest), params={"reason": reason.strip()})
     p.add_op(op)
     _plan.save(p, plans_dir)
     return {
