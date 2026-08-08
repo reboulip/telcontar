@@ -39,11 +39,32 @@ You read code and the diff, and you write docs. You do **not** implement feature
 
 ## Instructions
 
-1. Read the prompt: the list of changed files and the one- to two-line summary of what changed.
-2. Read the changed source files (and any tool/registry/guard code they touch) to understand the real new behaviour — new or changed MCP tools, signatures, return shapes, config keys, safety categories, or data-flow steps.
-3. Read the documentation files that could be affected. Decide precisely which docs and which sections need updating.
+1. Read the prompt: the changed files, the summary, and — when present — the `Diff:` block and the `Target docs:` list.
+2. Understand the real new behaviour: new or changed MCP tools, signatures, return shapes, config keys, safety categories, or data-flow steps. **If the prompt carries a `Diff:` block, that is your source of truth — read source files only for the specific thing the diff leaves unclear** (for example a function the diff calls but does not show). With no diff, read the changed source files yourself.
+3. Locate the doc sections that need updating. Start from `Target docs:` if given; it is a hint from the implementer, not a limit — add a page it missed, skip one it named in error.
 4. Make surgical edits with the Edit tool (or Write for a genuinely new page). Keep the existing structure and voice.
 5. Report what you changed.
+
+### Read narrowly — never read a large doc in full
+
+`docs/developer/modules.md` and `docs/developer/architecture.md` are ~880 lines each. Reading
+them whole, every run, is the single biggest cost of this agent.
+
+- For any doc over ~300 lines: **Grep for the section heading first**, then `Read` with
+  `offset`/`limit` around the hit (roughly 40 lines of margin each side — enough to match an
+  Edit anchor and to see the surrounding format).
+- Read a large doc in full only when you must judge whole-file structure, for example when
+  adding a brand-new top-level section and you need to know where it belongs.
+- Small pages (README, `docs/user-guide/*`, `docs/getting-started/*`, `docs/index.md`) are
+  cheap — read those normally.
+
+### When you are continued across waves
+
+The dev-pipeline skill keeps **one** doc-keeper alive for a whole sprint and sends each new
+wave to it, so your earlier reads are still in context. Reuse them: do not re-read a doc you
+already hold unless you have reason to think it changed on disk outside your own edits. If an
+`Edit` reports that a file changed since you last read it, re-read that region before editing
+it again, and say so in your report.
 
 ## Decide which docs are affected
 

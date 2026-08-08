@@ -288,20 +288,49 @@ extra cycle; forcing it costs a tangled commit.
 
 ## Step 4.5 — Update documentation (in the background)
 
-Once the whole wave is implemented, spawn **one** `doc-keeper` covering every item in it,
-so the docs land in the **same** commit as the code. Fire it with
-`run_in_background: true` and go straight on to Step 5 — doc-keeper writes only
-`README.md` and `docs/**`, which pytest never imports, so it runs safely alongside the
-test run instead of adding a serial leg.
+Once the whole wave is implemented, hand the wave to **one** `doc-keeper`, so the docs land
+in the **same** commit as the code. It always runs in the background — doc-keeper writes only
+`README.md` and `docs/**`, which pytest never imports, so it runs safely alongside the test
+run instead of adding a serial leg. Go straight on to Step 5 after firing it.
+
+**One doc-keeper per sprint, not per wave.** `docs/developer/modules.md` and
+`docs/developer/architecture.md` are ~880 lines each (~54k tokens together) and are touched
+by nearly every wave. A fresh agent re-reads them from cold every time, which is why doc
+updates lag far behind the ~63s test run. So:
+
+- **Wave 1** — spawn it with `Agent` and remember the returned agent id/name.
+- **Waves 2..N** — continue that **same** agent with `SendMessage`, passing the same prompt
+  body. Its context still holds the big docs, so later waves skip the cold read entirely.
+- Only spawn a fresh `doc-keeper` if the sprint was interrupted and the earlier agent is
+  gone, or if it reports that its in-context copy of a doc no longer matches disk.
+
+**Give it the diff and the targets — do not make it search.** The main session already read
+the source and already knows which docs the change lands in. Passing that removes a whole
+exploration pass:
+
+- `Diff:` the actual unified diff of the wave's source changes
+  (`git diff -- host server config profiles`, plus `git diff --cached`/untracked file bodies
+  for new files). With this, doc-keeper needs **zero** source Reads.
+- `Target docs:` the specific pages **and sections** you expect to change, for example
+  `docs/developer/modules.md § host/web/session.py`, `docs/developer/architecture.md § Data flow`.
+  Write "unknown" only when you genuinely cannot tell; doc-keeper stays free to correct you
+  and to touch a page you did not list.
 
 ```
+# Wave 1
 Agent({
   subagent_type: "doc-keeper",
   run_in_background: true,
   description: "Update docs for [milestone] wave [N]",
-  prompt: "Items in this wave:\n[label — title, one per item]\n\nChanged files:\n[list of files edited/created in Step 4]\n\nSummary of change:\n[1-2 sentences per item: what the implementation did — new/changed MCP tools, signatures, config keys, behaviour]"
+  prompt: "Items in this wave:\n[label — title, one per item]\n\nChanged files:\n[list of files edited/created in Step 4]\n\nTarget docs:\n[page § section, one per line, or \"unknown\"]\n\nSummary of change:\n[1-2 sentences per item: what the implementation did — new/changed MCP tools, signatures, config keys, behaviour]\n\nDiff:\n```diff\n[unified diff of the wave's source changes]\n```"
 })
+
+# Waves 2..N — same agent, context still warm
+SendMessage({ agent: "[doc-keeper id from wave 1]", message: "[same prompt body, this wave's values]" })
 ```
+
+If the diff is very large (a wide refactor), pass the diff for the behaviour-bearing files
+and fall back to the plain file list for the rest — say which is which in the prompt.
 
 ---
 
@@ -318,10 +347,11 @@ One run for the whole wave, scoped to the union of the wave's changes. If the ve
 RED, fix the failures before continuing. Do not advance until green. (The full suite is
 ~63s, so when a wave's changes are broad, running everything is a perfectly good answer.)
 
-**Join doc-keeper:** before committing, wait for the Step 4.5 background agent to report.
-Add any docs it updated/created to the commit's file list; if it reports "None —
-internal/test-only," proceed with no doc changes. Never commit while it is still in
-flight — that's how doc changes get orphaned into the next wave's commit.
+**Join doc-keeper:** before committing, wait for the Step 4.5 agent to report — whether it
+was spawned with `Agent` (wave 1) or continued with `SendMessage` (later waves). Add any
+docs it updated/created to the commit's file list; if it reports "None — internal/test-only,"
+proceed with no doc changes. Never commit while it is still in flight — that's how doc
+changes get orphaned into the next wave's commit.
 
 **Commit — one commit per wave**, covering every item in it plus the doc changes, run
 directly in the main session:
