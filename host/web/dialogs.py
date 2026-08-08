@@ -1,6 +1,7 @@
-"""Approval (U4) / cost estimate (U5) / journal (U6) dialog builders.
+"""Approval (U4) / cost estimate (U5) / ask_user (V12) / journal (U6) dialog
+builders.
 
-The approval and cost dialogs are one per PendingRequest kind, both
+The approval, cost, and ask_user dialogs are one per PendingRequest kind, all
 `.props("persistent")`: no backdrop-click or Esc dismissal. The original
 inline dialog (host/web/main.py, before U4) was a plain `ui.dialog()` —
 closeable without resolving its future, which leaves `RunSession.pending`
@@ -8,9 +9,20 @@ set and the run silently deadlocked with zero visible symptom (the same
 failure mode ROADMAP.md's Break 1 spike found and fixed for the reload
 path; this closes the same door for the dialog-dismissal path). Every
 resolution therefore goes through an explicit button, and every resolution
-is request-scoped (`session.resolve_pending(result,
-request_id=pending.request_id)`) so a stale dialog left over in another tab
-or after a reload can't resolve a different, newer pending request.
+is request-scoped (`_make_resolver` below, wrapping
+`session.resolve_pending(result, request_id=pending.request_id)`) so a stale
+dialog left over in another tab or after a reload can't resolve a
+different, newer pending request.
+
+ask_user (V12) used to be a plain-text question rendered into the transcript,
+answered by typing a chat reply — no dialog, no request-scoping. That path
+also double-posted the user's reply as a transcript turn (`bridge.py`'s
+`_send()` posted it once via the chat queue, `on_ask_user_needed` posted it
+again after reading the queue). Moving it onto this module's persistent-
+dialog / request-scoped-resolution pattern is what fixes both: the dialog
+resolves through `_make_resolver` like the other two, and `on_ask_user_needed`
+now awaits the pending's future exclusively — it never touches the chat
+queue at all, so there is only one place left that can post the reply.
 
 The journal dialog (U6) is different in kind: it isn't resolving a
 PendingRequest — nothing is waiting on a future — so a normal, dismissible
@@ -19,12 +31,28 @@ PendingRequest — nothing is waiting on a future — so a normal, dismissible
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any
+
 from nicegui import ui
 
-from host.agent import ApprovalResult, CostApprovalResult
+from host.agent import ApprovalResult, AskUserResult, CostApprovalResult
 from host.format import fmt_journal_entry, fmt_op, render_target_layout
 from host.web import journal
 from host.web.session import PendingRequest, RunSession
+
+
+def _make_resolver(
+    session: RunSession, pending: PendingRequest, dialog: ui.dialog
+) -> Callable[[Any], None]:
+    """Every PendingRequest-backed dialog resolves through this same shape:
+    request-scoped resolution, then close. See this module's docstring."""
+
+    def _resolve(result: Any) -> None:
+        session.resolve_pending(result, request_id=pending.request_id)
+        dialog.close()
+
+    return _resolve
 
 
 def build_approval_dialog(session: RunSession, pending: PendingRequest) -> ui.dialog:
@@ -87,22 +115,20 @@ def build_approval_dialog(session: RunSession, pending: PendingRequest) -> ui.di
             .mark("refine-input")
         )
 
-        def _resolve(result: ApprovalResult) -> None:
-            session.resolve_pending(result, request_id=pending.request_id)
-            dialog.close()
+        resolve = _make_resolver(session, pending, dialog)
 
         def _approve() -> None:
             removed = [op_id for op_id, cb in checkboxes.items() if not cb.value and op_id]
-            _resolve(ApprovalResult(approved=True, removed_op_ids=removed))
+            resolve(ApprovalResult(approved=True, removed_op_ids=removed))
 
         def _refine() -> None:
             text = refine_input.value.strip()
             if not text:
                 return  # nothing to refine — keep the dialog open
-            _resolve(ApprovalResult(approved=False, refinement=text))
+            resolve(ApprovalResult(approved=False, refinement=text))
 
         def _reject() -> None:
-            _resolve(ApprovalResult(approved=False))
+            resolve(ApprovalResult(approved=False))
 
         with ui.row().classes("w-full justify-end"):
             ui.button("Approve", on_click=_approve, color="positive").mark("approve-btn")
@@ -142,21 +168,75 @@ def build_cost_dialog(session: RunSession, pending: PendingRequest) -> ui.dialog
             "Covers analysis only — organizing the corpus afterward adds more."
         ).classes("text-caption text-grey")
 
-        def _resolve(result: CostApprovalResult) -> None:
-            session.resolve_pending(result, request_id=pending.request_id)
-            dialog.close()
+        resolve = _make_resolver(session, pending, dialog)
 
         with ui.row():
             ui.button(
                 "Proceed",
-                on_click=lambda: _resolve(CostApprovalResult(approved=True)),
+                on_click=lambda: resolve(CostApprovalResult(approved=True)),
                 color="positive",
             ).mark("cost-proceed")
             ui.button(
                 "Cancel",
-                on_click=lambda: _resolve(CostApprovalResult(approved=False)),
+                on_click=lambda: resolve(CostApprovalResult(approved=False)),
                 color="negative",
             ).mark("cost-cancel")
+
+    return dialog
+
+
+def build_ask_user_dialog(session: RunSession, pending: PendingRequest) -> ui.dialog:
+    """Structured ask_user modal (V12): radio-button options per question
+    plus one free-text "additional comment" field, replacing the old
+    plain-text question rendered into the transcript. Persistent like the
+    other two PendingRequest dialogs above — a dismissible ask modal would
+    reintroduce the exact deadlock this module's docstring describes.
+
+    The reply sent back to the agent is composed here, in code, from the
+    selected options and the comment — never a second LLM round-trip — in
+    the fixed shape ``"<question> → <answer>"`` per question, plus an
+    ``"Additional comment: <text>"`` line when non-empty. "Skip" resolves
+    with ``AskUserResult(reply="", provided=False)``, which
+    ``host/agent.py`` already treats as "proceed with your best judgement."
+    """
+    questions: list[dict] = pending.payload.get("questions") or []
+
+    dialog = ui.dialog().props("persistent")
+    with dialog, ui.card().classes("w-full max-w-2xl").mark("ask-dialog"):
+        ui.label("telcontar has a question").classes("text-h6 tc-display")
+
+        radios: dict[int, ui.radio] = {}
+        with ui.column().classes("w-full gap-3"):
+            for i, question in enumerate(questions):
+                ui.label(question.get("text", "")).classes("text-body1")
+                options = question.get("options") or []
+                if options:
+                    radios[i] = ui.radio(list(options)).props("inline").mark(f"ask-q{i}")
+
+        comment_input = (
+            ui.input("Additional comment (optional)").classes("w-full").mark("ask-comment")
+        )
+
+        resolve = _make_resolver(session, pending, dialog)
+
+        def _submit() -> None:
+            lines = [
+                f"{question.get('text', '')} → {radios[i].value}"
+                for i, question in enumerate(questions)
+                if i in radios and radios[i].value
+            ]
+            comment = comment_input.value.strip()
+            if comment:
+                lines.append(f"Additional comment: {comment}")
+            reply = "\n".join(lines)
+            resolve(AskUserResult(reply=reply, provided=bool(reply)))
+
+        def _skip() -> None:
+            resolve(AskUserResult(reply="", provided=False))
+
+        with ui.row().classes("w-full justify-end"):
+            ui.button("Submit", on_click=_submit, color="positive").mark("ask-submit")
+            ui.button("Skip — you decide", on_click=_skip, color="grey").mark("ask-skip")
 
     return dialog
 

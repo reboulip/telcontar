@@ -52,7 +52,7 @@ class StepRecord:
     status: StepStatus = "running"
 
 
-PendingKind = Literal["approval", "cost"]
+PendingKind = Literal["approval", "cost", "ask"]
 
 
 @dataclass

@@ -36,7 +36,7 @@ from typing import Any
 from nicegui import app, run, ui
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from host.agent import ApprovalResult, CostApprovalResult
+from host.agent import ApprovalResult, AskUserResult, CostApprovalResult
 from host.paths import directory_overview, find_organizer_root
 from host.web import journal
 from host.web import security
@@ -45,7 +45,12 @@ from host.web import steplog
 from host.web import theme
 from host.web import tree as web_tree
 from host.web.bridge import AgentBridge, QueryBridge
-from host.web.dialogs import build_approval_dialog, build_cost_dialog, build_journal_dialog
+from host.web.dialogs import (
+    build_approval_dialog,
+    build_ask_user_dialog,
+    build_cost_dialog,
+    build_journal_dialog,
+)
 from host.web.query_view import build_query_view
 from host.web.settings import build_settings_view
 from host.web.shell import app_shell
@@ -267,10 +272,13 @@ async def run_page(run_id: str) -> None:
                 return
             render_state.shown_request_id = pending.request_id
 
-            if pending.kind == "approval":
-                build_approval_dialog(session, pending).open()
-            else:
-                build_cost_dialog(session, pending).open()
+            match pending.kind:
+                case "approval":
+                    build_approval_dialog(session, pending).open()
+                case "cost":
+                    build_cost_dialog(session, pending).open()
+                case "ask":
+                    build_ask_user_dialog(session, pending).open()
 
         async def _refresh() -> None:
             for item in session.transcript:
@@ -464,11 +472,14 @@ def run_web(target: Path | None = None, *, native: bool = True) -> None:
     def _reject_pending_on_shutdown() -> None:
         for session in web_session.all_sessions():
             if session.pending is not None:
-                result = (
-                    ApprovalResult(approved=False)
-                    if session.pending.kind == "approval"
-                    else CostApprovalResult(approved=False)
-                )
+                result: ApprovalResult | CostApprovalResult | AskUserResult
+                match session.pending.kind:
+                    case "approval":
+                        result = ApprovalResult(approved=False)
+                    case "cost":
+                        result = CostApprovalResult(approved=False)
+                    case "ask":
+                        result = AskUserResult(reply="", provided=False)
                 session.resolve_pending(result)
             # U7: every organize/query session leaves its MCP server
             # subprocess running for the process's lifetime (nothing ever

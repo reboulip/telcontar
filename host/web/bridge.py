@@ -116,21 +116,25 @@ class AgentBridge:
         return result
 
     async def on_ask_user_needed(self, questions: list[dict]) -> AskUserResult:
-        """Render the agent's question(s)/option(s) as a chat turn and await
-        the next chat message (P8) — no dialog, unlimited per run, reusing
-        the same live-chat queue mid-run steering already uses."""
+        """Structured ask_user dialog (V12) — a persistent, request-scoped
+        PendingRequest like on_approval_needed/on_cost_approval_needed above,
+        not the old plain-text-in-transcript-then-read-the-chat-queue design.
+
+        This is also the fix for the double-post-on-answer bug: the old
+        version read the reply from `session.messages` — the same queue
+        `_send()` (host/web/main.py) already posts the user's typed text
+        into as a "user" transcript turn, so the reply got posted twice.
+        Awaiting the pending's future exclusively means this method never
+        touches `session.messages` at all, so there is only one place left
+        (right below) that can post the reply as a turn.
+        """
         session = self.session
-        lines = []
-        for q in questions:
-            line = f"• {q['text']}"
-            options = q.get("options")
-            if options:
-                line += "  (" + " / ".join(options) + ")"
-            lines.append(line)
-        session.add_turn("telcontar", "I have a question for you\n" + "\n".join(lines))
-        reply = await session.messages.get()
-        session.add_turn("user", reply)
-        return AskUserResult(reply=reply, provided=True)
+        summary = "; ".join(q.get("text", "") for q in questions)
+        session.add_turn("telcontar", f"I have a question for you: {summary}")
+        pending = session.new_pending("ask", {"questions": questions})
+        result: AskUserResult = await pending.future
+        session.add_turn("user", result.reply if result.provided else "(skipped)")
+        return result
 
     def start(self, instructions: str | None = None) -> asyncio.Task:
         """Kick off the run as a detached task owned by the RunSession, not by

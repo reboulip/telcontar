@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from host.agent import AgentEvent, ApprovalResult, CostApprovalResult
+from host.agent import AgentEvent, ApprovalResult, AskUserResult, CostApprovalResult
 from host.web import session as web_session
 from host.web.bridge import AgentBridge, QueryBridge
 from host.web.session import RunSession
@@ -326,7 +326,11 @@ async def test_pending_future_never_auto_resolves(tmp_path: Path) -> None:
     await task  # let the task finish cleanly
 
 
-async def test_on_ask_user_needed_reads_reply_from_message_queue(tmp_path: Path) -> None:
+async def test_on_ask_user_needed_creates_an_ask_pending_and_resolves_via_future(
+    tmp_path: Path,
+) -> None:
+    """V12: ask_user is a persistent, request-scoped PendingRequest like
+    approval/cost above, not a plain-text question read from the chat queue."""
     session = RunSession(run_id="x", target=tmp_path)
     bridge = AgentBridge(session)
 
@@ -336,11 +340,71 @@ async def test_on_ask_user_needed_reads_reply_from_message_queue(tmp_path: Path)
     await asyncio.sleep(0)
     assert "Group by?" in session.transcript[-1].text
 
-    session.messages.put_nowait("by date")
+    assert session.pending is not None
+    assert session.pending.kind == "ask"
+    assert session.pending.payload["questions"][0]["text"] == "Group by?"
+
+    session.resolve_pending(AskUserResult(reply="by date", provided=True))
     result = await task
 
     assert result.provided is True
     assert result.reply == "by date"
+
+
+async def test_on_ask_user_needed_posts_exactly_one_user_turn(tmp_path: Path) -> None:
+    """Regression guard for the double-post-on-answer bug (V12): the old
+    design read the reply from session.messages — the same queue _send()
+    (host/web/main.py) already posts a "user" turn into — so the reply was
+    posted twice."""
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = AgentBridge(session)
+
+    task = asyncio.create_task(bridge.on_ask_user_needed([{"text": "Group by?"}]))
+    await asyncio.sleep(0)
+
+    session.resolve_pending(AskUserResult(reply="by date", provided=True))
+    await task
+
+    user_turns = [item for item in session.transcript if item.speaker == "user"]
+    assert len(user_turns) == 1
+    assert user_turns[0].text == "by date"
+
+
+async def test_on_ask_user_needed_never_reads_the_message_queue(tmp_path: Path) -> None:
+    """The double-post fix is structural: on_ask_user_needed must not touch
+    session.messages at all — that queue is for mid-run chat steering, not
+    for ask_user answers, once the dialog owns resolution."""
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = AgentBridge(session)
+
+    task = asyncio.create_task(bridge.on_ask_user_needed([{"text": "Group by?"}]))
+    await asyncio.sleep(0)
+
+    session.messages.put_nowait("a stray chat message, unrelated to this ask")
+    session.resolve_pending(AskUserResult(reply="by date", provided=True))
+    result = await task
+
+    assert result.reply == "by date"
+    assert session.messages.qsize() == 1  # never consumed by on_ask_user_needed
+
+
+async def test_on_ask_user_needed_skip_posts_a_placeholder_turn(tmp_path: Path) -> None:
+    """The dialog's "Skip" path resolves provided=False — the transcript
+    should reflect that rather than posting an empty string as if the user
+    had typed nothing."""
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = AgentBridge(session)
+
+    task = asyncio.create_task(bridge.on_ask_user_needed([{"text": "Group by?"}]))
+    await asyncio.sleep(0)
+
+    session.resolve_pending(AskUserResult(reply="", provided=False))
+    result = await task
+
+    assert result.provided is False
+    user_turns = [item for item in session.transcript if item.speaker == "user"]
+    assert len(user_turns) == 1
+    assert user_turns[0].text == "(skipped)"
 
 
 # ── AgentBridge.run: settings/ledger/queue threading ─────────────────────────────

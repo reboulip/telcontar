@@ -112,27 +112,31 @@ In `APPROVAL_MODE=never`, this gate is skipped automatically (the estimate is st
 
 At any point before or while building the plan, the agent **may** call `ask_user` with a short batch of items — plain clarifying questions, multiple-choice options for the user to pick from, or a mix in the same call — when it hits genuine ambiguity (unclear document type, competing taxonomy groupings, ambiguous naming) or there are genuinely several valid ways to classify or handle the corpus (e.g. group COPIL decks by date vs. by workstream vs. one flat folder). If there is no real ambiguity, the agent skips this and proceeds with its own best judgement.
 
-This is a **host-side** capability, not an MCP server tool: `ask_user` is a synthetic tool the host injects into the model's tool list, and it is never forwarded to the MCP server. Unlike the modal-based checkpoints it replaces, it has no dialog of its own — it renders as a normal `telcontar` turn in the chat transcript and blocks on the exact same live-chat message queue described in [Chatting during and after a run](#chatting-during-and-after-a-run-live-chat-resumable-chat) below, so your next chat message is read as the reply. There is no once-per-run cap: because it's a normal chat exchange rather than an interruptive modal, the agent can check in as many times as it genuinely needs to.
+This is a **host-side** capability, not an MCP server tool: `ask_user` is a synthetic tool the host injects into the model's tool list, and it is never forwarded to the MCP server. There is no once-per-run cap: the agent can check in as many times as it genuinely needs to. How you're asked differs by UI:
 
-```
-Agent hits genuine ambiguity, at any point before/while building the plan
-       │
-       ▼
-Agent calls ask_user(questions)   (1-5 items; each may carry 2-5 options)
-       │
-       ▼
-Question(s) rendered as a "telcontar" turn in the transcript
-       │
-       ▼
-Agent's tool call blocks on the live-chat message queue
-       │
-   You type a reply in the chat box
-       │
-       ▼
-Reply echoed as a "you" turn, returned to the agent as free text;
-the agent continues — and may call ask_user again later if a new
-ambiguity comes up
-```
+- **Textual TUI** — no dialog of its own: the question(s) render as a normal `telcontar` turn in the chat transcript, and the agent's tool call blocks on the exact same live-chat message queue described in [Chatting during and after a run](#chatting-during-and-after-a-run-live-chat-resumable-chat) below, so your next chat message is read as the reply.
+
+  ```
+  Agent hits genuine ambiguity, at any point before/while building the plan
+         │
+         ▼
+  Agent calls ask_user(questions)   (1-5 items; each may carry 2-5 options)
+         │
+         ▼
+  Question(s) rendered as a "telcontar" turn in the transcript
+         │
+         ▼
+  Agent's tool call blocks on the live-chat message queue
+         │
+     You type a reply in the chat box
+         │
+         ▼
+  Reply echoed as a "you" turn, returned to the agent as free text;
+  the agent continues — and may call ask_user again later if a new
+  ambiguity comes up
+  ```
+
+- **Web UI** — a modal dialog, matching the plan-approval and cost-estimate dialogs: each question gets its own radio-button choice (when the agent supplied options) plus one free-text "Additional comment" field, and **Submit** / **Skip — you decide** buttons. Submitting composes the reply from your selections — `"<question> → <selected option>"` per answered question, plus your comment if you added one — and sends it back to the agent; **Skip** tells the agent to proceed with its own best judgement instead.
 
 The agent is instructed not to stall or use this to offload every decision — only for real, close judgement calls; otherwise it proceeds with its own best judgement.
 
@@ -207,7 +211,7 @@ The chat box (`#organize-input`) at the bottom of the Organizer screen is enable
 
 While the agent is still working — even during the pre-pass/analysis stage, before the first chat turn — a message you type is queued and woven into the run at the next opportunity, without waiting for it to finish: right before the run's first LLM call, after every turn's batch of tool calls completes, and — most importantly — at the moment the agent would otherwise stop (its response carries no more tool calls). At that last point, if a message is waiting, the agent takes it as a new instruction and keeps going instead of ending the run. This lets you course-correct an in-progress run, e.g. "actually, group by year instead", without waiting for it to finish first.
 
-This is the same queue [the `ask_user` chat checkpoint](#the-ask_user-chat-checkpoint) blocks on when the agent has a question for you — an `ask_user` call is really just a special case of this mechanism, one where the agent is the one waiting on your next message.
+In the **Textual TUI**, this is the same queue [the `ask_user` chat checkpoint](#the-ask_user-chat-checkpoint) blocks on when the agent has a question for you — there, an `ask_user` call is really just a special case of this mechanism, one where the agent is the one waiting on your next message. The **web UI**'s `ask_user` checkpoint uses its own modal dialog instead and never touches this queue.
 
 ```
 Run in progress (pre-pass / analysis / a turn's tool calls)

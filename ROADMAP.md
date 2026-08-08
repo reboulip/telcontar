@@ -40,7 +40,7 @@ on open work.
 
 #### Interaction dialogs & robustness — `host/web/dialogs.py` (new builder), `bridge.py`, `session.py`
 
-- [ ] V12 · `ask_user` structured dialog — a real modal (radio-button options + free-text "additional comment"), replacing today's plain-text question rendered into the transcript; while here, audit the dialog↔session resolution path for the reported double-post-on-answer bug — `ask_user` never got the persistent-dialog / request-scoped-resolution treatment U4/U5 already gave the approval and cost dialogs (see `dialogs.py`'s header docstring). [#33]
+- [x] V12 · `ask_user` structured dialog — a real modal (radio-button options + free-text "additional comment"), replacing today's plain-text question rendered into the transcript; while here, audit the dialog↔session resolution path for the reported double-post-on-answer bug — `ask_user` never got the persistent-dialog / request-scoped-resolution treatment U4/U5 already gave the approval and cost dialogs (see `dialogs.py`'s header docstring). [#33]
 
 #### Prompts & settings — `host/web/settings.py`, `host/agent.py`
 

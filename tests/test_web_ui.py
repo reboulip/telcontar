@@ -646,6 +646,114 @@ async def test_cost_dialog_cancel_resolves_rejected(user: User, tmp_path: Path) 
     assert result.approved is False
 
 
+# ── Ask-user dialog (V12) ─────────────────────────────────────────────────────
+
+
+async def test_ask_user_dialog_shows_question_text(user: User, tmp_path: Path) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.new_pending(
+        "ask", {"questions": [{"text": "Group invoices by workstream or by date?"}]}
+    )
+
+    await user.open(f"/run/{session.run_id}")
+
+    await user.should_see("telcontar has a question")
+    await user.should_see("Group invoices by workstream or by date?")
+
+
+async def test_ask_user_dialog_submit_composes_reply_from_selected_option(
+    user: User, tmp_path: Path
+) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    pending = session.new_pending(
+        "ask",
+        {"questions": [{"text": "Group by?", "options": ["by-date-option", "by-ws-option"]}]},
+    )
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="ask-q0")
+
+    user.find("by-date-option").click()
+    user.find(marker="ask-submit").click()
+
+    result = await pending.future
+    assert result.provided is True
+    assert result.reply == "Group by? → by-date-option"
+
+
+async def test_ask_user_dialog_submit_appends_additional_comment(
+    user: User, tmp_path: Path
+) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    pending = session.new_pending(
+        "ask", {"questions": [{"text": "Group by?", "options": ["date-opt", "ws-opt"]}]}
+    )
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="ask-comment")
+
+    user.find("date-opt").click()
+    user.find(marker="ask-comment").type("also archive the 2023 folder")
+    user.find(marker="ask-submit").click()
+
+    result = await pending.future
+    assert "Group by? → date-opt" in result.reply
+    assert "Additional comment: also archive the 2023 folder" in result.reply
+
+
+async def test_ask_user_dialog_submit_with_only_a_comment_and_no_option_picked(
+    user: User, tmp_path: Path
+) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    pending = session.new_pending("ask", {"questions": [{"text": "Anything else?"}]})
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="ask-comment")
+
+    user.find(marker="ask-comment").type("skip the drafts folder entirely")
+    user.find(marker="ask-submit").click()
+
+    result = await pending.future
+    assert result.provided is True
+    assert result.reply == "Additional comment: skip the drafts folder entirely"
+
+
+async def test_ask_user_dialog_submit_with_nothing_filled_in_resolves_not_provided(
+    user: User, tmp_path: Path
+) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    pending = session.new_pending("ask", {"questions": [{"text": "Group by?"}]})
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="ask-submit")
+
+    user.find(marker="ask-submit").click()  # nothing selected, no comment typed
+
+    result = await pending.future
+    assert result.provided is False
+    assert result.reply == ""
+
+
+async def test_ask_user_dialog_skip_resolves_not_provided(user: User, tmp_path: Path) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    pending = session.new_pending("ask", {"questions": [{"text": "Group by?"}]})
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="ask-skip")
+
+    user.find(marker="ask-skip").click()
+
+    result = await pending.future
+    assert result.provided is False
+    assert result.reply == ""
+
+
 # ── Journal dialog (U6) ───────────────────────────────────────────────────────
 
 

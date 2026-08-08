@@ -381,7 +381,7 @@ see `host/web/main.py` below).
 
 ---
 
-### `host/web/` (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7, Phase 20 U1-U7/U10, Phase 21 V1/V11/V13a/V13c/V15)
+### `host/web/` (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7, Phase 20 U1-U7/U10, Phase 21 V1/V11/V12/V13a/V13c/V15)
 
 **Role:** NiceGUI-based web UI package — the first piece of a planned
 Textual→NiceGUI migration. As of S6, `telcontar --web` (`host/main.py`, lazy import)
@@ -411,7 +411,8 @@ Key types: `RunSession` (`run_id`, `target`, `mode: Literal["organize", "query"]
 `history: list[dict] | None`, `narrator`, `task`, `fs_revision: int`),
 `TranscriptItem` (`seq`/`speaker`/`text`), `StepRecord`
 (`seq`/`tool`/`summary`/`args`/`detail`/`status: "running"|"ok"|"error"`),
-`PendingRequest` (`request_id`/`kind`/`payload`/`future: asyncio.Future`). `mode`
+`PendingRequest` (`request_id`/`kind: "approval"|"cost"|"ask"` (`"ask"` added
+V12)/`payload`/`future: asyncio.Future`). `mode`
 (U7) is one `RunSession` type/registry serving both organize and query runs
 rather than a parallel `QuerySession` type — query mode needs the exact same
 `add_turn`/`open_step`/`close_step`/`status`/`tokens` primitives, and
@@ -436,8 +437,8 @@ A step left "running" forever (the run errored out mid-call before its matching
 `tool_result` arrived) is the intentional, correct visual, not a bug — it shows
 exactly where things stopped. These replace the old `append_step`/`_steps_item`
 group-building logic that mirrored `OrganizerScreen`'s `_add_turn`/`_append_step`.
-`new_pending`/`resolve_pending` manage the one in-flight approval/cost request per
-session; as of U4, `resolve_pending(result, *, request_id=None)` takes an optional
+`new_pending`/`resolve_pending` manage the one in-flight approval/cost/ask request
+per session; as of U4, `resolve_pending(result, *, request_id=None)` takes an optional
 `request_id` that, when given, must match the *current* `pending.request_id` or the
 call is silently ignored — stops a stale dialog (another browser tab, or one left
 over after a reload) from resolving a different, newer pending request than the one
@@ -470,9 +471,17 @@ the clamped value actually stored.
 
 **`host/web/bridge.py`** — `AgentBridge(session)`, also `nicegui`-free. Implements
 the same callback contract `host.app.OrganizerScreen` uses:
-`on_event`/`on_approval_needed`/`on_cost_approval_needed`/`on_ask_user_needed` (the
-last awaits the next message on `session.messages`, mirroring P8's live-chat
-`ask_user` checkpoint). `start(instructions: str | None = None)` launches
+`on_event`/`on_approval_needed`/`on_cost_approval_needed`/`on_ask_user_needed`. As
+of V12, `on_ask_user_needed` creates an `"ask"`-kind `PendingRequest`
+(`session.new_pending("ask", {"questions": questions})`) and awaits its future —
+the same request-scoped pattern `on_approval_needed`/`on_cost_approval_needed`
+already use — resolved by the structured `build_ask_user_dialog`
+(`host/web/dialogs.py`, below), rather than the pre-V12 design of rendering the
+question into the transcript and reading the reply off `session.messages`, the
+same queue `_send()` (`host/web/main.py`) already posts a `"user"` transcript turn
+into; the old path posted the reply twice (once via the queue, once explicitly) —
+`on_ask_user_needed` no longer touches `session.messages` at all, fixing it.
+`start(instructions: str | None = None)` launches
 `run(instructions)` as a detached `asyncio.Task` owned by the `RunSession` (not by
 any one NiceGUI client); `run()` is a near-verbatim port of
 `OrganizerScreen._agent_worker` onto a plain `asyncio.Task` — loads settings, opens
@@ -525,7 +534,7 @@ session and one `_TokenLedger` for the whole chat, threading `history` across
 questions for multi-turn context. `done`/`error` here are per-question, not
 per-session: `QueryBridge` never sets `session.done`.
 
-**`host/web/dialogs.py`** (U4, extended by U6) — one builder per `PendingRequest` kind, replacing
+**`host/web/dialogs.py`** (U4, extended by U5/U6/V12) — one builder per `PendingRequest` kind, replacing
 the dialog-building code that used to live inline in `run_page`'s
 `_show_pending_dialog` closure. `build_approval_dialog(session, pending) ->
 ui.dialog` is a faithful port of the TUI's `ApprovalModal`: title (plan id +
@@ -548,17 +557,33 @@ source of truth, matching the approval dialog's `plan_data`-driven approach;
 `pending.payload["summary"]` is used only as a fallback when `data` is empty,
 a caller-convenience case exercised by one existing test), the same
 "rough estimate from file sizes" disclaimer as the TUI, and Proceed/Cancel
-buttons. Both dialogs are
-`.props("persistent")` (no backdrop-click or Esc dismissal) and resolve via
-`session.resolve_pending(result, request_id=pending.request_id)` — fixing a live
-bug where the previous plain `ui.dialog()` could be dismissed without resolving
-its future, permanently deadlocking the run with no visible symptom (the same
-failure class as the reload-orphaning issue ROADMAP.md's "Break 1" spike found,
-closed here for the dialog-dismissal path instead).
+buttons. `build_ask_user_dialog(session, pending) -> ui.dialog` (V12) replaces the
+old design — the question rendered as a plain transcript turn, answered by typing
+a normal chat message — with a structured modal: one radio-button group per
+question from `pending.payload["questions"]` (only when the agent supplied
+`options`), plus one free-text "Additional comment" input, and Submit/"Skip — you
+decide" buttons. Submit composes the reply in code, never a second LLM
+round-trip — `"<question text> → <selected option>"` per answered question, plus
+an `"Additional comment: <text>"` line when non-blank — and resolves
+`AskUserResult(reply=reply, provided=bool(reply))`; Skip resolves
+`AskUserResult(reply="", provided=False)`, the same "proceed with your own best
+judgement" signal a degenerate/no-callback case already produced. All three
+dialogs are
+`.props("persistent")` (no backdrop-click or Esc dismissal) and resolve through a
+shared `_make_resolver(session, pending, dialog)` helper (V12) —
+`session.resolve_pending(result, request_id=pending.request_id)` then
+`dialog.close()` — factored out of `build_approval_dialog`/`build_cost_dialog`'s
+previously separately hand-rolled copies of the same shape (pure refactor, no
+behaviour change to either) and reused by `build_ask_user_dialog` too. This fixes a
+live bug where the previous plain `ui.dialog()` could be dismissed without
+resolving its future, permanently deadlocking the run with no visible symptom (the
+same failure class as the reload-orphaning issue ROADMAP.md's "Break 1" spike
+found, closed here for the dialog-dismissal path instead). V12 applies the same
+treatment to `ask_user`'s new dialog too.
 
 `build_journal_dialog(session) -> ui.dialog` (U6) is the toolbar-triggered
 journal viewer — the web UI's counterpart to the TUI's `JournalScreen`. Unlike
-the approval/cost dialogs above, it isn't resolving a `PendingRequest` (nothing
+the approval/cost/ask dialogs above, it isn't resolving a `PendingRequest` (nothing
 is waiting on a future), so it's a plain, dismissible `ui.dialog()` — Esc/
 backdrop-close just closes the viewer. Lists entries via
 `host.web.journal.load_entries` rendered through `host.format.fmt_journal_entry`
@@ -837,20 +862,20 @@ and, below a separator, a step-log strip
 (`host.web.steplog.sync_steps`/`StepLogState`, the same T5/T6 idiom `run_page`
 established) instead of the TUI `QueryScreen`'s side-by-side dual-`RichLog` split.
 Phase 20 is parity with a cleaner surface, not a redesign, and the log strip
-already *is* the web UI's "tool timeline". No approval/cost dialog wiring at all —
-query mode is read-only by construction (`QUERY_ALLOWED_TOOLS`), so there is
+already *is* the web UI's "tool timeline". No approval/cost/ask dialog wiring at
+all — query mode is read-only by construction (`QUERY_ALLOWED_TOOLS`), so there is
 nothing to gate. A `ui.timer` (same `web_session.REFRESH_INTERVAL` cadence as
 `run_page`) drives `_refresh()`, which renders new transcript turns, syncs the
 step log, and updates the status/token line.
 
-**`host/web/main.py`** (extended by T5/T6/T7/T8, U1/U2/U3/U4/U6/U7, V1/V13a) — now shares nicegui-importing duties
+**`host/web/main.py`** (extended by T5/T6/T7/T8, U1/U2/U3/U4/U6/U7, V1/V12/V13a) — now shares nicegui-importing duties
 with `host/web/shell.py` (T2). Pages are registered at import time (`@ui.page("/")`,
 `@ui.page("/run/{run_id}")`, `@ui.page("/query/{run_id}")` (U7)) but nothing binds a port until `run_web(target: Path |
 None = None, *, native: bool = True)` (V1 added `native`) is called, so importing the module is side-effect-free. Each
 connected browser tab or native-window client polls `RunSession`/`TranscriptItem`/`StepRecord` state with
 its own `ui.timer`, rather than the bridge touching NiceGUI elements directly —
-this is what lets a page reload re-attach to an in-flight approval/cost dialog (via
-`session.pending`) instead of orphaning it. The browser tab/native window title (T7) comes from
+this is what lets a page reload re-attach to an in-flight approval/cost/ask dialog
+(via `session.pending`) instead of orphaning it. The browser tab/native window title (T7) comes from
 `host.web.theme.window_title`: `run_web`'s `ui.run(...)` call passes it (with no
 target) as the global default title, and `run_page` calls
 `ui.page_title(theme.window_title(session.target))` from inside the page body —
@@ -904,7 +929,7 @@ input mirroring the Textual TUI's pre-analysis steering box. Only its
 `start(instructions=...)`, which is what actually launches the agent task; S4's
 version began the run as soon as a directory was picked. Once `session.started`
 flips, the starter pane hides and the main view (status/progress-bar/chat-input/
-approval-cost-dialog) takes over.
+approval-cost-ask-dialog) takes over.
 
 As of T5/T6, that main view splits telcontar's own tool activity out of the chat
 stream into two independent zones: `conversation_column` (turns only,
@@ -943,12 +968,13 @@ way. Clicking it creates a new query-mode session
 (`web_session.create(session.target, mode="query")`) and navigates to
 `/query/{run_id}`.
 
-**Dialogs (U4):** `_show_pending_dialog`'s inline checkbox/button-building code is
+**Dialogs (U4, extended by V12):** `_show_pending_dialog`'s inline checkbox/button-building code is
 gone too — it now just tracks which `pending.request_id` has already been shown
 (`_RenderState.shown_request_id`) and, on a new one, calls
-`host.web.dialogs.build_approval_dialog`/`build_cost_dialog` and `.open()`s the
-result; the dialog's own Approve/Refine/Reject buttons resolve
-`session.pending` directly (see `dialogs.py` above).
+`host.web.dialogs.build_approval_dialog`/`build_cost_dialog`/`build_ask_user_dialog`
+(V12) and `.open()`s the result; the dialog's own buttons (Approve/Refine/Reject,
+Proceed/Cancel, or — V12 — Submit/Skip) resolve `session.pending` directly (see
+`dialogs.py` above).
 
 **Sidebar tree refresh (U4):** `_RenderState` gained an `fs_revision: int` field
 (the step log's own render cursor moved out to `steplog.StepLogState`, above).

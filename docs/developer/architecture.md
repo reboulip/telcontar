@@ -381,7 +381,7 @@ Three parts:
   call `execute_plan`, the run ends normally but the final text names the
   unexecuted plan id instead of losing it silently.
 
-### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8, U1/U2/U3/U4/U6/U7/U10, V1/V11/V13a/V13c/V15)
+### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8, U1/U2/U3/U4/U6/U7/U10, V1/V11/V12/V13a/V13c/V15)
 
 `host/web/` is a package — the first piece of a planned Textual→NiceGUI web UI
 migration (ROADMAP Phase 18). As of S6, `telcontar --web` (`host/main.py`) launched
@@ -437,8 +437,9 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   or "error". A step that never closes (the run errored out mid-call) stays
   "running" forever by design — it shows exactly where things stopped, not a bug.
   `transcript` and `steps` share the same `_seq` counter for a stable relative
-  ordering. Also holds status, tokens, progress, a `pending` approval/cost request
-  keyed to an `asyncio.Future`, a chat `messages` queue, conversation `history`, and
+  ordering. Also holds status, tokens, progress, a `pending` approval/cost/ask
+  request (`kind: "approval"|"cost"|"ask"`, `"ask"` added V12) keyed to an
+  `asyncio.Future`, a chat `messages` queue, conversation `history`, and
   (U7) a `mode: Literal["organize", "query"] = "organize"` field — one `RunSession`
   type/registry serves both kinds of run rather than a parallel `QuerySession` type,
   since query mode needs the exact same `add_turn`/`open_step`/`close_step`/
@@ -470,7 +471,15 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   same callback contract `host/agent.py`'s `run_agent_loop` already uses for the
   Textual TUI, plus `run()`/`start()`, which drive one full organize run (settings
   load → `mcp_session` → `run_agent_loop`, including the O7 continuation loop for
-  follow-up chat messages) as a detached `asyncio.Task`. Also `nicegui`-free.
+  follow-up chat messages) as a detached `asyncio.Task`. Also `nicegui`-free. As of
+  V12, `on_ask_user_needed` creates an `"ask"`-kind `PendingRequest` and awaits its
+  future — the same request-scoped pattern `on_approval_needed`/
+  `on_cost_approval_needed` already use — resolved by the structured
+  `build_ask_user_dialog` (`host/web/dialogs.py`, below) rather than the pre-V12
+  design of rendering the question into the transcript and reading the reply off
+  `session.messages`; that old path double-posted the reply (once via the queue,
+  once explicitly), which this fixes too, since `session.messages` is no longer
+  touched at all.
   Both `start()` and `run()` take an optional `instructions: str | None = None`,
   threaded into the *first* `run_agent_loop` call only — never into an O7
   continuation — mirroring the Textual TUI's `OrganizerScreen._agent_worker`.
@@ -500,23 +509,42 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   mirrors that, calling `session.add_turn` with the returned answer after each
   `run_query_loop` call rather than reacting to the event. `done`/`error` here are
   per-question, not per-session: `QueryBridge` never sets `session.done`.
-- `host/web/dialogs.py` (U4, extended by U6) — one builder per `PendingRequest` kind, replacing the
+- `host/web/dialogs.py` (U4, extended by U5/U6/V12) — one builder per `PendingRequest` kind, replacing the
   dialog-building code that used to live inline in `run_page`.
   `build_approval_dialog(session, pending)` is a faithful port of the TUI's
   `ApprovalModal`: rationale + disclaimer, target-layout preview + disclaimer,
   per-op checkboxes defaulting checked, the `ops_json_path` label, a free-text
   refine input, and Approve/Refine/Reject buttons — Refine only resolves on
   non-blank input and always takes priority over Approve, since they're mutually
-  exclusive button clicks. `build_cost_dialog(session, pending)` is intentionally
-  minimal for now (summary text, Proceed/Cancel) — its TUI-faithful content is
-  U5's job. Both dialogs are `.props("persistent")` (no backdrop-click or Esc
-  dismissal) and resolve via `session.resolve_pending(result,
-  request_id=pending.request_id)` — this closes a live bug where the prior plain
-  `ui.dialog()` could be dismissed without resolving its future, permanently
-  deadlocking the run with no visible symptom: the same failure class as the
-  reload-orphaning issue described below ("Reload-safe design"), just a different
-  door into it. `build_journal_dialog(session)` (U6) is different in kind — it
-  isn't resolving a `PendingRequest`, so it's a plain, dismissible `ui.dialog()`.
+  exclusive button clicks. `build_cost_dialog(session, pending)` is a faithful
+  port of the TUI's `CostEstimateModal` (U5): title "Analyze this corpus?", a
+  summary line composed from the engine-side `pending.payload["data"]` dict
+  (`new`/`already_analyzed`/`estimated_tokens`/`batch_size`, falling back to
+  `pending.payload["summary"]` only when `data` is empty), the same "rough
+  estimate from file sizes" disclaimer as the TUI, and Proceed/Cancel buttons.
+  `build_ask_user_dialog(session, pending)` (V12) replaces the old design — the
+  question rendered as a plain transcript turn, answered by typing a normal chat
+  message — with a structured modal: one radio-button group per question
+  (`pending.payload["questions"]`, only when the agent supplied `options`) plus a
+  free-text "Additional comment" field, and Submit/"Skip — you decide" buttons.
+  Submit composes the reply in code — never a second LLM round-trip —
+  `"<question text> → <selected option>"` per answered question, plus an
+  `"Additional comment: <text>"` line when non-blank; Skip resolves
+  `AskUserResult(reply="", provided=False)`, the same "proceed with your own best
+  judgement" signal a degenerate/no-callback case already produced. All three
+  dialogs are `.props("persistent")` (no backdrop-click or Esc dismissal) and
+  resolve through a shared `_make_resolver(session, pending, dialog)` helper
+  (V12) — request-scoped `session.resolve_pending(...)` then `dialog.close()` —
+  factored out of `build_approval_dialog`/`build_cost_dialog`'s previously
+  separately hand-rolled copies of the same shape (pure refactor, no behaviour
+  change to either) and reused by `build_ask_user_dialog` too. This closes a live
+  bug where the prior plain `ui.dialog()` could be dismissed without resolving
+  its future, permanently deadlocking the run with no visible symptom: the same
+  failure class as the reload-orphaning issue described below ("Reload-safe
+  design"), just a different door into it — V12 applies the same treatment to
+  `ask_user`'s new dialog too. `build_journal_dialog(session)` (U6) is different
+  in kind — it isn't resolving a `PendingRequest`, so it's a plain, dismissible
+  `ui.dialog()`.
   It lists journal entries (`host.web.journal.load_entries`, rendered via
   `host.format.fmt_journal_entry`) and an Undo button gated behind a sibling
   confirm dialog; confirming calls `host.web.journal.do_undo` and, on success,
@@ -723,8 +751,8 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   (`host.web.steplog.sync_steps`, the same T5/T6 idiom `run_page` already
   established) instead of the TUI `QueryScreen`'s side-by-side dual-`RichLog`
   split — Phase 20 is parity with a cleaner surface, not a redesign, and the log
-  strip already is the web UI's "tool timeline". No approval/cost dialog wiring at
-  all — query mode is read-only by construction, so there is nothing to gate.
+  strip already is the web UI's "tool timeline". No approval/cost/ask dialog wiring
+  at all — query mode is read-only by construction, so there is nothing to gate.
 - `host/web/main.py` now mounts `app_shell(...)` at the top of both page bodies
   instead of assembling its own layout. The landing page (`/`) first checks
   `config.settings.is_configured()`: if telcontar hasn't been set up yet, it
@@ -756,7 +784,8 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   button constructs the `AgentBridge` and calls `start(instructions=...)` — S4's
   version started the run immediately on directory selection. Once started
   (`session.started`), the starter pane hides and the main view (status/progress
-  bar/chat input/approval-cost-dialogs, now via `host/web/dialogs.py`, U4) takes
+  bar/chat input/approval-cost-ask dialogs, now via `host/web/dialogs.py`,
+  U4/V12) takes
   over. As of U7, the main view also shows a "Query this corpus" button, hidden
   until `session.done` — mirroring the TUI's `OrganizerScreen`'s `g` keybinding,
   gated the same way — that creates a new query-mode session
@@ -844,15 +873,16 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
 
 **Reload-safe design:** a page reload creates a new NiceGUI client, but `RunSession`
 (looked up by run_id from the URL) persists independently of any one client, and a
-pending approval/cost request is an `asyncio.Future` parked on the session rather
+pending approval/cost/ask request is an `asyncio.Future` parked on the session rather
 than an awaited NiceGUI dialog — so a reload re-attaches to an in-flight approval
 instead of orphaning it. This was validated in a pre-implementation spike (see
 ROADMAP.md's "Break 1" note ahead of Phase 18), which found that a bare reload does
 **not** kill the background run — it silently orphans it, and any UI element the
 run's task then tries to touch afterward targets a dead client, which can
-permanently deadlock an approval gate with no visible symptom. As of U4, the
-approval/cost dialogs themselves (`host/web/dialogs.py`) close the same failure
-class's other door: they're `.props("persistent")` (no backdrop-click or Esc
+permanently deadlock an approval gate with no visible symptom. As of U4 — and,
+for `ask_user`'s dialog, V12 — the approval/cost/ask dialogs themselves
+(`host/web/dialogs.py`) close the same failure class's other door: they're
+`.props("persistent")` (no backdrop-click or Esc
 dismissal) and resolve through `session.resolve_pending(result,
 request_id=pending.request_id)`, so a dismissed-without-resolving dialog can no
 longer deadlock a run, and a stale dialog from another tab or a pre-reload client
