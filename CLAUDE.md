@@ -29,6 +29,12 @@ A locally-run, **profile-driven document-intelligence engine**. Given a director
 
 ## Architecture
 
+> **For any architecture-level, effort-estimate, or "how does X work" question, read
+> `docs/developer/architecture.md` and `docs/developer/modules.md` first** — they are the
+> maintained, current source of truth (kept up to date by the `doc-keeper` subagent) for
+> component boundaries, data flow, and per-file responsibilities. Prefer those two reads
+> over Glob/Grep-exploring `host/`/`server/` from scratch.
+
 ### Components
 
 1. **MCP Server** (`server/`) — exposes file tools, owns all guardrails, the quarantine logic, and the undo journal. Never deletes.
@@ -145,26 +151,26 @@ Start at `always`; relax over time via config — no code changes.
 ```
 project/
 ├── CLAUDE.md
+├── ROADMAP.md
 ├── pyproject.toml          # uv-managed
 ├── .env                    # config (gitignored)
-├── host/
-│   ├── __init__.py
-│   ├── main.py             # agent loop, MCP client, approval flow
-│   └── llm.py              # openai SDK wrapper (Azure/Mammouth via base_url)
-├── server/
-│   ├── __init__.py
-│   ├── main.py             # MCP server entrypoint (stdio)
-│   ├── tools.py            # tool implementations
-│   ├── guards.py           # collision/overwrite/quarantine rules
-│   ├── journal.py          # undo journal
-│   ├── extract.py          # markitdown/pypdf text extraction
-│   ├── profile.py          # domain profile loader
-│   └── registry.py         # document memory
+├── host/                   # MCP host: agent.py (agent loop), app.py (Textual TUI),
+│                           # web/ (web UI), main.py (thin CLI entry point)
+├── server/                 # MCP server: tools.py (tool implementations) + guards.py,
+│                           # journal.py, extract.py, profile.py, registry.py, archive.py,
+│                           # events.py, graph.py, sinks.py, egress.py, plan.py, main.py
 ├── config/
 │   └── settings.py         # env loading + validation
-└── profiles/
-    └── is_it_project.toml  # domain profile #1
+├── profiles/
+│   └── is_it_project.toml  # domain profile #1
+├── docs/developer/         # architecture.md, modules.md — maintained source of truth
+└── tests/
 ```
+
+> **Note:** this tree is a rough map, not authoritative — it has drifted before (e.g. it once
+> omitted `host/app.py` and `host/web/` entirely). `docs/developer/architecture.md` and
+> `docs/developer/modules.md` are the maintained, current source of truth; see the pointer
+> under "## Architecture" above.
 
 ## Development Setup
 
@@ -238,19 +244,34 @@ Task orchestration for non-trivial work is delegated to specialized agents and s
 
 - **`feature-forecast`** (Haiku subagent, background): Pre-reads the codebase for the next ROADMAP item while the current item is being implemented. Invoked automatically by `/dev-pipeline` with `run_in_background: true`.
 
-- **`sprint-planner`** (Opus subagent, xhigh reasoning): Strategic, up-front sprint planner. At the start of a non-trivial sprint, `/dev-pipeline` partitions the in-scope ROADMAP items into feature clusters and spawns one `sprint-planner` per cluster (up to 4, in parallel) to deep-read the code and return a Planning Report — recommended approach/sequencing, cross-cutting decisions, open questions, proposed roadmap adjustments, and risks. The root aggregates these, asks the user once (consolidated), and writes an uncommitted `sprint-brief.md` (in gitignored `.claude/tmp/dev-pipeline/<slug>/`) that the rest of the sprint follows and that a resumed sprint reuses. Read-only; never edits, never asks the user directly. This replaces the old standalone design-clarification step.
+- **`sprint-planner`** (Opus subagent, xhigh reasoning): Strategic, up-front sprint planner. At the start of a non-trivial sprint, `/dev-pipeline` partitions the in-scope ROADMAP items into feature clusters and spawns one `sprint-planner` per cluster (up to 4, in parallel) to deep-read the code and return a Planning Report — recommended approach/sequencing, cross-cutting decisions, open questions, proposed roadmap adjustments, risks, and a required `Files touched & dependencies` table (`Writes` / `Depends on` / `Notes`) per item. The root unions those tables across clusters to compute the sprint's wave plan, aggregates open questions, asks the user once (consolidated), and writes an uncommitted `sprint-brief.md` (in gitignored `.claude/tmp/dev-pipeline/<slug>/`) that the rest of the sprint follows and that a resumed sprint reuses. Read-only; never edits, never asks the user directly. This replaces the old standalone design-clarification step.
 
-- **`doc-keeper`** (Sonnet subagent): Documentation maintainer. Runs at the end of each feature implementation step (Step 4.5 of `/dev-pipeline`, before the commit), reads the changed source and the existing docs, and makes surgical updates to `README.md` and `docs/**` so the documentation stays in sync with the code. Edits docs only — never source, `ROADMAP.md`, or `CLAUDE.md`. Doc changes land in the same commit as the code.
+- **`doc-keeper`** (Sonnet subagent): Documentation maintainer. Runs once per wave in `/dev-pipeline` — spawned in the background at the start of Step 4.5, concurrently with the wave's test run, and joined before the commit so docs land in the same commit as the code. Reads the changed source and the existing docs and makes surgical updates to `README.md` and `docs/**`. Edits docs only — never source, `ROADMAP.md`, or `CLAUDE.md`.
 
 - **`/test-select`**: Select and run the minimal pytest scope for the current branch's changes. Call before every commit. Blocks commit if any test fails.
 
-- **`/dev-pipeline`**: Full sprint orchestrator. Reads `ROADMAP.md`, implements all unchecked items in order on a `feat/` branch using the agents above, then squash-merges into `develop`. Start here when working through the roadmap. End-of-session improvement reflection (scanning for boilerplate instructions, repeated corrections, automation opportunities) is handled automatically by the global Stop hook — no explicit auto-improve step needed.
+- **`/dev-pipeline`**: Full sprint orchestrator. Reads `ROADMAP.md`, batches independent unchecked items into dependency-ordered waves, and implements them on a `feat/` branch using the agents above — one commit per wave. Fast-forward-merges into `develop` by default, preserving per-wave commits (squash only on request). Start here when working through the roadmap. (Parallel git worktrees were evaluated and rejected for this repo — see `dev-pipeline/SKILL.md`'s "Why waves and not parallel git worktrees" if this comes up again.) End-of-session improvement reflection (scanning for boilerplate instructions, repeated corrections, automation opportunities) is handled automatically by the global Stop hook — no explicit auto-improve step needed.
 
 ## ROADMAP conventions
 
 - All items must use `- [ ] X1 · description` format (checkbox + label). Plain `- ` bullets are invisible to dev-pipeline.
 - If an item depends on a later-listed item, note it inline: `(requires: C5)`. dev-pipeline uses this to detect and handle prerequisite inversion — implementing the dependency first and noting the reordering in the commit body.
 - Example: `- [ ] C3 · execute_plan — ... (requires: C5)`
+
+## Concurrent sessions
+
+More than one Claude Code session may work in this repo at once (e.g. one session
+mid-sprint while another edits the roadmap or a skill file). This applies to
+`ROADMAP.md`, `CLAUDE.md`, and everything under `.claude/skills/**` and
+`.claude/agents/**` — files an agent reads once into context and then edits by anchor.
+
+- If an `Edit` result reports the file was modified on disk since it was last read,
+  **re-read the file before making any further edit to it** — do not chain more
+  anchor-based edits off a stale in-context view.
+- Before starting a multi-edit pass on `ROADMAP.md`, a skill/agent file, or `CLAUDE.md`
+  itself, re-read it once at the start of the pass rather than trusting an earlier read
+  from the same session (see `/dev-pipeline` Step 1's roadmap re-read rule for the
+  canonical example).
 
 ## Roadmap / Future
 

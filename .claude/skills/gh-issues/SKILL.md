@@ -20,6 +20,22 @@ description: Triage open GH issues (implement / defer / drop with labels), then 
 gh issue list --state open --json number,title,labels,body --limit 100
 ```
 
+For a readable at-a-glance listing (number + labels + title), don't improvise a display
+command — piping `ForEach-Object` string interpolation directly to output garbles when
+labels are multi-value (fields run together). Use this known-good pattern instead:
+
+```powershell
+gh issue list --state open --json number,title,labels --limit 100 |
+  ConvertFrom-Json |
+  ForEach-Object {
+    [PSCustomObject]@{
+      Number = $_.number
+      Labels = ($_.labels.name -join ', ')
+      Title  = $_.title
+    }
+  } | Format-Table -AutoSize | Out-String -Width 200
+```
+
 Filter out any issue that already carries one of the following labels — those are already triaged:
 - `roadmap`
 - `deferred`

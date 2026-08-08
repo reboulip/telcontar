@@ -34,55 +34,32 @@ git status --porcelain
 > feat-branch diff on `main` returns the *entire* `develop` history and defeats
 > scoped selection. Always base a feat/fix branch on `develop`.
 
-## Step 2 — Select test scope
+## Step 2 — Cheap-suite escape hatch
 
-Apply these rules in order (first match wins):
+The full suite is currently **~91s for 868 tests** (measured 2026-08-08; was 63s/691 tests
+two days earlier — it grows as the roadmap adds tests, so re-measure occasionally rather
+than trusting this number indefinitely). **If the full suite would run in well under
+~120s, skip scope selection entirely and just run it:**
 
-| Changed file(s) | Run |
-|-----------------|-----|
-| `config/settings.py` only | Full suite — settings affect everything (includes `tests/test_settings_credentials.py`, `tests/test_settings.py`) |
-| `server/tools.py` only | `tests/test_tools_readonly.py tests/test_tools_propose.py tests/test_execute_plan.py tests/test_undo_last.py tests/test_review_plan.py tests/test_tools_outputs.py tests/test_tools_registry.py tests/test_events.py tests/test_graph.py tests/test_archive.py tests/test_compress_quarantine.py tests/test_e2e_toolchain.py tests/test_tools_errors.py` |
-| `server/guards.py` only | `tests/test_guards.py tests/test_tools_errors.py` |
-| `server/extract.py` only | `tests/test_tools_readonly.py` (extract_text delegates here) |
-| `server/plan.py` only | `tests/test_plan.py tests/test_e2e_toolchain.py` |
-| `server/profile.py` only | `tests/test_profile.py tests/test_e2e_toolchain.py` |
-| `server/registry.py` only | `tests/test_registry.py tests/test_e2e_toolchain.py` |
-| `server/journal.py` only | `tests/test_journal.py tests/test_tools_outputs.py tests/test_e2e_toolchain.py` |
-| `server/events.py` only | `tests/test_events.py` |
-| `server/graph.py` only | `tests/test_graph.py` |
-| `server/archive.py` only | `tests/test_archive.py` |
-| `server/egress.py` only | `tests/test_egress.py` |
-| `server/sinks.py` only | `tests/test_sinks.py` |
-| `server/main.py` only | `tests/test_entrypoints.py tests/test_main_confinement.py tests/test_egress.py` |
-| `server/tools.py` propose_* only | `tests/test_tools_propose.py tests/test_e2e_toolchain.py` |
-| `server/tools.py` execute_plan only | `tests/test_execute_plan.py tests/test_e2e_toolchain.py tests/test_tools_errors.py` |
-| `server/tools.py` undo_last only | `tests/test_undo_last.py tests/test_compress_quarantine.py tests/test_e2e_toolchain.py` |
-| `server/tools.py` compress_quarantine only | `tests/test_compress_quarantine.py tests/test_undo_last.py` |
-| `server/tools.py` review_plan only | `tests/test_review_plan.py tests/test_e2e_toolchain.py` |
-| `server/tools.py` registry tools only (record_document/get_registry/list_documents/get_document/find_duplicates/find_modified_documents) | `tests/test_tools_registry.py tests/test_e2e_toolchain.py` |
-| `server/tools.py` event tools only (create_event/list_events) | `tests/test_events.py` |
-| `server/tools.py` graph tools only (build_graph/get_graph/get_actors) | `tests/test_graph.py` |
-| `server/tools.py` archive tools only (archive_document/list_archived) | `tests/test_archive.py tests/test_undo_last.py` |
-| Multiple files in `server/` | Full `tests/` suite |
-| `host/agent.py` only | `tests/test_host.py tests/test_tools_outputs.py tests/test_web_prompts.py` |
-| `host/app.py` only | `tests/test_app_ui.py` |
-| `host/main.py` only | `tests/test_entrypoints.py` |
-| `host/tokenlog.py` only | `tests/test_token_log.py` |
-| `host/format.py`, `host/paths.py`, or `host/narration.py` only | `tests/test_host_format.py tests/test_host_paths.py tests/test_app_ui.py` |
-| `host/configflow.py` only | `tests/test_configflow.py tests/test_app_ui.py tests/test_web_ui.py` |
-| `host/web/tree.py` only | `tests/test_web_tree.py` |
-| `host/web/theme.py` only | `tests/test_web_theme.py` |
-| `host/web/settings.py` only | `tests/test_web_ui.py tests/test_configflow.py tests/test_web_prompts.py` |
-| `host/web/forms.py`, `host/web/wizard.py`, or `host/web/shell.py` only | `tests/test_web_ui.py tests/test_configflow.py` |
-| `host/web/dialogs.py`, `host/web/steplog.py`, `host/web/bridge.py`, `host/web/session.py`, `host/web/journal.py`, or `host/web/query_view.py` only | `tests/test_web_session.py tests/test_web_ui.py` |
-| `host/web/main.py` only | `tests/test_web_ui.py tests/test_web_session.py` |
-| Any file in `host/web/` only | `tests/test_web_session.py tests/test_web_tree.py tests/test_web_theme.py tests/test_web_ui.py tests/test_web_prompts.py` |
-| Any file in `host/` | `tests/test_host.py tests/test_tools_outputs.py tests/test_app_ui.py tests/test_entrypoints.py tests/test_token_log.py tests/test_host_format.py tests/test_host_paths.py tests/test_configflow.py tests/test_web_session.py tests/test_web_tree.py tests/test_web_theme.py tests/test_web_ui.py tests/test_web_prompts.py` |
-| Changes span `server/` + `host/` | Full suite |
-| Cross-cutting refactor or interface change | Full suite |
-| When in doubt | Full suite |
+```bash
+uv run --group test pytest -q
+```
 
-> **Note:** Update this table whenever new test files are added. When a test file doesn't exist yet for a changed module, run the full suite.
+This replaces hand-maintained per-file scope selection — the token/time cost of picking a
+scoped subset stopped being worth it once the full run was already this cheap, and a
+hand-maintained table is a recurring source of missed updates. Only fall back to a scoped
+run (below) if the suite has grown past the ~120s mark since it was last measured here —
+re-time it (`uv run --group test pytest -q`, note the total) and update this section's
+number if so.
+
+### Scoped fallback (only if the full suite has grown past ~120s)
+
+Base the diff on `develop` (feat/fix branches) or `main` (from `develop`), per Step 1, and
+run only the test files touching the changed modules — check `tests/` for a same-named or
+clearly-related test file per changed `host/`/`server/` module. When no test file obviously
+corresponds to a changed module, or the change is cross-cutting (spans `server/` + `host/`,
+touches `config/settings.py`, or is a broad refactor), run the full suite instead of
+guessing.
 
 State explicitly which files you selected and why before running.
 
