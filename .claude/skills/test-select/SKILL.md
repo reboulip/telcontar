@@ -64,7 +64,7 @@ Apply these rules in order (first match wins):
 | `server/tools.py` graph tools only (build_graph/get_graph/get_actors) | `tests/test_graph.py` |
 | `server/tools.py` archive tools only (archive_document/list_archived) | `tests/test_archive.py tests/test_undo_last.py` |
 | Multiple files in `server/` | Full `tests/` suite |
-| `host/agent.py` only | `tests/test_host.py tests/test_tools_outputs.py` |
+| `host/agent.py` only | `tests/test_host.py tests/test_tools_outputs.py tests/test_web_prompts.py` |
 | `host/app.py` only | `tests/test_app_ui.py` |
 | `host/main.py` only | `tests/test_entrypoints.py` |
 | `host/tokenlog.py` only | `tests/test_token_log.py` |
@@ -72,11 +72,12 @@ Apply these rules in order (first match wins):
 | `host/configflow.py` only | `tests/test_configflow.py tests/test_app_ui.py tests/test_web_ui.py` |
 | `host/web/tree.py` only | `tests/test_web_tree.py` |
 | `host/web/theme.py` only | `tests/test_web_theme.py` |
-| `host/web/forms.py`, `host/web/wizard.py`, `host/web/settings.py`, or `host/web/shell.py` only | `tests/test_web_ui.py tests/test_configflow.py` |
+| `host/web/settings.py` only | `tests/test_web_ui.py tests/test_configflow.py tests/test_web_prompts.py` |
+| `host/web/forms.py`, `host/web/wizard.py`, or `host/web/shell.py` only | `tests/test_web_ui.py tests/test_configflow.py` |
 | `host/web/dialogs.py`, `host/web/steplog.py`, `host/web/bridge.py`, `host/web/session.py`, `host/web/journal.py`, or `host/web/query_view.py` only | `tests/test_web_session.py tests/test_web_ui.py` |
 | `host/web/main.py` only | `tests/test_web_ui.py tests/test_web_session.py` |
-| Any file in `host/web/` only | `tests/test_web_session.py tests/test_web_tree.py tests/test_web_theme.py tests/test_web_ui.py` |
-| Any file in `host/` | `tests/test_host.py tests/test_tools_outputs.py tests/test_app_ui.py tests/test_entrypoints.py tests/test_token_log.py tests/test_host_format.py tests/test_host_paths.py tests/test_configflow.py tests/test_web_session.py tests/test_web_tree.py tests/test_web_theme.py tests/test_web_ui.py` |
+| Any file in `host/web/` only | `tests/test_web_session.py tests/test_web_tree.py tests/test_web_theme.py tests/test_web_ui.py tests/test_web_prompts.py` |
+| Any file in `host/` | `tests/test_host.py tests/test_tools_outputs.py tests/test_app_ui.py tests/test_entrypoints.py tests/test_token_log.py tests/test_host_format.py tests/test_host_paths.py tests/test_configflow.py tests/test_web_session.py tests/test_web_tree.py tests/test_web_theme.py tests/test_web_ui.py tests/test_web_prompts.py` |
 | Changes span `server/` + `host/` | Full suite |
 | Cross-cutting refactor or interface change | Full suite |
 | When in doubt | Full suite |

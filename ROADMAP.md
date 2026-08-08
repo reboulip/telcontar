@@ -44,7 +44,7 @@ on open work.
 
 #### Prompts & settings — `host/web/settings.py`, `host/agent.py`
 
-- [ ] V11 · Prompt inspection — a read-only Settings view of the composed system prompt(s) `host/agent.py` sends, so the user can see what telcontar is actually being told. Editing is deliberately out of scope here: an editable prompt sits next to Phase 12 M10's injection-resistance guardrails and needs its own security pass before it's safe to expose as a write path. [#30]
+- [x] V11 · Prompt inspection — a read-only Settings view of the composed system prompt(s) `host/agent.py` sends, so the user can see what telcontar is actually being told. Editing is deliberately out of scope here: an editable prompt sits next to Phase 12 M10's injection-resistance guardrails and needs its own security pass before it's safe to expose as a write path. [#30]
 
 #### Sidebar tree & live state — `host/web/tree.py`, `shell.py`
 
@@ -53,7 +53,7 @@ on open work.
 
 #### Theme & layout polish — theme tokens, chat rendering (`bridge.py`/`session.py`), `steplog.py`'s detail drawer
 
-- [ ] V13a · Theme & layout polish — chat bubbles — right-align user chat bubbles, left-align telcontar's [#39]; silver (user) / gold (telcontar) bubble backgrounds, checked for accessible contrast in both light and dark themes [#36].
+- [x] V13a · Theme & layout polish — chat bubbles — right-align user chat bubbles, left-align telcontar's [#39]; silver (user) / gold (telcontar) bubble backgrounds, checked for accessible contrast in both light and dark themes [#36].
 - [ ] V13b · Theme & layout polish — step-detail drawer — move the step-detail drawer (`steplog.py`) from the shell's right side into the left sidebar next to the file tree, widening the sidebar to fit; fix it following a fixed white background instead of the browser's theme along the way (root cause: `ui.codemirror`'s light theme default). [#35] (requires: V7, V15)
 - [x] V13c · Theme & layout polish — display face — more use of the elvish display face where relevant. [#36]
 

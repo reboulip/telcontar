@@ -6,7 +6,7 @@ import asyncio
 import json
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 
 from host.agent import (
@@ -883,6 +883,90 @@ def test_query_system_prompt_is_readonly() -> None:
     assert "propose_move" not in prompt
     # the active profile's vocabulary is injected
     assert "releve_de_decision" in prompt
+
+
+# ── V11: prompt inspection (composed_system_prompts) ───────────────────────────
+
+
+def test_composed_system_prompts_returns_all_three() -> None:
+    from config.settings import load
+
+    from host.agent import composed_system_prompts
+
+    prompts = composed_system_prompts(load(), _PROJECT_ROOT)
+
+    assert set(prompts) == {"organize", "query", "analyze"}
+    # organize: same profile-driven content _build_system_prompt produces
+    assert "already" in prompts["organize"].lower()
+    assert "analyzed" in prompts["organize"].lower()
+    assert "releve_de_decision" in prompts["organize"]
+    # query: read-only, no mutating tools
+    assert "list_documents" in prompts["query"]
+    assert "execute_plan" not in prompts["query"]
+    # analyze: the injection-resistance delimiter explanation (S2/M10)
+    assert "UNTRUSTED DOCUMENT CONTENT" in prompts["analyze"]
+    assert "releve_de_decision" in prompts["analyze"]
+
+
+def test_composed_system_prompts_loads_profile_once_for_all_three_builders() -> None:
+    """Load the domain profile ONCE and pass it to all three builders — not
+    three separate loads/parses (V11's explicit requirement)."""
+    import host.agent as agent_module
+    from config.settings import load
+
+    with patch.object(
+        agent_module, "_try_load_profile", wraps=agent_module._try_load_profile
+    ) as mock_load:
+        agent_module.composed_system_prompts(load(), _PROJECT_ROOT)
+
+    assert mock_load.call_count == 1
+
+
+def test_composed_system_prompts_project_root_defaults_like_run_agent_loop() -> None:
+    """No explicit project_root -> must resolve exactly like run_agent_loop's
+    own default (`Path(__file__).resolve().parent.parent`) — NAMING.md is read
+    relative to the repo root, not any run's target, so a different default
+    would silently display a prompt telcontar does not actually send."""
+    import host.agent as agent_module
+    from config.settings import load
+
+    settings = load()
+    expected_root = Path(agent_module.__file__).resolve().parent.parent
+
+    assert agent_module.composed_system_prompts(settings) == agent_module.composed_system_prompts(
+        settings, expected_root
+    )
+
+
+def test_composed_system_prompts_falls_back_without_profile() -> None:
+    from host.agent import composed_system_prompts
+
+    # A MagicMock has no real profile/profiles_dir -> profile load fails -> fallback
+    prompts = composed_system_prompts(MagicMock(), _PROJECT_ROOT)
+
+    assert '"default" domain profile' in prompts["organize"]
+    assert '"default" domain profile' in prompts["query"]
+    # the analyzer template wraps "domain"/"profile" onto separate lines
+    assert '"default" domain' in prompts["analyze"]
+    assert "profile" in prompts["analyze"]
+
+
+def test_resolved_profile_name_returns_loaded_profile_name() -> None:
+    from config.settings import load
+
+    from host.agent import _resolved_profile_name
+
+    assert _resolved_profile_name(load(), _PROJECT_ROOT) == "is_it_project"
+
+
+def test_resolved_profile_name_returns_none_on_load_failure() -> None:
+    """`_try_load_profile` swallows a load failure and prompt-building falls
+    back to "default" silently — `_resolved_profile_name` must surface that
+    same failure instead of hiding it, for the Settings prompt-inspection
+    view's transparency requirement."""
+    from host.agent import _resolved_profile_name
+
+    assert _resolved_profile_name(MagicMock(), _PROJECT_ROOT) is None
 
 
 # ── M10: injection-resistance delimiter around document content (S2) ─────────

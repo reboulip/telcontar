@@ -278,6 +278,8 @@ see `host/web/main.py` below).
 - `_discover_openai_tools(session, allowed=None, denied=None)` — lists MCP tools and converts to OpenAI function specs; when `allowed` is given, only tools in the set are exposed (used by query mode); when `denied` is given (P6), tools in the set are excluded instead (used by organize/ORGANIZE mode, `denied=ORGANIZE_DENIED_TOOLS`) — the two parameters are independent filters, not mutually exclusive
 - `_build_system_prompt(project_root, settings)` — assembles the organize-mode system prompt from the active profile, including one "Optional chat checkpoint" paragraph (P8) referencing `ask_user` — replaces the former separate clarification-checkpoint and multiple-option-checkpoint paragraphs
 - `_build_query_system_prompt(project_root, settings)` — assembles the read-only query-mode system prompt from the active profile
+- `composed_system_prompts(settings, project_root=None) -> dict[str, str]` (V11) — read-only introspection for the Settings "What telcontar tells the model" panel: renders and returns all three system prompts (`{"organize": ..., "query": ..., "analyze": ...}`) from a single profile load, reusing the same rendering steps `_build_system_prompt`/`_build_query_system_prompt`/`_analyze_batch` already use (factored into `_render_system_prompt`/`_render_query_system_prompt`/`_build_analyzer_system_prompt`) rather than duplicating them or loading the profile three times. `project_root` defaults to the exact expression `run_agent_loop` uses when omitted (`Path(__file__).resolve().parent.parent`) — load-bearing, since `_load_naming_conventions` reads `.organizer/NAMING.md` relative to the repo root, not any run's target directory, so a different default would silently display a prompt telcontar does not actually send. The ANALYZE prompt is rendered for a full `_ANALYZER_BATCH_SIZE`-document batch, illustrative rather than any real run's actual (often smaller) batch size. Deliberately does not reflect the two things composed at runtime from a live run — the corpus digest and the user's own pre-analysis steering instructions — since this view is target-free and must work before any directory has been analyzed
+- `_resolved_profile_name(settings, project_root=None) -> str | None` (V11) — the active profile's real name once loaded, or `None` on a load failure. `_try_load_profile` swallows that same failure and prompt-building falls back to a generic "default" profile name so the prompts stay renderable — convenient for the LLM-facing text, but it would hide the failure from a transparency view; this surfaces the same pass/fail outcome instead. Same `project_root` default as `composed_system_prompts`
 - `_handle_execute_plan(...)` — intercepts `execute_plan` calls to insert the approval gate before forwarding to the server. Fetches the plan via `get_plan`, writes its full ops (plan id, rationale, folder notes, ops) to `.organizer/plan_ops.json` via `_write_ops_json` and attaches the path as `ops_json_path` on the event data, then awaits `on_approval_needed`. If the returned `ApprovalResult.refinement` is set (non-blank), the plan is NOT approved or executed — the tool result instead carries the refinement text back to the agent as a note instructing it to revise the plan (ops/rationale/folder notes) and call `execute_plan` again. Otherwise falls back to the plain approved/rejected path
 - `_write_ops_json(plan_data, plans_dir)` — writes `{plan_id, rationale, folder_notes, ops}` to `<plans_dir>/../plan_ops.json` (i.e. `.organizer/plan_ops.json`), latest-plan-wins; returns the path, or `None` on an `OSError`
 - `_handle_ask_user(*, args, on_event, on_ask_user_needed) -> Any` (P8) — intercepts calls to the host-side `ask_user` tool; merges K1's `_handle_clarification` and L7's `_handle_options` into one handler. Drops malformed/empty items, emits an `"ask_user"` `AgentEvent` with the well-formed questions, and awaits the callback; no once-per-run guard (unlimited calls per run); never raises — degenerate input (no callback wired, no well-formed questions, no reply captured) returns a note telling the agent to proceed with its own best judgement
@@ -379,7 +381,7 @@ see `host/web/main.py` below).
 
 ---
 
-### `host/web/` (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7, Phase 20 U1-U7/U10, Phase 21 V1/V13c/V15)
+### `host/web/` (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7, Phase 20 U1-U7/U10, Phase 21 V1/V11/V13a/V13c/V15)
 
 **Role:** NiceGUI-based web UI package — the first piece of a planned
 Textual→NiceGUI migration. As of S6, `telcontar --web` (`host/main.py`, lazy import)
@@ -801,10 +803,34 @@ calling `build_settings_view(on_done=lambda: ui.navigate.back())` inside
 `app_shell()`; the sidebar's Settings button (`host/web/shell.py`) is what
 routes here from any screen.
 
-**`host/web/query_view.py`** (U7) — the query page's UI, `nicegui`-importing (like
+As of V11, `build_settings_view` also awaits `_build_prompt_inspection()` after
+rendering the form — a collapsed "What telcontar tells the model" `ui.expansion`
+(`.mark("expansion-prompts")`) deliberately built OUTSIDE the `@ui.refreshable
+form()` region, since a `refresh()` triggered by save-validation must never
+recompose it. `_load_prompt_inspection_data()` (dispatched via `run.io_bound`,
+bundling the TOML profile load and `NAMING.md` read into one blocking round trip)
+builds a plain `config.settings.Settings()` — not `config.settings.load()`, which
+raises without credentials — so the panel renders even before the setup wizard
+has run, and calls `host.agent.composed_system_prompts(settings)` for the three
+read-only ORGANIZE/QUERY/ANALYZE prompts and `host.agent._resolved_profile_name(settings)`
+for the profile-load status shown above them (a load failure is surfaced
+explicitly — `_try_load_profile` swallows the same failure and silently falls
+back to a generic "default" profile name for the prompts themselves, which a
+transparency view must not hide). Each prompt renders via disabled
+`ui.codemirror`, never `ui.markdown`/`ui.html`, matching `Shell.show_detail`'s
+precedent (T6): a composed prompt can embed profile free-text and `NAMING.md`
+content that must never be interpreted as markup. Editing is deliberately out of
+scope — an editable prompt sits next to M10's injection-resistance guardrails and
+needs its own security pass first — and the panel explicitly notes the two things
+it can't show: the corpus digest and the user's pre-analysis steering
+instructions, both composed at run time from a live target/registry this
+target-free view never has.
+
+**`host/web/query_view.py`** (U7, extended by V13a) — the query page's UI, `nicegui`-importing (like
 `dialogs.py`/`steplog.py`/`shell.py`). `build_query_view(shell, session)` renders a
 conversation column (`ui.chat_message`, reusing the same idiom `run_page` already
-uses for organize turns) plus a question input/Ask button
+uses for organize turns, including `run_page`'s V13a bubble alignment/colour fix
+— duplicated here rather than shared, per this pair's existing precedent) plus a question input/Ask button
 (`.mark("query-input")`/`.mark("btn-query-ask")`) that echoes the question as a
 `user`-speaker turn (`session.add_turn`) and pushes it onto `session.messages` —
 and, below a separator, a step-log strip
@@ -817,7 +843,7 @@ nothing to gate. A `ui.timer` (same `web_session.REFRESH_INTERVAL` cadence as
 `run_page`) drives `_refresh()`, which renders new transcript turns, syncs the
 step log, and updates the status/token line.
 
-**`host/web/main.py`** (extended by T5/T6/T7/T8, U1/U2/U3/U4/U6/U7, V1) — now shares nicegui-importing duties
+**`host/web/main.py`** (extended by T5/T6/T7/T8, U1/U2/U3/U4/U6/U7, V1/V13a) — now shares nicegui-importing duties
 with `host/web/shell.py` (T2). Pages are registered at import time (`@ui.page("/")`,
 `@ui.page("/run/{run_id}")`, `@ui.page("/query/{run_id}")` (U7)) but nothing binds a port until `run_web(target: Path |
 None = None, *, native: bool = True)` (V1 added `native`) is called, so importing the module is side-effect-free. Each
@@ -884,7 +910,14 @@ As of T5/T6, that main view splits telcontar's own tool activity out of the chat
 stream into two independent zones: `conversation_column` (turns only,
 `ui.chat_message`, rendering `session.transcript` exactly as S4 did) and, below a
 separator, an `activity_label` (`session.activity`, the current narration line)
-plus a pinned-bottom, scrolling `log_column` (`max-height: 25vh`). As of U4, the
+plus a pinned-bottom, scrolling `log_column` (`max-height: 25vh`). As of V13a,
+each `ui.chat_message` bubble also gets `.classes("w-full")` — without it,
+NiceGUI's `.nicegui-column` CSS (`align-items: flex-start`) shrink-wraps every
+bubble to its content width regardless of `sent=`, hiding the left/right
+alignment `sent=` was already computing correctly — plus explicit
+`bg-color`/`text-color` Quasar props resolved against `theme.PALETTE`
+(`secondary`/`dark` for the user, `primary`/`dark` for telcontar), fixing
+low-contrast white-on-gold bubble text. As of U4, the
 log column's rendering (row-building, glyphs, the truncating cap) is no longer
 inline here — it's `host/web/steplog.py`'s `sync_steps`/`StepLogState`, above;
 `run_page` just owns a `steplog.StepLogState()` instance and calls

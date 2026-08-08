@@ -236,8 +236,24 @@ async def run_page(run_id: str) -> None:
         step_log_state = steplog.StepLogState()
 
         def _render_turn(item: web_session.TranscriptItem) -> None:
+            # V13a: `sent=` already picks the right side, but NiceGUI's
+            # `.nicegui-column` CSS (`align-items: flex-start`) shrink-wraps
+            # every chat-message to its content width, hiding that alignment
+            # — `.classes("w-full")` on the message itself is the fix.
+            # bg-color/text-color are genuine QChatMessage props (Quasar
+            # renders them as `text-<color>` utility classes under the hood,
+            # relying on `.q-message-text { background: currentColor }`)
+            # resolved against theme.PALETTE via run_web()'s app.colors().
+            is_user = item.speaker == "user"
+            bubble_props = (
+                "bg-color=secondary text-color=dark"
+                if is_user
+                else "bg-color=primary text-color=dark"
+            )
             with conversation_column:
-                ui.chat_message(item.text, name=item.speaker, sent=item.speaker == "user")
+                ui.chat_message(item.text, name=item.speaker, sent=is_user).classes("w-full").props(
+                    bubble_props
+                )
 
         def _show_pending_dialog() -> None:
             pending = session.pending

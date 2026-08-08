@@ -845,6 +845,74 @@ async def test_query_page_asks_question_and_shows_answer(
     assert len(answers) == 1
 
 
+# ── Chat bubble alignment & colour (V13a) ────────────────────────────────────
+#
+# Visual layout/colour itself isn't observable through the headless `user`
+# fixture (it renders no CSS — see the module docstring's gotchas) — these
+# assert the underlying element got the right classes/props to produce it:
+# `.classes("w-full")` is what makes the `sent=` alignment actually visible
+# (NiceGUI's `.nicegui-column` CSS otherwise shrink-wraps every bubble to its
+# content width regardless of `sent`), and `bg-color`/`text-color` are real
+# QChatMessage props (Quasar's own component, confirmed against the vendored
+# quasar.umd.js) that resolve against theme.PALETTE — silver/user,
+# gold/telcontar, both paired with a `dark` foreground for contrast.
+#
+# ElementFilter special-cases ChatMessage to match `content=` against its
+# `name` prop (see nicegui/element_filter.py), so filtering by `content=
+# "user"`/`content="telcontar"` reliably picks out each speaker's own bubble
+# — no `.mark(...)` needed on the element itself.
+
+
+async def test_run_page_chat_bubbles_are_full_width_and_themed_by_speaker(
+    user: User, tmp_path: Path
+) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.add_turn("user", "hello there")
+    session.add_turn("telcontar", "hi human")
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see("hello there")
+    await user.should_see("hi human")
+
+    [user_bubble] = user.find(kind=ui.chat_message, content="user").elements
+    [telcontar_bubble] = user.find(kind=ui.chat_message, content="telcontar").elements
+
+    assert user_bubble.props["sent"] is True
+    assert telcontar_bubble.props["sent"] is False
+    assert "w-full" in user_bubble.classes
+    assert "w-full" in telcontar_bubble.classes
+    assert user_bubble.props["bg-color"] == "secondary"
+    assert user_bubble.props["text-color"] == "dark"
+    assert telcontar_bubble.props["bg-color"] == "primary"
+    assert telcontar_bubble.props["text-color"] == "dark"
+
+
+async def test_query_page_chat_bubbles_are_full_width_and_themed_by_speaker(
+    user: User, tmp_path: Path
+) -> None:
+    session = web_session.create(tmp_path, mode="query")
+    session.started = True  # skip QueryBridge(session).start() — see U7 tests above
+    session.add_turn("user", "how many documents?")
+    session.add_turn("telcontar", "42 documents")
+
+    await user.open(f"/query/{session.run_id}")
+    await user.should_see("how many documents?")
+    await user.should_see("42 documents")
+
+    [user_bubble] = user.find(kind=ui.chat_message, content="user").elements
+    [telcontar_bubble] = user.find(kind=ui.chat_message, content="telcontar").elements
+
+    assert user_bubble.props["sent"] is True
+    assert telcontar_bubble.props["sent"] is False
+    assert "w-full" in user_bubble.classes
+    assert "w-full" in telcontar_bubble.classes
+    assert user_bubble.props["bg-color"] == "secondary"
+    assert user_bubble.props["text-color"] == "dark"
+    assert telcontar_bubble.props["bg-color"] == "primary"
+    assert telcontar_bubble.props["text-color"] == "dark"
+
+
 def test_sidebar_resize_js_is_an_invoked_iife() -> None:
     """V15: `_RESIZE_JS` used to be a bare arrow-function *expression*.
     NiceGUI's `run_javascript` evaluates the string via `eval`, and `eval` of

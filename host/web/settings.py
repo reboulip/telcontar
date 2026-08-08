@@ -43,6 +43,12 @@ async def build_settings_view(*, on_done: Callable[[], None]) -> None:
 
     form()
 
+    # V11: read-only prompt inspection, deliberately OUTSIDE form()'s
+    # @ui.refreshable region — a validation-driven refresh() (e.g. from
+    # _save()) must never recompose this on every keystroke. It reflects the
+    # currently-saved settings, not in-progress (unsaved) form edits.
+    await _build_prompt_inspection()
+
 
 def _render_form(
     state: _SettingsState,
@@ -117,3 +123,98 @@ def _render_form(
     with ui.row():
         ui.button("Save", on_click=_save, color="primary").mark("btn-settings-save")
         ui.button("Cancel", on_click=_cancel).mark("btn-settings-cancel")
+
+
+# ── V11: prompt inspection ("What telcontar tells the model") ────────────────
+
+
+@dataclass
+class _PromptInspectionData:
+    prompts: dict[str, str]
+    resolved_profile: str | None
+    configured_profile: str
+    analyzer_batch_size: int
+
+
+def _load_prompt_inspection_data() -> _PromptInspectionData:
+    """Blocking work for the prompt-inspection expansion, bundled into one
+    `run.io_bound` round trip (TOML profile load + NAMING.md read).
+
+    Builds `config.settings.Settings()` directly — NOT `config.settings.load()`,
+    which raises when credentials are absent — so prompt inspection works even
+    before the setup wizard has run. `resolved_profile` is None when the
+    profile failed to load: `host.agent`'s `_try_load_profile` swallows that
+    failure and falls back to a generic "default" profile internally so the
+    prompts themselves stay renderable — but a transparency feature must not
+    hide the failure the same way, so this surfaces it for display instead.
+    """
+    from config.settings import Settings
+    from host.agent import _ANALYZER_BATCH_SIZE, _resolved_profile_name, composed_system_prompts
+
+    settings = Settings()
+    return _PromptInspectionData(
+        prompts=composed_system_prompts(settings),
+        resolved_profile=_resolved_profile_name(settings),
+        configured_profile=settings.profile,
+        analyzer_batch_size=_ANALYZER_BATCH_SIZE,
+    )
+
+
+async def _build_prompt_inspection() -> None:
+    """Collapsed "What telcontar tells the model" expansion (V11): the three
+    read-only composed system prompts (ORGANIZE/QUERY/ANALYZE) telcontar
+    actually sends the LLM, so the user can see what it's being told.
+
+    Editing is deliberately out of scope — an editable prompt sits next to
+    Phase 12 M10's injection-resistance guardrails and needs its own security
+    pass before it's safe to expose as a write path.
+
+    Rendering safety: the composed prompts can embed profile free-text and
+    NAMING.md file content, which — like host/web/shell.py's step-detail
+    drawer (`show_detail`) — must never be rendered as markup/HTML. Displayed
+    via disabled `ui.codemirror` only, never `ui.markdown`/`ui.html`, matching
+    that same precedent.
+    """
+    data = await run.io_bound(_load_prompt_inspection_data)
+    if data is None:
+        # run.io_bound returns None only when cancelled or the app is
+        # shutting down mid-call (NiceGUI's documented interim shape) —
+        # nothing to render either way.
+        return
+
+    with ui.expansion("What telcontar tells the model").classes("w-full").mark("expansion-prompts"):
+        if data.resolved_profile is not None:
+            ui.label(f"Domain profile resolved: {data.resolved_profile}").mark(
+                "prompt-profile-status"
+            )
+        else:
+            ui.label(
+                f"Domain profile {data.configured_profile!r} failed to load — the "
+                "prompts below fall back to a generic default, matching what the "
+                "model is actually sent in that case."
+            ).classes("text-negative").mark("prompt-profile-status")
+
+        ui.label(
+            "Not shown here: the corpus digest (built from the analyzed registry) "
+            "and any steering instructions you gave before analysis — both are "
+            "composed at run time from a live target directory, which this "
+            "settings view does not have."
+        ).classes("text-caption")
+
+        ui.label("ORGANIZE — sent once, drives the whole organize run").classes("text-caption")
+        ui.codemirror(data.prompts.get("organize", "")).classes("w-full").style(
+            "max-height: 20rem"
+        ).disable().mark("prompt-organize")
+
+        ui.label("QUERY — sent for read-only corpus questions").classes("text-caption")
+        ui.codemirror(data.prompts.get("query", "")).classes("w-full").style(
+            "max-height: 20rem"
+        ).disable().mark("prompt-query")
+
+        ui.label(
+            "ANALYZE — sent once per batch of new documents during analysis "
+            f"(shown here for a full {data.analyzer_batch_size}-document batch)"
+        ).classes("text-caption")
+        ui.codemirror(data.prompts.get("analyze", "")).classes("w-full").style(
+            "max-height: 20rem"
+        ).disable().mark("prompt-analyze")

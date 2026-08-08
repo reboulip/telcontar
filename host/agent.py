@@ -338,14 +338,24 @@ def _load_naming_conventions(project_root: Path, profile: Profile | None) -> str
     return _DEFAULT_NAMING_CONVENTIONS
 
 
-def _build_system_prompt(project_root: Path, settings: Settings) -> str:
-    profile = _try_load_profile(project_root, settings)
+def _render_system_prompt(profile: Profile | None, project_root: Path) -> str:
+    """Render the ORGANIZE system prompt from an already-loaded profile.
+
+    Split out of `_build_system_prompt` so `composed_system_prompts` (V11) can
+    reuse this rendering step across all three prompts without loading the
+    profile more than once.
+    """
     return _SYSTEM_PROMPT_TEMPLATE.format(
         profile_name=profile.name if profile is not None else "default",
         types_section=_build_types_section(profile),
         naming_section=_load_naming_conventions(project_root, profile),
         synthesis_section=_build_synthesis_section(profile),
     )
+
+
+def _build_system_prompt(project_root: Path, settings: Settings) -> str:
+    profile = _try_load_profile(project_root, settings)
+    return _render_system_prompt(profile, project_root)
 
 
 # ── Query mode ──────────────────────────────────────────────────────────────
@@ -432,12 +442,77 @@ Rules:
 """
 
 
-def _build_query_system_prompt(project_root: Path, settings: Settings) -> str:
-    profile = _try_load_profile(project_root, settings)
+def _render_query_system_prompt(profile: Profile | None) -> str:
+    """Render the QUERY system prompt from an already-loaded profile — split
+    out for the same reason as `_render_system_prompt` (V11)."""
     return _QUERY_SYSTEM_PROMPT_TEMPLATE.format(
         profile_name=profile.name if profile is not None else "default",
         types_section=_build_types_section(profile),
     )
+
+
+def _build_query_system_prompt(project_root: Path, settings: Settings) -> str:
+    profile = _try_load_profile(project_root, settings)
+    return _render_query_system_prompt(profile)
+
+
+# ── Prompt inspection (V11) ───────────────────────────────────────────────────
+
+# Read-only introspection over the prompts telcontar composes, for the Settings
+# "What telcontar tells the model" view. Deliberately kept target-free (no
+# `run_prepass`/registry involved) so it works before any directory has been
+# analyzed — the two things that ARE composed at runtime from a live run
+# (the corpus digest and the user's own steering instructions) are therefore
+# never reflected here; see `composed_system_prompts`'s docstring.
+
+
+def composed_system_prompts(settings: Settings, project_root: Path | None = None) -> dict[str, str]:
+    """Render telcontar's three composed system prompts for read-only
+    inspection: ``{"organize": ..., "query": ..., "analyze": ...}``.
+
+    ``project_root`` defaults to the exact same expression `run_agent_loop`
+    uses to resolve its own project root when the caller doesn't pass one —
+    this is load-bearing, not cosmetic: `_load_naming_conventions` reads
+    ``.organizer/NAMING.md`` relative to the REPO root, not any run's target
+    directory, so re-deriving this differently here would display a prompt
+    telcontar does not actually send. The domain profile is loaded ONCE and
+    reused across all three builders below, rather than three separate
+    loads/parses.
+
+    The ANALYZE prompt is rendered for a full batch of `_ANALYZER_BATCH_SIZE`
+    documents — illustrative, since an actual run's batches (especially the
+    last one) are often smaller.
+
+    Two things composed at runtime from a live run are deliberately NOT
+    reflected here: the corpus digest (built from an actual target's analyzed
+    registry) and the user's own pre-analysis steering instructions — both
+    require a live target/registry this target-free view does not have.
+    """
+    if project_root is None:
+        project_root = Path(__file__).resolve().parent.parent
+    profile = _try_load_profile(project_root, settings)
+    return {
+        "organize": _render_system_prompt(profile, project_root),
+        "query": _render_query_system_prompt(profile),
+        "analyze": _build_analyzer_system_prompt(profile, _ANALYZER_BATCH_SIZE),
+    }
+
+
+def _resolved_profile_name(settings: Settings, project_root: Path | None = None) -> str | None:
+    """The active profile's actual name once loaded, or None on load failure.
+
+    `_try_load_profile` swallows load errors (missing/malformed profile TOML)
+    and returns None so prompt-building can silently fall back to a generic
+    "default" profile name — convenient for the LLM-facing prompt text, but it
+    hides the failure from anything inspecting the result. This surfaces that
+    same pass/fail outcome for UI transparency: a prompt-inspection view must
+    show a load failure, not hide it. ``project_root`` defaults the same way
+    `composed_system_prompts` does.
+    """
+    if project_root is None:
+        project_root = Path(__file__).resolve().parent.parent
+    profile = _try_load_profile(project_root, settings)
+    return profile.name if profile is not None else None
 
 
 _MAX_TURNS = 50
@@ -916,6 +991,24 @@ in the SAME ORDER the documents were given to you.
 """
 
 
+def _build_analyzer_system_prompt(profile: Profile | None, count: int) -> str:
+    """Render the ANALYZE system prompt from an already-loaded profile and a
+    document count.
+
+    Factored out of `_analyze_batch` so `composed_system_prompts` (V11) can
+    reuse it without duplicating the `.format()` call — `_ANALYZER_SYSTEM_
+    PROMPT_TEMPLATE` itself and its placeholder names are untouched (existing
+    tests format the template directly and depend on them).
+    """
+    return _ANALYZER_SYSTEM_PROMPT_TEMPLATE.format(
+        profile_name=profile.name if profile is not None else "default",
+        count=count,
+        extraction_rules=_build_extraction_rules(profile),
+        types_section=_build_types_section(profile),
+        tool_name=_SUBMIT_RECORDS_TOOL_NAME,
+    )
+
+
 def _new_docs_cost_estimate(
     new_docs: list[dict[str, str]], sizes: dict[str, int], max_snippet_chars: int
 ) -> tuple[int, int]:
@@ -1007,13 +1100,7 @@ async def _analyze_batch(
     messages = [
         {
             "role": "system",
-            "content": _ANALYZER_SYSTEM_PROMPT_TEMPLATE.format(
-                profile_name=profile.name if profile is not None else "default",
-                count=len(batch),
-                extraction_rules=_build_extraction_rules(profile),
-                types_section=_build_types_section(profile),
-                tool_name=_SUBMIT_RECORDS_TOOL_NAME,
-            ),
+            "content": _build_analyzer_system_prompt(profile, len(batch)),
         },
         {"role": "user", "content": "\n\n".join(doc_sections)},
     ]

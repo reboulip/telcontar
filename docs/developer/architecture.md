@@ -381,7 +381,7 @@ Three parts:
   call `execute_plan`, the run ends normally but the final text names the
   unexecuted plan id instead of losing it silently.
 
-### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8, U1/U2/U3/U4/U6/U7/U10, V1/V13c/V15)
+### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8, U1/U2/U3/U4/U6/U7/U10, V1/V11/V13a/V13c/V15)
 
 `host/web/` is a package — the first piece of a planned Textual→NiceGUI web UI
 migration (ROADMAP Phase 18). As of S6, `telcontar --web` (`host/main.py`) launched
@@ -678,7 +678,7 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   built by `build_updates()` — never a cached one, since `save_user_config` pops the
   API key out of its argument before raising `PlaintextKeyFallbackNeeded`, so reusing
   a dict across a retry would silently drop the key.
-- `host/web/settings.py` (U3) — the settings view, a NiceGUI port of
+- `host/web/settings.py` (U3, extended by V11) — the settings view, a NiceGUI port of
   `host/app.py`'s `ConfigScreen` at parity with it, including the
   blank-key-preserves-existing rule. `build_settings_view(*, on_done)` fetches
   `configflow.profile_options()` and `config.settings.read_user_config()` via
@@ -687,7 +687,23 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   wizard, there's no multi-step routing to do. Saves through the same
   `forms.save_with_plaintext_guard` as the wizard. Mounted at `@ui.page("/settings")`
   in `host/web/main.py`, reached from any screen via the sidebar's Settings button
-  (`host/web/shell.py`, above).
+  (`host/web/shell.py`, above). As of V11, it also renders a collapsed "What
+  telcontar tells the model" `ui.expansion` (`.mark("expansion-prompts")`),
+  deliberately placed OUTSIDE the `@ui.refreshable form()` region so a
+  validation-driven `refresh()` never recomposes it — backed by
+  `host.agent.composed_system_prompts(settings)` (the three read-only composed
+  ORGANIZE/QUERY/ANALYZE system prompts) and `host.agent._resolved_profile_name(settings)`
+  (which domain profile actually resolved, surfacing a load failure instead of
+  silently falling back the way the prompt renderers themselves do), both built off
+  a plain `config.settings.Settings()` instance rather than `load()` (which raises
+  without credentials) so the panel works even before the setup wizard has run.
+  Rendered via disabled `ui.codemirror` only, never `ui.markdown`/`ui.html`,
+  matching `Shell.show_detail`'s precedent (T6) — a composed prompt can embed
+  profile free-text and `NAMING.md` content. Deliberately read-only: an editable
+  prompt sits next to M10's injection-resistance guardrails and needs its own
+  security pass first. The panel also notes what it can't show — the corpus
+  digest and the user's pre-analysis steering instructions, both composed at run
+  time from a live target/registry this target-free view never has.
 - `host/web/wizard.py` (U2) — `build_setup_wizard(*, on_finish)`, a 1:1 port of
   `host/app.py`'s `SetupScreen`: the same 5 steps (welcome, service choice, API
   details, document profile, done), same validation order/strings (via
@@ -700,9 +716,10 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   `main.py`'s `@ui.page` decorators stay thin shells: `@ui.page("/setup")` just
   calls `build_setup_wizard(on_finish=lambda: ui.navigate.to("/"))` inside
   `app_shell()`.
-- `host/web/query_view.py` (U7) — the query page's UI: `build_query_view(shell,
+- `host/web/query_view.py` (U7, extended by V13a) — the query page's UI: `build_query_view(shell,
   session)` renders a conversation column (`ui.chat_message`, the same idiom
-  `run_page` uses for organize turns) plus a step-log strip
+  `run_page` uses for organize turns — including `run_page`'s V13a bubble
+  alignment/colour fix, deliberately duplicated here rather than shared) plus a step-log strip
   (`host.web.steplog.sync_steps`, the same T5/T6 idiom `run_page` already
   established) instead of the TUI `QueryScreen`'s side-by-side dual-`RichLog`
   split — Phase 20 is parity with a cleaner surface, not a redesign, and the log
@@ -752,7 +769,13 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   `session.steps` as one compact line each — a status glyph (▶ running / · ok /
   ✗ error) plus the step's summary — with a small "code" icon button per row that
   calls `shell.show_detail(step.summary, step.detail)` to open the full payload in
-  the right-side detail drawer (T6). As of U4 this rendering is
+  the right-side detail drawer (T6). As of V13a, each rendered bubble also carries
+  `.classes("w-full")`: NiceGUI's `.nicegui-column` CSS (`align-items: flex-start`)
+  otherwise shrink-wraps every `ui.chat_message` to its content width regardless of
+  `sent=`, hiding the left/right alignment `sent=` was already choosing correctly —
+  plus explicit `bg-color`/`text-color` Quasar props resolved against
+  `theme.PALETTE` (`secondary`/`dark` for the user, `primary`/`dark` for
+  telcontar), fixing low-contrast white-on-gold bubble text. As of U4 this rendering is
   `host/web/steplog.py`'s `sync_steps`/`StepLogState` (above), not inline: `run_page`
   owns one `steplog.StepLogState()` and calls `steplog.sync_steps(log_column, shell,
   step_log_state, session.steps)` once per tick, which caps the DOM at
