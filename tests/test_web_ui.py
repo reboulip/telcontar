@@ -83,6 +83,7 @@ from nicegui.testing import User
 from host.agent import AgentEvent
 from host.web import session as web_session
 from host.web import shell as web_shell
+from host.web import theme
 
 
 @pytest.fixture(autouse=True)
@@ -1033,6 +1034,75 @@ async def test_journal_undo_blocked_while_step_is_open(user: User, tmp_path: Pat
 
     await user.should_see(marker="journal-busy")
     await user.should_not_see(marker="journal-undo")
+
+
+# ── Step-detail section (T6, V13b) ───────────────────────────────────────────
+
+
+async def test_step_detail_hidden_until_a_step_row_is_clicked(user: User, tmp_path: Path) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.open_step("execute_plan", "execute_plan(plan_id='p1')")
+    session.close_step({"ops_applied": 3}, ok=True)
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="step-detail-1")
+
+    await user.should_not_see(marker="detail-title")
+
+
+async def test_step_detail_opens_in_left_sidebar_with_title_and_content(
+    user: User, tmp_path: Path
+) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.open_step("execute_plan", "execute_plan(plan_id='p1')")
+    session.close_step({"ops_applied": 3}, ok=True)
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="step-detail-1")
+
+    user.find(marker="step-detail-1").click()
+
+    await user.should_see(marker="detail-title")
+    await user.should_see("execute_plan(plan_id='p1')")
+    await user.should_see('"ops_applied": 3')
+
+
+async def test_step_detail_close_button_hides_the_section(user: User, tmp_path: Path) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.open_step("execute_plan", "execute_plan(plan_id='p1')")
+    session.close_step({"ops_applied": 3}, ok=True)
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="step-detail-1")
+    user.find(marker="step-detail-1").click()
+    await user.should_see(marker="btn-detail-close")
+
+    user.find(marker="btn-detail-close").click()
+
+    await user.should_not_see(marker="detail-title")
+
+
+async def test_step_detail_codemirror_uses_the_dark_theme(user: User, tmp_path: Path) -> None:
+    """V13b root cause: ui.codemirror defaults to a light theme regardless
+    of the app's own dark palette — every instance must pass theme=
+    explicitly (S4/M4-adjacent fixed-white-background bug, #35). The
+    element is only reachable via find() once its container is visible —
+    find() excludes elements hidden by an invisible ancestor by default."""
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.open_step("execute_plan", "execute_plan(plan_id='p1')")
+    session.close_step({"ops_applied": 3}, ok=True)
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="step-detail-1")
+    user.find(marker="step-detail-1").click()
+    await user.should_see(marker="detail-content")
+
+    [codemirror] = user.find(marker="detail-content").elements
+    assert codemirror.props["theme"] == theme.CODEMIRROR_THEME
 
 
 # ── Query view (U7) ──────────────────────────────────────────────────────────

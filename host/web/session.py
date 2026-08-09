@@ -254,10 +254,17 @@ TREE_POLL_INTERVAL: float = 5.0
 # RunSession: it needs to apply on the picker route too, where no RunSession
 # exists yet, and telcontar is a single-user local tool — there's no other
 # viewer whose preference it could clobber.
+#
+# MAX raised 720 -> 1000 for V13b: the step-detail drawer now lives inside
+# this same sidebar (stacked below the tree) rather than a separate
+# right-side drawer, and its codemirror content wants more than 720px to be
+# comfortably readable. DEFAULT stays unchanged — most sessions never open
+# the detail view, so the common case (just browsing the tree) shouldn't
+# start wider than before.
 
 SIDEBAR_WIDTH_DEFAULT = 380
 SIDEBAR_WIDTH_MIN = 240
-SIDEBAR_WIDTH_MAX = 720
+SIDEBAR_WIDTH_MAX = 1000
 
 _sidebar_width = SIDEBAR_WIDTH_DEFAULT
 

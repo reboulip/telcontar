@@ -29,6 +29,7 @@ regardless, so a missing font file is a slightly-plainer heading, never a
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Final
 
 # Exactly the keyword set `nicegui.app.colors()` accepts — verified against
 # the installed version. Positive/negative stay in their own green/red hue
@@ -67,6 +68,14 @@ _FALLBACK_FONT_STACK = '"Trajan Pro", "Palatino Linotype", "Book Antiqua", Georg
 FONT_DIR = Path(__file__).resolve().parent / "assets" / "fonts"
 _FONT_FILENAME = "cinzel-latin-600.woff2"
 FONT_URL_PATH = "/tc-fonts"  # app.add_static_files mount point, run_web()
+
+# V13b: ui.codemirror defaults to the "basicLight" theme regardless of the
+# app's own dark palette above — every read-only codemirror in the product
+# (the step-detail drawer, the prompt-inspection view) must pass this
+# explicitly, or it renders as a jarring white panel on the dark shell.
+# `Final` (not just a plain `str` annotation) keeps this narrowed to the
+# literal `ui.codemirror(theme=...)` expects, rather than widening to `str`.
+CODEMIRROR_THEME: Final = "basicDark"
 
 
 def font_face_css(font_dir: Path | None = None) -> str:

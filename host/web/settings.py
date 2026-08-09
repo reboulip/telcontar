@@ -17,6 +17,7 @@ from nicegui import run, ui
 
 from host import configflow
 from host.web import forms
+from host.web import theme
 
 
 @dataclass
@@ -202,19 +203,19 @@ async def _build_prompt_inspection() -> None:
         ).classes("text-caption")
 
         ui.label("ORGANIZE — sent once, drives the whole organize run").classes("text-caption")
-        ui.codemirror(data.prompts.get("organize", "")).classes("w-full").style(
-            "max-height: 20rem"
-        ).disable().mark("prompt-organize")
+        ui.codemirror(data.prompts.get("organize", ""), theme=theme.CODEMIRROR_THEME).classes(
+            "w-full"
+        ).style("max-height: 20rem").disable().mark("prompt-organize")
 
         ui.label("QUERY — sent for read-only corpus questions").classes("text-caption")
-        ui.codemirror(data.prompts.get("query", "")).classes("w-full").style(
-            "max-height: 20rem"
-        ).disable().mark("prompt-query")
+        ui.codemirror(data.prompts.get("query", ""), theme=theme.CODEMIRROR_THEME).classes(
+            "w-full"
+        ).style("max-height: 20rem").disable().mark("prompt-query")
 
         ui.label(
             "ANALYZE — sent once per batch of new documents during analysis "
             f"(shown here for a full {data.analyzer_batch_size}-document batch)"
         ).classes("text-caption")
-        ui.codemirror(data.prompts.get("analyze", "")).classes("w-full").style(
-            "max-height: 20rem"
-        ).disable().mark("prompt-analyze")
+        ui.codemirror(data.prompts.get("analyze", ""), theme=theme.CODEMIRROR_THEME).classes(
+            "w-full"
+        ).style("max-height: 20rem").disable().mark("prompt-analyze")

@@ -567,15 +567,24 @@ def test_set_sidebar_width_clamps_below_minimum(monkeypatch: pytest.MonkeyPatch)
 def test_set_sidebar_width_clamps_above_maximum(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(web_session, "_sidebar_width", web_session.SIDEBAR_WIDTH_DEFAULT)
 
-    assert web_session.set_sidebar_width(900) == web_session.SIDEBAR_WIDTH_MAX
+    assert (
+        web_session.set_sidebar_width(web_session.SIDEBAR_WIDTH_MAX + 100)
+        == web_session.SIDEBAR_WIDTH_MAX
+    )
     assert web_session.get_sidebar_width() == web_session.SIDEBAR_WIDTH_MAX
 
 
 def test_set_sidebar_width_accepts_exact_bounds(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(web_session, "_sidebar_width", web_session.SIDEBAR_WIDTH_DEFAULT)
 
-    assert web_session.set_sidebar_width(web_session.SIDEBAR_WIDTH_MIN) == 240
-    assert web_session.set_sidebar_width(web_session.SIDEBAR_WIDTH_MAX) == 720
+    assert (
+        web_session.set_sidebar_width(web_session.SIDEBAR_WIDTH_MIN)
+        == web_session.SIDEBAR_WIDTH_MIN
+    )
+    assert (
+        web_session.set_sidebar_width(web_session.SIDEBAR_WIDTH_MAX)
+        == web_session.SIDEBAR_WIDTH_MAX
+    )
 
 
 # ── RunSession: close_step return value, fs_revision (U4) ────────────────────

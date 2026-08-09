@@ -30,11 +30,16 @@ for why. The drag handle only updates the DOM live in JS; the width is only
 persisted (and the Quasar `width` prop re-applied) once, on pointerup, via a
 custom `tc_sidebar_resized` event.
 
-The internal-step detail zone (T6) is a `ui.right_drawer`, created here
-alongside the left one — both are top-level layout elements, so both must be
-direct children of the page's content, per the same `require_top_level_layout`
-constraint. `Shell.show_detail()` is the only way `host/web/main.py` touches
-it, so the widget choice stays an implementation detail of this module.
+The internal-step detail zone (T6) lives inside this same left drawer as of
+V13b — stacked below the file tree, not a separate `ui.right_drawer` (its
+original T6 home). It starts hidden (`.visible = False`, NiceGUI's standard
+bindable visibility toggle) and is revealed by `Shell.show_detail()`, the
+only way `host/web/main.py`/`steplog.py` touch it,
+so the widget choice stays an implementation detail of this module. The tree
+gets a bounded `max-height` so the detail section always has room below it
+without the whole drawer needing to scroll to reach it. `SIDEBAR_WIDTH_MAX`
+(`host/web/session.py`) was raised accordingly — detail content (JSON tool
+results) wants more horizontal room than the tree alone ever needed.
 """
 
 from __future__ import annotations
@@ -48,6 +53,7 @@ from nicegui import run, ui
 from nicegui.events import GenericEventArguments, ValueChangeEventArguments
 
 from host.web import session as web_session
+from host.web import theme
 from host.web import tree as web_tree
 
 # Wired once per page build via a `window.__tcSidebarResizeWired` guard —
@@ -66,7 +72,9 @@ from host.web import tree as web_tree
 # the page content overlapped). Must be an invoked IIFE — `run_javascript`
 # evaluates this string with `eval`, and a bare arrow-function expression
 # would just be constructed and discarded, never called (this was V15's bug:
-# the handlers below were never bound, in any browser).
+# the handlers below were never bound, in any browser). The min/max clamp is
+# interpolated from web_session.SIDEBAR_WIDTH_MIN/MAX (V13b) rather than
+# duplicated as JS literals, so the two can never silently drift apart again.
 _RESIZE_JS = """
 (() => {
   if (window.__tcSidebarResizeWired) return;
@@ -88,7 +96,7 @@ _RESIZE_JS = """
   });
   document.addEventListener('pointermove', (e) => {
     if (!dragging || !drawer) return;
-    const width = Math.max(240, Math.min(720, startWidth + (e.clientX - startX)));
+    const width = Math.max(__MIN__, Math.min(__MAX__, startWidth + (e.clientX - startX)));
     drawer.style.width = width + 'px';
   });
   document.addEventListener('pointerup', () => {
@@ -101,18 +109,24 @@ _RESIZE_JS = """
     drawer = null;
   });
 })()
-"""
+""".replace("__MIN__", str(web_session.SIDEBAR_WIDTH_MIN)).replace(
+    "__MAX__", str(web_session.SIDEBAR_WIDTH_MAX)
+)
 
 
 @dataclass
 class Shell:
     """Handle to one page build's mounted shell — the sidebar drawer/tree,
-    the internal-step detail drawer, and the page's main content column."""
+    the internal-step detail section (V13b: stacked inside this same left
+    drawer, not a separate right-side one), and the page's main content
+    column."""
 
     drawer: ui.left_drawer
     tree: ui.tree
     content: ui.column
-    detail_drawer: ui.right_drawer
+    detail_section: ui.column
+    detail_title: ui.label
+    detail_content: ui.codemirror
     target: Path | None = None
     selected: Path | None = None
     _reloading: bool = field(default=False, repr=False)
@@ -154,20 +168,26 @@ class Shell:
             self._reloading = False
 
     def show_detail(self, title: str, detail: str) -> None:
-        """Populate and open the step-detail drawer (T6).
+        """Populate and reveal the step-detail section (T6) — stacked below
+        the file tree inside this left drawer as of V13b, rather than a
+        separate right-side drawer.
 
         Never `ui.code`/`ui.markdown` here: both render through a markdown
         fenced-code path, and step detail can carry untrusted document
         content that must never be interpreted as markup. `ui.codemirror`
         takes the content as a plain value/prop instead — no injection path
         — and is set read-only via `.disable()` since this is a display-only
-        view, not an editor.
+        view, not an editor. `theme.CODEMIRROR_THEME` is applied once at
+        creation time (below); only the value/title change per call.
         """
-        self.detail_drawer.clear()
-        with self.detail_drawer:
-            ui.label(title).classes("text-subtitle2 q-pa-sm")
-            ui.codemirror(detail, language="JSON").classes("w-full h-full").disable()
-        self.detail_drawer.show()
+        self.detail_title.set_text(title)
+        self.detail_content.set_value(detail)
+        self.detail_section.visible = True
+
+    def hide_detail(self) -> None:
+        """Collapse the step-detail section, returning the sidebar's full
+        height to the file tree (V13b)."""
+        self.detail_section.visible = False
 
 
 def _apply_theme() -> None:
@@ -226,18 +246,40 @@ def app_shell(
                     ).props("dense borderless").classes("flex-grow")
 
         nodes = web_tree.build_nodes(root)
-        tree_widget = ui.tree(
-            nodes, node_key="id", label_key="label", children_key="children"
-        ).props("dense no-connectors")
+        tree_widget = (
+            ui.tree(nodes, node_key="id", label_key="label", children_key="children")
+            .props("dense no-connectors")
+            .classes("w-full")
+            .style("max-height: 45vh; overflow-y: auto")
+        )
 
-    detail_drawer = ui.right_drawer(value=False).classes("tc-detail-drawer")
+        # V13b: step-detail section, stacked below the tree inside this same
+        # drawer — hidden until Shell.show_detail() populates and reveals it.
+        detail_section = ui.column().classes("w-full gap-0").mark("detail-section")
+        detail_section.visible = False
+        with detail_section:
+            ui.separator()
+            with ui.row().classes("w-full items-center justify-between q-px-sm"):
+                detail_title = ui.label().classes("text-subtitle2 ellipsis").mark("detail-title")
+                ui.button(icon="close", on_click=lambda: shell.hide_detail()).props(
+                    "flat dense round size=sm"
+                ).mark("btn-detail-close")
+            detail_content = (
+                ui.codemirror("", language="JSON", theme=theme.CODEMIRROR_THEME)
+                .classes("w-full")
+                .style("max-height: 40vh")
+                .disable()
+                .mark("detail-content")
+            )
 
     content = ui.column().classes("w-full")
     shell = Shell(
         drawer=drawer,
         tree=tree_widget,
         content=content,
-        detail_drawer=detail_drawer,
+        detail_section=detail_section,
+        detail_title=detail_title,
+        detail_content=detail_content,
         target=root,
     )
 

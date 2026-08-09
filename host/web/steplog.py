@@ -49,7 +49,7 @@ def render_step_row(
             ui.button(
                 icon="code",
                 on_click=lambda: shell.show_detail(step.summary, step.detail or "(pending…)"),
-            ).props("flat dense size=xs")
+            ).props("flat dense size=xs").mark(f"step-detail-{step.seq}")
     return row, label
 
 
