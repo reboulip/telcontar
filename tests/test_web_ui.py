@@ -1268,3 +1268,28 @@ def test_sidebar_resize_js_is_an_invoked_iife() -> None:
     code = web_shell._RESIZE_JS.strip()
     assert code.startswith("("), "must be an expression, not a bare statement"
     assert code.endswith(")()"), "must be self-invoking (IIFE) so eval() actually calls it"
+
+
+async def test_progress_row_hidden_when_no_batch_is_running(user: User, tmp_path: Path) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_not_see(marker="progress-row")
+
+
+async def test_progress_bar_shows_rounded_integer_percent(user: User, tmp_path: Path) -> None:
+    """V14: `ui.linear_progress` shows its raw float value ("0.75") by
+    default — the row must show a formatted, rounded integer percent instead
+    ("75%"), not the float."""
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.progress = {"analyzed": 3, "total": 4}
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="progress-row")
+    await user.should_see("75%")
+
+    [percent_label] = user.find(marker="progress-percent").elements
+    assert percent_label.text == "75%"
+    assert "0.75" not in percent_label.text

@@ -200,8 +200,13 @@ async def run_page(run_id: str) -> None:
         with main_column:
             conversation_column = ui.column().classes("w-full")
             status_label = ui.label()
-            progress_bar = ui.linear_progress(value=0.0)
-            progress_bar.visible = False
+            # V14: a row, not a bare bar, so the integer-percent label sits
+            # beside it — and so V8b's current-document label has a slot to
+            # join as a third sibling without another restructure.
+            with ui.row().classes("w-full items-center gap-2").mark("progress-row") as progress_row:
+                progress_percent_label = ui.label().mark("progress-percent")
+                progress_bar = ui.linear_progress(value=0.0).classes("flex-grow")
+            progress_row.visible = False
             with ui.row().classes("w-full items-center"):
                 chat_input = ui.input("Chat anytime…").classes("flex-grow")
 
@@ -295,10 +300,12 @@ async def run_page(run_id: str) -> None:
 
             total = session.progress.get("total", 0)
             if total:
-                progress_bar.visible = True
-                progress_bar.set_value(session.progress.get("analyzed", 0) / total)
+                progress_row.visible = True
+                fraction = session.progress.get("analyzed", 0) / total
+                progress_bar.set_value(fraction)
+                progress_percent_label.set_text(f"{round(fraction * 100)}%")
             else:
-                progress_bar.visible = False
+                progress_row.visible = False
 
             _show_pending_dialog()
             chat_input.enabled = session.started
