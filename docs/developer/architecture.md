@@ -210,7 +210,7 @@ Because it mutates the registry, it is *not* added to `QUERY_ALLOWED_TOOLS` (que
 
 As of P6, both sets are populated **before the ORGANIZE turn loop starts**, from the pre-pass + analyzer results, rather than incrementally from live tool calls during the loop: `discovered` from every file `run_prepass` found (skipping telcontar's own output artifacts, dotfiles, OS junk, `.organizer`, and the configured quarantine directory — mirroring the `_SKIP` precedent in `server/tools.py`'s `write_index`), `analyzed` from `PrepassResult.known` plus whichever new documents the analyzer successfully recorded. As of Q2, `_analyze_new_documents` takes the `_ProgressTracker` directly via a required keyword-only `tracker` parameter and updates `analyzed` — emitting a fresh `"progress"` event right there — **once per analysis batch**, immediately after that batch's `record_document_batch` call returns, rather than accumulating silently across the whole analyzer loop and computing/emitting one snapshot at the end (the old post-loop tracking/emission block in `run_agent_loop`, and the `progress_after_prepass` snapshot variable it compared against, are both gone). So progress now fires once from `run_prepass` (the pre-analysis snapshot of `known`/`total-so-far`), plus once per `_ANALYZER_BATCH_SIZE`-sized batch of newly-recorded documents — giving the TUI's progress bar incremental movement through analysis instead of jumping straight from the pre-pass snapshot to ~100% at the end. Since the ORGANIZE-phase model's toolset structurally excludes `record_document`/`record_document_batch` (`ORGANIZE_DENIED_TOOLS`, see "ORGANIZE-only agent loop + corpus digest (P6)" below), the ORGANIZE turn loop itself still never drives progress incrementally on its own.
 
-As of V8a, `data` also carries `"current": list[str]` — the basename(s) (never full paths, which would leak directory layout) of whichever document(s) the in-flight analyzer batch is currently processing. `_analyze_new_documents` now emits a `"progress"` event at the *start* of each batch, before its LLM call, with `current` populated from that batch's filenames, in addition to the existing post-batch event (Q2), whose `current` is always `[]` so a just-finished batch doesn't leave a stale filename on screen. The pre-pass's own one-shot snapshot event does not carry `current` at all — there is no "current" file during a deterministic walk, and `data.get("current")` throughout consumers is expected to handle its absence. `host/format.py`'s new `fmt_progress(progress: dict) -> str` renders any of these shapes defensively into a short status string (e.g. `"3/47 — report.pdf +2"`); this is agent-side plumbing only — no UI wires it in yet (planned for a later wave).
+As of V8a, `data` also carries `"current": list[str]` — the basename(s) (never full paths, which would leak directory layout) of whichever document(s) the in-flight analyzer batch is currently processing. `_analyze_new_documents` now emits a `"progress"` event at the *start* of each batch, before its LLM call, with `current` populated from that batch's filenames, in addition to the existing post-batch event (Q2), whose `current` is always `[]` so a just-finished batch doesn't leave a stale filename on screen. The pre-pass's own one-shot snapshot event does not carry `current` at all — there is no "current" file during a deterministic walk, and `data.get("current")` throughout consumers is expected to handle its absence. `host/format.py`'s new `fmt_progress(progress: dict) -> str` renders any of these shapes defensively into a short status string (e.g. `"3/47 — report.pdf +2"`), though it remains unused by either UI — both format `current` themselves inline rather than calling it. As of V8b, the web UI is the first to actually surface `current` to the user: `host/web/main.py`'s `_refresh()` reads `session.progress["current"]` directly and renders it in a dedicated `progress-current` label (first filename plus a `" +N"` suffix). The Textual TUI still doesn't render `current` at all.
 
 This is purely additive to the event stream — no MCP tool signature or tool list changed. As of O6, `host/app.py`'s `OrganizerScreen` consumes the `"progress"` event: a `#progress-row` (a numeric `#progress-label` plus a Textual `ProgressBar`) sits between `#ops-journal` and the status bar, hidden until the first progress event carrying a known `total > 0` arrives (an unknown/`None` total is never shown, since that would trigger Textual's indeterminate spinning-bar mode), and hidden again — without snapping to 100% first — once the run reaches `"done"` or `"error"`.
 
@@ -383,7 +383,7 @@ Three parts:
   call `execute_plan`, the run ends normally but the final text names the
   unexecuted plan id instead of losing it silently.
 
-### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8, U1/U2/U3/U4/U6/U7/U10, V1/V7/V11/V12/V13a/V13c/V15)
+### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8, U1/U2/U3/U4/U6/U7/U10, V1/V5/V7/V11/V12/V13a/V13c/V15)
 
 `host/web/` is a package — the first piece of a planned Textual→NiceGUI web UI
 migration (ROADMAP Phase 18). As of S6, `telcontar --web` (`host/main.py`) launched
@@ -423,7 +423,13 @@ the keyboard-only `j` then `u`) — see `host/web/journal.py` and
 read-only query view at `/query/{run_id}`, reached via a "Query this corpus" button
 on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with the
 `g` keybinding — see `host/web/query_view.py` and `host/web/bridge.py`'s
-`QueryBridge` below.
+`QueryBridge` below. As of V5, it also has a corpus browser at `/corpus/{run_id}`
+— a sortable, filterable table over the document registry with a per-document
+detail pane, reached via a "Browse corpus" button beside "Query this corpus" —
+merging what used to be the separate V4 document-preview idea into one screen,
+and reachable without any LLM call or agent turn at all (unlike query mode). No
+TUI equivalent exists; see `host/web/corpus.py` and `host/web/corpus_view.py`
+below.
 
 - `host/web/session.py` — `RunSession`, framework-agnostic per-run state. As of
   T5/T6, the transcript is turns-only: `RunSession.transcript: list[TranscriptItem]`
@@ -432,13 +438,21 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   longer interleaves there as a "steps"-kind item; instead `RunSession.steps:
   list[StepRecord]` (`seq`/`tool`/`summary`/`args`/`detail`/`status:
   "running"|"ok"|"error"`) holds it, and `RunSession.activity: str` holds a single
-  mutable "what's happening right now" narration line. `open_step(tool, summary,
+  mutable "what's happening right now" narration line. As of V16, a third list —
+  `RunSession.activity_log: list[ActivityEntry]` (`seq`/`text`) — persists one
+  entry per macro-phase change, appended via `add_activity(text)`; `activity`
+  (the scalar) is unchanged and still what earlier tests assert against,
+  `activity_log` is purely additive, giving the web UI a reviewable history of
+  phase changes instead of a single line that's overwritten and lost.
+  Deliberately not folded into `transcript`: `activity_log`, like `steps`, is
+  telcontar's own narration, not a genuine user↔telcontar exchange. `open_step(tool, summary,
   args)` starts a step "running"; `close_step(result, ok=...)` pairs it with its
   result — `{"args": ..., "result": result}`, pretty-printed JSON, capped at
   `_MAX_STEP_DETAIL_CHARS = 20_000` with a "(truncated)" suffix — and marks it "ok"
   or "error". A step that never closes (the run errored out mid-call) stays
   "running" forever by design — it shows exactly where things stopped, not a bug.
-  `transcript` and `steps` share the same `_seq` counter for a stable relative
+  `transcript`, `steps`, and `activity_log` share the same `_seq` counter for a
+  stable relative
   ordering. Also holds status, tokens, progress, a `pending` approval/cost/ask
   request (`kind: "approval"|"cost"|"ask"`, `"ask"` added V12) keyed to an
   `asyncio.Future`, a chat `messages` queue, conversation `history`, and
@@ -449,7 +463,9 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   sessions) — plus a module-level registry (`create(target, *, mode="organize")`/
   `get`/`close`/`all_sessions`) keyed by a `secrets.token_urlsafe(16)` run id.
   Deliberately has no `nicegui` import, so it is unit-testable in plain pytest. `get_sidebar_width()`/`set_sidebar_width(width)`
-  (T4) manage one in-memory sidebar-width preference (240-720px, default 380) for
+  (T4) manage one in-memory sidebar-width preference (240-1000px, default 380 —
+  the max raised from 720 in V13b, since the step-detail section now shares this
+  same drawer and wants more room) for
   the process's lifetime, rather than a `RunSession` field, since it also applies on
   the picker route where no `RunSession` exists yet; `set_sidebar_width` clamps and
   returns the stored value. As of U4, `RunSession` also carries `fs_revision: int`,
@@ -487,7 +503,11 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   continuation — mirroring the Textual TUI's `OrganizerScreen._agent_worker`.
   As of T5/T6, `on_event`'s `tool_call`/`tool_result` handling no longer appends a
   chat turn — that was the "telcontar talking to itself in bubbles" T5 fixes.
-  `tool_call` narrates into `session.activity` (via `Narrator.narrate`) and calls
+  `tool_call` narrates into `session.activity` (via `Narrator.narrate`) — and, as
+  of V16, also into `session.activity_log` via `session.add_activity(phrase)`,
+  appended right alongside the `activity` assignment and only when the Narrator
+  actually returns a new phrase (a repeated phrase collapses to nothing before
+  either is touched) — and calls
   `session.open_step(tool, event.text, args)`, reading `tool`/`args` off `event.data`
   (`host/agent.py`'s 5 `AgentEvent("tool_call", ...)` sites now carry `data={"tool":
   name, "args": args}`, previously just the tool name); `tool_result` calls
@@ -594,7 +614,7 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   dialog didn't end up needing it — journal entries render as plain formatted
   lines (`host.format.fmt_journal_entry`), not as steps — so the reuse case is
   still open, pending U7's query view.
-- `host/web/shell.py` (T2, extended by T3, T6, U3, V7) — `app_shell(*, target=None,
+- `host/web/shell.py` (T2, extended by T3, T6, U3, V7, V13b) — `app_shell(*, target=None,
   on_select=None)`, a `@contextmanager` mounted by every `@ui.page` route, including
   the early-return branches (not-configured, run-not-found), so a left-sidebar frame
   is visible on every screen rather than being assembled per-page. As of U3 the
@@ -606,15 +626,29 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   `ui.left_drawer` as a direct child of the page body — NiceGUI's
   `require_top_level_layout` raises `RuntimeError` if a drawer is nested inside
   another container — mounts a `ui.tree` inside it from `host.web.tree.build_nodes`
-  (`.props("dense no-connectors")` for a denser vertical rhythm). As of T6 it also
-  creates a `ui.right_drawer` alongside the left one — both are top-level layout
-  elements subject to the same `require_top_level_layout` constraint — and yields a
-  `Shell` dataclass (`drawer`, `tree`, `content`, `detail_drawer`, `target`,
+  (`.props("dense no-connectors")` for a denser vertical rhythm, plus — as of
+  V13b — `max-height: 45vh; overflow-y: auto` so the tree scrolls internally
+  rather than pushing what's stacked below it off-screen). As of V13b, the
+  internal-step detail zone (T6) is stacked directly below the tree inside this
+  *same* left drawer instead of the separate `ui.right_drawer` T6 originally
+  created: a hidden-by-default `ui.column().mark("detail-section")` holding a
+  title label (`.mark("detail-title")`), a close button
+  (`.mark("btn-detail-close")`, calls `shell.hide_detail()`), and the detail body
+  — `ui.codemirror("", language="JSON", theme=theme.CODEMIRROR_THEME).disable().mark(
+  "detail-content")`, created once at build time. `theme.CODEMIRROR_THEME`
+  (`host/web/theme.py`, `= "basicDark"`) is required explicitly because
+  `ui.codemirror` otherwise defaults to a light theme regardless of the app's own
+  dark palette. `app_shell` yields a
+  `Shell` dataclass (`drawer`, `tree`, `content`, `detail_section`, `detail_title`,
+  `detail_content`, `target`,
   `selected`, and — V7 — a private `_reloading: bool` guard) that the page body
-  builds into via `with app_shell(...) as shell:`.
-  `Shell.show_detail(title, detail)` populates and opens the right drawer with one
-  internal step's full payload; it deliberately renders via
-  `ui.codemirror(detail, language="JSON").disable()`, never `ui.code`/`ui.markdown`
+  builds into via `with app_shell(...) as shell:` — no more standalone
+  `detail_drawer` field.
+  `Shell.show_detail(title, detail)` (rewritten V13b) now populates the existing
+  widgets in place — `detail_title.set_text(title)`, `detail_content.set_value(
+  detail)` — and reveals the section (`.visible = True`) instead of clearing and
+  rebuilding a separate drawer each call; the new `Shell.hide_detail()` sets
+  `.visible = False` back. Never `ui.code`/`ui.markdown`
   — both of those render through a markdown fenced-code path, and step detail can
   carry untrusted document content (e.g. a `read_file_batch`/`extract_text_batch`
   result) that must never be interpreted as markup. `ui.codemirror` takes the
@@ -664,7 +698,12 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   right edge — wired by a small injected JS snippet (`_RESIZE_JS`) tracking
   pointerdown/pointermove/pointerup on `document` rather than just the handle
   (so the pointer can leave the 6px strip mid-drag without breaking the resize)
-  — live-resizes the drawer in the DOM during the drag and, only on pointerup,
+  — live-resizes the drawer in the DOM during the drag, clamped between
+  `SIDEBAR_WIDTH_MIN`/`_MAX` in the JS itself (`Math.max(__MIN__, Math.min(
+  __MAX__, ...))`, the two bounds interpolated into `_RESIZE_JS` at module-import
+  time via `.replace()` as of V13b — previously hardcoded `240`/`720` literals
+  that had already drifted out of sync the moment `SIDEBAR_WIDTH_MAX` became
+  `1000` in this same change) — and, only on pointerup,
   emits a `tc_sidebar_resized` event that the Python side clamps, persists via
   `web_session.set_sidebar_width()`, and re-applies as the real `width` prop. As
   of V15, `_RESIZE_JS` must be a self-invoking IIFE, not a bare arrow-function
@@ -723,6 +762,11 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   (Elendil's seven-pointed star) passed to `ui.run(favicon=...)`, which NiceGUI
   inlines as a data URL with no file or network request — the browser-mode
   favicon, untouched by V1's native-window icon (see `run_web()` below).
+  `CODEMIRROR_THEME: Final = "basicDark"` (V13b) exists because `ui.codemirror`
+  defaults to a light theme regardless of `PALETTE`/`dark=True`; every read-only
+  `ui.codemirror` in the app — `Shell.show_detail`'s step-detail body and
+  `host/web/settings.py`'s three prompt-inspection panels — now passes it
+  explicitly instead of falling back to that mismatched light default.
 - `host/configflow.py` (U2, extended by U3) — framework-agnostic (no `nicegui`, no
   `textual`) configuration-flow logic factored out of the TUI's
   `SetupScreen`/`ConfigScreen` so both the web UI's setup wizard and settings view
@@ -769,7 +813,9 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   silently falling back the way the prompt renderers themselves do), both built off
   a plain `config.settings.Settings()` instance rather than `load()` (which raises
   without credentials) so the panel works even before the setup wizard has run.
-  Rendered via disabled `ui.codemirror` only, never `ui.markdown`/`ui.html`,
+  Rendered via disabled `ui.codemirror(..., theme=theme.CODEMIRROR_THEME)` only
+  (the explicit `theme=` a V13b addition — `ui.codemirror` otherwise defaults to a
+  light theme regardless of the app's own dark palette), never `ui.markdown`/`ui.html`,
   matching `Shell.show_detail`'s precedent (T6) — a composed prompt can embed
   profile free-text and `NAMING.md` content. Deliberately read-only: an editable
   prompt sits next to M10's injection-resistance guardrails and needs its own
@@ -797,6 +843,42 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   split — Phase 20 is parity with a cleaner surface, not a redesign, and the log
   strip already is the web UI's "tool timeline". No approval/cost/ask dialog wiring
   at all — query mode is read-only by construction, so there is nothing to gate.
+- `host/web/corpus.py` (V5) — registry load logic, `nicegui`-free, mirroring
+  `host/web/journal.py`'s contract exactly: this module owns the
+  filesystem-adjacent logic, `host/web/corpus_view.py` owns the rendering.
+  `list_documents(target) -> list[dict]` loads the registry via
+  `server.registry.load(host.paths.resolve_registry_path(target))` and returns
+  `[rec.to_dict() for rec in registry.records()]`, or `[]` on any error (missing
+  file, corrupt JSON) — never raises, the same defensive contract as
+  `journal.load_entries`. `get_document(target, checksum) -> dict | None` returns
+  one record by checksum, or `None` if missing/unreadable. `server.registry` is
+  called directly, never through MCP — there is no agent-reachable reason for a
+  read-only *browse* to exist — and its import is late (inside the functions),
+  matching `journal.py`'s discipline.
+- `host/web/corpus_view.py` (V5) — the corpus-browser page's UI:
+  `build_corpus_view(session)` loads records via `await
+  run.io_bound(corpus.list_documents, session.target)`, shows an empty state
+  (`.mark("corpus-empty")`) if the registry has no records at all, otherwise a
+  search input (`.mark("corpus-search")`) filtering rows Python-side against
+  each record's full, untruncated title/type/summary text (not the truncated
+  preview shown in the table) beside a `ui.table` (`.mark("corpus-table")`,
+  `row_key="checksum"`, `selection="single"`, `pagination=10`) with sortable
+  title/type/date/status/summary/entities columns — client-side Quasar sort, no
+  Python sort logic. Row values are pre-flattened to plain strings: `ui.table`
+  crashes the browser on list-valued cells, so the registry's `entities` list
+  becomes a short joined preview (up to 3 names, `"+N"` for the rest) for the
+  table row, while the full list still lives in the record dict for the detail
+  pane. Selecting a row (`table.on_select`, NiceGUI's typed
+  `TableSelectionEventArguments`, not a raw Quasar `rowClick` event) reveals a
+  detail pane (`.mark("corpus-detail")`) beside the table with the full
+  summary, provenance, and every entity as its own line (`name — role (kind)`,
+  defensively `.get()`-read since older records may carry incomplete entity
+  dicts). Merges the former V4 (document preview) concept into this one
+  screen. Every value rendered here is LLM-derived output from
+  attacker-controllable documents — `ui.label`/`ui.table` row values only,
+  never `ui.markdown`/`ui.html`/`ui.code` — the same rule V13b's step-detail
+  view and V11's prompt inspection already follow; see
+  [Security Model](security-model.md).
 - `host/web/main.py` now mounts `app_shell(...)` at the top of both page bodies
   instead of assembling its own layout. The landing page (`/`) first checks
   `config.settings.is_configured()`: if telcontar hasn't been set up yet, it
@@ -806,7 +888,14 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   is registered the same thin-shell way too — a page that looks up the query-mode
   `RunSession`, starts `QueryBridge(session)` on first mount if not already started
   (TUI parity: `QueryScreen.on_mount` also auto-starts its worker, no explicit
-  "start" button), and delegates rendering to `build_query_view`. Once configured, folder selection is the
+  "start" button), and delegates rendering to `build_query_view`. As of V5,
+  `/corpus/{run_id}` is registered the same thin-shell way too: it looks up the
+  `RunSession` (same not-found handling as the other two run-scoped routes) and
+  delegates to `build_corpus_view(session)` — no bridge, no MCP session, no
+  agent turn, since it reads the registry directly (`host/web/corpus.py`)
+  rather than through the model. It reuses the *same* session/run_id the
+  organize run already created rather than minting a new one, since the corpus
+  page only ever reads `session.target`. Once configured, folder selection is the
   sidebar tree, which now doubles as the directory picker (T3, superseding the
   browse-view half of Phase 20's U1): clicking a node sets `shell.selected`
   (which may now be a file, since the tree shows files too), and a "Use selected
@@ -830,19 +919,44 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
   (`session.started`), the starter pane hides and the main view (status/progress
   bar/chat input/approval-cost-ask dialogs, now via `host/web/dialogs.py`,
   U4/V12) takes
-  over. As of U7, the main view also shows a "Query this corpus" button, hidden
+  over. As of V14, the progress bar is a `ui.row()` (`.mark("progress-row")`)
+  pairing the `ui.linear_progress` with a sibling `ui.label()`
+  (`.mark("progress-percent")`) showing a rounded integer percent instead of
+  NiceGUI's raw 0–1 float — the row's own `.visible` is what's toggled on
+  `session.progress["total"]`, kept generic so a later current-document label
+  (V8b) can join as a third sibling. As of V8b, that third sibling exists:
+  `ui.label().mark("progress-current")` shows the in-flight document name(s)
+  from the O5/V8a `session.progress["current"]` list — the first filename plus
+  a `" +N"` suffix when more than one file is in flight, or `""` when the list
+  is empty (between batches, or on the pre-pass snapshot event, which omits
+  the key entirely). As of U7, the main view also shows a "Query this corpus" button, hidden
   until `session.done` — mirroring the TUI's `OrganizerScreen`'s `g` keybinding,
   gated the same way — that creates a new query-mode session
   (`web_session.create(session.target, mode="query")`) and navigates to
-  `/query/{run_id}`. As of T5/T6, that main view is two independent zones instead of one
+  `/query/{run_id}`. As of V5, a "Browse corpus" button
+  (`.mark("btn-browse-corpus")`) sits beside it, gated the same `session.done`
+  way — set both at build time and again on every `_refresh()` tick, the same
+  two-places-set pattern the query button already needed — navigating to
+  `/corpus/{session.run_id}`: the same session, not a new one. As of T5/T6, that main view is two independent zones instead of one
   interleaved stream: a
   `conversation_column` (turns only, `ui.chat_message`, rendering `session.transcript`)
-  and, below a separator, a pinned-bottom `activity_label` (the current narration
-  line, `session.activity`) plus a scrolling `log_column` (~25vh) rendering
+  and, below a separator, a pinned-bottom `activity_column` plus a scrolling
+  `log_column` (~25vh) rendering
   `session.steps` as one compact line each — a status glyph (▶ running / · ok /
   ✗ error) plus the step's summary — with a small "code" icon button per row that
   calls `shell.show_detail(step.summary, step.detail)` to open the full payload in
-  the right-side detail drawer (T6). As of V13a, each rendered bubble also carries
+  the step-detail section (T6, stacked in the left sidebar below the tree as of
+  V13b — no longer a right-side drawer). As of V16, `activity_column`
+  (`.mark("activity-column")`) replaces the old single-line `activity_label`: it
+  renders `session.activity_log` — a third, separate history alongside
+  `transcript`/`steps` (see `session.py` above) — as a small growing list
+  instead of a line that's overwritten and lost, one `ui.label(entry.text).mark(
+  "activity-entry")` per macro-phase change, via the same new-entries-only
+  render-cursor pattern `conversation_column` already used
+  (`_RenderState.activity_seq`). `session.activity` (the scalar) is unchanged
+  and untouched by this — it still drives the status line elsewhere;
+  `activity_log` is purely the persisted history behind it, not a replacement.
+  As of V13a, each rendered bubble also carries
   `.classes("w-full")`: NiceGUI's `.nicegui-column` CSS (`align-items: flex-start`)
   otherwise shrink-wraps every `ui.chat_message` to its content width regardless of
   `sent=`, hiding the left/right alignment `sent=` was already choosing correctly —

@@ -303,6 +303,16 @@ Press **Esc** to return to the previous screen.
 
 ---
 
+## Browsing the corpus directly
+
+The web UI also has a **corpus browser** — a sortable, filterable table over every analyzed document, with no LLM call and no agent turn involved at all. It's reachable via the **Browse corpus** button beside **Query this corpus**, once a run finishes. There is no Textual TUI equivalent — inspecting a specific document there still means asking about it in query mode.
+
+- **Search** filters the table as you type, matched against each document's full title, type, and summary text — not just the shortened preview shown in the table.
+- **Columns** — title, type, date, status, summary, entities — sort by clicking their header. The summary and entities columns show short previews (entities lists up to three names, then "+N" for the rest).
+- **Selecting a row** opens a detail pane beside the table with that document's full summary, full provenance, and every recorded entity (name, role, kind) — nothing truncated.
+
+---
+
 ## The server's safety invariants
 
 The MCP server enforces five non-negotiable rules in code:

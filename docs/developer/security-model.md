@@ -353,7 +353,13 @@ To be fair to the design, these mitigations exist and should be preserved:
   `ui.codemirror(...).disable()` rather than `ui.code`/`ui.markdown`, both of which
   render through a markdown fenced-code path; `ui.codemirror` takes the content as
   a plain value/prop, so there is no path from document content to interpreted
-  markup in the browser.
+  markup in the browser. The same discipline is applied everywhere else
+  LLM-derived, attacker-influenceable text reaches the browser: `host/web/settings.py`'s
+  prompt-inspection panels (V11, also disabled `ui.codemirror`) and, as of V5,
+  the corpus browser's table and document-detail pane
+  (`host/web/corpus_view.py`) — every registry field shown there (title, type,
+  summary, provenance, entity names) is rendered via plain `ui.label`/`ui.table`
+  row values only, never `ui.markdown`/`ui.html`/`ui.code`.
 
 ---
 
