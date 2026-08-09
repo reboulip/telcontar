@@ -40,6 +40,20 @@ def resolve_plans_dir(target: Path) -> Path:
     return Settings().for_target(target).plans_dir
 
 
+def resolve_registry_path(target: Path) -> Path:
+    """Resolve the document-registry path for ``target`` from settings."""
+    from config.settings import Settings
+
+    return Settings().for_target(target).registry_path
+
+
+def resolve_graph_path(target: Path) -> Path:
+    """Resolve the knowledge-graph path for ``target`` from settings."""
+    from config.settings import Settings
+
+    return Settings().for_target(target).graph_path
+
+
 def quarantine_basename() -> str:
     """Basename of the configured quarantine dir, for discovery-hiding (P2).
 

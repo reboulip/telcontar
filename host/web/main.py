@@ -44,6 +44,7 @@ from host.web import session as web_session
 from host.web import steplog
 from host.web import theme
 from host.web.bridge import AgentBridge, QueryBridge
+from host.web.corpus_view import build_corpus_view
 from host.web.dialogs import (
     build_approval_dialog,
     build_ask_user_dialog,
@@ -235,6 +236,18 @@ async def run_page(run_id: str) -> None:
             )
             query_button.visible = session.done
 
+            # V5: same session — corpus_page only reads session.target, so
+            # there's no reason to spin up a second RunSession just to browse.
+            def _browse_corpus() -> None:
+                ui.navigate.to(f"/corpus/{session.run_id}")
+
+            corpus_button = (
+                ui.button("Browse corpus", on_click=_browse_corpus, icon="table_chart")
+                .props("flat dense")
+                .mark("btn-browse-corpus")
+            )
+            corpus_button.visible = session.done
+
             # Internal-step log strip (T5/T6) — pinned at the bottom, always
             # visible, distinct from the conversation above: telcontar's own
             # tool activity never renders as a chat bubble. activity_column is
@@ -332,6 +345,7 @@ async def run_page(run_id: str) -> None:
                 starter_column.visible = False
                 main_column.visible = True
             query_button.visible = session.done
+            corpus_button.visible = session.done
 
             # Sidebar tree + journal count refresh (U4/U6) — only when a
             # tree-mutating tool (or an undo) actually changed something
@@ -366,6 +380,21 @@ async def query_page(run_id: str) -> None:
             QueryBridge(session).start()
 
         build_query_view(shell, session)
+
+
+@ui.page("/corpus/{run_id}")
+async def corpus_page(run_id: str) -> None:
+    session = web_session.get(run_id)
+
+    with app_shell(target=session.target if session is not None else None):
+        if session is None:
+            ui.label(
+                "Run not found — it may have finished and been cleared, or the link is wrong."
+            ).classes("text-negative")
+            return
+
+        ui.page_title(theme.window_title(session.target))
+        await build_corpus_view(session)
 
 
 def _pick_port() -> int:

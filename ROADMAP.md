@@ -66,7 +66,7 @@ on open work.
 
 #### Corpus browser — `.organizer/registry.json`-backed view
 
-- [ ] V5 · Corpus browser — a sortable, filterable table over `.organizer/registry.json` (title, type, date, summary, entities) with a document detail pane (click a row to see its full summary, provenance, and entities) — merges the former V4 (document preview) into one screen; today only reachable by asking the agent.
+- [x] V5 · Corpus browser — a sortable, filterable table over `.organizer/registry.json` (title, type, date, summary, entities) with a document detail pane (click a row to see its full summary, provenance, and entities) — merges the former V4 (document preview) into one screen; today only reachable by asking the agent.
 
 ---
 

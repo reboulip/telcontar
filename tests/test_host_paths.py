@@ -15,7 +15,9 @@ from config import settings as settings_module
 from host.paths import (
     directory_overview,
     is_op_out_of_scope,
+    resolve_graph_path,
     resolve_journal_path,
+    resolve_registry_path,
 )
 
 
@@ -77,6 +79,23 @@ def test_resolve_journal_path_absolute_override_passes_through(
     monkeypatch.setenv("JOURNAL_PATH", str(explicit_journal))
 
     assert resolve_journal_path(target) == explicit_journal
+
+
+# ── resolve_registry_path / resolve_graph_path ──────────────────────────────────
+
+
+def test_resolve_registry_path_rebases_under_target(tmp_path: Path) -> None:
+    target = tmp_path / "corpus"
+    target.mkdir()
+
+    assert resolve_registry_path(target) == target.resolve() / ".organizer" / "registry.json"
+
+
+def test_resolve_graph_path_rebases_under_target(tmp_path: Path) -> None:
+    target = tmp_path / "corpus"
+    target.mkdir()
+
+    assert resolve_graph_path(target) == target.resolve() / ".organizer" / "graph.json"
 
 
 # ── directory_overview ──────────────────────────────────────────────────────────
