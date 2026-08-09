@@ -514,11 +514,25 @@ on the organize view (`/run/{run_id}`) once a run finishes — TUI parity with t
 - `host/web/dialogs.py` (U4, extended by U5/U6/V12) — one builder per `PendingRequest` kind, replacing the
   dialog-building code that used to live inline in `run_page`.
   `build_approval_dialog(session, pending)` is a faithful port of the TUI's
-  `ApprovalModal`: rationale + disclaimer, target-layout preview + disclaimer,
-  per-op checkboxes defaulting checked, the `ops_json_path` label, a free-text
-  refine input, and Approve/Refine/Reject buttons — Refine only resolves on
-  non-blank input and always takes priority over Approve, since they're mutually
-  exclusive button clicks. `build_cost_dialog(session, pending)` is a faithful
+  `ApprovalModal` for the rationale + disclaimer and the folder-notes disclaimer,
+  but as of V3 replaces the old flat `render_target_layout` text block plus
+  separate checkbox list with an actual before/after file tree
+  (`host.format.plan_tree_diff`, pure — no filesystem I/O, derived entirely from
+  the plan's ops): a read-only "Before" panel of current file locations beside an
+  "After" panel of destinations (folder notes annotated on its folder lines),
+  with per-op checkboxes living inline on each after-tree file node. Ops with no
+  clean tree slot — `create_dir`, `compress_quarantine`, `update_file`, and any
+  `quarantine`/`archive_document` with no destination — fall back to an "Other
+  operations" list below the tree, each still with its own checkbox: every op in
+  the plan gets exactly one checkbox somewhere, preserving the `removed_op_ids`
+  safety contract. `render_target_layout` itself is unchanged — the TUI's
+  `ApprovalModal` still calls it directly for its own flat-text preview; only this
+  dialog's use of it was replaced. The card is now sized via an inline style
+  (`width: 90vw; max-width: 1400px`) rather than a Tailwind `max-w-3xl` class —
+  Quasar's own dialog CSS outranks a same-specificity Tailwind swap. Then the
+  `ops_json_path` label, a free-text refine input, and Approve/Refine/Reject
+  buttons — Refine only resolves on non-blank input and always takes priority
+  over Approve, since they're mutually exclusive button clicks. `build_cost_dialog(session, pending)` is a faithful
   port of the TUI's `CostEstimateModal` (U5): title "Analyze this corpus?", a
   summary line composed from the engine-side `pending.payload["data"]` dict
   (`new`/`already_analyzed`/`estimated_tokens`/`batch_size`, falling back to

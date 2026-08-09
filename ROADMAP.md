@@ -34,7 +34,7 @@ on open work.
 
 #### Plan-approval trust surface — `host/web/dialogs.py::build_approval_dialog`
 
-- [ ] V3 · Plan review as a before/after tree — the approval gate is the highest-trust screen; a checkbox list is a terminal-era compromise. Backed by real usage (#32): state a rationale for the target layout, render it as an actual before/after tree instead of `render_target_layout`'s flat text block, and size the modal bigger/denser. [#32] (requires: V10)
+- [x] V3 · Plan review as a before/after tree — the approval gate is the highest-trust screen; a checkbox list is a terminal-era compromise. Backed by real usage (#32): state a rationale for the target layout, render it as an actual before/after tree instead of `render_target_layout`'s flat text block, and size the modal bigger/denser. [#32] (requires: V10)
 - [x] V10 · Quarantine op rationale — every `propose_quarantine` op shows a stated reason (unreadable, duplicate, superseded, ...) in the approval dialog, not just the basename; "telcontar couldn't read it" stops being sufficient justification on its own. The fuller ask — don't auto-quarantine unreadable files, ask the user interactively instead — needs V12's `ask_user` dialog and can follow once that lands. [#29]
 - [x] V17 · Interactive quarantine confirmation for unreadable files — the agent must `ask_user` before proposing quarantine for a document it could not extract text from, instead of quarantining unilaterally. (requires: V12) [#29]
 

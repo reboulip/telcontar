@@ -37,7 +37,7 @@ from typing import Any
 from nicegui import ui
 
 from host.agent import ApprovalResult, AskUserResult, CostApprovalResult
-from host.format import fmt_journal_entry, fmt_op, render_target_layout
+from host.format import fmt_journal_entry, fmt_op, plan_tree_diff
 from host.web import journal
 from host.web.session import PendingRequest, RunSession
 
@@ -56,15 +56,29 @@ def _make_resolver(
 
 
 def build_approval_dialog(session: RunSession, pending: PendingRequest) -> ui.dialog:
+    """V3: the target-layout preview is an actual before/after file tree
+    (host.format.plan_tree_diff) rather than render_target_layout's flat
+    folder-only text block — every op still gets exactly one checkbox
+    (`removed_op_ids` is the safety contract this preserves), living on its
+    after-tree node for ops with a real destination, or in "Other
+    operations" for the rest (create_dir, compress_quarantine, update_file,
+    and any quarantine/archive_document with no destination). The modal is
+    sized via an inline style, not a Tailwind max-w-* class: Quasar's own
+    dialog CSS has higher specificity and a class swap alone would not
+    visibly change anything.
+    """
     plan_data = pending.payload["plan_data"]
     ops = plan_data.get("ops", [])
     rationale = (plan_data.get("rationale") or "").strip()
     folder_notes = plan_data.get("folder_notes") or {}
-    layout_lines = render_target_layout(ops, folder_notes)
     ops_json_path = (plan_data.get("ops_json_path") or "").strip()
+    before_lines, after_lines, other_ops = plan_tree_diff(ops, folder_notes, session.target)
 
     dialog = ui.dialog().props("persistent")
-    with dialog, ui.card().classes("w-full max-w-3xl"):
+    with (
+        dialog,
+        ui.card().classes("w-full").style("width: 90vw; max-width: 1400px"),
+    ):
         ui.label(f"Plan Review · {pending.payload['plan_id'][:8]} · {len(ops)} op(s)").classes(
             "text-h6 tc-display"
         )
@@ -74,30 +88,50 @@ def build_approval_dialog(session: RunSession, pending: PendingRequest) -> ui.di
                 "text-caption text-grey"
             )
             ui.label(rationale).mark("plan-rationale")
+        if folder_notes:
+            ui.label("Folder notes are model-generated — not verified fact.").classes(
+                "text-caption text-grey"
+            )
 
-        if layout_lines:
-            ui.separator()
-            ui.label("Target layout").classes("text-subtitle2")
-            if folder_notes:
-                ui.label("Folder notes are model-generated — not verified fact.").classes(
-                    "text-caption text-grey"
-                )
-            with ui.column().classes("max-h-40 overflow-auto"):
-                ui.label("\n".join(layout_lines)).classes("whitespace-pre font-mono text-xs").mark(
-                    "target-layout"
-                )
-
-        ui.separator()
         checkboxes: dict[str, ui.checkbox] = {}
-        with ui.column().classes("max-h-64 overflow-auto w-full"):
-            if ops:
-                for op in ops:
+
+        if before_lines or after_lines:
+            ui.separator()
+            with ui.row().classes("w-full gap-4 items-start"):
+                with ui.column().classes("flex-1 max-h-96 overflow-auto gap-0"):
+                    ui.label("Before").classes("text-subtitle2")
+                    with ui.column().classes("gap-0").mark("before-tree"):
+                        for line in before_lines:
+                            ui.label(line.label).classes("whitespace-pre font-mono text-xs").style(
+                                f"margin-left: {line.depth * 16}px"
+                            )
+                with ui.column().classes("flex-1 max-h-96 overflow-auto gap-0"):
+                    ui.label("After").classes("text-subtitle2")
+                    with ui.column().classes("gap-0").mark("after-tree"):
+                        for line in after_lines:
+                            with (
+                                ui.row()
+                                .classes("items-center gap-1 no-wrap")
+                                .style(f"margin-left: {line.depth * 16}px")
+                            ):
+                                if line.op_id:
+                                    checkboxes[line.op_id] = ui.checkbox(value=True).mark(
+                                        f"op-{line.op_id}"
+                                    )
+                                ui.label(line.label).classes("whitespace-pre font-mono text-xs")
+
+        if other_ops:
+            ui.separator()
+            ui.label("Other operations").classes("text-subtitle2")
+            with ui.column().classes("max-h-48 overflow-auto w-full"):
+                for op in other_ops:
                     op_id = op.get("op_id", "")
                     checkboxes[op_id] = ui.checkbox(
                         fmt_op(op, session.target, markup=False), value=True
                     ).mark(f"op-{op_id}")
-            else:
-                ui.label("No operations in this plan.").classes("text-grey")
+
+        if not ops:
+            ui.label("No operations in this plan.").classes("text-grey")
 
         if ops_json_path:
             ui.label(f"Full ops JSON: {ops_json_path}").classes("text-caption text-grey").mark(

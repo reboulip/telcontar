@@ -493,6 +493,117 @@ async def test_approval_dialog_approve_returns_unchecked_ops_as_removed(
     assert result.removed_op_ids == ["op2"]
 
 
+async def test_approval_dialog_shows_before_and_after_tree(user: User, tmp_path: Path) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.new_pending(
+        "approval",
+        {
+            "plan_id": "plan-1",
+            "plan_data": _plan_data(
+                ops=[{"op_id": "op1", "op_type": "move", "src": "/in/a.txt", "dst": "/sorted"}]
+            ),
+        },
+    )
+
+    await user.open(f"/run/{session.run_id}")
+
+    await user.should_see("Before")
+    await user.should_see("After")
+    await user.should_see(marker="before-tree")
+    await user.should_see(marker="after-tree")
+    await user.should_see("a.txt")
+    await user.should_see("sorted/")
+
+
+async def test_approval_dialog_annotates_after_tree_with_folder_notes(
+    user: User, tmp_path: Path
+) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.new_pending(
+        "approval",
+        {
+            "plan_id": "plan-1",
+            "plan_data": _plan_data(
+                ops=[{"op_id": "op1", "op_type": "move", "src": "/in/a.txt", "dst": "/sorted"}],
+                folder_notes={"sorted": "Everything already filed"},
+            ),
+        },
+    )
+
+    await user.open(f"/run/{session.run_id}")
+
+    await user.should_see("Everything already filed")
+
+
+async def test_approval_dialog_tree_shows_outside_target_marker(user: User, tmp_path: Path) -> None:
+    """S4/M4 regression guard at the page level: an op whose source resolves
+    outside the run's target directory must still carry the advisory marker
+    once rendered inside V3's before/after tree, not just in the old flat
+    checkbox list."""
+    target = tmp_path / "target"
+    target.mkdir()
+    outside_src = str(tmp_path / "elsewhere" / "secret.env")
+    session = web_session.create(target)
+    session.started = True
+    session.new_pending(
+        "approval",
+        {
+            "plan_id": "plan-1",
+            "plan_data": _plan_data(
+                ops=[
+                    {
+                        "op_id": "op1",
+                        "op_type": "rename",
+                        "src": outside_src,
+                        "dst": "renamed.env",
+                    }
+                ]
+            ),
+        },
+    )
+
+    await user.open(f"/run/{session.run_id}")
+
+    await user.should_see("outside target")
+
+
+async def test_approval_dialog_every_op_gets_exactly_one_checkbox_regardless_of_type(
+    user: User, tmp_path: Path
+) -> None:
+    """Safety-critical invariant: every op in the plan — whether it lands on
+    a tree node (move) or falls back to "Other operations" (create_dir) —
+    must be individually deselectable via removed_op_ids."""
+    session = web_session.create(tmp_path)
+    session.started = True
+    pending = session.new_pending(
+        "approval",
+        {
+            "plan_id": "plan-1",
+            "plan_data": _plan_data(
+                ops=[
+                    {"op_id": "op1", "op_type": "move", "src": "/in/a.txt", "dst": "/sorted"},
+                    {"op_id": "op2", "op_type": "create_dir", "src": "/sorted", "dst": ""},
+                ]
+            ),
+        },
+    )
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="op-op1")
+    await user.should_see(marker="op-op2")
+    await user.should_see("Other operations")
+
+    user.find(marker="op-op1").click()  # uncheck the tree-node op
+    user.find(marker="op-op2").click()  # uncheck the "Other operations" op
+    user.find(marker="approve-btn").click()
+
+    result = await pending.future
+    assert result.approved is True
+    assert set(result.removed_op_ids) == {"op1", "op2"}
+
+
 async def test_approval_dialog_refine_with_blank_text_is_a_noop(user: User, tmp_path: Path) -> None:
     session = web_session.create(tmp_path)
     session.started = True

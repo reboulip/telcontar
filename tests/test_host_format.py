@@ -14,6 +14,7 @@ from host.format import (
     fmt_journal_entry,
     fmt_op,
     fmt_progress,
+    plan_tree_diff,
     quarantine_reason,
     render_target_layout,
 )
@@ -121,6 +122,217 @@ def test_fmt_op_quarantine_markup_false_strips_rich_tags() -> None:
     formatted = fmt_op(op, markup=False)
     assert "[dim]" not in formatted
     assert "duplicate" in formatted
+
+
+# ── plan_tree_diff (V3) ──────────────────────────────────────────────────────────
+
+
+def test_plan_tree_diff_empty_ops_returns_empty_everything() -> None:
+    before, after, other = plan_tree_diff([])
+    assert before == []
+    assert after == []
+    assert other == []
+
+
+def test_plan_tree_diff_rename_shows_old_and_new_name() -> None:
+    ops = [{"op_id": "o1", "op_type": "rename", "src": "/t/a.txt", "dst": "b.txt"}]
+    before, after, other = plan_tree_diff(ops)
+    assert other == []
+    before_files = [line for line in before if line.op_id]
+    after_files = [line for line in after if line.op_id]
+    assert [(line.label, line.op_id) for line in before_files] == [("a.txt", "o1")]
+    assert [(line.label, line.op_id) for line in after_files] == [("b.txt", "o1")]
+
+
+def test_plan_tree_diff_move_places_file_under_dest_dir() -> None:
+    ops = [{"op_id": "o1", "op_type": "move", "src": "/t/in/a.txt", "dst": "/t/sorted"}]
+    _, after, other = plan_tree_diff(ops)
+    assert other == []
+    labels = [line.label for line in after]
+    assert "sorted/" in labels
+    assert any(line.label == "a.txt" and line.op_id == "o1" for line in after)
+
+
+def test_plan_tree_diff_quarantine_with_dest_appears_in_both_trees() -> None:
+    ops = [
+        {
+            "op_id": "o1",
+            "op_type": "quarantine",
+            "src": "/t/junk.txt",
+            "dst": "/t/_quarantine/junk.txt",
+            "params": {"reason": "duplicate"},
+        }
+    ]
+    before, after, other = plan_tree_diff(ops)
+    assert other == []
+    assert any(line.op_id == "o1" and line.label == "junk.txt  — duplicate" for line in before)
+    assert any(line.op_id == "o1" and line.label == "junk.txt  — duplicate" for line in after)
+
+
+def test_plan_tree_diff_quarantine_without_dest_goes_to_other_ops() -> None:
+    op = {"op_id": "o1", "op_type": "quarantine", "src": "/t/junk.txt", "dst": ""}
+    before, after, other = plan_tree_diff([op])
+    assert before == []
+    assert after == []
+    assert other == [op]
+
+
+def test_plan_tree_diff_archive_document_without_dest_goes_to_other_ops() -> None:
+    op = {"op_id": "o1", "op_type": "archive_document", "src": "/t/doc.pdf", "dst": ""}
+    before, after, other = plan_tree_diff([op])
+    assert before == []
+    assert after == []
+    assert other == [op]
+
+
+def test_plan_tree_diff_create_file_appears_only_in_after_tree() -> None:
+    ops = [{"op_id": "o1", "op_type": "create_file", "src": "/t/README.md", "dst": ""}]
+    before, after, other = plan_tree_diff(ops)
+    assert other == []
+    assert before == []
+    assert any(line.op_id == "o1" and line.label == "README.md" for line in after)
+
+
+def test_plan_tree_diff_update_file_create_dir_compress_quarantine_are_other_ops() -> None:
+    ops = [
+        {"op_id": "o1", "op_type": "update_file", "src": "/t/a.txt", "dst": ""},
+        {"op_id": "o2", "op_type": "create_dir", "src": "/t/new_folder", "dst": ""},
+        {"op_id": "o3", "op_type": "compress_quarantine", "src": "/t/_quarantine", "dst": ""},
+    ]
+    before, after, other = plan_tree_diff(ops)
+    assert before == []
+    assert after == []
+    assert [op["op_id"] for op in other] == ["o1", "o2", "o3"]
+
+
+def test_plan_tree_diff_every_op_id_appears_exactly_once_across_all_three() -> None:
+    ops = [
+        {"op_id": "o1", "op_type": "rename", "src": "/t/a.txt", "dst": "b.txt"},
+        {"op_id": "o2", "op_type": "move", "src": "/t/c.txt", "dst": "/t/sorted"},
+        {"op_id": "o3", "op_type": "quarantine", "src": "/t/d.txt", "dst": "/t/_q/d.txt"},
+        {"op_id": "o4", "op_type": "quarantine", "src": "/t/e.txt", "dst": ""},
+        {"op_id": "o5", "op_type": "create_file", "src": "/t/new.md", "dst": ""},
+        {"op_id": "o6", "op_type": "update_file", "src": "/t/f.txt", "dst": ""},
+        {"op_id": "o7", "op_type": "create_dir", "src": "/t/g", "dst": ""},
+        {
+            "op_id": "o8",
+            "op_type": "archive_document",
+            "src": "/t/h.pdf",
+            "dst": "/t/_q/h.pdf",
+        },
+    ]
+    before, after, other = plan_tree_diff(ops)
+    seen_op_ids = (
+        [line.op_id for line in before if line.op_id]
+        + [line.op_id for line in after if line.op_id]
+        + [op["op_id"] for op in other]
+    )
+    # o1/o2/o3/o8 have a genuine before AND after location (rename, move,
+    # quarantine-with-dest, archive-with-dest) — they appear in both trees,
+    # count 2. o4/o6/o7 (other-only) and o5 (create_file, after-only) appear
+    # exactly once.
+    from collections import Counter
+
+    counts = Counter(seen_op_ids)
+    assert set(counts) == {f"o{i}" for i in range(1, 9)}
+    for op_id in ("o1", "o2", "o3", "o8"):
+        assert counts[op_id] == 2
+    for op_id in ("o4", "o5", "o6", "o7"):
+        assert counts[op_id] == 1
+
+
+def test_plan_tree_diff_groups_multiple_files_under_shared_folder() -> None:
+    ops = [
+        {"op_id": "o1", "op_type": "move", "src": "/t/in/a.txt", "dst": "/t/sorted/2024"},
+        {"op_id": "o2", "op_type": "move", "src": "/t/in/b.txt", "dst": "/t/sorted/2024"},
+    ]
+    _, after, _ = plan_tree_diff(ops)
+    file_lines = [line for line in after if line.op_id]
+    assert {line.label for line in file_lines} == {"a.txt", "b.txt"}
+    # both files sit at the same depth, under the same "2024/" folder line
+    folder_lines = [line for line in after if line.label == "2024/"]
+    assert len(folder_lines) == 1
+    assert all(line.depth == folder_lines[0].depth + 1 for line in file_lines)
+
+
+def test_plan_tree_diff_annotates_after_tree_folders_with_notes() -> None:
+    ops = [{"op_id": "o1", "op_type": "move", "src": "/t/in/a.txt", "dst": "/t/sorted/2024"}]
+    notes = {"2024": "This year's invoices"}
+    before, after, _ = plan_tree_diff(ops, folder_notes=notes)
+    assert not any("invoices" in line.label for line in before)
+    assert any("This year's invoices" in line.label for line in after)
+
+
+def test_plan_tree_diff_marks_out_of_scope_ops_on_both_tree_sides(tmp_path: Path) -> None:
+    """S4/M4 regression guard: the (outside target) advisory marker must
+    survive V3's before/after tree, not just the "Other operations"
+    fallback list that still goes through fmt_op."""
+    target = tmp_path / "target"
+    target.mkdir()
+    outside = tmp_path / "elsewhere" / "secret.env"
+    ops = [{"op_id": "o1", "op_type": "rename", "src": str(outside), "dst": "renamed.env"}]
+    before, after, _ = plan_tree_diff(ops, target=target)
+    assert any(line.op_id == "o1" and "outside target" in line.label for line in before)
+    assert any(line.op_id == "o1" and "outside target" in line.label for line in after)
+
+
+def test_plan_tree_diff_in_scope_ops_have_no_marker(tmp_path: Path) -> None:
+    target = tmp_path
+    ops = [{"op_id": "o1", "op_type": "move", "src": str(tmp_path / "a.txt"), "dst": "/sorted"}]
+    before, after, _ = plan_tree_diff(ops, target=target)
+    assert not any("outside target" in line.label for line in before)
+    assert not any("outside target" in line.label for line in after)
+
+
+def test_plan_tree_diff_no_target_means_no_marker() -> None:
+    ops = [{"op_id": "o1", "op_type": "rename", "src": "/anywhere/doc.pdf", "dst": "new.pdf"}]
+    before, after, _ = plan_tree_diff(ops, target=None)
+    assert not any("outside target" in line.label for line in before)
+    assert not any("outside target" in line.label for line in after)
+
+
+def test_plan_tree_diff_quarantine_reason_survives_on_tree_nodes() -> None:
+    """V10 regression guard: a quarantine op with a resolved destination
+    lands on a tree node (not "Other operations"), and its stated reason
+    must still be visible there, not silently dropped."""
+    ops = [
+        {
+            "op_id": "o1",
+            "op_type": "quarantine",
+            "src": "/t/junk.txt",
+            "dst": "/t/_q/junk.txt",
+            "params": {"reason": "duplicate of report_v2.pdf"},
+        }
+    ]
+    before, after, other = plan_tree_diff(ops)
+    assert other == []
+    assert any(line.op_id == "o1" and "duplicate of report_v2.pdf" in line.label for line in before)
+    assert any(line.op_id == "o1" and "duplicate of report_v2.pdf" in line.label for line in after)
+
+
+def test_plan_tree_diff_quarantine_reason_falls_back_to_no_reason_given() -> None:
+    ops = [
+        {
+            "op_id": "o1",
+            "op_type": "quarantine",
+            "src": "/t/junk.txt",
+            "dst": "/t/_q/junk.txt",
+            "params": {"reason": ""},
+        }
+    ]
+    _, after, _ = plan_tree_diff(ops)
+    assert any(line.op_id == "o1" and "no reason given" in line.label for line in after)
+
+
+def test_plan_tree_diff_handles_cross_drive_paths_without_raising(tmp_path: Path) -> None:
+    # os.path.commonpath raises ValueError across drives on Windows —
+    # render_target_layout already guards this; plan_tree_diff must too.
+    ops = [
+        {"op_id": "o1", "op_type": "move", "src": "C:/a/one.txt", "dst": "C:/sorted"},
+        {"op_id": "o2", "op_type": "move", "src": "D:/b/two.txt", "dst": "D:/sorted"},
+    ]
+    _, after, _ = plan_tree_diff(ops)  # must not raise
+    assert {line.label for line in after if line.op_id} == {"one.txt", "two.txt"}
 
 
 # ── render_target_layout ────────────────────────────────────────────────────────

@@ -541,11 +541,44 @@ the dialog-building code that used to live inline in `run_page`'s
 `_show_pending_dialog` closure. `build_approval_dialog(session, pending) ->
 ui.dialog` is a faithful port of the TUI's `ApprovalModal`: title (plan id +
 op count), the rationale (if any) with its "model-generated — not verified fact"
-disclaimer, the target-layout preview (`host.format.render_target_layout`) with
-its own folder-notes disclaimer when folder notes are present, per-op checkboxes
-(`fmt_op(op, session.target, markup=False)`, defaulting checked), the
-`ops_json_path` label when present, a free-text refine input, and
-Approve/Refine/Reject buttons. Approve resolves with `ApprovalResult(approved=True,
+disclaimer, then a folder-notes disclaimer when folder notes are present. As of
+V3, what follows is an actual before/after file tree instead of the old flat
+`render_target_layout` text block plus a separate flat checkbox list (`render_target_layout`
+itself is unchanged and unused here now — the TUI's `ApprovalModal` still calls
+it directly for its own preview; only this dialog's use of it was replaced).
+`host.format.plan_tree_diff(ops, folder_notes, target) -> (before_lines,
+after_lines, other_ops)` is a pure function (no filesystem I/O — the plan's ops
+ARE the diff) that derives the tree from each op's `dst` per its type
+(documented in the function's own docstring): `rename` -> new filename in the
+same parent; `move` -> basename under the destination directory;
+`quarantine`/`archive_document` with a computed destination -> that
+destination; `create_file` -> its own `src` (nothing to show as "before").
+Each side is a `list[PlanTreeLine]` (`depth`/`label`/`op_id: str | None`, a
+frozen dataclass) built by the private `_render_file_tree` helper — files
+listed before subfolders at each level, `depth` driving visual indent
+(rendered as `margin-left: {depth * 16}px`, not ASCII connectors, since the
+dialog renders one label per line rather than raw preformatted text). `op_id`
+is set on every leaf file line in both trees, but the dialog only ever builds
+a checkbox from the after-tree's copy — the before tree is a read-only
+reference. `plan_tree_diff` also computes a per-op_id `suffixes` dict, applied
+to both tree sides, so a tree-rendered op keeps the same advisories a flat
+`fmt_op` row would have shown: the `(outside target)` marker
+(`is_op_out_of_scope`, S4/M4) for any op whose source resolves outside
+`target`, and — for `quarantine` specifically — its V10 stated reason
+(`quarantine_reason`), falling back to "no reason given". Ops with no clean
+tree slot (`create_dir`, `compress_quarantine`, `update_file`, and any
+`quarantine`/`archive_document` with no destination) come back as `other_ops`
+instead, rendered below the tree as an "Other operations" list using the same
+`fmt_op(op, session.target, markup=False)` label the whole checklist used
+pre-V3 — so the `(overwrite)` marker (`update_file`-only, and `update_file`
+always lands in `other_ops`) is the one marker still exclusive to that
+fallback bucket. Every op in the plan still ends up with exactly one checkbox,
+in the after-tree or in "Other operations" — never both, never neither —
+preserving the `removed_op_ids` safety contract. The card is now sized via an
+inline style
+(`width: 90vw; max-width: 1400px`) rather than a Tailwind `max-w-3xl` class —
+Quasar's own dialog CSS outranks a same-specificity Tailwind swap. Approve
+resolves with `ApprovalResult(approved=True,
 removed_op_ids=[...])` for every unchecked op; Refine resolves with
 `ApprovalResult(approved=False, refinement=text)` only if the field is non-blank
 (otherwise a no-op, dialog stays open) — refinement therefore always takes

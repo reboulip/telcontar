@@ -9,6 +9,7 @@ passes ``markup=False`` to get plain text instead.
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 from host.paths import is_op_out_of_scope
@@ -207,4 +208,150 @@ def render_target_layout(ops: list[dict], folder_notes: dict) -> list[str]:
             _walk(children, prefix + ("    " if last else "│   "), new_acc)
 
     _walk(tree, "", ())
+    return lines
+
+
+@dataclass(frozen=True)
+class PlanTreeLine:
+    """One line of a before/after plan tree (V3). ``depth`` drives visual
+    indent (the web UI renders these in a single column, indented by
+    depth — no ASCII connectors needed since nesting isn't done via raw
+    text). ``op_id`` is set on every leaf file entry, before-tree and
+    after-tree alike; the before tree is a read-only reference, so its
+    caller simply never renders a checkbox from it — the dataclass itself
+    doesn't need two shapes."""
+
+    depth: int
+    label: str
+    op_id: str | None = None
+
+
+def plan_tree_diff(
+    ops: list[dict], folder_notes: dict | None = None, target: Path | None = None
+) -> tuple[list[PlanTreeLine], list[PlanTreeLine], list[dict]]:
+    """Derive a before/after file-tree pair from a plan's ops (V3) — no
+    filesystem I/O, entirely from the ops list itself; the plan's ops ARE
+    the diff. Returns ``(before_lines, after_lines, other_ops)``:
+    ``other_ops`` holds every op with no clean before/after tree slot
+    (``create_dir``, ``compress_quarantine``, ``update_file``, and any
+    ``quarantine``/``archive_document`` with no destination computed) — each
+    of these still needs its own checkbox in the approval dialog, just in
+    an "Other operations" list instead of a tree node. No op is ever
+    dropped: every op_id ends up in exactly one of before/after/other.
+
+    ``folder_notes`` (model-authored, from ``set_plan_folder_notes``) is
+    applied only to the after-tree's folder lines — it describes the
+    *destination* structure, so it has no meaning on the before side.
+
+    ``target``, when given, restores the ``(outside target)`` advisory
+    marker (S4/M4 — ``is_op_out_of_scope``, the same check ``fmt_op`` uses)
+    on both tree sides for any op whose *source* resolves outside it, and
+    every ``quarantine`` op that lands on a tree node still carries its V10
+    stated reason. Neither must silently disappear just because an op
+    landed on a tree node instead of the "Other operations" fallback list,
+    which is the only place still routed through ``fmt_op``.
+
+    ``dst`` semantics, per ``server/plan.py``'s ``PlanOp`` docstring:
+    ``rename`` -> bare new filename; ``move`` -> destination *directory*;
+    ``quarantine`` -> *full* destination path; ``create_file``/
+    ``update_file``/``create_dir``/``compress_quarantine`` -> ``""`` (the
+    real path is in ``src``); ``archive_document`` -> quarantine path,
+    possibly ``""``.
+    """
+    before: dict[str, str] = {}
+    after: dict[str, str] = {}
+    other: list[dict] = []
+    suffixes: dict[str, str] = {}
+
+    for op in ops:
+        op_id = str(op.get("op_id", ""))
+        op_type = op.get("op_type", "")
+        src = op.get("src", "")
+        dst = op.get("dst", "")
+        suffix = "  (outside target)" if is_op_out_of_scope(op, target) else ""
+        if op_type == "rename":
+            before[op_id] = src
+            after[op_id] = str(Path(src).parent / dst) if dst else src
+        elif op_type == "move":
+            before[op_id] = src
+            after[op_id] = str(Path(dst) / Path(src).name) if dst else src
+        elif op_type in ("quarantine", "archive_document"):
+            if dst:
+                before[op_id] = src
+                after[op_id] = dst
+                if op_type == "quarantine":
+                    suffix += f"  — {quarantine_reason(op)}"
+            else:
+                other.append(op)
+        elif op_type == "create_file":
+            after[op_id] = src  # new file — no prior location to show
+        else:  # update_file, create_dir, compress_quarantine
+            other.append(op)
+        if suffix:
+            suffixes[op_id] = suffix
+
+    return (
+        _render_file_tree(before, suffixes=suffixes),
+        _render_file_tree(after, folder_notes, suffixes=suffixes),
+        other,
+    )
+
+
+def _render_file_tree(
+    paths: dict[str, str],
+    folder_notes: dict | None = None,
+    suffixes: dict[str, str] | None = None,
+) -> list[PlanTreeLine]:
+    """``paths``: op_id -> absolute file path. Groups by parent folder into
+    a tree, files listed before subfolders at each level. ``folder_notes``,
+    when given, annotates folder lines the same way ``render_target_layout``
+    does (``note_for``'s fuzzy path/basename matching). ``suffixes``, when
+    given, appends per-op_id extra text (the ``(outside target)`` marker,
+    a quarantine reason) to that op's file line, the same way ``fmt_op``
+    would for an op in the "Other operations" fallback list."""
+    if not paths:
+        return []
+    suffixes = suffixes or {}
+    norm = {op_id: p.replace("\\", "/") for op_id, p in paths.items()}
+    dirs = [str(Path(p).parent).replace("\\", "/") for p in norm.values()]
+    try:
+        base = (
+            str(Path(dirs[0]).parent).replace("\\", "/")
+            if len(set(dirs)) == 1
+            else os.path.commonpath(dirs).replace("\\", "/")
+        )
+    except ValueError:  # e.g. paths on different drives — no common base
+        base = ""
+
+    tree: dict = {}
+    files_at: dict[tuple[str, ...], list[tuple[str, str]]] = {}
+    note_at: dict[tuple[str, ...], str] = {}
+    noted_dirs: set[str] = set()
+    for op_id, path in norm.items():
+        parent = str(Path(path).parent).replace("\\", "/")
+        rel = parent[len(base) :].strip("/") if base and parent.startswith(base) else parent
+        parts = tuple(p for p in rel.split("/") if p)
+        node = tree
+        for part in parts:
+            node = node.setdefault(part, {})
+        files_at.setdefault(parts, []).append((op_id, Path(path).name))
+        if folder_notes and parts and parent not in noted_dirs:
+            noted_dirs.add(parent)
+            note = note_for(parent, folder_notes)
+            if note:
+                note_at[parts] = note
+
+    lines = [PlanTreeLine(0, f"{Path(base).name or base or 'target'}/")]
+
+    def _walk(node: dict, depth: int, acc: tuple[str, ...]) -> None:
+        for op_id, filename in sorted(files_at.get(acc, []), key=lambda t: t[1]):
+            lines.append(PlanTreeLine(depth, f"{filename}{suffixes.get(op_id, '')}", op_id))
+        for name, children in sorted(node.items()):
+            new_acc = acc + (name,)
+            note = note_at.get(new_acc, "")
+            suffix = f"  — {note}" if note else ""
+            lines.append(PlanTreeLine(depth, f"{name}/{suffix}"))
+            _walk(children, depth + 1, new_acc)
+
+    _walk(tree, 1, ())
     return lines
