@@ -555,8 +555,9 @@ forecast briefs, `sprint-brief.md` **and any `docs-pending.md`** are scratch sta
 needed once every item is committed and merged. Only delete it once Step 6.5 has actually
 landed the docs; the `Docs pending:` line is the resume record for undocumented waves.
 
-(End-of-session improvement reflection is handled automatically by the global
-Stop hook — no explicit auto-improve step needed here.)
+(End-of-session improvement reflection is not part of this skill. The user runs
+`/learn` when they decide the whole session — not just the sprint — is over. Do
+not run it here and do not suggest it at the end of every sprint.)
 
 Report:
 - Milestone completed.

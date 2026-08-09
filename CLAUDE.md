@@ -250,7 +250,9 @@ Task orchestration for non-trivial work is delegated to specialized agents and s
 
 - **`/test-select`**: Select and run the minimal pytest scope for the current branch's changes. Call before every commit. Blocks commit if any test fails.
 
-- **`/dev-pipeline`**: Full sprint orchestrator. Reads `ROADMAP.md`, batches independent unchecked items into dependency-ordered waves, and implements them on a `feat/` branch using the agents above — one commit per wave. Fast-forward-merges into `develop` by default, preserving per-wave commits (squash only on request). Start here when working through the roadmap. (Parallel git worktrees were evaluated and rejected for this repo — see `dev-pipeline/SKILL.md`'s "Why waves and not parallel git worktrees" if this comes up again.) End-of-session improvement reflection (scanning for boilerplate instructions, repeated corrections, automation opportunities) is handled automatically by the global Stop hook — no explicit auto-improve step needed.
+- **`/dev-pipeline`**: Full sprint orchestrator. Reads `ROADMAP.md`, batches independent unchecked items into dependency-ordered waves, and implements them on a `feat/` branch using the agents above — one commit per wave. Fast-forward-merges into `develop` by default, preserving per-wave commits (squash only on request). Start here when working through the roadmap. (Parallel git worktrees were evaluated and rejected for this repo — see `dev-pipeline/SKILL.md`'s "Why waves and not parallel git worktrees" if this comes up again.) End-of-session improvement reflection is not part of this skill — see `/learn` below.
+
+- **`/learn`**: End-of-session reflection, triggered by the user only. Reads the session transcript in a subagent and writes improvement proposals to `~/.claude/pending-improvements/` and learning notes to `~/.claude/pending-learnings/` — notes only, no review. Review happens later via `/experience-feedback` and `/teach-me-things`. It replaced a global Stop hook that fired too early in a session; never re-wire it as a hook and never run it on your own initiative.
 
 ## ROADMAP conventions
 
