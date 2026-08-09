@@ -206,6 +206,7 @@ async def run_page(run_id: str) -> None:
             with ui.row().classes("w-full items-center gap-2").mark("progress-row") as progress_row:
                 progress_percent_label = ui.label().mark("progress-percent")
                 progress_bar = ui.linear_progress(value=0.0).classes("flex-grow")
+                progress_current_label = ui.label().classes("text-caption").mark("progress-current")
             progress_row.visible = False
             with ui.row().classes("w-full items-center"):
                 chat_input = ui.input("Chat anytime…").classes("flex-grow")
@@ -304,6 +305,12 @@ async def run_page(run_id: str) -> None:
                 fraction = session.progress.get("analyzed", 0) / total
                 progress_bar.set_value(fraction)
                 progress_percent_label.set_text(f"{round(fraction * 100)}%")
+                current = session.progress.get("current") or []
+                if current:
+                    extra = f" +{len(current) - 1}" if len(current) > 1 else ""
+                    progress_current_label.set_text(f"{current[0]}{extra}")
+                else:
+                    progress_current_label.set_text("")
             else:
                 progress_row.visible = False
 

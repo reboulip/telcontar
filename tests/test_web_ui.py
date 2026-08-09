@@ -1293,3 +1293,70 @@ async def test_progress_bar_shows_rounded_integer_percent(user: User, tmp_path: 
     [percent_label] = user.find(marker="progress-percent").elements
     assert percent_label.text == "75%"
     assert "0.75" not in percent_label.text
+
+
+async def test_progress_current_document_label_shows_in_flight_filename(
+    user: User, tmp_path: Path
+) -> None:
+    """V8b: the progress row names which document is being analyzed right
+    now, using V8a's `"current"` list on the progress event data."""
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.progress = {"analyzed": 3, "total": 4, "current": ["report.pdf"]}
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="progress-row")
+    await user.should_see("report.pdf")
+
+    [current_label] = user.find(marker="progress-current").elements
+    assert current_label.text == "report.pdf"
+
+
+async def test_progress_current_document_label_shows_count_suffix_for_multiple_files(
+    user: User, tmp_path: Path
+) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.progress = {
+        "analyzed": 1,
+        "total": 4,
+        "current": ["report.pdf", "notes.docx", "invoice.pdf"],
+    }
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="progress-row")
+
+    [current_label] = user.find(marker="progress-current").elements
+    assert current_label.text == "report.pdf +2"
+
+
+async def test_progress_current_document_label_empty_between_batches(
+    user: User, tmp_path: Path
+) -> None:
+    """V8a clears `"current"` to `[]` on the post-batch event — the label
+    must not keep showing a just-finished file's name."""
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.progress = {"analyzed": 4, "total": 4, "current": []}
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="progress-row")
+
+    [current_label] = user.find(marker="progress-current").elements
+    assert current_label.text == ""
+
+
+async def test_progress_current_document_label_defensive_when_key_absent(
+    user: User, tmp_path: Path
+) -> None:
+    """The pre-pass snapshot event omits `"current"` entirely (V8a) — must
+    not raise, must render as empty."""
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.progress = {"analyzed": 2, "total": 5}
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="progress-row")
+
+    [current_label] = user.find(marker="progress-current").elements
+    assert current_label.text == ""
