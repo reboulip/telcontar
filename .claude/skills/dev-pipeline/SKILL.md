@@ -1,6 +1,6 @@
 ---
 name: dev-pipeline
-description: Orchestrate a full development sprint from ROADMAP.md. Reads unchecked items, batches independent ones into dependency-ordered waves, and implements them on a feat/ sub-branch of develop — using feature-forecast for background prefetch, one doc-keeper and one /test-select run per wave, and one commit per wave. Use when asked to run the sprint, work through the roadmap, or implement all pending items.
+description: Orchestrate a full development sprint from ROADMAP.md. Reads unchecked items, batches independent ones into dependency-ordered waves, and implements them on a feat/ sub-branch of develop — using feature-forecast for background prefetch, one /test-select run and one commit per wave, and a single sprint-long doc-keeper whose work lands in one docs-only commit at the end. Use when asked to run the sprint, work through the roadmap, or implement all pending items.
 ---
 
 # /dev-pipeline — sprint orchestrator
@@ -11,9 +11,9 @@ Reads `ROADMAP.md`, finds all unchecked items in the active milestone, then — 
 
 1. **Forecast** (`feature-forecast` subagent, Haiku) — reads the codebase and produces a tactical Forecast Brief per item, persisted to a temp file.
 2. **Implementation** — main session implements every item in the wave, in one pass, using those briefs.
-3. **Documentation** (`doc-keeper` subagent, Sonnet) — syncs README/docs to the wave's changes. Runs **in the background, concurrently with tests**.
-4. **Tests** (`/test-select` skill) — one run for the whole wave; gates the commit, red blocks advance.
-5. **Commit** — one commit per wave, covering the code **and** doc changes, run directly in the main session.
+3. **Tests** (`/test-select` skill) — one run for the whole wave; gates the commit, red blocks advance.
+4. **Commit** — one commit per wave, covering the code, run directly in the main session.
+5. **Documentation** (`doc-keeper` subagent, Sonnet) — the committed wave is handed to a **single sprint-long** doc-keeper and the sprint moves straight on to the next wave. Docs are **never joined per wave**; they land in one docs-only commit at Step 6.5.
 
 Forecasts run **one wave ahead** of whichever wave is being implemented, so every brief is
 ready with zero wait time. Each brief is written to
@@ -24,9 +24,9 @@ survive context compaction and sprint interruption/resume. The sprint-wide
 a resumed sprint reuses it — including its wave plan — without re-planning.
 
 > **Why waves and not parallel git worktrees.** Waves cut the *fixed per-item tail* — the
-> cold-start doc-keeper round trip and the test run — without
+> test run and the per-item commit cycle — without
 > introducing any new failure mode: one editor, one branch, one gate. Fanning implementer
-> agents out across worktrees was considered and rejected for this repo: the roadmap's
+> agents out across *worktrees* was considered and rejected for this repo: the roadmap's
 > items overwhelmingly pile onto the same few files (`host/web/main.py`, `host/agent.py`),
 > foundation items define contracts that later items mount into (a *semantic* conflict that
 > merges cleanly and still breaks), every item edits `ROADMAP.md`, each worktree needs its
@@ -35,8 +35,9 @@ a resumed sprint reuses it — including its wave plan — without re-planning.
 > ambiguity. Note also that the **full** suite is ~63s / 691 tests — pytest is not the
 > bottleneck, agent round trips and token generation are. Don't re-propose worktrees
 > without a milestone whose items are genuinely disjoint (separate views/modules, no shared
-> contract); if one appears, parallelize the implementation body only and keep the merge,
-> docs, roadmap edits, and the test gate serial in the main session.
+> contract). Parallelizing the *implementation body* inside the single working tree is a
+> different question and **is** allowed under a strict disjointness test — see the
+> "Waves batch; parallelize only on provably disjoint files" rule at the bottom.
 
 > **Note on design clarification.** Non-obvious design decisions (output formats,
 > tool signatures, LLM-vs-code prose, dependency ordering) are **not** resolved in a
@@ -210,6 +211,9 @@ table; batching two items that turn out to collide costs more than it saves.
    - **Waves** — the wave plan from step 5: one line per wave (`Wave 1: T1, T7`), each
      followed by a one-clause reason the items are safe to batch (or, for a singleton, why
      it stands alone). This is what Steps 2/4/5/6 execute against.
+   - `Docs pending:` — initially empty. Step 5.5 appends each wave handed to doc-keeper and
+     removes it when its report lands; Step 6.5 clears it. This is the sprint's only record
+     of undocumented waves, and the one thing a resumed session cannot rebuild from git.
    - **Plan** — the agreed approach & item ordering across clusters (fold in any
      user-approved reordering/splitting; if the implementation order now differs from
      ROADMAP's listed order, state it explicitly here).
@@ -286,61 +290,6 @@ extra cycle; forcing it costs a tangled commit.
 
 ---
 
-## Step 4.5 — Update documentation (in the background)
-
-Once the whole wave is implemented, hand the wave to **one** `doc-keeper`, so the docs land
-in the **same** commit as the code. It always runs in the background — doc-keeper writes only
-`README.md` and `docs/**`, which pytest never imports, so it runs safely alongside the test
-run instead of adding a serial leg. Go straight on to Step 5 after firing it.
-
-**One doc-keeper per sprint, not per wave.** `docs/developer/modules.md` and
-`docs/developer/architecture.md` are ~880 lines each (~54k tokens together) and are touched
-by nearly every wave. A fresh agent re-reads them from cold every time, which is why doc
-updates lag far behind the ~63s test run. So:
-
-- **Wave 1** — spawn it with `Agent`.
-- **Waves 2..N** — continue that **same** agent with `SendMessage`, addressed **by name**
-  (`to: "doc-keeper"`), passing the same prompt body. A send resumes the agent from its
-  transcript, so its context still holds the big docs and later waves skip the cold read
-  entirely. Addressing by name also works after a context compaction or a sprint resume —
-  do not persist or print a raw agent id.
-- Spawn a fresh `doc-keeper` only if the send fails to reach one, or if it reports that its
-  in-context copy of a doc no longer matches disk.
-
-**Give it the diff and the targets — do not make it search.** The main session already read
-the source and already knows which docs the change lands in. Passing that removes a whole
-exploration pass:
-
-- `Diff:` the actual unified diff of the wave's source changes
-  (`git diff -- host server config profiles`, plus `git diff --cached`/untracked file bodies
-  for new files). With this, doc-keeper needs **zero** source Reads.
-- `Target docs:` the specific pages **and sections** you expect to change, for example
-  `docs/developer/modules.md § host/web/session.py`, `docs/developer/architecture.md § Data flow`.
-  Write "unknown" only when you genuinely cannot tell; doc-keeper stays free to correct you
-  and to touch a page you did not list.
-
-```
-# Wave 1
-Agent({
-  subagent_type: "doc-keeper",
-  run_in_background: true,
-  description: "Update docs for [milestone] wave [N]",
-  prompt: "Items in this wave:\n[label — title, one per item]\n\nChanged files:\n[list of files edited/created in Step 4]\n\nTarget docs:\n[page § section, one per line, or \"unknown\"]\n\nSummary of change:\n[1-2 sentences per item: what the implementation did — new/changed MCP tools, signatures, config keys, behaviour]\n\nDiff:\n```diff\n[unified diff of the wave's source changes]\n```"
-})
-
-# Waves 2..N — same agent, context still warm
-SendMessage({
-  to: "doc-keeper",
-  summary: "docs for [milestone] wave [N]",
-  message: "[same prompt body, this wave's values]"
-})
-```
-
-If the diff is very large (a wide refactor), pass the diff for the behaviour-bearing files
-and fall back to the plain file list for the rest — say which is which in the prompt.
-
----
-
 ## Step 5 — Test and commit the wave
 
 **Scope table first:**
@@ -354,28 +303,109 @@ One run for the whole wave, scoped to the union of the wave's changes. If the ve
 RED, fix the failures before continuing. Do not advance until green. (The full suite is
 ~63s, so when a wave's changes are broad, running everything is a perfectly good answer.)
 
-**Join doc-keeper:** before committing, wait for the Step 4.5 agent to report — whether it
-was spawned with `Agent` (wave 1) or continued with `SendMessage` (later waves). Add any
-docs it updated/created to the commit's file list; if it reports "None — internal/test-only,"
-proceed with no doc changes. Never commit while it is still in flight — that's how doc
-changes get orphaned into the next wave's commit.
+**Do NOT wait for doc-keeper here.** Docs are not part of a wave commit any more — see
+Step 5.5. If a doc-keeper report happens to land while you are in this step, just note it;
+never let it gate the commit.
 
-If a *continued* doc-keeper never reports, do not block the sprint indefinitely: run
-`git status -- README.md docs mkdocs.yml`, commit whatever doc changes are actually on
-disk, and spawn a fresh `doc-keeper` for the next wave instead of sending to the old one.
-
-**Commit — one commit per wave**, covering every item in it plus the doc changes, run
-directly in the main session:
+**Commit — one commit per wave**, covering every item in it, run directly in the
+main session:
 ```
-git add [list of changed files]
+git add [list of changed source/test files + ROADMAP.md]
 git commit -m "[type]: [wave summary — the shared theme, or the items joined]" -m "[body: one bullet per item in the wave ([label] — what changed and why)]"
 ```
 
+Stage **source, tests and `ROADMAP.md` only — never `README.md`, `docs/**` or `mkdocs.yml`**.
+Those belong to the single docs commit in Step 6.5, and a doc-keeper writing to disk in the
+background means an unlisted `git add -A` would sweep in a half-finished doc edit. Stage only
+the listed files — never `git add -A`/`.`.
+
 The body's one-bullet-per-item is what keeps a wave commit auditable against the roadmap
 now that history is no longer 1:1 with items — don't skip it. For a singleton wave this is
-exactly the old per-item commit. Stage only the listed files — never `git add -A`/`.` — and
-follow CLAUDE.md's Branch Model hard rules (no `--force`, no `--no-verify`, no amending a
-published commit).
+exactly the old per-item commit. Follow CLAUDE.md's Branch Model hard rules (no `--force`,
+no `--no-verify`, no amending a published commit).
+
+---
+
+## Step 5.5 — Hand the committed wave to doc-keeper (fire and forget)
+
+Immediately after the wave commit, hand the wave to **one** `doc-keeper` and go straight on
+to Step 6. **Never join it here.** doc-keeper writes only `README.md`, `docs/**` and
+`mkdocs.yml` — files pytest never imports and no wave commit ever stages — so it can keep
+working right through the next wave's implementation. Its output is collected once, at
+Step 6.5.
+
+**Fire it after the commit, not before.** The diff you pass must be the *committed* state.
+Firing before the test gate means doc-keeper can document an implementation that the red-test
+fix then changed, or an item that Step 4's collision rule pushed into the next wave — work
+that is wasted and, worse, produces a doc describing a state that never existed.
+
+**One doc-keeper per sprint, not per wave.** `docs/developer/modules.md` and
+`docs/developer/architecture.md` are ~880 lines each (~54k tokens together) and are touched
+by nearly every wave. A fresh agent re-reads them from cold every time. So:
+
+- **Wave 1** — spawn it with `Agent`, `run_in_background: true`.
+- **Waves 2..N** — continue that **same** agent with `SendMessage`, addressed **by name**
+  (`to: "doc-keeper"`), passing the same prompt body. A send resumes the agent from its
+  transcript, so its context still holds the big docs and later waves skip the cold read
+  entirely. Addressing by name also works after a context compaction or a sprint resume —
+  do not persist or print a raw agent id.
+- Spawn a fresh `doc-keeper` only if the send fails to reach one, or if it reports that its
+  in-context copy of a doc no longer matches disk.
+
+**Give it the diff and the targets — do not make it search.** The main session already read
+the source and already knows which docs the change lands in. Passing that removes a whole
+exploration pass:
+
+- `Diff:` the committed diff of the wave's source changes
+  (`git show --stat` for orientation plus `git diff HEAD~1 HEAD -- host server config profiles`).
+  With this, doc-keeper needs **zero** source Reads.
+- `Target docs:` the specific pages **and sections** you expect to change, for example
+  `docs/developer/modules.md § host/web/session.py`, `docs/developer/architecture.md § Data flow`.
+  Write "unknown" only when you genuinely cannot tell; doc-keeper stays free to correct you
+  and to touch a page you did not list.
+
+```
+# Wave 1
+Agent({
+  subagent_type: "doc-keeper",
+  run_in_background: true,
+  description: "Update docs for [milestone] wave [N]",
+  prompt: "Items in this wave:\n[label — title, one per item]\n\nChanged files:\n[list of files edited/created in Step 4]\n\nTarget docs:\n[page § section, one per line, or \"unknown\"]\n\nSummary of change:\n[1-2 sentences per item: what the implementation did — new/changed MCP tools, signatures, config keys, behaviour]\n\nDiff:\n```diff\n[committed unified diff of the wave's source changes]\n```"
+})
+
+# Waves 2..N — same agent, context still warm
+SendMessage({
+  to: "doc-keeper",
+  summary: "docs for [milestone] wave [N]",
+  message: "[same prompt body, this wave's values]"
+})
+```
+
+If the diff is very large (a wide refactor), pass the diff for the behaviour-bearing files
+and fall back to the plain file list for the rest — say which is which in the prompt.
+
+### Track the doc backlog
+
+Because nothing joins per wave, the sprint must remember which waves doc-keeper still owes.
+Maintain a `Docs pending:` line in `sprint-brief.md` (add the line if absent). If planning
+was skipped and there is no brief, write the line to
+`.claude/tmp/dev-pipeline/<milestone-slug>/docs-pending.md` instead — a trivial sprint is a
+single wave, so this stays a one-line file:
+
+- **After firing/sending a wave**, add that wave: `Docs pending: wave 3, wave 4`.
+- **When a doc-keeper report arrives** (a background notification can land at any point in
+  any step), remove the waves it covers from the line. Note its `Discrepancies noticed`
+  section — a discrepancy about an *already committed* wave is a real finding and needs a
+  decision now, not at Step 6.5.
+- **If `Docs pending:` reaches 3 waves, stop and join** before starting the next wave.
+  A backlog that keeps growing means doc-keeper is slower than the wave cadence, and letting
+  it run to the end of the sprint just moves the whole wait onto the merge path.
+
+**Sending to a busy agent.** Unlike the old flow, a `SendMessage` here may reach a
+doc-keeper that is still working on the previous wave; the harness does not document that
+case. Treat a wave as delivered only once it appears in a doc-keeper report. If a wave sits
+in `Docs pending:` across two later waves with no report mentioning it, assume the send was
+lost: join, then re-send that wave's prompt on its own.
 
 ---
 
@@ -405,9 +435,57 @@ After wave[K] is committed:
 
 ---
 
+## Step 6.5 — Land the sprint's docs
+
+Run this **once**, after the last wave is committed and **before** Step 7. It is the only
+place doc-keeper is joined.
+
+1. **Join doc-keeper.** Wait for it to report on every wave still listed in
+   `sprint-brief.md`'s `Docs pending:` line. If that line is already empty, it has reported
+   on everything — go to step 2 anyway to verify the tree.
+
+   If it never reports, do not block the sprint indefinitely: run
+   `git status -- README.md docs mkdocs.yml` and continue with whatever doc changes are
+   actually on disk. Say in the final report which waves were left undocumented.
+
+2. **Check the tree matches the reports.** `git status -- README.md docs mkdocs.yml`. Any
+   path a report did not mention, or any report claiming an edit that is not on disk, means
+   the backlog was not delivered — re-send the missing wave before continuing.
+
+3. **Docs build gate.** A new page with no `nav:` entry fails the docs CI build, and this
+   commit is the sprint's largest doc change with no test covering it:
+
+   ```bash
+   uv run --group docs mkdocs build --strict
+   ```
+
+   ~6s. If it fails, fix the `nav:` entry or the broken link **yourself** (this is
+   `mkdocs.yml`/docs only, no source), or re-send doc-keeper the specific error. Do not
+   commit a red docs build. `/site` is gitignored, so the build leaves nothing to clean up.
+
+4. **Commit the docs, on the feature branch**, so the ff-merge carries them:
+
+   ```
+   git add README.md docs mkdocs.yml
+   git commit -m "docs: sync documentation for [milestone]" -m "[body: one bullet per wave — which pages changed and why]"
+   ```
+
+   Stage only real doc paths. If there are no doc changes at all (a purely internal
+   sprint), skip the commit and say so.
+
+5. Clear `Docs pending:` in `sprint-brief.md`.
+
+> **Known trade-off, accepted deliberately.** Every per-wave commit in this sprint carries
+> docs describing the *previous* state; only the final docs commit makes the tree
+> self-consistent. That is the price of not paying a multi-minute doc-keeper wait at the end
+> of every wave. Do not "fix" it by re-introducing the per-wave join — the backlog cap in
+> Step 5.5 is what keeps the trade bounded.
+
+---
+
 ## Step 7 — Merge into develop
 
-When the last wave is committed:
+When the last wave is committed and Step 6.5 has landed the docs:
 
 **7a — Format gate (do this BEFORE merging).** The `develop`→`main` PR has a
 `ruff format --check .` CI gate, so any format drift anywhere in the repo (even in
@@ -438,7 +516,8 @@ git log --oneline -1 develop
 Compare the listed commits against the sprint's own implementation commits
 (**one per wave**, not one per ROADMAP item — a wave commit legitimately covers
 several items, so a lower commit count than item count is expected here, and the
-wave plan in `sprint-brief.md` is what you check against). If the branch contains
+wave plan in `sprint-brief.md` is what you check against), **plus the single
+`docs:` commit from Step 6.5** and any `chore: ruff format` commit from 7a. If the branch contains
 **any commit you did not author
 this sprint** — e.g. a commit from a separate process landed on the branch base,
 or develop advanced underneath you — **do not blind-squash.** Surface the
@@ -472,8 +551,9 @@ Then delete the local feature branch (`git branch -d feat/[milestone-slug]`).
 ## Step 8 — Sprint complete
 
 Delete the sprint's forecast directory, `.claude/tmp/dev-pipeline/<milestone-slug>/` — its
-forecast briefs **and `sprint-brief.md`** are scratch state, no longer needed once every
-item is committed and merged.
+forecast briefs, `sprint-brief.md` **and any `docs-pending.md`** are scratch state, no longer
+needed once every item is committed and merged. Only delete it once Step 6.5 has actually
+landed the docs; the `Docs pending:` line is the resume record for undocumented waves.
 
 (End-of-session improvement reflection is handled automatically by the global
 Stop hook — no explicit auto-improve step needed here.)
@@ -490,11 +570,32 @@ Report:
 - **Never start wave N+1 until wave N is committed and green.** Forecasting runs ahead of
   schedule; implementation never does. Batching happens *within* a wave, never across the
   test gate.
-- **Waves batch, they never parallelize.** One editor, one branch, one gate — a wave's
-  items are implemented sequentially in a single main-session pass. Never fan implementer
-  subagents out over the items of a wave, with or without worktrees (see the rationale
-  under "What this does"). The only agents that run concurrently are the read-only
+- **Waves batch; parallelize only on provably disjoint files.** One branch, one working
+  tree, one gate. The default is a single sequential main-session pass over the wave's items.
+  But when a wave's items are genuinely independent, **do** fan implementer subagents out
+  over them to cut lead time — one agent per item, all spawned in one message, all joined
+  before the test gate. Delegate only when **every** condition holds:
+  - The `Writes` sets in `sprint-brief.md` are disjoint across the items — which the wave
+    rule already guarantees — **and** you have no reason to doubt them. Any item whose row
+    carried an "unsure" note stays in the main session.
+  - No item is shared scaffolding another item imports, and none defines a contract another
+    reads. Disjoint files are not enough; a semantic dependency merges cleanly and still breaks.
+  - The item raises no open design question. Subagents cannot call `AskUserQuestion`, so an
+    ambiguous item gets guessed at rather than asked about — keep those in the main session.
+  - Each agent is given an **explicit file allowlist** (its own `Writes` set plus its test
+    files) and told to touch nothing else.
+
+  The main session always keeps, serially and to itself: `ROADMAP.md` checkboxes,
+  `uv run ruff format .`, the `/test-select` gate, the commit, and all git work. Never give
+  a subagent a git worktree or a branch (see "Why waves and not parallel git worktrees").
+  If two agents report edits to the same file, treat the wave as mis-batched — follow Step 4's
+  collision rule rather than trying to reconcile them.
+
+  Beyond those implementer agents, the agents that run concurrently are the read-only
   `feature-forecast` prefetch and the docs-only `doc-keeper`.
+- **Docs never gate a wave.** doc-keeper is fired after each wave commit (Step 5.5) and
+  joined once, at Step 6.5. Do not add a per-wave join back; use the `Docs pending:` backlog
+  cap instead. No wave commit ever stages `README.md`, `docs/**` or `mkdocs.yml`.
 - **Never commit on a red test run** — fix first.
 - If implementation fails after 3 fix attempts, **pause the sprint**, surface the error to the user, and wait for guidance.
 - The `ROADMAP.md` checkbox update is part of each implementation step (not a separate commit).
@@ -508,9 +609,25 @@ Report:
   bounded and keeps briefs reasonably close to current codebase state. (An all-singleton
   sprint therefore prefetches one item ahead rather than the old two — the wave gate
   already runs less often per item, so the deeper window bought nothing.)
-- **Resuming mid-sprint resumes at a wave boundary.** Waves commit atomically, so a
-  resumed sprint re-reads the Waves section of `sprint-brief.md` and restarts at the first
-  wave whose items are still unchecked in `ROADMAP.md` — never mid-wave.
+- **Expect to resume mid-wave, not at a wave boundary.** A session ends when it hits a
+  limit, which is usually in the middle of a wave, not at a commit. Never assume the last
+  wave was either untouched or finished. On resume, establish the real state from git before
+  editing anything:
+  1. `git log --oneline develop..HEAD` — which waves are already committed.
+  2. `git status` and `git diff` — what the interrupted wave already wrote to the working
+     tree. **Read that diff.** It is the only reliable record of partial work; the
+     `ROADMAP.md` checkboxes are not, because Step 4 ticks every item in the wave at the end
+     of the pass, so a half-done wave can show zero ticks or all of them.
+  3. Match that against the wave's items in `sprint-brief.md`, then **finish only what is
+     missing** — do not re-implement what the diff shows is already there, and do not revert
+     it to "start clean". Then run the test gate and commit the wave normally.
+  4. Check `Docs pending:` in `sprint-brief.md`. The doc-keeper from the dead session is
+     gone, so a resumed sprint spawns a fresh one and gives it the **union** diff of every
+     pending wave (`git diff <first-pending-wave>~1 HEAD -- host server config profiles`)
+     in a single message, rather than replaying the waves one by one.
+
+  If the working tree is too tangled to reconstruct — a wave stopped mid-refactor with tests
+  in an unknown state — say so and ask the user before either finishing or discarding it.
 - All git work (staging, committing, branching, merging) runs directly in the main
   session, per CLAUDE.md's Branch Model hard rules (no `--force`, no `--no-verify`,
   no amending a published commit, no direct push to `main`).
