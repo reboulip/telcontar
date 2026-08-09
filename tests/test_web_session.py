@@ -212,6 +212,50 @@ def test_on_event_consecutive_same_narration_sets_activity_once(tmp_path: Path) 
     assert len(session.steps) == 2
 
 
+def test_on_event_tool_call_appends_activity_log_entry(tmp_path: Path) -> None:
+    """V16: a phase change is persisted to activity_log, not just the
+    overwritten `activity` scalar, so it survives being reviewed later."""
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = AgentBridge(session)
+
+    bridge.on_event(AgentEvent("tool_call", "list_dir(a)", data={"tool": "list_dir"}))
+
+    assert len(session.activity_log) == 1
+    assert session.activity_log[0].text == session.activity == "Scanning the directory…"
+
+
+def test_on_event_consecutive_same_narration_does_not_grow_activity_log(
+    tmp_path: Path,
+) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = AgentBridge(session)
+
+    bridge.on_event(AgentEvent("tool_call", "list_dir(a)", data={"tool": "list_dir"}))
+    bridge.on_event(AgentEvent("tool_call", "list_dir(b)", data={"tool": "list_dir"}))
+
+    # Same collapse rule as `activity` itself — "small, discrete" entries,
+    # one per macro-phase, not one per tool call.
+    assert len(session.activity_log) == 1
+
+
+def test_on_event_different_narration_appends_a_second_activity_log_entry(
+    tmp_path: Path,
+) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = AgentBridge(session)
+
+    bridge.on_event(AgentEvent("tool_call", "list_dir(a)", data={"tool": "list_dir"}))
+    bridge.on_event(AgentEvent("tool_call", "read_file(a)", data={"tool": "read_file"}))
+
+    assert [e.text for e in session.activity_log] == [
+        "Scanning the directory…",
+        "Reading documents…",
+    ]
+    # Seq is monotonically increasing across the whole session, not a
+    # separate counter — same invariant as transcript/steps.
+    assert session.activity_log[1].seq > session.activity_log[0].seq
+
+
 def test_on_event_progress_updates_session_progress(tmp_path: Path) -> None:
     session = RunSession(run_id="x", target=tmp_path)
     bridge = AgentBridge(session)

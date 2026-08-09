@@ -54,6 +54,7 @@ class AgentBridge:
                 phrase = session.narrator.narrate(tool)
                 if phrase:
                     session.activity = phrase
+                    session.add_activity(phrase)
                 args = (event.data or {}).get("args") or {}
                 session.open_step(tool, event.text, args)
             case "tool_result":

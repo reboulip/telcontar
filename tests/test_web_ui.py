@@ -66,6 +66,16 @@ Gotchas learned the hard way (read before adding more tests):
    specific to the headless simulation. If a nested-dialog handler needs to
    do blocking I/O, call it synchronously instead (justified when the
    operation is fast and rare — never for anything on the poll-timer path).
+
+7. **`user.find(...).elements` has no defined order.** `User._gather_elements`
+   (`nicegui/testing/user.py`) wraps its `ElementFilter` result in `set(...)`
+   before returning — confirmed by direct experiment (V16's activity-column
+   entries came back permuted despite both the underlying `session` list and
+   the actual DOM children being correctly ordered). Never assert a specific
+   sequence straight off `.elements` when more than one element shares a
+   marker/kind/content match; sort by `.id` first (NiceGUI's element id is
+   assigned in creation order, so it's a reliable proxy) or compare as a set
+   if order genuinely doesn't matter.
 """
 
 from __future__ import annotations
@@ -1360,3 +1370,37 @@ async def test_progress_current_document_label_defensive_when_key_absent(
 
     [current_label] = user.find(marker="progress-current").elements
     assert current_label.text == ""
+
+
+async def test_activity_column_empty_when_no_phase_seen_yet(user: User, tmp_path: Path) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="activity-column")
+    await user.should_not_see(marker="activity-entry")
+
+
+async def test_activity_column_keeps_every_phase_as_a_discrete_entry(
+    user: User, tmp_path: Path
+) -> None:
+    """V16: activity_label used to show one line, overwritten on every phase
+    change and lost once done — the replacement must keep every phase as its
+    own reviewable entry instead of only the latest."""
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.add_activity("Scanning the directory…")
+    session.add_activity("Reading documents…")
+    session.add_activity("Planning changes…")
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see("Planning changes…")
+
+    # .elements has no defined order (gotcha #7 above) — sort by NiceGUI's
+    # own element id, assigned in creation order, to recover it.
+    entries = sorted(user.find(marker="activity-entry").elements, key=lambda e: e.id)
+    assert [e.text for e in entries] == [
+        "Scanning the directory…",
+        "Reading documents…",
+        "Planning changes…",
+    ]

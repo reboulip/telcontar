@@ -62,7 +62,7 @@ on open work.
 - [x] V8a · Per-document progress — agent-side — emit the in-progress document name(s) on the `"progress"` event (`host/agent.py`) so a batch's current file(s) are visible to any UI, not just the analyzed/total counts.
 - [x] V8b · Per-document progress — web UI — label the progress bar with "which document, right now", using V8a's data. (requires: V8a, V14)
 - [x] V14 · Progress bar as integer percent — `ui.linear_progress` in `host/web/main.py` shows its raw float value by default ("0.58765304"); format as an integer percentage instead. [#40]
-- [ ] V16 · Status/activity messages as reviewable stages — `activity_label` (`host/web/main.py`) shows the current macro-phase ("analyzing directory structure", ...) as a single line overwritten on every phase change and lost once done; render these as small, discrete entries in the conversation/log area instead, so the sequence can be reviewed afterward — distinct from `steplog.py`'s per-tool-call step log, which already covers finer-grained tool activity. [#37]
+- [x] V16 · Status/activity messages as reviewable stages — `activity_label` (`host/web/main.py`) shows the current macro-phase ("analyzing directory structure", ...) as a single line overwritten on every phase change and lost once done; render these as small, discrete entries in the conversation/log area instead, so the sequence can be reviewed afterward — distinct from `steplog.py`'s per-tool-call step log, which already covers finer-grained tool activity. [#37]
 
 #### Corpus browser — `.organizer/registry.json`-backed view
 

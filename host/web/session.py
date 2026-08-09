@@ -32,6 +32,22 @@ class TranscriptItem:
     text: str
 
 
+# ── Activity history (V16) ───────────────────────────────────────────────────
+#
+# `activity` below stays a single overwritten "current phase" scalar (bridge.py
+# still sets it directly, and existing tests assert against it). This is the
+# persisted, reviewable history behind it — one entry per macro-phase change
+# (Narrator already collapses repeats before either is touched), distinct from
+# both `transcript` (real user<->telcontar turns, T5) and `steps` (per-tool-call
+# log, T6): a phase like "Reading documents…" spans many tool calls.
+
+
+@dataclass
+class ActivityEntry:
+    seq: int
+    text: str
+
+
 # ── Internal steps / log stream (T6) ─────────────────────────────────────────
 
 StepStatus = Literal["running", "ok", "error"]
@@ -76,6 +92,7 @@ class RunSession:
     transcript: list[TranscriptItem] = field(default_factory=list)
     steps: list[StepRecord] = field(default_factory=list)
     activity: str = ""
+    activity_log: list[ActivityEntry] = field(default_factory=list)
     status: str = "Initialising…"
     tokens: str = ""
     progress: dict = field(default_factory=dict)
@@ -103,6 +120,13 @@ class RunSession:
         never telcontar's own tool activity (that's `open_step`/`close_step`
         below, rendered in the separate log zone, T5)."""
         self.transcript.append(TranscriptItem(self._next_seq(), speaker, text))
+
+    def add_activity(self, text: str) -> None:
+        """Append a macro-phase activity entry (V16) — the persisted history
+        behind `activity`. Callers should only invoke this on a genuine phase
+        change (bridge.py's Narrator already collapses repeats), so entries
+        stay "small, discrete" rather than one per tool call."""
+        self.activity_log.append(ActivityEntry(self._next_seq(), text))
 
     def has_open_step(self) -> bool:
         """True while a tool call is still running (U6): undo must be

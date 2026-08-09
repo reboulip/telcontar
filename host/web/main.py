@@ -72,6 +72,7 @@ class _RenderState:
     steplog.StepLogState (shared with U6/U7's screens)."""
 
     turn_seq: int = 0
+    activity_seq: int = 0
     shown_request_id: str | None = None
     fs_revision: int = 0
 
@@ -236,12 +237,15 @@ async def run_page(run_id: str) -> None:
 
             # Internal-step log strip (T5/T6) — pinned at the bottom, always
             # visible, distinct from the conversation above: telcontar's own
-            # tool activity never renders as a chat bubble. activity_label is
-            # the "what's happening right now" line; log_column is the
-            # scrolling one-line-per-step history, each with a toggle that
-            # opens the full payload in shell's right-side detail drawer.
+            # tool activity never renders as a chat bubble. activity_column is
+            # the macro-phase history (V16: "Reading documents…", "Planning
+            # changes…", one small entry per phase change, kept for review —
+            # no longer a single line overwritten and lost on the next
+            # phase); log_column is the finer-grained scrolling
+            # one-line-per-tool-call history, each with a toggle that opens
+            # the full payload in shell's left-sidebar detail section (V13b).
             ui.separator()
-            activity_label = ui.label().classes("text-xs text-grey-6 q-px-sm")
+            activity_column = ui.column().classes("w-full gap-0 q-px-sm").mark("activity-column")
             log_column = (
                 ui.column()
                 .classes("w-full overflow-auto q-px-sm q-gutter-none")
@@ -271,6 +275,10 @@ async def run_page(run_id: str) -> None:
                     bubble_props
                 )
 
+        def _render_activity(entry: web_session.ActivityEntry) -> None:
+            with activity_column:
+                ui.label(entry.text).classes("text-xs text-grey-6").mark("activity-entry")
+
         def _show_pending_dialog() -> None:
             pending = session.pending
             if pending is None or pending.request_id == render_state.shown_request_id:
@@ -291,7 +299,11 @@ async def run_page(run_id: str) -> None:
                     _render_turn(item)
                     render_state.turn_seq = item.seq
 
-            activity_label.set_text(session.activity)
+            for entry in session.activity_log:
+                if entry.seq > render_state.activity_seq:
+                    _render_activity(entry)
+                    render_state.activity_seq = entry.seq
+
             steplog.sync_steps(log_column, shell, step_log_state, session.steps)
 
             line = session.status
