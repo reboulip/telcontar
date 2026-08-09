@@ -43,7 +43,6 @@ from host.web import security
 from host.web import session as web_session
 from host.web import steplog
 from host.web import theme
-from host.web import tree as web_tree
 from host.web.bridge import AgentBridge, QueryBridge
 from host.web.dialogs import (
     build_approval_dialog,
@@ -310,17 +309,15 @@ async def run_page(run_id: str) -> None:
 
             # Sidebar tree + journal count refresh (U4/U6) — only when a
             # tree-mutating tool (or an undo) actually changed something
-            # since the last tick, never on every 0.5s poll. Expansion state
-            # is read from the tree's own Quasar `expanded` prop (kept in
-            # sync by shell.py's on_expand handler) so a refresh doesn't
-            # collapse whatever the user had open.
+            # since the last tick, never on every 0.5s poll. reload_tree()
+            # (V7) is the one writer for tree.props["nodes"] — it also backs
+            # the manual refresh button and the periodic tree poll, and
+            # already reads expansion state from the tree's own Quasar
+            # `expanded` prop so a refresh doesn't collapse whatever the user
+            # had open.
             if session.fs_revision != render_state.fs_revision:
                 render_state.fs_revision = session.fs_revision
-                expanded = set(shell.tree.props.get("expanded") or [])
-                nodes = await run.io_bound(web_tree.rebuild_nodes, session.target, expanded)
-                if nodes is not None:  # run.io_bound returns None on shutdown/cancel
-                    shell.tree.props["nodes"] = nodes
-                    shell.tree.update()
+                await shell.reload_tree()
                 journal_button.set_text(f"Journal ({len(journal.load_entries(session.target))})")
 
         ui.timer(web_session.REFRESH_INTERVAL, _refresh)

@@ -48,7 +48,7 @@ on open work.
 
 #### Sidebar tree & live state — `host/web/tree.py`, `shell.py`
 
-- [ ] V7 · Live-updating file tree — builds on Phase 19's T3 sidebar tree and Phase 20 U4's one-shot post-`execute_plan` refresh (`tree.py::rebuild_nodes`). Backed by real usage (#38): add a manual refresh button, plus a periodic poll that doesn't disturb the running agent. [#38]
+- [x] V7 · Live-updating file tree — builds on Phase 19's T3 sidebar tree and Phase 20 U4's one-shot post-`execute_plan` refresh (`tree.py::rebuild_nodes`). Backed by real usage (#38): add a manual refresh button, plus a periodic poll that doesn't disturb the running agent. [#38]
 - [x] V15 · Fix the sidebar resize handle — the drag handle has never actually been wired in any browser (not an Edge-specific regression): `_RESIZE_JS` (`shell.py`) is a bare arrow-function *literal*, and NiceGUI's `eval`-based `run_javascript` evaluates but never invokes it, so `mousedown`/`mousemove`/`mouseup` are never bound. Make it a self-invoking IIFE with document-level delegation (the handle may not exist in the DOM yet when the script first runs). [#34]
 
 #### Theme & layout polish — theme tokens, chat rendering (`bridge.py`/`session.py`), `steplog.py`'s detail drawer

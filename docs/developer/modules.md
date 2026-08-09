@@ -383,7 +383,7 @@ see `host/web/main.py` below).
 
 ---
 
-### `host/web/` (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7, Phase 20 U1-U7/U10, Phase 21 V1/V11/V12/V13a/V13c/V15)
+### `host/web/` (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7, Phase 20 U1-U7/U10, Phase 21 V1/V7/V11/V12/V13a/V13c/V15)
 
 **Role:** NiceGUI-based web UI package — the first piece of a planned
 Textual→NiceGUI migration. As of S6, `telcontar --web` (`host/main.py`, lazy import)
@@ -673,7 +673,7 @@ caps the DOM at `_MAX_LOG_ROWS = 500`, deleting the oldest row first;
 status/summary changed (a "running" step is updated in place once it closes) —
 `run_page`'s `_refresh()` now just calls this once per tick.
 
-**`host/web/shell.py`** (Phase 19 T2, extended by T3, T6, and Phase 20 U3) —
+**`host/web/shell.py`** (Phase 19 T2, extended by T3, T6, Phase 20 U3, Phase 21 V7) —
 `app_shell(*, target: Path | None = None, on_select: Callable[[Path], None] | None
 = None) -> Iterator[Shell]`, a `@contextmanager` mounted by every `@ui.page` route in
 `host/web/main.py`, including the early-return branches (not-configured,
@@ -681,14 +681,18 @@ run-not-found), so the sidebar is visible on every screen instead of being
 assembled per-page. As of U3, the drawer always renders an unconditional
 "Settings" button (`.mark("btn-sidebar-settings")`) right below the "telcontar"
 label, navigating to `/settings` — reachable from every route, mirroring the
-TUI's app-level `ctrl+s` `action_open_settings` binding (`host/app.py`). Builds a `ui.left_drawer` as a direct child of the page body —
+TUI's app-level `ctrl+s` `action_open_settings` binding (`host/app.py`). As of V7,
+that header row also carries a manual refresh icon button
+(`.mark("btn-tree-refresh")`, tooltip "Refresh file tree") beside the "telcontar"
+label, calling `shell.reload_tree()` on click. Builds a `ui.left_drawer` as a direct child of the page body —
 NiceGUI's `require_top_level_layout` raises `RuntimeError` if the drawer is nested
 inside another container — containing a `ui.tree` sourced from
 `host.web.tree.build_nodes` (`.props("dense no-connectors")`), plus the page's
 main content column. As of T6 it also creates a `ui.right_drawer` alongside the
 left one (both top-level layout elements, subject to the same constraint), and
 yields a `Shell` dataclass (`drawer`, `tree`, `content`, `detail_drawer`, `target`,
-`selected`). `Shell.show_detail(title: str, detail: str)` (T6) populates and opens
+`selected`, and — V7 — a private `_reloading: bool` re-entrancy flag).
+`Shell.show_detail(title: str, detail: str)` (T6) populates and opens
 the right drawer with one internal step's full payload, via
 `ui.codemirror(detail, language="JSON").disable()` — deliberately never
 `ui.code`/`ui.markdown`, since both render through a markdown fenced-code path and
@@ -702,11 +706,44 @@ otherwise sets
 handler is async — the first time a real directory node is expanded it calls
 `host.web.tree.load_children` via `run.io_bound`, splices the result into
 `tree.props["nodes"]` in place (found via `host.web.tree.find_node`), and calls
-`tree.update()`. `Shell.refresh_tree(root)` (T3) re-roots the tree at `root` and
+`tree.update()`. As of V7, it re-locates the node a second time — in whatever
+`tree.props["nodes"]` actually is *after* the await — before splicing children
+into it, rather than mutating the pre-await reference directly: a concurrent
+`reload_tree()` poll can replace the whole node list while `load_children` is
+still running, detaching the earlier reference from what's actually live and
+silently dropping the expand. This was a latent bug in the pre-V7 code (there
+was only ever one writer of `nodes` before, so it never manifested) fixed as
+part of introducing the second writer. `Shell.refresh_tree(root)` (T3) re-roots the tree at `root` and
 updates `Shell.target` to match — used by the picker's "go up one level" button and
 a Windows-only drive-root `ui.select` dropdown, both rendered only when `on_select`
 is passed in (the picker route, `/`; hidden on `/run/{run_id}`, where the tree is
-for verification only). `app_shell`'s signature is frozen: later Phase 20/21 work
+for verification only).
+
+**`Shell.reload_tree()`** (V7) is now the one writer for `tree.props["nodes"]`:
+rebuilds the tree from disk via `host.web.tree.rebuild_nodes` (off the event loop,
+`run.io_bound`), preserving whatever the user had expanded (the same `expanded`
+Quasar-prop read the old inline U4 refresh logic used), and only actually
+replaces the prop — and calls `tree.update()` — when the rebuilt node list
+differs from what's already there: a QTree `nodes` replacement re-renders the
+whole subtree and can reset scroll/selection, so a genuine no-op poll must not
+touch the prop at all, not just be fast about it. Guarded by `self._reloading`:
+the page's own `REFRESH_INTERVAL` render-poll timer (`host/web/main.py`) and this
+method's new periodic poll (below) are two *different* `ui.timer`s, so nothing
+else stops them from calling in concurrently. A no-op when `self.target is None`
+(the picker/setup/settings routes have no target directory to rebuild from).
+Three call sites: the new manual refresh button above; a new periodic
+`ui.timer(web_session.TREE_POLL_INTERVAL, shell.reload_tree)`, created only when
+`app_shell()` is given a real `target` (never on the picker/setup/settings
+routes); and `host/web/main.py`'s existing post-`execute_plan` `fs_revision`
+refresh (U4, below), which now just awaits this method instead of inlining the
+rebuild itself — `main.py` no longer imports `host.web.tree` directly as a
+result. `web_session.TREE_POLL_INTERVAL` (V7, default `5.0`s) is a module-level
+test-seam constant in `host/web/session.py`, the same pattern `REFRESH_INTERVAL`
+already established — deliberately coarser than `REFRESH_INTERVAL`'s 0.5s, since
+`rebuild_nodes` recurses over every expanded directory and a live tree poll is a
+nice-to-have, not something needing sub-second latency.
+
+`app_shell`'s signature is frozen: later Phase 20/21 work
 is expected to mount through it unchanged. `_apply_theme()` is a deliberately empty
 hook for T7/T8's future `host/web/theme.py`. `host/web/shell.py` now shares
 nicegui-importing duties with `host/web/main.py`.
@@ -1011,18 +1048,26 @@ gone too — it now just tracks which `pending.request_id` has already been show
 Proceed/Cancel, or — V12 — Submit/Skip) resolve `session.pending` directly (see
 `dialogs.py` above).
 
-**Sidebar tree refresh (U4):** `_RenderState` gained an `fs_revision: int` field
+**Sidebar tree refresh (U4, extended by V7):** `_RenderState` gained an `fs_revision: int` field
 (the step log's own render cursor moved out to `steplog.StepLogState`, above).
 `run_page`'s `_refresh()` is now `async`; on each tick, if `session.fs_revision`
-has changed since `render_state.fs_revision`, it reads the tree's currently-
-expanded node ids off its Quasar `expanded` prop (`shell.tree.props.get(
-"expanded")`, kept in sync by `shell.py`'s `on_expand` handler), rebuilds the node
-list via `await run.io_bound(web_tree.rebuild_nodes, session.target, expanded)`,
-and — guarding against `run.io_bound` returning `None` on shutdown/cancel —
-replaces `shell.tree.props["nodes"]` and calls `shell.tree.update()`. This only
-runs when a tree-mutating tool actually closed since the last tick (see
-`bridge.py`'s `_TREE_MUTATING_TOOLS` above), never on every 0.5s poll, and never
-collapses whatever the user had expanded.
+has changed since `render_state.fs_revision`, it now (V7) just calls `await
+shell.reload_tree()` — the expansion-preserving rebuild-from-disk logic this
+used to inline here (reading the `expanded` Quasar prop, calling
+`web_tree.rebuild_nodes` via `run.io_bound`, guarding against `None` on
+shutdown/cancel, replacing `shell.tree.props["nodes"]`) moved onto `Shell`
+itself (`host/web/shell.py`, above), since V7 needed the identical logic
+reachable from two more call sites — a manual refresh button and a periodic
+poll timer — that have no `RenderState` of their own to key off. `main.py` no
+longer imports `host.web.tree` directly as a result. This `fs_revision`-gated
+call still only fires when a tree-mutating tool actually closed since the last
+tick (see `bridge.py`'s `_TREE_MUTATING_TOOLS` above), not on every 0.5s
+`REFRESH_INTERVAL` tick — but the tree no longer depends on that path alone to
+stay current: `app_shell`'s own `TREE_POLL_INTERVAL` timer and the sidebar's
+manual refresh button both call `reload_tree()` independently of `fs_revision`
+and of any run being active at all. `reload_tree()`'s own skip-if-unchanged
+check is what keeps all of this from colliding or thrashing the DOM, and it
+never collapses whatever the user had expanded.
 
 `_pick_port()` binds an ephemeral `127.0.0.1` port. As of V1, `run_web(target:
 Path | None = None, *, native: bool = True)` gained the keyword-only `native`

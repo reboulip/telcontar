@@ -101,8 +101,12 @@ def _preserve_dunder_main() -> Iterator[None]:
 @pytest.fixture(autouse=True)
 def _fast_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
     """Shrink the render-poll interval so should_see()'s ~0.3s retry budget
-    doesn't race the real 0.5s cadence — see gotcha #4 above."""
+    doesn't race the real 0.5s cadence — see gotcha #4 above. Also shrinks
+    V7's tree-poll interval (5s in production) for the same reason — both
+    are read once at mount time (ui.timer's interval argument), so this must
+    run before user.open()."""
     monkeypatch.setattr(web_session, "REFRESH_INTERVAL", 0.02)
+    monkeypatch.setattr(web_session, "TREE_POLL_INTERVAL", 0.02)
 
 
 @pytest.fixture(autouse=True)
@@ -667,19 +671,63 @@ async def test_sidebar_tree_refreshes_when_fs_revision_changes(user: User, tmp_p
     (tmp_path / "new_file.txt").write_text("x")
     session.bump_fs_revision()
 
-    def _root_children_labels() -> set[str]:
-        [tree] = user.find(kind=ui.tree).elements
-        root_children = tree.props["nodes"][0].get("children", [])
-        return {child.get("label") for child in root_children}
-
     for _ in range(20):
-        if "new_file.txt" in _root_children_labels():
+        if "new_file.txt" in _root_children_labels(user):
             break
         await asyncio.sleep(0.05)
     else:
         raise AssertionError(
-            f"sidebar tree was not refreshed with new_file.txt; saw {_root_children_labels()}"
+            f"sidebar tree was not refreshed with new_file.txt; saw {_root_children_labels(user)}"
         )
+
+
+def _root_children_labels(user: User) -> set[str]:
+    [tree] = user.find(kind=ui.tree).elements
+    root_children = tree.props["nodes"][0].get("children", [])
+    return {child.get("label") for child in root_children}
+
+
+async def test_sidebar_tree_manual_refresh_button_updates_tree(user: User, tmp_path: Path) -> None:
+    """V7: the refresh button calls Shell.reload_tree() directly — no
+    fs_revision bump involved at all, unlike U4's execute_plan-triggered
+    refresh."""
+    session = web_session.create(tmp_path)
+    session.started = True
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="btn-tree-refresh")
+
+    (tmp_path / "manual.txt").write_text("x")
+    user.find(marker="btn-tree-refresh").click()
+
+    for _ in range(20):
+        if "manual.txt" in _root_children_labels(user):
+            break
+        await asyncio.sleep(0.05)
+    else:
+        raise AssertionError(f"tree was not refreshed; saw {_root_children_labels(user)}")
+
+
+async def test_sidebar_tree_periodic_poll_updates_tree_without_fs_revision_bump(
+    user: User, tmp_path: Path
+) -> None:
+    """V7: the tree poll timer picks up an on-disk change on its own —
+    unlike test_sidebar_tree_refreshes_when_fs_revision_changes above, this
+    never calls session.bump_fs_revision() at all."""
+    session = web_session.create(tmp_path)
+    session.started = True
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="btn-sidebar-settings")
+
+    (tmp_path / "polled.txt").write_text("x")
+
+    for _ in range(40):
+        if "polled.txt" in _root_children_labels(user):
+            break
+        await asyncio.sleep(0.05)
+    else:
+        raise AssertionError(f"tree was not polled; saw {_root_children_labels(user)}")
 
 
 # ── Cost estimate dialog (U5) ─────────────────────────────────────────────────

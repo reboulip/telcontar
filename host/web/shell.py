@@ -41,7 +41,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from nicegui import run, ui
@@ -115,6 +115,7 @@ class Shell:
     detail_drawer: ui.right_drawer
     target: Path | None = None
     selected: Path | None = None
+    _reloading: bool = field(default=False, repr=False)
 
     def refresh_tree(self, root: Path) -> None:
         """Re-root the sidebar tree at ``root`` — used by the picker's "go
@@ -123,6 +124,34 @@ class Shell:
         self.target = root
         self.tree.props["nodes"] = web_tree.build_nodes(root)
         self.tree.update()
+
+    async def reload_tree(self) -> None:
+        """Rebuild the sidebar tree from disk in place, preserving whatever
+        the user had expanded (V7) — the one writer for ``tree.props["nodes"]``,
+        called by the manual refresh button, the periodic poll timer, and
+        (via U4) `host/web/main.py`'s post-``execute_plan`` ``fs_revision``
+        refresh.
+
+        Guarded against overlapping calls: the page's own ``REFRESH_INTERVAL``
+        poll and this tree's ``TREE_POLL_INTERVAL`` poll are two *different*
+        ``ui.timer``s, so nothing stops them firing concurrently even though a
+        single timer never overlaps itself. Skips the actual prop assignment
+        when the rebuilt nodes are unchanged — a QTree ``nodes`` replacement
+        re-renders the whole subtree and can reset scroll/selection, so "does
+        not disturb the running agent" means not touching the prop at all
+        when nothing changed, not just being fast about it.
+        """
+        if self._reloading or self.target is None:
+            return
+        self._reloading = True
+        try:
+            expanded = set(self.tree.props.get("expanded") or [])
+            nodes = await run.io_bound(web_tree.rebuild_nodes, self.target, expanded)
+            if nodes is not None and nodes != self.tree.props.get("nodes"):
+                self.tree.props["nodes"] = nodes
+                self.tree.update()
+        finally:
+            self._reloading = False
 
     def show_detail(self, title: str, detail: str) -> None:
         """Populate and open the step-detail drawer (T6).
@@ -165,7 +194,11 @@ def app_shell(
             "position:absolute; top:0; right:0; width:6px; height:100%; "
             "cursor:ew-resize; z-index:10;"
         )
-        ui.label("telcontar").classes("text-subtitle2 tc-display q-pa-sm")
+        with ui.row().classes("w-full items-center justify-between q-px-sm"):
+            ui.label("telcontar").classes("text-subtitle2 tc-display")
+            ui.button(icon="refresh", on_click=lambda: shell.reload_tree()).props(
+                "flat dense round"
+            ).mark("btn-tree-refresh").tooltip("Refresh file tree")
 
         # Persistent Settings link — reachable from every route (T2), not
         # just the picker/startup page, mirroring the TUI's global
@@ -222,7 +255,15 @@ def app_shell(
             node = web_tree.find_node(tree_widget.props["nodes"], node_id)
             if node is None or not web_tree.needs_loading(node):
                 continue
-            node["children"] = await run.io_bound(web_tree.load_children, Path(node_id))
+            children = await run.io_bound(web_tree.load_children, Path(node_id))
+            # V7: tree_widget.props["nodes"] may have been replaced wholesale
+            # by a poll (or another expand) while the above await was in
+            # flight, detaching `node` from what's actually live now — never
+            # mutate the pre-await reference, re-locate it in the current
+            # nodes first (a no-op re-lookup in the common case).
+            current = web_tree.find_node(tree_widget.props["nodes"], node_id)
+            if current is not None:
+                current["children"] = children
         tree_widget.update()
 
     def _handle_resize(e: GenericEventArguments) -> None:
@@ -236,6 +277,11 @@ def app_shell(
     tree_widget.on_expand(_handle_expand)
     ui.on("tc_sidebar_resized", _handle_resize, throttle=0.05)
     ui.run_javascript(_RESIZE_JS)
+
+    # V7: only on routes with a real target — otherwise this would poll
+    # Path.home() forever on the picker/setup/settings routes for no reason.
+    if target is not None:
+        ui.timer(web_session.TREE_POLL_INTERVAL, shell.reload_tree)
 
     with content:
         yield shell

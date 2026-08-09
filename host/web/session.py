@@ -236,6 +236,18 @@ def get_default_target() -> Path | None:
 REFRESH_INTERVAL: float = 0.5
 
 
+# ── Sidebar tree poll interval (V7 test-seam) ───────────────────────────────
+#
+# Read by app_shell's ui.timer at mount time instead of a hardcoded literal —
+# same test-seam reasoning as REFRESH_INTERVAL above. rebuild_nodes recurses
+# over every expanded directory, so this is deliberately much coarser than
+# REFRESH_INTERVAL: a live tree poll is a nice-to-have, not something that
+# needs sub-second latency, and polling faster buys nothing a human would
+# notice while risking a real I/O cliff on a deeply-expanded corpus.
+
+TREE_POLL_INTERVAL: float = 5.0
+
+
 # ── Sidebar width (T4) ───────────────────────────────────────────────────────
 #
 # One in-memory preference for the process's lifetime rather than a field on
