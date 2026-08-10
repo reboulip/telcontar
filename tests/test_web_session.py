@@ -79,6 +79,39 @@ def test_seq_is_shared_between_transcript_and_steps(tmp_path: Path) -> None:
     assert [s.seq for s in session.steps] == [2]
 
 
+def test_thread_is_empty_for_a_fresh_session(tmp_path: Path) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+    assert session.thread() == []
+
+
+def test_thread_merges_transcript_and_activity_log_in_seq_order(tmp_path: Path) -> None:
+    """X3: transcript and activity_log share one _seq counter — the thread
+    is a plain sort by seq, interleaving turns and activity entries in the
+    order they actually happened."""
+    session = RunSession(run_id="x", target=tmp_path)
+    session.add_turn("user", "please organize this")
+    session.add_activity("Scanning the directory…")
+    session.add_activity("Reading documents…")
+    session.add_turn("telcontar", "done reading")
+
+    thread = session.thread()
+    assert [getattr(item, "text") for item in thread] == [
+        "please organize this",
+        "Scanning the directory…",
+        "Reading documents…",
+        "done reading",
+    ]
+    assert [item.seq for item in thread] == [1, 2, 3, 4]
+
+
+def test_thread_excludes_steps(tmp_path: Path) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+    session.add_turn("telcontar", "one")
+    session.open_step("list_dir", "list_dir(path='.')")
+
+    assert len(session.thread()) == 1
+
+
 # ── RunSession: internal steps (T6) ───────────────────────────────────────────────
 
 

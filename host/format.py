@@ -219,11 +219,134 @@ class PlanTreeLine:
     text). ``op_id`` is set on every leaf file entry, before-tree and
     after-tree alike; the before tree is a read-only reference, so its
     caller simply never renders a checkbox from it — the dataclass itself
-    doesn't need two shapes."""
+    doesn't need two shapes.
+
+    ``op_ids`` (X4) carries every op chained onto this same file — e.g. a
+    rename immediately followed by a move of the renamed file — so the file
+    appears once in the tree with its true start/end state instead of once
+    per op with a wrong intermediate one. ``op_id`` stays the chain's first
+    id (``op_ids[0]``) for every existing reader; an unchained line simply
+    has ``op_ids == (op_id,)``.
+    """
 
     depth: int
     label: str
     op_id: str | None = None
+    op_ids: tuple[str, ...] = ()
+
+
+def _norm_key(path: str) -> str:
+    """Normalized comparison key for chaining ops onto the same file (X4) —
+    matches the ``os.path.normcase(os.path.normpath(...))`` idiom used
+    elsewhere in the codebase (e.g. ``server/registry.py``'s ``_same_path``)
+    so a chain isn't split by a slash-direction or Windows-casing quirk."""
+    return os.path.normcase(os.path.normpath(path)).replace("\\", "/")
+
+
+@dataclass
+class _FileChain:
+    """One file's full lifecycle across a plan (X4) — accumulated by
+    ``_chain_ops``, mirroring ``execute_plan``'s ``moved`` dict
+    (``server/tools.py``) on the host side, entirely from the ops list, no
+    filesystem I/O."""
+
+    op_ids: list[str]
+    original_path: str | None  # None for a chain rooted at create_file
+    final_path: str
+    outside_target: bool
+    quarantine_reason_text: str | None
+
+    @property
+    def suffix(self) -> str:
+        text = "  (outside target)" if self.outside_target else ""
+        if self.quarantine_reason_text is not None:
+            text += f"  — {self.quarantine_reason_text}"
+        return text
+
+
+def _chain_ops(ops: list[dict], target: Path | None) -> tuple[list[_FileChain], list[dict]]:
+    """Walk ``ops`` in plan order, chaining same-file rename/move/quarantine/
+    archive_document sequences into one ``_FileChain`` per file (X4) — so a
+    rename immediately followed by a move of the renamed file shows up once
+    in the before/after tree, with its true start and end state, instead of
+    twice with a wrong intermediate one on each.
+
+    Chains on an op whose ``src`` equals either an earlier op's original
+    ``src`` (mirrors ``execute_plan``'s ``moved`` dict) or an earlier op's
+    just-computed destination (the common case — a move of a file this same
+    pass just renamed) — the second is a safe superset of the first, since
+    both describe the same on-disk file at the point this op runs.
+
+    Returns ``(chains, other_ops)``: ``other_ops`` holds every op with no
+    clean before/after tree slot (``create_dir``, ``compress_quarantine``,
+    ``update_file``, and any ``quarantine``/``archive_document`` with no
+    destination computed) — unchanged from ``plan_tree_diff``'s prior
+    per-op behaviour. No op is ever dropped: every op_id ends up in exactly
+    one chain's ``op_ids`` or in ``other_ops``.
+    """
+    chains: dict[str, _FileChain] = {}
+    resolved: dict[str, str] = {}  # normalized current path -> chain's primary op_id
+    other_ops: list[dict] = []
+
+    for op in ops:
+        op_id = str(op.get("op_id", ""))
+        op_type = op.get("op_type", "")
+        src = op.get("src", "")
+        dst = op.get("dst", "")
+        out_of_scope = is_op_out_of_scope(op, target)
+        reason: str | None = None
+
+        # Resolve `src` through the chain first — mirrors execute_plan's own
+        # `src_path = moved.get(op.src, op.src)` (server/tools.py). Without
+        # this, a move immediately following a rename would recompute its
+        # destination from the op's own (now-stale) `src.name` instead of
+        # the file's actual current name on disk.
+        primary = resolved.get(_norm_key(src))
+        chained = primary is not None and primary in chains
+        current_path = chains[primary].final_path if chained else src
+
+        if op_type == "rename":
+            new_path = str(Path(current_path).parent / dst) if dst else current_path
+        elif op_type == "move":
+            new_path = str(Path(dst) / Path(current_path).name) if dst else current_path
+        elif op_type in ("quarantine", "archive_document"):
+            if not dst:
+                other_ops.append(op)
+                continue
+            new_path = dst
+            if op_type == "quarantine":
+                reason = quarantine_reason(op)
+        elif op_type == "create_file":
+            new_path = current_path  # new file — no prior location to show
+        else:  # update_file, create_dir, compress_quarantine
+            other_ops.append(op)
+            continue
+
+        if chained:
+            chain = chains[primary]
+            chain.op_ids.append(op_id)
+            chain.final_path = new_path
+            chain.outside_target = chain.outside_target or out_of_scope
+            if reason is not None and chain.quarantine_reason_text is None:
+                chain.quarantine_reason_text = reason
+        else:
+            primary = op_id
+            chains[primary] = _FileChain(
+                op_ids=[op_id],
+                original_path=src if op_type != "create_file" else None,
+                final_path=new_path,
+                outside_target=out_of_scope,
+                quarantine_reason_text=reason,
+            )
+        # Record both this op's own src and its computed destination as
+        # aliases for the chain — a later op may reference either (the
+        # literal original src, mirroring execute_plan's `moved` dict; or
+        # the just-computed destination, the common case of a plan that
+        # accurately tracks the file's intermediate state).
+        resolved[_norm_key(src)] = primary
+        resolved[_norm_key(new_path)] = primary
+
+    return list(chains.values()), other_ops
 
 
 def plan_tree_diff(
@@ -238,6 +361,11 @@ def plan_tree_diff(
     of these still needs its own checkbox in the approval dialog, just in
     an "Other operations" list instead of a tree node. No op is ever
     dropped: every op_id ends up in exactly one of before/after/other.
+
+    A same-file rename+move (or similar) chain (X4 — see ``_chain_ops``)
+    appears as a single tree line, carrying every chained op_id in
+    ``PlanTreeLine.op_ids``, so unchecking it in the approval dialog excludes
+    the whole chain rather than leaving the file in a half-applied state.
 
     ``folder_notes`` (model-authored, from ``set_plan_folder_notes``) is
     applied only to the after-tree's folder lines — it describes the
@@ -258,41 +386,25 @@ def plan_tree_diff(
     real path is in ``src``); ``archive_document`` -> quarantine path,
     possibly ``""``.
     """
+    chains, other = _chain_ops(ops, target)
+
     before: dict[str, str] = {}
     after: dict[str, str] = {}
-    other: list[dict] = []
     suffixes: dict[str, str] = {}
+    op_ids_map: dict[str, tuple[str, ...]] = {}
 
-    for op in ops:
-        op_id = str(op.get("op_id", ""))
-        op_type = op.get("op_type", "")
-        src = op.get("src", "")
-        dst = op.get("dst", "")
-        suffix = "  (outside target)" if is_op_out_of_scope(op, target) else ""
-        if op_type == "rename":
-            before[op_id] = src
-            after[op_id] = str(Path(src).parent / dst) if dst else src
-        elif op_type == "move":
-            before[op_id] = src
-            after[op_id] = str(Path(dst) / Path(src).name) if dst else src
-        elif op_type in ("quarantine", "archive_document"):
-            if dst:
-                before[op_id] = src
-                after[op_id] = dst
-                if op_type == "quarantine":
-                    suffix += f"  — {quarantine_reason(op)}"
-            else:
-                other.append(op)
-        elif op_type == "create_file":
-            after[op_id] = src  # new file — no prior location to show
-        else:  # update_file, create_dir, compress_quarantine
-            other.append(op)
-        if suffix:
-            suffixes[op_id] = suffix
+    for chain in chains:
+        primary = chain.op_ids[0]
+        op_ids_map[primary] = tuple(chain.op_ids)
+        if chain.original_path is not None:
+            before[primary] = chain.original_path
+        after[primary] = chain.final_path
+        if chain.suffix:
+            suffixes[primary] = chain.suffix
 
     return (
-        _render_file_tree(before, suffixes=suffixes),
-        _render_file_tree(after, folder_notes, suffixes=suffixes),
+        _render_file_tree(before, suffixes=suffixes, op_ids=op_ids_map),
+        _render_file_tree(after, folder_notes, suffixes=suffixes, op_ids=op_ids_map),
         other,
     )
 
@@ -301,17 +413,22 @@ def _render_file_tree(
     paths: dict[str, str],
     folder_notes: dict | None = None,
     suffixes: dict[str, str] | None = None,
+    op_ids: dict[str, tuple[str, ...]] | None = None,
 ) -> list[PlanTreeLine]:
-    """``paths``: op_id -> absolute file path. Groups by parent folder into
-    a tree, files listed before subfolders at each level. ``folder_notes``,
-    when given, annotates folder lines the same way ``render_target_layout``
-    does (``note_for``'s fuzzy path/basename matching). ``suffixes``, when
-    given, appends per-op_id extra text (the ``(outside target)`` marker,
-    a quarantine reason) to that op's file line, the same way ``fmt_op``
-    would for an op in the "Other operations" fallback list."""
+    """``paths``: primary op_id (a chain's first op_id — X4) -> absolute file
+    path. Groups by parent folder into a tree, files listed before
+    subfolders at each level. ``folder_notes``, when given, annotates folder
+    lines the same way ``render_target_layout`` does (``note_for``'s fuzzy
+    path/basename matching). ``suffixes``, when given, appends per-key extra
+    text (the ``(outside target)`` marker, a quarantine reason) to that
+    file's line, the same way ``fmt_op`` would for an op in the "Other
+    operations" fallback list. ``op_ids``, when given, maps a key to the
+    full tuple of op_ids chained onto it (X4); a key absent from the map is
+    treated as its own single-op chain."""
     if not paths:
         return []
     suffixes = suffixes or {}
+    op_ids = op_ids or {}
     norm = {op_id: p.replace("\\", "/") for op_id, p in paths.items()}
     dirs = [str(Path(p).parent).replace("\\", "/") for p in norm.values()]
     try:
@@ -345,7 +462,8 @@ def _render_file_tree(
 
     def _walk(node: dict, depth: int, acc: tuple[str, ...]) -> None:
         for op_id, filename in sorted(files_at.get(acc, []), key=lambda t: t[1]):
-            lines.append(PlanTreeLine(depth, f"{filename}{suffixes.get(op_id, '')}", op_id))
+            ids = op_ids.get(op_id, (op_id,))
+            lines.append(PlanTreeLine(depth, f"{filename}{suffixes.get(op_id, '')}", ids[0], ids))
         for name, children in sorted(node.items()):
             new_acc = acc + (name,)
             note = note_at.get(new_acc, "")

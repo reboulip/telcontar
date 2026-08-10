@@ -213,3 +213,84 @@ class TestGuardedHandlers:
 
         with pytest.raises(PermissionError):
             server_main.propose_move(str(outside_file), str(target), "some-plan-id")
+
+
+class TestQuarantineCollisionGuards:
+    """X8 — agent-proposed taxonomy folders may not collide with the
+    server-managed quarantine folder, case/locale-insensitively."""
+
+    def _cfg(self, target: Path) -> Settings:
+        return Settings(target_dir=target).for_target(target)
+
+    def test_propose_create_dir_raises_for_configured_name(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        target = tmp_path / "target"
+        target.mkdir()
+        cfg = self._cfg(target)
+        monkeypatch.setattr(server_main, "_get_settings", lambda: cfg)
+
+        with pytest.raises(ValueError, match="server-managed quarantine"):
+            server_main.propose_create_dir(str(target / "_Quarantine"), "some-plan-id")
+
+    def test_propose_create_dir_raises_for_alias(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        target = tmp_path / "target"
+        target.mkdir()
+        cfg = self._cfg(target)
+        monkeypatch.setattr(server_main, "_get_settings", lambda: cfg)
+
+        with pytest.raises(ValueError, match="server-managed quarantine"):
+            server_main.propose_create_dir(str(target / "corbeille"), "some-plan-id")
+
+    def test_propose_create_dir_passes_for_normal_taxonomy_folder(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        target = tmp_path / "target"
+        target.mkdir()
+        cfg = self._cfg(target)
+        monkeypatch.setattr(server_main, "_get_settings", lambda: cfg)
+        plan_id = server_main.create_plan()["plan_id"]
+
+        result = server_main.propose_create_dir(str(target / "01_decisions"), plan_id)
+        assert result["op_type"] == "create_dir"
+
+    def test_propose_move_raises_when_dest_dir_collides(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        target = tmp_path / "target"
+        target.mkdir()
+        doc = target / "doc.txt"
+        doc.write_text("x")
+        cfg = self._cfg(target)
+        monkeypatch.setattr(server_main, "_get_settings", lambda: cfg)
+
+        with pytest.raises(ValueError, match="server-managed quarantine"):
+            server_main.propose_move(str(doc), str(target / "trash"), "some-plan-id")
+
+    def test_propose_move_raises_when_dest_dir_nested_inside_quarantine(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        target = tmp_path / "target"
+        target.mkdir()
+        doc = target / "doc.txt"
+        doc.write_text("x")
+        cfg = self._cfg(target)
+        monkeypatch.setattr(server_main, "_get_settings", lambda: cfg)
+
+        with pytest.raises(ValueError, match="quarantine folder"):
+            server_main.propose_move(str(doc), str(cfg.quarantine_dir / "drafts"), "some-plan-id")
+
+    def test_propose_rename_raises_when_new_name_collides(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        target = tmp_path / "target"
+        target.mkdir()
+        src = target / "olddir"
+        src.mkdir()
+        cfg = self._cfg(target)
+        monkeypatch.setattr(server_main, "_get_settings", lambda: cfg)
+
+        with pytest.raises(ValueError, match="server-managed quarantine"):
+            server_main.propose_rename(str(src), "quarantaine", "some-plan-id")

@@ -128,6 +128,14 @@ class RunSession:
         stay "small, discrete" rather than one per tool call."""
         self.activity_log.append(ActivityEntry(self._next_seq(), text))
 
+    def thread(self) -> list[TranscriptItem | ActivityEntry]:
+        """The conversation thread (X3) — `transcript` and `activity_log`
+        merged in chronological order. Both already share this session's one
+        `_seq` counter (`add_turn`/`add_activity` above), so the merge is a
+        plain sort, no timestamps needed. `steps` (T6's per-tool-call log)
+        is deliberately excluded — it stays in its own drawer."""
+        return sorted([*self.transcript, *self.activity_log], key=lambda item: item.seq)
+
     def has_open_step(self) -> bool:
         """True while a tool call is still running (U6): undo must be
         blocked in this state — server.journal.pop_last rewrites the whole

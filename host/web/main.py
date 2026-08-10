@@ -72,8 +72,7 @@ class _RenderState:
     bookkeeping. The step log's own cursor lives in a separate
     steplog.StepLogState (shared with U6/U7's screens)."""
 
-    turn_seq: int = 0
-    activity_seq: int = 0
+    thread_seq: int = 0
     shown_request_id: str | None = None
     fs_revision: int = 0
 
@@ -257,17 +256,16 @@ async def run_page(run_id: str) -> None:
             )
             corpus_button.visible = session.done
 
-            # Internal-step log strip (T5/T6) — pinned at the bottom, always
+            # Internal-step log strip (T6) — pinned at the bottom, always
             # visible, distinct from the conversation above: telcontar's own
-            # tool activity never renders as a chat bubble. activity_column is
-            # the macro-phase history (V16: "Reading documents…", "Planning
-            # changes…", one small entry per phase change, kept for review —
-            # no longer a single line overwritten and lost on the next
-            # phase); log_column is the finer-grained scrolling
-            # one-line-per-tool-call history, each with a toggle that opens
-            # the full payload in shell's left-sidebar detail section (V13b).
+            # tool activity never renders as a chat bubble. It's the
+            # finer-grained scrolling one-line-per-tool-call history, each
+            # with a toggle that opens the full payload in shell's
+            # left-sidebar detail section (V13b). The macro-phase history
+            # (V16: "Reading documents…", "Planning changes…") used to live
+            # in its own column here; X3 interleaves it into
+            # conversation_column instead, chronologically with the turns.
             ui.separator()
-            activity_column = ui.column().classes("w-full gap-0 q-px-sm").mark("activity-column")
             log_column = (
                 ui.column()
                 .classes("w-full overflow-auto q-px-sm q-gutter-none")
@@ -298,8 +296,21 @@ async def run_page(run_id: str) -> None:
                 )
 
         def _render_activity(entry: web_session.ActivityEntry) -> None:
-            with activity_column:
-                ui.label(entry.text).classes("text-xs text-grey-6").mark("activity-entry")
+            with conversation_column:
+                ui.label(entry.text).classes("text-xs text-grey-6 self-center").mark(
+                    "activity-entry"
+                )
+
+        def _render_thread_item(
+            item: web_session.TranscriptItem | web_session.ActivityEntry,
+        ) -> None:
+            # X3: activity/stage entries interleave chronologically with
+            # conversation turns (both share session._seq) instead of
+            # rendering in a separate column.
+            if isinstance(item, web_session.ActivityEntry):
+                _render_activity(item)
+            else:
+                _render_turn(item)
 
         def _show_pending_dialog() -> None:
             pending = session.pending
@@ -316,15 +327,10 @@ async def run_page(run_id: str) -> None:
                     build_ask_user_dialog(session, pending).open()
 
         async def _refresh() -> None:
-            for item in session.transcript:
-                if item.seq > render_state.turn_seq:
-                    _render_turn(item)
-                    render_state.turn_seq = item.seq
-
-            for entry in session.activity_log:
-                if entry.seq > render_state.activity_seq:
-                    _render_activity(entry)
-                    render_state.activity_seq = entry.seq
+            for item in session.thread():
+                if item.seq > render_state.thread_seq:
+                    _render_thread_item(item)
+                    render_state.thread_seq = item.seq
 
             steplog.sync_steps(log_column, shell, step_log_state, session.steps)
 

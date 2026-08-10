@@ -16,8 +16,10 @@ V11's prompt inspection already follow for untrusted content).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from nicegui import run, ui
-from nicegui.events import TableSelectionEventArguments
+from nicegui.events import GenericEventArguments
 
 from host.web import corpus
 from host.web.session import RunSession
@@ -65,6 +67,15 @@ def _to_row(record: dict) -> dict:
     }
 
 
+@dataclass
+class _CorpusViewState:
+    """Mutable state for one build_corpus_view() call, held outside any
+    widget so a later data reload (X10) can restore it — e.g. re-show the
+    detail pane for whatever document was selected before the reload."""
+
+    selected_checksum: str | None = None
+
+
 async def build_corpus_view(session: RunSession) -> None:
     records = await run.io_bound(corpus.list_documents, session.target)
     records_by_checksum = {rec["checksum"]: rec for rec in records}
@@ -79,6 +90,7 @@ async def build_corpus_view(session: RunSession) -> None:
         return
 
     all_rows = [_to_row(rec) for rec in records]
+    state = _CorpusViewState()
 
     search_input = (
         ui.input("Search title, type, or summary…").classes("w-full").mark("corpus-search")
@@ -91,10 +103,9 @@ async def build_corpus_view(session: RunSession) -> None:
                     columns=_COLUMNS,
                     rows=all_rows,
                     row_key="checksum",
-                    selection="single",
                     pagination=10,
                 )
-                .classes("w-full")
+                .classes("w-full cursor-pointer")
                 .mark("corpus-table")
             )
 
@@ -148,11 +159,22 @@ async def build_corpus_view(session: RunSession) -> None:
             else:
                 ui.label("None recorded.").classes("text-caption")
 
-    def _on_select(e: TableSelectionEventArguments) -> None:
-        if e.selection:
-            _show_detail(e.selection[0]["checksum"])
+    def _on_row_click(e: GenericEventArguments) -> None:
+        # Quasar's row-click payload is [evt, row, index] — the DOM event
+        # comes first, not the row; guard defensively rather than assume
+        # the shape (X12).
+        if not isinstance(e.args, list) or len(e.args) < 2:
+            return
+        row = e.args[1]
+        if not isinstance(row, dict):
+            return
+        checksum = row.get("checksum")
+        if not checksum:
+            return
+        state.selected_checksum = checksum
+        _show_detail(checksum)
 
-    table.on_select(_on_select)
+    table.on("rowClick", _on_row_click)
 
     def _apply_filter(value: str) -> None:
         needle = value.strip().lower()

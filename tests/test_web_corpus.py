@@ -205,16 +205,14 @@ async def test_corpus_row_selection_populates_detail_pane(user: User, tmp_path: 
     await user.should_see(marker="corpus-table")
     await user.should_not_see(marker="corpus-detail-content")
 
-    # ui.table has no ElementFilter case and setting `.selected` directly
-    # doesn't fire the "selection" event `on_select` listens for — `.trigger`
+    # ui.table has no ElementFilter case for a row click — `.trigger`
     # dispatches straight to the registered listener the same way a real
-    # client-side selection would (gotcha #7-adjacent: know your harness API
-    # before reaching for a raw workaround).
+    # client click would. Quasar's `row-click` payload is `[evt, row,
+    # index]` (X12); the harness's `.trigger` passes `args` straight through
+    # as `GenericEventArguments.args`, so a list payload works.
     [table] = user.find(marker="corpus-table").elements
     [row] = [r for r in table.rows if r["title"] == "Alpha Report"]
-    user.find(marker="corpus-table").trigger(
-        "selection", {"added": True, "rows": [row], "keys": [row["checksum"]]}
-    )
+    user.find(marker="corpus-table").trigger("rowClick", [{}, row, 0])
 
     await user.should_see(marker="corpus-detail-content")
     await user.should_see("Alpha Report")
@@ -232,9 +230,7 @@ async def test_corpus_detail_pane_handles_missing_entities(user: User, tmp_path:
 
     [table] = user.find(marker="corpus-table").elements
     row = table.rows[0]
-    user.find(marker="corpus-table").trigger(
-        "selection", {"added": True, "rows": [row], "keys": [row["checksum"]]}
-    )
+    user.find(marker="corpus-table").trigger("rowClick", [{}, row, 0])
 
     await user.should_see(marker="corpus-detail-content")
     await user.should_see("None recorded.")

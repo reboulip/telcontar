@@ -773,6 +773,32 @@ def test_system_prompt_requires_ask_user_before_quarantining_unreadable_files() 
     assert prompt.index("create_plan") < prompt.index("Project synthesis")
 
 
+def test_system_prompt_warns_against_quarantine_flavored_taxonomy_names() -> None:
+    """X8: the model must not design a taxonomy folder that collides with
+    the server-managed quarantine dir (case/locale-insensitive guard)."""
+    from config.settings import load
+
+    from host.agent import _build_system_prompt
+
+    prompt = _build_system_prompt(_PROJECT_ROOT, load())
+
+    assert "server rejects these as collisions" in prompt
+    assert "quarantaine" in prompt.lower()
+
+
+def test_system_prompt_reflects_configured_quarantine_dir_name() -> None:
+    """X8: the prompt's guardrail text names the ACTUAL configured
+    quarantine folder, not a hardcoded default."""
+    from config.settings import load
+
+    from host.agent import _build_system_prompt
+
+    settings = load().model_copy(update={"quarantine_dir": Path("_disposed")})
+    prompt = _build_system_prompt(_PROJECT_ROOT, settings)
+
+    assert "_disposed" in prompt
+
+
 def test_system_prompt_falls_back_without_profile() -> None:
     from host.agent import _build_system_prompt
 

@@ -1372,30 +1372,45 @@ async def test_progress_current_document_label_defensive_when_key_absent(
     assert current_label.text == ""
 
 
-async def test_activity_column_empty_when_no_phase_seen_yet(user: User, tmp_path: Path) -> None:
+async def test_no_activity_entries_render_when_no_phase_seen_yet(
+    user: User, tmp_path: Path
+) -> None:
+    """X3: activity entries interleave into conversation_column now — there
+    is no separate container to assert on, just the absence of any
+    activity-entry marker until a phase actually fires."""
     session = web_session.create(tmp_path)
     session.started = True
 
     await user.open(f"/run/{session.run_id}")
-    await user.should_see(marker="activity-column")
+    await user.should_see(marker="btn-open-journal")
     await user.should_not_see(marker="activity-entry")
 
 
-async def test_activity_column_keeps_every_phase_as_a_discrete_entry(
+async def test_activity_entries_interleave_chronologically_with_conversation_turns(
     user: User, tmp_path: Path
 ) -> None:
-    """V16: activity_label used to show one line, overwritten on every phase
-    change and lost once done — the replacement must keep every phase as its
-    own reviewable entry instead of only the latest."""
+    """V16/X3: activity_label used to show one line, overwritten on every
+    phase change and lost once done. X3 interleaves every phase into the
+    conversation thread, in the same chronological order as the turns
+    around it (both share RunSession._seq), instead of a separate column —
+    and each phase still stays its own reviewable entry, not just the
+    latest."""
     session = web_session.create(tmp_path)
     session.started = True
+    session.add_turn("user", "please organize this")
     session.add_activity("Scanning the directory…")
     session.add_activity("Reading documents…")
+    session.add_turn("telcontar", "done reading")
     session.add_activity("Planning changes…")
 
     await user.open(f"/run/{session.run_id}")
     await user.should_see("Planning changes…")
 
+    # ChatMessage's content= filter matches its `name` prop (the speaker),
+    # not the message body (module docstring above) — each speaker appears
+    # once here, so this uniquely picks out each bubble.
+    [user_bubble] = user.find(kind=ui.chat_message, content="user").elements
+    [telcontar_bubble] = user.find(kind=ui.chat_message, content="telcontar").elements
     # .elements has no defined order (gotcha #7 above) — sort by NiceGUI's
     # own element id, assigned in creation order, to recover it.
     entries = sorted(user.find(marker="activity-entry").elements, key=lambda e: e.id)
@@ -1404,3 +1419,6 @@ async def test_activity_column_keeps_every_phase_as_a_discrete_entry(
         "Reading documents…",
         "Planning changes…",
     ]
+    # Chronological interleave: user turn, two activity entries, telcontar
+    # turn, one more activity entry — ids are assigned in creation order.
+    assert user_bubble.id < entries[0].id < entries[1].id < telcontar_bubble.id < entries[2].id

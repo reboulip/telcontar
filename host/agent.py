@@ -171,7 +171,12 @@ A. ORGANIZE the tree:
       just those at the top level; call walk_tree if you need to see the current
       on-disk layout. Stage each folder with propose_create_dir(path, plan_id) —
       it goes into the plan like every other operation, idempotent and
-      collision-safe.
+      collision-safe. Never design a taxonomy folder for discarded, duplicate, or
+      superseded documents — the quarantine folder ({quarantine_name}) is
+      server-managed and created for you by propose_quarantine; never propose a
+      folder named {quarantine_name}, quarantine, quarantaine, trash, corbeille,
+      poubelle, or a similar discard/cleanup-themed name in any language — the
+      server rejects these as collisions with its own quarantine folder.
    2. Create a plan with create_plan, then stage ops: propose_rename to apply the
       naming convention, propose_move to file each document into its folder in the
       taxonomy, propose_quarantine for useless or duplicate documents (never delete
@@ -198,9 +203,11 @@ A. ORGANIZE the tree:
       user above the op list when they review the plan. Also call
       set_plan_folder_notes(plan_id, notes) with a dict mapping each target folder to a
       short one-line purpose note (e.g. {{"01_decisions": "Formal decision records",
-      "_quarantine": "Duplicates and superseded drafts"}}); these are shown beside each
-      folder in the plan's target-layout preview so the user sees what the organized tree
-      will look like at a glance.
+      "{quarantine_name}": "Duplicates and superseded drafts"}}); these are shown beside
+      each folder in the plan's target-layout preview so the user sees what the organized
+      tree will look like at a glance. Only annotate {quarantine_name} this way if you
+      actually quarantined something — never create it yourself or propose_move a
+      document into it, the server manages that folder.
    4. Call execute_plan(plan_id) as soon as the plan (with rationale and folder
       notes) is ready — this call IS how the plan is presented to the user; it
       is not something that happens after approval, it is what asks for
@@ -352,24 +359,30 @@ def _load_naming_conventions(project_root: Path, profile: Profile | None) -> str
     return _DEFAULT_NAMING_CONVENTIONS
 
 
-def _render_system_prompt(profile: Profile | None, project_root: Path) -> str:
+def _render_system_prompt(
+    profile: Profile | None, project_root: Path, quarantine_name: str = "_quarantine"
+) -> str:
     """Render the ORGANIZE system prompt from an already-loaded profile.
 
     Split out of `_build_system_prompt` so `composed_system_prompts` (V11) can
     reuse this rendering step across all three prompts without loading the
-    profile more than once.
+    profile more than once. ``quarantine_name`` (X8) is the configured
+    quarantine folder's basename, threaded through so the prompt's
+    naming-guardrail text and folder-notes example match the real config
+    instead of assuming the default.
     """
     return _SYSTEM_PROMPT_TEMPLATE.format(
         profile_name=profile.name if profile is not None else "default",
         types_section=_build_types_section(profile),
         naming_section=_load_naming_conventions(project_root, profile),
         synthesis_section=_build_synthesis_section(profile),
+        quarantine_name=quarantine_name,
     )
 
 
 def _build_system_prompt(project_root: Path, settings: Settings) -> str:
     profile = _try_load_profile(project_root, settings)
-    return _render_system_prompt(profile, project_root)
+    return _render_system_prompt(profile, project_root, _resolve_quarantine_name(settings))
 
 
 # ── Query mode ──────────────────────────────────────────────────────────────
@@ -506,7 +519,9 @@ def composed_system_prompts(settings: Settings, project_root: Path | None = None
         project_root = Path(__file__).resolve().parent.parent
     profile = _try_load_profile(project_root, settings)
     return {
-        "organize": _render_system_prompt(profile, project_root),
+        "organize": _render_system_prompt(
+            profile, project_root, _resolve_quarantine_name(settings)
+        ),
         "query": _render_query_system_prompt(profile),
         "analyze": _build_analyzer_system_prompt(profile, _ANALYZER_BATCH_SIZE),
     }
@@ -683,13 +698,28 @@ def _normalize_path(path: str) -> str:
     return os.path.normcase(str(Path(path)))
 
 
+def _resolve_quarantine_name(settings: Settings) -> str:
+    """The configured quarantine folder's basename, for prompt text (X8) —
+    falls back to the default on any lookup failure so a bare mock/stub
+    ``settings`` (several tests pass a plain ``MagicMock()``) never breaks
+    prompt rendering."""
+    try:
+        return Path(str(settings.quarantine_dir)).name or "_quarantine"
+    except Exception:
+        return "_quarantine"
+
+
 def _should_skip_discovery(name: str, path: str, settings: Settings) -> bool:
     if name in _DISCOVERY_SKIP_NAMES or name.startswith("."):
         return True
     parts = Path(_normalize_path(path)).parts
     if ".organizer" in parts:
         return True
-    quarantine_name = Path(str(settings.quarantine_dir)).name
+    # normcase both sides — `parts` is already normcase'd via
+    # _normalize_path above, but the raw quarantine_dir name wasn't, so on
+    # Windows a differently-cased configured name (`_Quarantine`) silently
+    # never matched and quarantined files leaked back into discovery (X8).
+    quarantine_name = os.path.normcase(Path(str(settings.quarantine_dir)).name)
     return bool(quarantine_name) and quarantine_name in parts
 
 

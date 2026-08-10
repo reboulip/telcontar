@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
@@ -48,6 +49,12 @@ def _check_within_root(path: str, cfg) -> None:
     from server.guards import check_within_root
 
     check_within_root(Path(path), _confinement_roots(cfg))
+
+
+def _check_not_quarantine(path: str, cfg) -> None:
+    from server.guards import check_not_quarantine_collision
+
+    check_not_quarantine_collision(Path(path), cfg.quarantine_dir)
 
 
 def _log_egress(path: str, content: str, tool: str, cfg) -> None:
@@ -99,7 +106,11 @@ def walk_tree(path: str, max_depth: int = 3) -> dict:
     again on that subpath to go deeper)."""
     cfg = _get_settings()
     _check_within_root(path, cfg)
-    hidden = frozenset({".organizer", cfg.quarantine_dir.name})
+    # normcase (not the fuzzy guards.normalize_dir_name) — this is an exact
+    # name hide, not the quarantine-alias fuzzy match; a differently-cased
+    # on-disk folder (Windows: `_Quarantine` vs. a configured `_quarantine`)
+    # must still be hidden from discovery.
+    hidden = frozenset({os.path.normcase(".organizer"), os.path.normcase(cfg.quarantine_dir.name)})
     return tools.walk_tree(path, max_depth, hidden_names=hidden)
 
 
@@ -309,6 +320,7 @@ def propose_rename(path: str, new_name: str, plan_id: str) -> dict:
     """Stage a rename operation in the named plan."""
     cfg = _get_settings()
     _check_within_root(path, cfg)
+    _check_not_quarantine(str(Path(path).parent / new_name), cfg)
     return tools.propose_rename(path, new_name, plan_id, cfg.plans_dir)
 
 
@@ -318,6 +330,9 @@ def propose_move(path: str, dest_dir: str, plan_id: str) -> dict:
     cfg = _get_settings()
     _check_within_root(path, cfg)
     _check_within_root(dest_dir, cfg)
+    # Guard the destination only — never the source, or moving a file back
+    # out of quarantine (a legal, common operation) would be blocked too.
+    _check_not_quarantine(dest_dir, cfg)
     return tools.propose_move(path, dest_dir, plan_id, cfg.plans_dir)
 
 
@@ -355,6 +370,7 @@ def propose_create_dir(path: str, plan_id: str) -> dict:
     """Stage creating a directory (and parents) in the named plan; idempotent."""
     cfg = _get_settings()
     _check_within_root(path, cfg)
+    _check_not_quarantine(path, cfg)
     return tools.propose_create_dir(path, plan_id, cfg.plans_dir)
 
 

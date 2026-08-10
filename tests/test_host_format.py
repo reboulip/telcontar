@@ -335,6 +335,100 @@ def test_plan_tree_diff_handles_cross_drive_paths_without_raising(tmp_path: Path
     assert {line.label for line in after if line.op_id} == {"one.txt", "two.txt"}
 
 
+# ── plan_tree_diff — X4 op chaining ─────────────────────────────────────────────
+
+
+def test_plan_tree_diff_chains_rename_then_move_into_one_line() -> None:
+    """X4 regression guard: a rename immediately followed by a move of the
+    SAME (pre-rename) src must appear once per tree with the true start/end
+    state — the move must resolve the file's *current* name (post-rename),
+    not recompute from its own stale ``src``."""
+    ops = [
+        {"op_id": "o1", "op_type": "rename", "src": "/t/a.txt", "dst": "b.txt"},
+        {"op_id": "o2", "op_type": "move", "src": "/t/a.txt", "dst": "/t/sorted"},
+    ]
+    before, after, other = plan_tree_diff(ops)
+    assert other == []
+    before_files = [line for line in before if line.op_ids]
+    after_files = [line for line in after if line.op_ids]
+    assert len(before_files) == 1
+    assert len(after_files) == 1
+    assert before_files[0].label == "a.txt"
+    assert after_files[0].label == "b.txt"
+    assert any(line.label == "sorted/" for line in after)
+    assert before_files[0].op_ids == ("o1", "o2")
+    assert after_files[0].op_ids == ("o1", "o2")
+    assert before_files[0].op_id == "o1"
+    assert after_files[0].op_id == "o1"
+
+
+def test_plan_tree_diff_chains_when_later_op_src_is_the_intermediate_name() -> None:
+    """Same chain, but the plan tracks the intermediate state accurately —
+    the move's ``src`` is the already-renamed name, not the original one.
+    Must chain identically to the stale-src case above."""
+    ops = [
+        {"op_id": "o1", "op_type": "rename", "src": "/t/a.txt", "dst": "b.txt"},
+        {"op_id": "o2", "op_type": "move", "src": "/t/b.txt", "dst": "/t/sorted"},
+    ]
+    before, after, other = plan_tree_diff(ops)
+    assert other == []
+    before_files = [line for line in before if line.op_ids]
+    after_files = [line for line in after if line.op_ids]
+    assert len(before_files) == 1
+    assert len(after_files) == 1
+    assert after_files[0].label == "b.txt"
+    assert after_files[0].op_ids == ("o1", "o2")
+
+
+def test_plan_tree_diff_unchained_line_has_single_element_op_ids() -> None:
+    ops = [{"op_id": "o1", "op_type": "rename", "src": "/t/a.txt", "dst": "b.txt"}]
+    before, after, _ = plan_tree_diff(ops)
+    assert [line.op_ids for line in before if line.op_ids] == [("o1",)]
+    assert [line.op_ids for line in after if line.op_ids] == [("o1",)]
+
+
+def test_plan_tree_diff_chain_rooted_at_create_file_has_no_before_entry() -> None:
+    ops = [
+        {"op_id": "o1", "op_type": "create_file", "src": "/t/new.md", "dst": ""},
+        {"op_id": "o2", "op_type": "move", "src": "/t/new.md", "dst": "/t/sorted"},
+    ]
+    before, after, other = plan_tree_diff(ops)
+    assert other == []
+    assert before == []
+    after_files = [line for line in after if line.op_ids]
+    assert len(after_files) == 1
+    assert after_files[0].label == "new.md"
+    assert after_files[0].op_ids == ("o1", "o2")
+
+
+def test_plan_tree_diff_chain_dedupes_outside_target_marker() -> None:
+    ops = [
+        {"op_id": "o1", "op_type": "rename", "src": "/elsewhere/a.txt", "dst": "b.txt"},
+        {"op_id": "o2", "op_type": "move", "src": "/elsewhere/a.txt", "dst": "/elsewhere/sorted"},
+    ]
+    before, after, _ = plan_tree_diff(ops, target=Path("/t"))
+    after_files = [line for line in after if line.op_ids]
+    assert after_files[0].label.count("outside target") == 1
+
+
+def test_plan_tree_diff_chain_keeps_quarantine_reason_after_a_rename() -> None:
+    ops = [
+        {"op_id": "o1", "op_type": "rename", "src": "/t/a.txt", "dst": "b.txt"},
+        {
+            "op_id": "o2",
+            "op_type": "quarantine",
+            "src": "/t/a.txt",
+            "dst": "/t/_q/b.txt",
+            "params": {"reason": "duplicate"},
+        },
+    ]
+    before, after, other = plan_tree_diff(ops)
+    assert other == []
+    after_files = [line for line in after if line.op_ids]
+    assert after_files[0].op_ids == ("o1", "o2")
+    assert "duplicate" in after_files[0].label
+
+
 # ── render_target_layout ────────────────────────────────────────────────────────
 
 

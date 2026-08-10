@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import zipfile
 from pathlib import Path
@@ -82,7 +83,11 @@ def walk_tree(path: str, max_depth: int = 3, hidden_names: frozenset[str] | None
             return []
         entries: list[dict] = []
         for entry in children:
-            if entry.name in hidden:
+            # X8: `hidden` is pre-normcased by the server/main.py wrapper —
+            # normcase entry.name the same way so a differently-cased
+            # on-disk folder (e.g. Windows: `_Quarantine` on disk vs. a
+            # configured `_quarantine`) is still hidden from discovery.
+            if os.path.normcase(entry.name) in hidden:
                 continue
             try:
                 st = entry.stat()
