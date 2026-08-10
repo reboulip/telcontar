@@ -8,6 +8,8 @@ test before this move.
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -107,6 +109,29 @@ def directory_overview(target: Path, max_entries: int = 5000) -> str:
     else:
         lines.append("No files found at or below this folder.")
     return "\n".join(lines)
+
+
+def reveal_in_file_manager(path: Path) -> bool:
+    """Open the OS file manager with ``path`` selected (X5) — fire-and-forget,
+    never raises. Windows: Explorer's ``/select`` flag highlights the file in
+    its parent folder. macOS: ``open -R`` does the same. Linux has no
+    portable "select a specific file" verb, so this falls back to opening
+    the parent folder instead — a documented limitation, not worked around.
+
+    Never waits on or checks the child process's exit code: on Windows,
+    ``explorer.exe`` exits 1 even on success, so a return-code check would
+    misreport a working reveal as a failure.
+    """
+    try:
+        if sys.platform == "win32":
+            subprocess.Popen(["explorer", f"/select,{path}"])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", str(path)])
+        else:
+            subprocess.Popen(["xdg-open", str(path.parent)])
+        return True
+    except OSError:
+        return False
 
 
 def is_op_out_of_scope(op: dict, target: Path | None) -> bool:

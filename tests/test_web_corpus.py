@@ -6,6 +6,7 @@ logic (plain pytest, no NiceGUI) and host/web/corpus_view.py's rendering
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 
 import pytest
@@ -95,6 +96,58 @@ class TestGetDocument:
 
         assert doc is not None
         assert doc["title"] == "Report One"
+
+
+class TestFindByPath:
+    def test_returns_none_when_registry_missing(self, tmp_path: Path) -> None:
+        assert corpus.find_by_path(tmp_path, tmp_path / "doc.pdf") is None
+
+    def test_returns_matching_record(self, tmp_path: Path) -> None:
+        doc_path = tmp_path / "sorted" / "Report One.pdf"
+        registry_path = tmp_path / ".organizer" / "registry.json"
+        registry = Registry()
+        registry.upsert(_make_record("aaa", "Report One", path=str(doc_path)))
+        save(registry, registry_path)
+
+        found = corpus.find_by_path(tmp_path, doc_path)
+
+        assert found is not None
+        assert found["checksum"] == "aaa"
+
+    def test_matches_case_insensitively_on_windows_normcase(self, tmp_path: Path) -> None:
+        doc_path = tmp_path / "Sorted" / "Report One.pdf"
+        registry_path = tmp_path / ".organizer" / "registry.json"
+        registry = Registry()
+        registry.upsert(_make_record("aaa", "Report One", path=str(doc_path)))
+        save(registry, registry_path)
+
+        # A differently-cased query path — os.path.normcase folds case on
+        # Windows (a no-op on POSIX, where this simply matches identically).
+        query_path = tmp_path / "sorted" / "report one.pdf"
+
+        found = corpus.find_by_path(tmp_path, query_path)
+
+        assert (found is not None) == (os.path.normcase("A") != "A")
+
+    def test_returns_none_for_unrecorded_path(self, tmp_path: Path) -> None:
+        registry_path = tmp_path / ".organizer" / "registry.json"
+        registry = Registry()
+        registry.upsert(_make_record("aaa", "Report One", path=str(tmp_path / "a.pdf")))
+        save(registry, registry_path)
+
+        assert corpus.find_by_path(tmp_path, tmp_path / "unrelated.pdf") is None
+
+    def test_no_substring_or_basename_fallback(self, tmp_path: Path) -> None:
+        """A basename-only match would risk showing the wrong document's
+        summary if the exact path is ever missed — must not happen."""
+        registry_path = tmp_path / ".organizer" / "registry.json"
+        registry = Registry()
+        registry.upsert(
+            _make_record("aaa", "Report One", path=str(tmp_path / "archive" / "report.pdf"))
+        )
+        save(registry, registry_path)
+
+        assert corpus.find_by_path(tmp_path, tmp_path / "current" / "report.pdf") is None
 
 
 class TestRegistryMtime:

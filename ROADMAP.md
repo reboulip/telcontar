@@ -39,15 +39,15 @@ on open work.
 - [ ] X2 · Investigate and fix chat text not being selectable/copyable — likely lead: the sidebar-resize drag handler's `document.body.style.userSelect = 'none'` not resetting when a drag ends outside the browser window. [#42]
 - [x] X3 · Interleave V16 activity/stage messages chronologically into the conversation thread itself (merge `session.transcript` and `session.activity_log` in `host/web/main.py`), instead of a separate column; `steplog.py`'s per-tool-call step log stays in its own drawer. [#43]
 - [x] X4 · Teach `plan_tree_diff` (`host/format.py`) to chain same-file rename+move ops the way `execute_plan` (`server/tools.py`) already does, so each file appears once in the before/after view. [#44]
-- [ ] X5 · Add a "Reveal in file explorer" action to the plan approval dialog that opens the OS file manager with `plan_ops.json` selected. [#45]
+- [x] X5 · Add a "Reveal in file explorer" action to the plan approval dialog that opens the OS file manager with `plan_ops.json` selected. [#45]
 - [x] X6 · Add a label/tooltip to the plan "after" view checkboxes explaining that unchecking excludes that op from execution. [#46]
 - [ ] X7 · Add vertical connector lines and denser row spacing to all tree views — the sidebar file tree and the plan before/after tree. [#47]
 - [x] X8 · Guard the quarantine dir name against agent-proposed taxonomy folder names (case/locale-insensitive) in `server/guards.py`, and steer the taxonomy prompt away from quarantine-adjacent naming. [#48]
-- [ ] X9 · Add a document preview pane to the organize/run screen, reusing the corpus browser's (V5) detail-pane approach. [#49]
+- [x] X9 · Add a document preview pane to the organize/run screen, reusing the corpus browser's (V5) detail-pane approach. [#49]
 - [x] X10 · Add periodic polling (or a manual refresh) to the corpus browser so it reflects `execute_plan` renames/moves, matching the run page and sidebar tree's existing poll pattern. [#50]
 - [x] X11 · Add persistent shell navigation (tabs: Conversation | Corpus | Query | Settings) so users can move freely between views. [#51]
 - [x] X12 · In the corpus browser, trigger the document detail pane from a title/row click instead of the selection checkbox; remove the checkbox. [#52]
-- [ ] X13 · Design and wire in an SVG telcontar logo (White Tree of Gondor + branching roots) matching the gold/silver theme and elvish display face (Phase 19 T8), in the browser tab/header. [#54]
+- [x] X13 · Design and wire in an SVG telcontar logo (White Tree of Gondor + branching roots) matching the gold/silver theme and elvish display face (Phase 19 T8), in the browser tab/header. [#54]
 - [ ] X14 · Split `docs/developer/modules.md` and `docs/developer/architecture.md` (~880 lines each) into smaller per-area pages and rebuild the `mkdocs.yml` nav — doc-keeper cost scales with page size and both files are touched by nearly every wave. [deferred]
 
 *Once Phase 22 and Phase 23 are both done, telcontar is ready to cut its first official release.*

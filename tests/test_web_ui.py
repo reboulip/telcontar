@@ -90,10 +90,12 @@ import pytest
 from nicegui import ui
 from nicegui.testing import User
 
+from host import paths as host_paths
 from host.agent import AgentEvent
 from host.web import session as web_session
 from host.web import shell as web_shell
 from host.web import theme
+from server.registry import DocumentRecord, Registry, save
 
 
 @pytest.fixture(autouse=True)
@@ -679,6 +681,60 @@ async def test_approval_dialog_chained_ops_share_one_checkbox(user: User, tmp_pa
     assert set(result.removed_op_ids) == {"op1", "op2"}
 
 
+async def test_approval_dialog_hides_reveal_button_when_no_ops_json_path(
+    user: User, tmp_path: Path
+) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.new_pending("approval", {"plan_id": "plan-1", "plan_data": _plan_data()})
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="approve-btn")
+    await user.should_not_see(marker="reveal-ops-json")
+
+
+async def test_approval_dialog_reveal_button_opens_the_ops_json_file(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[Path] = []
+    monkeypatch.setattr(host_paths, "reveal_in_file_manager", lambda p: calls.append(p) or True)
+
+    ops_json_path = str(tmp_path / ".organizer" / "plans" / "plan-1" / "plan_ops.json")
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.new_pending(
+        "approval",
+        {"plan_id": "plan-1", "plan_data": _plan_data(ops_json_path=ops_json_path)},
+    )
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="reveal-ops-json")
+    user.find(marker="reveal-ops-json").click()
+
+    assert calls == [Path(ops_json_path)]
+
+
+async def test_approval_dialog_reveal_button_refuses_a_path_outside_target(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[Path] = []
+    monkeypatch.setattr(host_paths, "reveal_in_file_manager", lambda p: calls.append(p) or True)
+
+    outside_path = str(tmp_path.parent / "elsewhere" / "plan_ops.json")
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.new_pending(
+        "approval",
+        {"plan_id": "plan-1", "plan_data": _plan_data(ops_json_path=outside_path)},
+    )
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="reveal-ops-json")
+    user.find(marker="reveal-ops-json").click()
+
+    assert calls == []
+
+
 async def test_approval_dialog_refine_with_blank_text_is_a_noop(user: User, tmp_path: Path) -> None:
     session = web_session.create(tmp_path)
     session.started = True
@@ -799,6 +855,99 @@ async def test_sidebar_tree_periodic_poll_updates_tree_without_fs_revision_bump(
         await asyncio.sleep(0.05)
     else:
         raise AssertionError(f"tree was not polled; saw {_root_children_labels(user)}")
+
+
+# ── Document preview pane (X9) ──────────────────────────────────────────────
+
+
+async def test_run_page_shows_placeholder_before_any_selection(user: User, tmp_path: Path) -> None:
+    session = web_session.create(tmp_path)
+    session.started = True
+
+    await user.open(f"/run/{session.run_id}")
+
+    await user.should_see(marker="doc-detail-placeholder")
+    await user.should_not_see(marker="doc-detail-content")
+
+
+async def test_run_page_shows_document_preview_for_analyzed_file(
+    user: User, tmp_path: Path
+) -> None:
+    doc_path = tmp_path / "report.pdf"
+    doc_path.write_text("hello")
+    registry = Registry()
+    registry.upsert(
+        DocumentRecord.new(
+            checksum="aaa",
+            path=str(doc_path),
+            title="Alpha Report",
+            type="report",
+            summary="A detailed summary of the report.",
+            provenance="found during scan",
+            date="2026-01-01",
+        )
+    )
+    save(registry, tmp_path / ".organizer" / "registry.json")
+    session = web_session.create(tmp_path)
+    session.started = True
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="doc-detail-placeholder")
+
+    user.find(kind=ui.tree).trigger("update:selected", str(doc_path))
+
+    await user.should_see(marker="doc-detail-content")
+    await user.should_see("Alpha Report")
+    await user.should_see("A detailed summary of the report.")
+
+
+async def test_run_page_shows_not_analyzed_yet_for_unanalyzed_file(
+    user: User, tmp_path: Path
+) -> None:
+    unanalyzed = tmp_path / "unanalyzed.txt"
+    unanalyzed.write_text("still waiting on the analyzer")
+    session = web_session.create(tmp_path)
+    session.started = True
+
+    await user.open(f"/run/{session.run_id}")
+
+    user.find(kind=ui.tree).trigger("update:selected", str(unanalyzed))
+
+    await user.should_see(marker="doc-detail-content")
+    await user.should_see("unanalyzed.txt")
+    await user.should_see("Not analyzed yet.")
+
+
+async def test_run_page_selecting_a_directory_clears_the_preview(
+    user: User, tmp_path: Path
+) -> None:
+    subdir = tmp_path / "sorted"
+    subdir.mkdir()
+    doc_path = tmp_path / "report.pdf"
+    doc_path.write_text("hello")
+    registry = Registry()
+    registry.upsert(
+        DocumentRecord.new(
+            checksum="aaa",
+            path=str(doc_path),
+            title="Alpha Report",
+            type="report",
+            summary="s",
+            provenance="p",
+        )
+    )
+    save(registry, tmp_path / ".organizer" / "registry.json")
+    session = web_session.create(tmp_path)
+    session.started = True
+
+    await user.open(f"/run/{session.run_id}")
+    user.find(kind=ui.tree).trigger("update:selected", str(doc_path))
+    await user.should_see(marker="doc-detail-content")
+
+    user.find(kind=ui.tree).trigger("update:selected", str(subdir))
+
+    await user.should_see(marker="doc-detail-placeholder")
+    await user.should_not_see(marker="doc-detail-content")
 
 
 # ── Cost estimate dialog (U5) ─────────────────────────────────────────────────

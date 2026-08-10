@@ -6,6 +6,7 @@ from pathlib import Path
 
 from host.web.theme import (
     FAVICON_SVG,
+    LOGO_SVG,
     PALETTE,
     css,
     font_face_css,
@@ -82,6 +83,36 @@ def test_palette_positive_and_negative_stay_in_their_hue_families() -> None:
 def test_favicon_svg_is_a_raw_svg_string() -> None:
     assert FAVICON_SVG.strip().startswith("<svg")
     assert FAVICON_SVG.strip().endswith("</svg>")
+
+
+def test_favicon_svg_uses_the_white_tree_palette() -> None:
+    # X13: tab and header must show one consistent mark — silver
+    # trunk/branches, gold stars, same two hex values as LOGO_SVG below.
+    assert "#AEB6C4" in FAVICON_SVG
+    assert "#C8A951" in FAVICON_SVG
+
+
+# ── header logo (X13) ────────────────────────────────────────────────────
+
+
+def test_logo_svg_is_a_raw_svg_string() -> None:
+    assert LOGO_SVG.strip().startswith("<svg")
+    assert LOGO_SVG.strip().endswith("</svg>")
+
+
+def test_logo_svg_uses_the_white_tree_palette() -> None:
+    assert "#AEB6C4" in LOGO_SVG
+    assert "#C8A951" in LOGO_SVG
+
+
+def test_logo_svg_has_no_background_fill() -> None:
+    # Unlike the favicon (a standalone tile), the header logo sits directly
+    # on the nav header's own dark surface — no <rect> background.
+    assert "<rect" not in LOGO_SVG
+
+
+def test_css_sizes_the_header_logo() -> None:
+    assert ".tc-logo" in css()
 
 
 # ── font_face_css / css ──────────────────────────────────────────────────

@@ -30,6 +30,7 @@ import socket
 import sys
 from collections.abc import MutableMapping
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +39,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from host.agent import ApprovalResult, AskUserResult, CostApprovalResult
 from host.paths import directory_overview, find_organizer_root
-from host.web import journal
+from host.web import corpus, journal
 from host.web import security
 from host.web import session as web_session
 from host.web import steplog
@@ -51,6 +52,7 @@ from host.web.dialogs import (
     build_cost_dialog,
     build_journal_dialog,
 )
+from host.web.docpane import build_doc_pane
 from host.web.query_view import build_query_view
 from host.web.settings import build_settings_view
 from host.web.shell import app_shell
@@ -75,10 +77,31 @@ class _RenderState:
     thread_seq: int = 0
     shown_request_id: str | None = None
     fs_revision: int = 0
+    last_preview_path: Path | None = None
 
 
 def _start_run(target: Path) -> web_session.RunSession:
     return web_session.create(target)
+
+
+def _load_preview(target: Path, path: Path) -> tuple[bool, dict | None, str]:
+    """(is_file, record_or_None, meta_line) for the X9 document preview
+    pane — runs off the event loop thread via run.io_bound: a stat or
+    registry read on a possibly-network path must never block the UI.
+    No extraction on this path — an unanalyzed file just gets its
+    filesystem metadata, never its content read/parsed."""
+    if not path.is_file():
+        return False, None, ""
+    record = corpus.find_by_path(target, path)
+    if record is not None:
+        return True, record, ""
+    try:
+        st = path.stat()
+        modified = datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M")
+        meta_line = f"{st.st_size:,} bytes · modified {modified}"
+    except OSError:
+        meta_line = ""
+    return True, None, meta_line
 
 
 @ui.page("/")
@@ -217,7 +240,16 @@ async def run_page(run_id: str) -> None:
             overview_label.set_text(await run.io_bound(directory_overview, session.target) or "")
 
         with main_column:
-            conversation_column = ui.column().classes("w-full")
+            # X9: document preview pane, reusing the corpus browser's (V5)
+            # detail-pane approach — triggered by polling shell.selected in
+            # _refresh() below, never by wiring through app_shell()/the
+            # sidebar tree directly (keeps this out of host/web/shell.py,
+            # which already has heavy contention this sprint).
+            with ui.row().classes("w-full no-wrap items-start gap-4"):
+                with ui.column().classes("w-2/3"):
+                    conversation_column = ui.column().classes("w-full")
+                with ui.column().classes("w-1/3").mark("doc-preview"):
+                    doc_pane = build_doc_pane()
             status_label = ui.label()
             # V14: a row, not a bare bar, so the integer-percent label sits
             # beside it — and so V8b's current-document label has a slot to
@@ -388,6 +420,24 @@ async def run_page(run_id: str) -> None:
                 render_state.fs_revision = session.fs_revision
                 await shell.reload_tree()
                 journal_button.set_text(f"Journal ({len(journal.load_entries(session.target))})")
+
+            # X9: document preview pane — only stat/look up when the sidebar
+            # selection actually changed since the last tick, never on
+            # every 0.5s poll.
+            if shell.selected != render_state.last_preview_path:
+                render_state.last_preview_path = shell.selected
+                if shell.selected is None:
+                    doc_pane.clear()
+                else:
+                    is_file, record, meta_line = await run.io_bound(
+                        _load_preview, session.target, shell.selected
+                    )
+                    if not is_file:
+                        doc_pane.clear()
+                    elif record is not None:
+                        doc_pane.show(record)
+                    else:
+                        doc_pane.show_unanalyzed(shell.selected, meta_line)
 
         ui.timer(web_session.REFRESH_INTERVAL, _refresh)
 

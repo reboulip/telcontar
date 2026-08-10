@@ -7,17 +7,20 @@ previously exercised only indirectly through a Pilot test.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from config import settings as settings_module
+from host import paths as host_paths
 from host.paths import (
     directory_overview,
     is_op_out_of_scope,
     resolve_graph_path,
     resolve_journal_path,
     resolve_registry_path,
+    reveal_in_file_manager,
 )
 
 
@@ -159,3 +162,76 @@ def test_is_op_out_of_scope_false_when_src_missing(tmp_path: Path) -> None:
 
 def test_is_op_out_of_scope_false_when_src_empty(tmp_path: Path) -> None:
     assert is_op_out_of_scope({"src": ""}, tmp_path) is False
+
+
+# ── reveal_in_file_manager (X5) ────────────────────────────────────────────
+
+
+def test_reveal_in_file_manager_uses_explorer_select_on_windows(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(host_paths.sys, "platform", "win32")
+    monkeypatch.setattr(subprocess, "Popen", lambda args: calls.append(args))
+
+    target = tmp_path / "plan_ops.json"
+    assert reveal_in_file_manager(target) is True
+
+    assert calls == [["explorer", f"/select,{target}"]]
+
+
+def test_reveal_in_file_manager_uses_open_dash_r_on_macos(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(host_paths.sys, "platform", "darwin")
+    monkeypatch.setattr(subprocess, "Popen", lambda args: calls.append(args))
+
+    target = tmp_path / "plan_ops.json"
+    assert reveal_in_file_manager(target) is True
+
+    assert calls == [["open", "-R", str(target)]]
+
+
+def test_reveal_in_file_manager_opens_parent_folder_on_linux(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[list[str]] = []
+    monkeypatch.setattr(host_paths.sys, "platform", "linux")
+    monkeypatch.setattr(subprocess, "Popen", lambda args: calls.append(args))
+
+    target = tmp_path / "plan_ops.json"
+    assert reveal_in_file_manager(target) is True
+
+    assert calls == [["xdg-open", str(tmp_path)]]
+
+
+def test_reveal_in_file_manager_never_raises_on_spawn_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def _boom(args: list[str]) -> None:
+        raise OSError("no such program")
+
+    monkeypatch.setattr(host_paths.sys, "platform", "win32")
+    monkeypatch.setattr(subprocess, "Popen", _boom)
+
+    assert reveal_in_file_manager(tmp_path / "plan_ops.json") is False
+
+
+def test_reveal_in_file_manager_never_waits_on_the_child_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """explorer.exe exits 1 even on success — the function must never
+    inspect a return code, just fire-and-forget."""
+
+    class _FakePopen:
+        def __init__(self, args: list[str]) -> None:
+            self.args = args
+
+        def wait(self) -> int:
+            raise AssertionError("must never wait on the child process")
+
+    monkeypatch.setattr(host_paths.sys, "platform", "win32")
+    monkeypatch.setattr(subprocess, "Popen", _FakePopen)
+
+    assert reveal_in_file_manager(tmp_path / "plan_ops.json") is True

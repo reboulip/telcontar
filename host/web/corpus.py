@@ -11,6 +11,7 @@ chain at module import time — the same discipline host.web.journal follows.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from host.paths import resolve_registry_path
@@ -51,3 +52,18 @@ def registry_mtime(target: Path) -> tuple[float, int] | None:
         return (st.st_mtime, st.st_size)
     except OSError:
         return None
+
+
+def find_by_path(target: Path, path: Path) -> dict | None:
+    """Match a registry record by its recorded path (X9) — exact
+    ``os.path.normcase(os.path.normpath(...))`` comparison, the same idiom
+    ``server/registry.py``'s ``_same_path`` uses. Never a basename fallback:
+    that could silently show the wrong document's summary if the match is
+    ever missed. Never raises — same defensive contract as
+    ``list_documents``, which this is built on."""
+    needle = os.path.normcase(os.path.normpath(str(path)))
+    for record in list_documents(target):
+        recorded = os.path.normcase(os.path.normpath(record.get("path") or ""))
+        if recorded == needle:
+            return record
+    return None

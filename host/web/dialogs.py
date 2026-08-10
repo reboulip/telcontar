@@ -32,10 +32,12 @@ PendingRequest — nothing is waiting on a future — so a normal, dismissible
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from nicegui import ui
 
+from host import paths as host_paths
 from host.agent import ApprovalResult, AskUserResult, CostApprovalResult
 from host.format import fmt_journal_entry, fmt_op, plan_tree_diff
 from host.web import journal
@@ -158,6 +160,23 @@ def build_approval_dialog(session: RunSession, pending: PendingRequest) -> ui.di
             ui.label(f"Full ops JSON: {ops_json_path}").classes("text-caption text-grey").mark(
                 "ops-json-path"
             )
+
+            def _reveal_ops_json() -> None:
+                # X5: ops_json_path is host-authoritative (written by
+                # host/agent.py's _write_ops_json, never model-controlled),
+                # but this is the first place the product spawns a native OS
+                # process from a UI click — pin it to the run's target
+                # anyway, same spirit as is_op_out_of_scope's confinement
+                # check above.
+                try:
+                    Path(ops_json_path).resolve().relative_to(session.target.resolve())
+                except (ValueError, OSError):
+                    return
+                host_paths.reveal_in_file_manager(Path(ops_json_path))
+
+            ui.button(
+                "Reveal in file explorer", icon="folder_open", on_click=_reveal_ops_json
+            ).props("flat dense").mark("reveal-ops-json")
 
         ui.separator()
         ui.label(

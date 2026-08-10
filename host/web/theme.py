@@ -48,15 +48,55 @@ PALETTE: dict[str, str] = {
     "warning": "#D9A441",
 }
 
-# Elendil's seven-pointed star, gold on the dark base — an inline SVG string
-# is a legal `ui.run(favicon=...)` value (NiceGUI inlines it as a data URL;
-# no file, no network request).
+# X13: the White Tree of Gondor — a branching silver trunk/roots with seven
+# gold stars arced above it, echoing Gondor's own banner. Both this favicon
+# and LOGO_SVG below (the full-size header mark) are the same motif at two
+# sizes, so tab and header read as one identity — this replaces the earlier
+# Elendil's-star-only mark. An inline SVG string is a legal
+# `ui.run(favicon=...)` value (NiceGUI inlines it as a data URL; no file, no
+# network request); native mode additionally applies it as the taskbar icon
+# when it resolves to a local file, which this deliberately does not — see
+# `host/web/assets/telcontar.ico` (unchanged, a follow-up to regenerate).
 FAVICON_SVG = (
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
     '<rect width="32" height="32" rx="6" fill="#0E1116"/>'
-    '<polygon points="16.0,3.0 18.5,10.8 26.2,7.9 21.7,14.7 28.7,18.9 20.5,19.6 '
-    '21.6,27.7 16.0,21.8 10.4,27.7 11.5,19.6 3.3,18.9 10.3,14.7 5.8,7.9 13.5,10.8" '
-    'fill="#C8A951"/>'
+    '<g fill="none" stroke="#AEB6C4" stroke-width="1.6" stroke-linecap="round" '
+    'stroke-linejoin="round">'
+    '<path d="M16,26 L16,15"/>'
+    '<path d="M16,15 L11,10 M11,10 L8,6.5 M11,10 L13,5.5"/>'
+    '<path d="M16,15 L21,10 M21,10 L24,6.5 M21,10 L19,5.5"/>'
+    '<path d="M16,26 L16,28 M16,28 L12,30 M16,28 L20,30"/>'
+    "</g>"
+    '<g fill="#C8A951">'
+    '<polygon points="16,2.2 17.4,3.6 16,5 14.6,3.6"/>'
+    '<polygon points="9,5 10.2,6.2 9,7.4 7.8,6.2"/>'
+    '<polygon points="23,5 24.2,6.2 23,7.4 21.8,6.2"/>'
+    "</g>"
+    "</svg>"
+)
+
+# X13: the full-size header mark — same White Tree motif, more branch/root
+# detail and the full seven-star arc (Gondor's banner is a white tree under
+# seven stars). Transparent background: it sits directly on the nav
+# header's own dark surface, not a standalone tile like the favicon.
+LOGO_SVG = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="32" height="32">'
+    '<g fill="none" stroke="#AEB6C4" stroke-width="2.2" stroke-linecap="round" '
+    'stroke-linejoin="round">'
+    '<path d="M32,52 L32,30"/>'
+    '<path d="M32,30 L22,20 M22,20 L16,13 M22,20 L26,11"/>'
+    '<path d="M32,30 L42,20 M42,20 L48,13 M42,20 L38,11"/>'
+    '<path d="M32,52 L32,56 M32,56 L24,60 M32,56 L40,60 M32,56 L28,60 M32,56 L36,60"/>'
+    "</g>"
+    '<g fill="#C8A951">'
+    '<polygon points="8,10.2 9.8,12 8,13.8 6.2,12"/>'
+    '<polygon points="17,6 19,8 17,10 15,8"/>'
+    '<polygon points="26,2.8 28.2,5 26,7.2 23.8,5"/>'
+    '<polygon points="32,1.1 34.4,3.5 32,5.9 29.6,3.5"/>'
+    '<polygon points="38,2.8 40.2,5 38,7.2 35.8,5"/>'
+    '<polygon points="47,6 49,8 47,10 45,8"/>'
+    '<polygon points="56,10.2 57.8,12 56,13.8 54.2,12"/>'
+    "</g>"
     "</svg>"
 )
 
@@ -115,6 +155,10 @@ def css(font_dir: Path | None = None) -> str:
         "}\n"
         ".q-btn.bg-primary {\n"
         "  color: #0E1116 !important;\n"
+        "}\n"
+        ".tc-logo {\n"
+        "  display: inline-flex;\n"
+        "  align-items: center;\n"
         "}\n"
     )
 

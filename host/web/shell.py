@@ -237,7 +237,13 @@ def app_shell(
 
     if nav:
         with ui.header().classes("items-center justify-between q-px-md"):
-            ui.label("telcontar").classes("text-h6 tc-display")
+            with ui.row().classes("items-center gap-2"):
+                # X13: ui.html is legal here ONLY because theme.LOGO_SVG is
+                # an in-repo constant, never registry/document content — the
+                # untrusted-content rule elsewhere in host/web/ (ui.label
+                # only) is about LLM/corpus-derived text, which this is not.
+                ui.html(theme.LOGO_SVG).classes("tc-logo")
+                ui.label("telcontar").classes("text-h6 tc-display")
             with ui.tabs(value=active).props("dense") as tabs:
                 conversation_tab = ui.tab("conversation", label="Conversation").mark(
                     "nav-conversation"
