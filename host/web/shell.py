@@ -312,7 +312,10 @@ def app_shell(
         nodes = web_tree.build_nodes(root)
         tree_widget = (
             ui.tree(nodes, node_key="id", label_key="label", children_key="children")
-            .props("dense no-connectors")
+            # selected-color=primary (X1): highlights the run's target
+            # folder once app_shell()'s caller selects it — a Quasar prop,
+            # no CSS needed, so this stays out of theme.py.
+            .props("dense no-connectors selected-color=primary")
             .classes("w-full")
             .style("max-height: 45vh; overflow-y: auto")
         )

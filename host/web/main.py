@@ -160,6 +160,11 @@ async def run_page(run_id: str) -> None:
         # known once the URL's run_id resolves to a session (T7).
         ui.page_title(theme.window_title(session.target))
 
+        # X1: highlight the run's root in the sidebar tree from mount —
+        # `reload_tree()` only ever replaces the `nodes` prop, never
+        # `selected`, so this survives every subsequent tree poll.
+        shell.tree.select(str(session.target))
+
         # Journal toolbar affordance (U6) — placed above starter_column so
         # it's usable before a run even starts (TUI parity: `j` works from
         # mount). Count refreshes below whenever fs_revision changes. Reads
@@ -177,6 +182,15 @@ async def run_page(run_id: str) -> None:
             .props("flat dense")
             .mark("btn-open-journal")
         )
+
+        # X1: the target directory stays visible in the main content area
+        # for the whole run, not just before it starts — plain label, not
+        # clickable (X5's reveal-in-explorer helper is a different item;
+        # wiring this to it would make X1 depend on a not-yet-built piece
+        # for a nicety).
+        ui.label(str(session.target)).classes("text-caption ellipsis").mark(
+            "run-target-path"
+        ).tooltip(str(session.target))
 
         starter_column = ui.column().classes("w-full")
         main_column = ui.column().classes("w-full")

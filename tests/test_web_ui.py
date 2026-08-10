@@ -118,6 +118,7 @@ def _fast_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
     run before user.open()."""
     monkeypatch.setattr(web_session, "REFRESH_INTERVAL", 0.02)
     monkeypatch.setattr(web_session, "TREE_POLL_INTERVAL", 0.02)
+    monkeypatch.setattr(web_session, "CORPUS_POLL_INTERVAL", 0.02)
 
 
 @pytest.fixture(autouse=True)
@@ -612,6 +613,65 @@ async def test_approval_dialog_every_op_gets_exactly_one_checkbox_regardless_of_
 
     user.find(marker="op-op1").click()  # uncheck the tree-node op
     user.find(marker="op-op2").click()  # uncheck the "Other operations" op
+    user.find(marker="approve-btn").click()
+
+    result = await pending.future
+    assert result.approved is True
+    assert set(result.removed_op_ids) == {"op1", "op2"}
+
+
+async def test_approval_dialog_shows_checkbox_hint_captions(user: User, tmp_path: Path) -> None:
+    """X6: a visible caption (not just a tooltip, unreliable in the headless
+    harness) explains what unchecking a box does."""
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.new_pending(
+        "approval",
+        {
+            "plan_id": "plan-1",
+            "plan_data": _plan_data(
+                ops=[
+                    {"op_id": "op1", "op_type": "move", "src": "/in/a.txt", "dst": "/sorted"},
+                    {"op_id": "op2", "op_type": "create_dir", "src": "/sorted", "dst": ""},
+                ]
+            ),
+        },
+    )
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="after-checkbox-hint")
+
+
+async def test_approval_dialog_chained_ops_share_one_checkbox(user: User, tmp_path: Path) -> None:
+    """X4/X6: a rename immediately followed by a move of the same file is
+    one chained tree line with one checkbox, marked under every op_id in
+    the chain — unchecking it excludes the whole chain, per the user's
+    confirmed decision, never a partial chain."""
+    session = web_session.create(tmp_path)
+    session.started = True
+    pending = session.new_pending(
+        "approval",
+        {
+            "plan_id": "plan-1",
+            "plan_data": _plan_data(
+                ops=[
+                    {"op_id": "op1", "op_type": "rename", "src": "/t/a.txt", "dst": "b.txt"},
+                    {"op_id": "op2", "op_type": "move", "src": "/t/a.txt", "dst": "/t/sorted"},
+                ]
+            ),
+        },
+    )
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="op-op1")
+    await user.should_see(marker="op-op2")
+
+    # Both markers must resolve to the SAME checkbox element (X4's chain).
+    [cb_by_op1] = user.find(marker="op-op1").elements
+    [cb_by_op2] = user.find(marker="op-op2").elements
+    assert cb_by_op1.id == cb_by_op2.id
+
+    user.find(marker="op-op1").click()  # unchecking the shared checkbox once
     user.find(marker="approve-btn").click()
 
     result = await pending.future

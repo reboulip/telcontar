@@ -5,6 +5,7 @@ logic (plain pytest, no NiceGUI) and host/web/corpus_view.py's rendering
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -94,6 +95,37 @@ class TestGetDocument:
 
         assert doc is not None
         assert doc["title"] == "Report One"
+
+
+class TestRegistryMtime:
+    def test_returns_none_when_registry_missing(self, tmp_path: Path) -> None:
+        assert corpus.registry_mtime(tmp_path) is None
+
+    def test_returns_mtime_and_size_when_present(self, tmp_path: Path) -> None:
+        registry_path = tmp_path / ".organizer" / "registry.json"
+        registry = Registry()
+        registry.upsert(_make_record("aaa", "Report One"))
+        save(registry, registry_path)
+
+        result = corpus.registry_mtime(tmp_path)
+
+        assert result is not None
+        mtime, size = result
+        assert mtime > 0
+        assert size > 0
+
+    def test_changes_when_registry_content_changes(self, tmp_path: Path) -> None:
+        registry_path = tmp_path / ".organizer" / "registry.json"
+        registry = Registry()
+        registry.upsert(_make_record("aaa", "Report One"))
+        save(registry, registry_path)
+        first = corpus.registry_mtime(tmp_path)
+
+        registry.upsert(_make_record("bbb", "Report Two"))
+        save(registry, registry_path)
+        second = corpus.registry_mtime(tmp_path)
+
+        assert first != second
 
 
 # ── host/web/corpus_view.py ──────────────────────────────────────────────────
@@ -248,3 +280,115 @@ async def test_browse_corpus_button_visible_only_once_run_is_done(
 
     session.done = True
     await user.should_see(marker="btn-browse-corpus")
+
+
+# ── X10: corpus browser polling ──────────────────────────────────────────────
+
+
+def _table_titles(user: User) -> list[str]:
+    [table] = user.find(marker="corpus-table").elements
+    return [row["title"] for row in table.rows]
+
+
+async def test_corpus_browser_empty_state_fills_in_after_poll(user: User, tmp_path: Path) -> None:
+    """X10: the empty-state label must not be an early return — a poll must
+    still be able to fill the table in once analysis produces a record."""
+    session = web_session.create(tmp_path)
+
+    await user.open(f"/corpus/{session.run_id}")
+    await user.should_see(marker="corpus-empty")
+
+    _seed_registry(tmp_path, _make_record("aaa", "Alpha Report"))
+
+    for _ in range(20):
+        if "Alpha Report" in _table_titles(user):
+            break
+        await asyncio.sleep(0.05)
+    else:
+        raise AssertionError("corpus table was not filled in by the poll")
+    await user.should_not_see(marker="corpus-empty")
+
+
+async def test_corpus_browser_manual_refresh_button_reflects_a_rename(
+    user: User, tmp_path: Path
+) -> None:
+    """X10: the manual refresh button calls _reload() directly — no need to
+    wait for the periodic poll timer at all."""
+    _seed_registry(tmp_path, _make_record("aaa", "Alpha Report"))
+    session = web_session.create(tmp_path)
+
+    await user.open(f"/corpus/{session.run_id}")
+    await user.should_see(marker="btn-corpus-refresh")
+    assert _table_titles(user) == ["Alpha Report"]
+
+    registry = Registry()
+    registry.upsert(_make_record("aaa", "Alpha Report Renamed"))
+    save(registry, tmp_path / ".organizer" / "registry.json")
+    user.find(marker="btn-corpus-refresh").click()
+    await asyncio.sleep(0.1)
+
+    assert _table_titles(user) == ["Alpha Report Renamed"]
+
+
+async def test_corpus_browser_search_filter_persists_across_refresh(
+    user: User, tmp_path: Path
+) -> None:
+    _seed_registry(
+        tmp_path,
+        _make_record("aaa", "Alpha Report"),
+        _make_record("bbb", "Beta Report"),
+    )
+    session = web_session.create(tmp_path)
+
+    await user.open(f"/corpus/{session.run_id}")
+    await user.should_see(marker="corpus-search")
+    user.find(marker="corpus-search").type("Alpha")
+    assert _table_titles(user) == ["Alpha Report"]
+
+    user.find(marker="btn-corpus-refresh").click()
+    await asyncio.sleep(0.1)
+
+    assert _table_titles(user) == ["Alpha Report"]
+
+
+async def test_corpus_detail_pane_shows_relative_location(user: User, tmp_path: Path) -> None:
+    _seed_registry(
+        tmp_path,
+        _make_record("aaa", "Alpha Report", path=str(tmp_path / "sorted" / "Alpha Report.pdf")),
+    )
+    session = web_session.create(tmp_path)
+
+    await user.open(f"/corpus/{session.run_id}")
+    await user.should_see(marker="corpus-table")
+    [table] = user.find(marker="corpus-table").elements
+    [row] = [r for r in table.rows if r["title"] == "Alpha Report"]
+    user.find(marker="corpus-table").trigger("rowClick", [{}, row, 0])
+
+    await user.should_see(marker="corpus-detail-location")
+    [location] = user.find(marker="corpus-detail-location").elements
+    assert location.text == f"Location: {Path('sorted') / 'Alpha Report.pdf'}"
+
+
+async def test_corpus_detail_pane_clears_when_selected_doc_vanishes_on_refresh(
+    user: User, tmp_path: Path
+) -> None:
+    """X10: if the selected document is gone from the registry after a
+    reload (e.g. archived/quarantined elsewhere), the detail pane must
+    collapse back to the placeholder, never show stale content."""
+    _seed_registry(tmp_path, _make_record("aaa", "Alpha Report"))
+    session = web_session.create(tmp_path)
+
+    await user.open(f"/corpus/{session.run_id}")
+    await user.should_see(marker="corpus-table")
+    [table] = user.find(marker="corpus-table").elements
+    [row] = [r for r in table.rows if r["title"] == "Alpha Report"]
+    user.find(marker="corpus-table").trigger("rowClick", [{}, row, 0])
+    await user.should_see(marker="corpus-detail-content")
+
+    save(Registry(), tmp_path / ".organizer" / "registry.json")  # now empty
+    user.find(marker="btn-corpus-refresh").click()
+
+    # `.find()`/`should_not_see` can never observe an element becoming
+    # invisible (both filter to visible elements only) — assert the
+    # positive, functional outcome instead: the placeholder comes back.
+    await user.should_see(marker="corpus-detail-placeholder")

@@ -16,12 +16,14 @@ V11's prompt inspection already follow for untrusted content).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 
 from nicegui import run, ui
 from nicegui.events import GenericEventArguments
 
 from host.web import corpus
+from host.web import session as web_session
 from host.web.session import RunSession
 
 _SUMMARY_PREVIEW_CHARS = 120
@@ -70,27 +72,54 @@ def _to_row(record: dict) -> dict:
 @dataclass
 class _CorpusViewState:
     """Mutable state for one build_corpus_view() call, held outside any
-    widget so a later data reload (X10) can restore it — e.g. re-show the
-    detail pane for whatever document was selected before the reload."""
+    widget. ``selected_checksum``/``current_filter`` let a later data reload
+    (X10) restore what the user was looking at instead of resetting it;
+    ``records``/``records_by_checksum``/``all_rows`` are the reloadable data
+    itself (lifted out of local variables so `_reload` can replace them);
+    ``reloading``/``last_mtime`` back the same re-entrancy-guard and
+    skip-unchanged disciplines `Shell.reload_tree` already established."""
 
     selected_checksum: str | None = None
+    current_filter: str = ""
+    reloading: bool = False
+    last_mtime: tuple[float, int] | None = None
+    records: list[dict] = field(default_factory=list)
+    records_by_checksum: dict[str, dict] = field(default_factory=dict)
+    all_rows: list[dict] = field(default_factory=list)
 
 
 async def build_corpus_view(session: RunSession) -> None:
-    records = await run.io_bound(corpus.list_documents, session.target)
-    records_by_checksum = {rec["checksum"]: rec for rec in records}
+    # `run.io_bound` returns None (not the callback's result) when the call
+    # is cancelled or the app is stopping — `or []` treats that the same as
+    # a genuinely empty registry, matching this file's existing
+    # directory_overview-style call sites elsewhere in host/web/main.py.
+    records = await run.io_bound(corpus.list_documents, session.target) or []
+    last_mtime = await run.io_bound(corpus.registry_mtime, session.target)
+    state = _CorpusViewState(
+        records=records,
+        records_by_checksum={rec["checksum"]: rec for rec in records},
+        all_rows=[_to_row(rec) for rec in records],
+        last_mtime=last_mtime,
+    )
 
-    ui.label("Corpus browser").classes("text-h5")
+    with ui.row().classes("w-full items-center justify-between"):
+        ui.label("Corpus browser").classes("text-h5")
+        ui.button(icon="refresh", on_click=lambda: _reload()).props("flat dense round").mark(
+            "btn-corpus-refresh"
+        ).tooltip("Refresh corpus")
 
-    if not records:
+    # X10: built unconditionally (not an early return) so a later poll can
+    # fill the table in once analysis produces records — only this label's
+    # visibility toggles on empty/non-empty.
+    empty_label = (
         ui.label(
             "No analyzed documents yet — run Organize first, or check back once "
             "analysis has produced at least one record."
-        ).classes("text-caption").mark("corpus-empty")
-        return
-
-    all_rows = [_to_row(rec) for rec in records]
-    state = _CorpusViewState()
+        )
+        .classes("text-caption")
+        .mark("corpus-empty")
+    )
+    empty_label.visible = not records
 
     search_input = (
         ui.input("Search title, type, or summary…").classes("w-full").mark("corpus-search")
@@ -101,7 +130,7 @@ async def build_corpus_view(session: RunSession) -> None:
             table = (
                 ui.table(
                     columns=_COLUMNS,
-                    rows=all_rows,
+                    rows=state.all_rows,
                     row_key="checksum",
                     pagination=10,
                 )
@@ -120,6 +149,9 @@ async def build_corpus_view(session: RunSession) -> None:
             with detail_content:
                 detail_title = ui.label().classes("text-h6").mark("corpus-detail-title")
                 detail_meta = ui.label().classes("text-caption").mark("corpus-detail-meta")
+                detail_location = (
+                    ui.label().classes("text-caption text-grey").mark("corpus-detail-location")
+                )
                 ui.separator()
                 ui.label("Summary").classes("text-subtitle2")
                 detail_summary = (
@@ -133,8 +165,14 @@ async def build_corpus_view(session: RunSession) -> None:
                 detail_entities = ui.column().classes("w-full gap-0").mark("corpus-detail-entities")
 
     def _show_detail(checksum: str) -> None:
-        record = records_by_checksum.get(checksum)
+        record = state.records_by_checksum.get(checksum)
         if record is None:
+            # X10: the previously-selected document vanished from the
+            # registry across a reload (e.g. quarantined) — collapse back
+            # to the placeholder rather than show stale content.
+            state.selected_checksum = None
+            detail_content.visible = False
+            detail_placeholder.visible = True
             return
         detail_placeholder.visible = False
         detail_content.visible = True
@@ -145,6 +183,14 @@ async def build_corpus_view(session: RunSession) -> None:
             record.get("status") or "active",
         ]
         detail_meta.set_text(" · ".join(str(bit) for bit in meta_bits))
+        path_str = record.get("path") or ""
+        location = path_str
+        if path_str:
+            try:
+                location = str(Path(path_str).relative_to(session.target))
+            except (ValueError, OSError):
+                location = path_str
+        detail_location.set_text(f"Location: {location}" if location else "")
         detail_summary.set_text(record.get("summary") or "(no summary recorded)")
         detail_provenance.set_text(record.get("provenance") or "(no provenance recorded)")
         detail_entities.clear()
@@ -177,17 +223,54 @@ async def build_corpus_view(session: RunSession) -> None:
     table.on("rowClick", _on_row_click)
 
     def _apply_filter(value: str) -> None:
+        state.current_filter = value
         needle = value.strip().lower()
-        if not needle:
-            table.rows = all_rows
-            return
-        matches = {
-            rec["checksum"]
-            for rec in records
-            if needle in (rec.get("title") or "").lower()
-            or needle in (rec.get("type") or "").lower()
-            or needle in (rec.get("summary") or "").lower()
-        }
-        table.rows = [row for row in all_rows if row["checksum"] in matches]
+        rows = (
+            state.all_rows
+            if not needle
+            else [
+                row
+                for row in state.all_rows
+                if row["checksum"]
+                in {
+                    rec["checksum"]
+                    for rec in state.records
+                    if needle in (rec.get("title") or "").lower()
+                    or needle in (rec.get("type") or "").lower()
+                    or needle in (rec.get("summary") or "").lower()
+                }
+            ]
+        )
+        if rows != table.rows:
+            table.rows = rows
 
     search_input.on_value_change(lambda e: _apply_filter(e.value or ""))
+
+    async def _reload() -> None:
+        # Re-entrancy guard + skip-when-unchanged: the same two disciplines
+        # Shell.reload_tree already established (host/web/shell.py) — a
+        # ui.table.rows replacement re-renders and resets pagination/sort,
+        # so "does not disturb the user" means not touching it at all when
+        # nothing changed, not just being fast about it.
+        if state.reloading:
+            return
+        state.reloading = True
+        try:
+            mtime = await run.io_bound(corpus.registry_mtime, session.target)
+            if mtime is not None and mtime == state.last_mtime:
+                return
+            state.last_mtime = mtime
+            records = await run.io_bound(corpus.list_documents, session.target)
+            if records is None:
+                return
+            state.records = records
+            state.records_by_checksum = {rec["checksum"]: rec for rec in records}
+            state.all_rows = [_to_row(rec) for rec in records]
+            empty_label.visible = not records
+            _apply_filter(state.current_filter)
+            if state.selected_checksum is not None:
+                _show_detail(state.selected_checksum)
+        finally:
+            state.reloading = False
+
+    ui.timer(web_session.CORPUS_POLL_INTERVAL, _reload)

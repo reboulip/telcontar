@@ -39,3 +39,15 @@ def get_document(target: Path, checksum: str) -> dict | None:
         return rec.to_dict() if rec is not None else None
     except Exception:
         return None
+
+
+def registry_mtime(target: Path) -> tuple[float, int] | None:
+    """(mtime, size) of ``target``'s registry.json, or None if missing/
+    unreadable — same defensive contract as `list_documents`. A cheap
+    pre-check (X10) so a poll can skip re-parsing the whole registry on
+    every tick when nothing has actually changed since the last one."""
+    try:
+        st = resolve_registry_path(target).stat()
+        return (st.st_mtime, st.st_size)
+    except OSError:
+        return None

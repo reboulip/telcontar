@@ -50,8 +50,11 @@ def _preserve_dunder_main() -> Iterator[None]:
 def _fast_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
     """Shrink the render-poll interval so should_see()'s ~0.3s retry budget
     doesn't race the real 0.5s cadence (web_session.REFRESH_INTERVAL exists
-    specifically so tests can shrink it)."""
+    specifically so tests can shrink it). Also shrinks the corpus browser's
+    poll (X10) for the same reason — both are read once at mount time (a
+    ui.timer's interval argument), so this must run before user.open()."""
     monkeypatch.setattr(web_session, "REFRESH_INTERVAL", 0.02)
+    monkeypatch.setattr(web_session, "CORPUS_POLL_INTERVAL", 0.02)
 
 
 @pytest.fixture(autouse=True)

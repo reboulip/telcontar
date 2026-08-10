@@ -107,6 +107,9 @@ def build_approval_dialog(session: RunSession, pending: PendingRequest) -> ui.di
                             )
                 with ui.column().classes("flex-1 max-h-96 overflow-auto gap-0"):
                     ui.label("After").classes("text-subtitle2")
+                    ui.label("Unchecking a box excludes that change from execution.").classes(
+                        "text-caption text-grey"
+                    ).mark("after-checkbox-hint")
                     with ui.column().classes("gap-0").mark("after-tree"):
                         for line in after_lines:
                             with (
@@ -114,21 +117,39 @@ def build_approval_dialog(session: RunSession, pending: PendingRequest) -> ui.di
                                 .classes("items-center gap-1 no-wrap")
                                 .style(f"margin-left: {line.depth * 16}px")
                             ):
-                                if line.op_id:
-                                    checkboxes[line.op_id] = ui.checkbox(value=True).mark(
-                                        f"op-{line.op_id}"
+                                if line.op_ids:
+                                    # X4: a chained file (e.g. rename+move)
+                                    # carries every op_id in the chain — one
+                                    # checkbox, marked under each op_id, so
+                                    # unchecking it excludes the whole chain
+                                    # together rather than leaving the file
+                                    # half-applied (user-confirmed X6 decision).
+                                    cb = ui.checkbox(value=True).mark(
+                                        *(f"op-{oid}" for oid in line.op_ids)
                                     )
+                                    cb.tooltip(
+                                        "Uncheck to skip this change"
+                                        if len(line.op_ids) == 1
+                                        else "Uncheck to skip all of this file's chained changes"
+                                    )
+                                    for oid in line.op_ids:
+                                        checkboxes[oid] = cb
                                 ui.label(line.label).classes("whitespace-pre font-mono text-xs")
 
         if other_ops:
             ui.separator()
             ui.label("Other operations").classes("text-subtitle2")
+            ui.label("Unchecking a box excludes that change from execution.").classes(
+                "text-caption text-grey"
+            ).mark("after-checkbox-hint")
             with ui.column().classes("max-h-48 overflow-auto w-full"):
                 for op in other_ops:
                     op_id = op.get("op_id", "")
-                    checkboxes[op_id] = ui.checkbox(
-                        fmt_op(op, session.target, markup=False), value=True
-                    ).mark(f"op-{op_id}")
+                    checkboxes[op_id] = (
+                        ui.checkbox(fmt_op(op, session.target, markup=False), value=True)
+                        .mark(f"op-{op_id}")
+                        .tooltip("Uncheck to skip this change")
+                    )
 
         if not ops:
             ui.label("No operations in this plan.").classes("text-grey")

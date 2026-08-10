@@ -317,6 +317,18 @@ REFRESH_INTERVAL: float = 0.5
 TREE_POLL_INTERVAL: float = 5.0
 
 
+# ── Corpus browser poll interval (X10 test-seam) ────────────────────────────
+#
+# Read by build_corpus_view's ui.timer at mount time instead of a hardcoded
+# literal — same test-seam reasoning as REFRESH_INTERVAL/TREE_POLL_INTERVAL
+# above. As coarse as the tree poll: reflecting execute_plan's renames/moves
+# is a nice-to-have, not something that needs sub-second latency, and the
+# registry_mtime pre-check (host/web/corpus.py) already skips the real parse
+# on most ticks.
+
+CORPUS_POLL_INTERVAL: float = 5.0
+
+
 # ── Sidebar width (T4) ───────────────────────────────────────────────────────
 #
 # One in-memory preference for the process's lifetime rather than a field on
