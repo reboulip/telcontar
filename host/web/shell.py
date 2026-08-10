@@ -52,9 +52,11 @@ from pathlib import Path
 from nicegui import run, ui
 from nicegui.events import GenericEventArguments, ValueChangeEventArguments
 
+from host.paths import find_organizer_root
 from host.web import session as web_session
 from host.web import theme
 from host.web import tree as web_tree
+from host.web.session import RunSession
 
 # Wired once per page build via a `window.__tcSidebarResizeWired` guard —
 # NOT a `dataset` flag on the handle element, because `run_javascript` can be
@@ -194,9 +196,17 @@ def _apply_theme() -> None:
     """Hook point for T7/T8's host/web/theme.py — empty until then."""
 
 
+_NAV_TABS = ("conversation", "corpus", "query", "settings")
+
+
 @contextmanager
 def app_shell(
-    *, target: Path | None = None, on_select: Callable[[Path], None] | None = None
+    *,
+    target: Path | None = None,
+    on_select: Callable[[Path], None] | None = None,
+    session: RunSession | None = None,
+    active: str | None = None,
+    nav: bool = True,
 ) -> Iterator[Shell]:
     """Mount the persistent shell for one page build.
 
@@ -204,11 +214,65 @@ def app_shell(
     `/run/{run_id}`, or ``None`` on the picker/error routes, where it falls
     back to the user's home directory. ``on_select`` is called with the
     selected path whenever the user clicks a tree node.
+
+    X11: ``session`` is the *organize*-mode `RunSession` driving the current
+    route (``/run/{run_id}`` and ``/corpus/{run_id}`` pass their own; a query
+    session is deliberately never passed here — see the module docstring's
+    nav section). It both enables the Conversation/Corpus tabs and — via
+    ``web_session.set_active`` — becomes the fallback the *next* mount uses
+    when it has no session of its own in scope (e.g. `/settings`), so those
+    tabs still point at the run in progress instead of just being disabled.
+    ``active`` names which of `_NAV_TABS` is the current route, if any.
+    ``nav=False`` hides the header entirely — only `/setup` uses this, since
+    the first-run wizard has nowhere valid to navigate to yet.
     """
     _apply_theme()
 
+    if session is not None:
+        web_session.set_active(session.run_id)
+    effective_session = session or web_session.get_active()
+
     root = target or Path.home()
     width = web_session.get_sidebar_width()
+
+    if nav:
+        with ui.header().classes("items-center justify-between q-px-md"):
+            ui.label("telcontar").classes("text-h6 tc-display")
+            with ui.tabs(value=active).props("dense") as tabs:
+                conversation_tab = ui.tab("conversation", label="Conversation").mark(
+                    "nav-conversation"
+                )
+                corpus_tab = ui.tab("corpus", label="Corpus").mark("nav-corpus")
+                query_tab = ui.tab("query", label="Query").mark("nav-query")
+                ui.tab("settings", label="Settings").mark("nav-settings")
+
+            if effective_session is None:
+                conversation_tab.disable()
+                corpus_tab.disable()
+            effective_target = target or (
+                effective_session.target if effective_session is not None else None
+            )
+            if effective_target is None or find_organizer_root(effective_target) is None:
+                query_tab.disable()
+
+            def _on_nav_change(e: ValueChangeEventArguments) -> None:
+                # Constructing ui.tabs(value=active) above must not itself
+                # trigger a navigation — only a genuine user click should.
+                if e.value == active:
+                    return
+                if e.value == "conversation" and effective_session is not None:
+                    ui.navigate.to(f"/run/{effective_session.run_id}")
+                elif e.value == "corpus" and effective_session is not None:
+                    ui.navigate.to(f"/corpus/{effective_session.run_id}")
+                elif e.value == "query" and effective_target is not None:
+                    query_session = web_session.find_by_target(
+                        effective_target, mode="query"
+                    ) or web_session.create(effective_target, mode="query")
+                    ui.navigate.to(f"/query/{query_session.run_id}")
+                elif e.value == "settings":
+                    ui.navigate.to("/settings")
+
+            tabs.on_value_change(_on_nav_change)
     with ui.left_drawer().classes("tc-sidebar").props(f"width={width}") as drawer:
         ui.element("div").classes("tc-sidebar-resize").style(
             "position:absolute; top:0; right:0; width:6px; height:100%; "

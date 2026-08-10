@@ -45,7 +45,7 @@ on open work.
 - [ ] X8 · Guard the quarantine dir name against agent-proposed taxonomy folder names (case/locale-insensitive) in `server/guards.py`, and steer the taxonomy prompt away from quarantine-adjacent naming. [#48]
 - [ ] X9 · Add a document preview pane to the organize/run screen, reusing the corpus browser's (V5) detail-pane approach. [#49]
 - [ ] X10 · Add periodic polling (or a manual refresh) to the corpus browser so it reflects `execute_plan` renames/moves, matching the run page and sidebar tree's existing poll pattern. [#50]
-- [ ] X11 · Add persistent shell navigation (tabs: Conversation | Corpus | Query | Settings) so users can move freely between views. [#51]
+- [x] X11 · Add persistent shell navigation (tabs: Conversation | Corpus | Query | Settings) so users can move freely between views. [#51]
 - [ ] X12 · In the corpus browser, trigger the document detail pane from a title/row click instead of the selection checkbox; remove the checkbox. [#52]
 - [ ] X13 · Design and wire in an SVG telcontar logo (White Tree of Gondor + branching roots) matching the gold/silver theme and elvish display face (Phase 19 T8), in the browser tab/header. [#54]
 - [ ] X14 · Split `docs/developer/modules.md` and `docs/developer/architecture.md` (~880 lines each) into smaller per-area pages and rebuild the `mkdocs.yml` nav — doc-keeper cost scales with page size and both files are touched by nearly every wave. [deferred]

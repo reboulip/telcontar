@@ -131,13 +131,13 @@ async def index_page() -> None:
 
 @ui.page("/setup")
 async def setup_page() -> None:
-    with app_shell():
+    with app_shell(nav=False):
         await build_setup_wizard(on_finish=lambda: ui.navigate.to("/"))
 
 
 @ui.page("/settings")
 async def settings_page() -> None:
-    with app_shell():
+    with app_shell(active="settings"):
         await build_settings_view(on_done=lambda: ui.navigate.back())
 
 
@@ -145,7 +145,11 @@ async def settings_page() -> None:
 async def run_page(run_id: str) -> None:
     session = web_session.get(run_id)
 
-    with app_shell(target=session.target if session is not None else None) as shell:
+    with app_shell(
+        target=session.target if session is not None else None,
+        session=session,
+        active="conversation",
+    ) as shell:
         if session is None:
             ui.label(
                 "Run not found — it may have finished and been cleared, or the link is wrong."
@@ -225,8 +229,13 @@ async def run_page(run_id: str) -> None:
                 ui.button("Send", on_click=_send)
 
             # TUI parity: OrganizerScreen's "g" binding, gated on _done.
+            # X11: reuse an existing query session for this target rather
+            # than minting a fresh one (and its own MCP subprocess) on every
+            # click — same reuse the nav shell's Query tab uses.
             def _query_corpus() -> None:
-                query_session = web_session.create(session.target, mode="query")
+                query_session = web_session.find_by_target(
+                    session.target, mode="query"
+                ) or web_session.create(session.target, mode="query")
                 ui.navigate.to(f"/query/{query_session.run_id}")
 
             query_button = (
@@ -367,7 +376,7 @@ async def run_page(run_id: str) -> None:
 async def query_page(run_id: str) -> None:
     session = web_session.get(run_id)
 
-    with app_shell(target=session.target if session is not None else None) as shell:
+    with app_shell(target=session.target if session is not None else None, active="query") as shell:
         if session is None:
             ui.label(
                 "Run not found — it may have finished and been cleared, or the link is wrong."
@@ -386,7 +395,11 @@ async def query_page(run_id: str) -> None:
 async def corpus_page(run_id: str) -> None:
     session = web_session.get(run_id)
 
-    with app_shell(target=session.target if session is not None else None):
+    with app_shell(
+        target=session.target if session is not None else None,
+        session=session,
+        active="corpus",
+    ):
         if session is None:
             ui.label(
                 "Run not found — it may have finished and been cleared, or the link is wrong."

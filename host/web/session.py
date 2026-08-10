@@ -212,6 +212,8 @@ def create(target: Path, *, mode: Literal["organize", "query"] = "organize") -> 
     run_id = secrets.token_urlsafe(16)
     session = RunSession(run_id=run_id, target=target, mode=mode)
     _SESSIONS[run_id] = session
+    if mode == "organize":
+        set_active(run_id)
     return session
 
 
@@ -225,6 +227,41 @@ def close(run_id: str) -> None:
 
 def all_sessions() -> list[RunSession]:
     return list(_SESSIONS.values())
+
+
+def find_by_target(target: Path, mode: Literal["organize", "query"] = "query") -> RunSession | None:
+    """Find an existing session for ``target`` in the given ``mode`` (X11) —
+    lets the nav shell's Query tab and the "Query this corpus" button reuse
+    one query session per target instead of minting a new one (and its own
+    MCP subprocess) on every click."""
+    resolved = target.resolve()
+    for session in _SESSIONS.values():
+        if session.mode == mode and session.target.resolve() == resolved:
+            return session
+    return None
+
+
+# ── Active run (X11 nav shell test-seam) ────────────────────────────────────
+#
+# Which organize-mode RunSession the persistent nav shell's Conversation/
+# Corpus tabs point at. Set on every organize-mode `create()` and on every
+# `/run` or `/corpus` page mount (host/web/main.py) — read by `app_shell()`
+# as the fallback when a route has no session of its own in scope (e.g.
+# `/settings`), so those tabs still navigate back to the run in progress
+# instead of just being disabled.
+
+_active_run_id: str | None = None
+
+
+def set_active(run_id: str) -> None:
+    global _active_run_id
+    _active_run_id = run_id
+
+
+def get_active() -> RunSession | None:
+    if _active_run_id is None:
+        return None
+    return _SESSIONS.get(_active_run_id)
 
 
 # ── Default target (T7 / U9 test-seam) ───────────────────────────────────────
