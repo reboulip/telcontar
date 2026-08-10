@@ -1,6 +1,7 @@
-"""Tool-call narration vocabulary, shared by the Textual and web UIs.
+"""Tool-call narration vocabulary, used by the web UI.
 
-Extracted from host/app.py (Phase 18 S1) with zero behaviour change.
+Extracted from host/app.py (Phase 18 S1), which held the now-retired Textual
+TUI, with zero behaviour change.
 """
 
 from __future__ import annotations

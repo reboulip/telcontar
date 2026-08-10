@@ -154,8 +154,8 @@ project/
 ├── ROADMAP.md
 ├── pyproject.toml          # uv-managed
 ├── .env                    # config (gitignored)
-├── host/                   # MCP host: agent.py (agent loop), app.py (Textual TUI),
-│                           # web/ (web UI), main.py (thin CLI entry point)
+├── host/                   # MCP host: agent.py (agent loop), web/ (web UI),
+│                           # main.py (thin CLI entry point)
 ├── server/                 # MCP server: tools.py (tool implementations) + guards.py,
 │                           # journal.py, extract.py, profile.py, registry.py, archive.py,
 │                           # events.py, graph.py, sinks.py, egress.py, plan.py, main.py
@@ -168,7 +168,7 @@ project/
 ```
 
 > **Note:** this tree is a rough map, not authoritative — it has drifted before (e.g. it once
-> omitted `host/app.py` and `host/web/` entirely). `docs/developer/architecture.md` and
+> omitted `host/web/` entirely). `docs/developer/architecture.md` and
 > `docs/developer/modules.md` are the maintained, current source of truth; see the pointer
 > under "## Architecture" above.
 

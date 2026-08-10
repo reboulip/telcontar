@@ -1,9 +1,9 @@
-"""UI-agnostic formatters, shared by the Textual and web UIs.
+"""UI-agnostic formatters, used by the web UI.
 
-Extracted from host/app.py (Phase 18 S1) with zero behaviour change. Rich/
-Textual markup stays embedded in the formatters' output by default (``markup``
-keyword defaults to ``True``, preserving exact TUI behaviour); the web UI
-passes ``markup=False`` to get plain text instead.
+Extracted from host/app.py (Phase 18 S1), which held the now-retired Textual
+TUI, with zero behaviour change. Rich markup stays embedded in the formatters'
+output by default (``markup`` keyword defaults to ``True``, a holdover from
+that TUI); the web UI passes ``markup=False`` to get plain text instead.
 """
 
 from __future__ import annotations
@@ -111,8 +111,8 @@ def fmt_op(op: dict, target: Path | None = None, *, markup: bool = True) -> str:
         case "update_file":
             # Subtle, not alarming (M4's discreet-styling convention): the
             # overwrite flag matters to the approver but isn't a red-banner risk.
-            # Parens, not square brackets — Textual's markup parser treats
-            # `[...]` as a style tag and silently drops unrecognized names.
+            # Parens, not square brackets — Rich/Textual's markup parser
+            # treats `[...]` as a style tag and silently drops unrecognized names.
             has_overwrite = (op.get("params") or {}).get("overwrite")
             if has_overwrite:
                 overwrite_flag = "  [dim](overwrite)[/dim]" if markup else "  (overwrite)"

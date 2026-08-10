@@ -1,7 +1,7 @@
-"""UI-agnostic path/discovery helpers, shared by the Textual and web UIs.
+"""UI-agnostic path/discovery helpers, used by the web UI.
 
 Extracted from host/app.py (Phase 18 S1) with zero behaviour change — these
-functions have no Textual dependency and were only reachable through a Pilot
+functions had no Textual dependency and were only reachable through a Pilot
 test before this move.
 """
 

@@ -7,7 +7,7 @@ invoked bare, so these tests exercise them non-blockingly:
   metadata and asserted to load to a callable (proves packaging is correct);
 - invoking each ``main()`` with ``--help`` / ``--version`` exits cleanly (0) in a
   subprocess with a timeout, proving the entry point starts and its argument
-  handling works without launching the TUI or the blocking stdio server.
+  handling works without launching the blocking stdio server.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-# Cold subprocess imports (textual, mcp, markitdown) can be slow; be generous.
+# Cold subprocess imports (mcp, markitdown) can be slow; be generous.
 _TIMEOUT = 120
 
 _EXPECTED = {"telcontar": "host.main:main", "telcontar-server": "server.main:main"}
@@ -74,7 +74,7 @@ class TestEntryPointsRunAndExitClean:
         assert prog in r.stdout
 
 
-# ── U10: bare launch routes to the NiceGUI web UI, --tui is the escape hatch ──
+# ── U10: bare launch routes to the NiceGUI web UI ──────────────────────────────
 
 
 class TestWebFlagRouting:
@@ -114,24 +114,6 @@ class TestWebFlagRouting:
         main()
 
         assert calls == [Path("/tmp/some-dir")]
-
-    def test_tui_flag_launches_the_tui_not_the_web_ui(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        from host.main import main
-
-        web_calls = []
-        tui_calls = []
-        monkeypatch.setattr(
-            "host.web.main.run_web", lambda target=None, **kwargs: web_calls.append(target)
-        )
-        monkeypatch.setattr("host.app.OrganizerApp.run", lambda self: tui_calls.append(True))
-        monkeypatch.setattr(sys, "argv", ["telcontar", "--tui"])
-
-        main()
-
-        assert tui_calls == [True]
-        assert web_calls == []
 
 
 # ── V1: --browser is the escape hatch from the native-window default ──────────

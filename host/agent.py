@@ -1,7 +1,7 @@
 """Async agent loop: MCP client + LLM tool-calling loop.
 
-Fully decoupled from Textual — callers pass async callbacks for events and
-approval so this module can be exercised in plain pytest tests.
+Fully decoupled from any particular UI — callers pass async callbacks for
+events and approval so this module can be exercised in plain pytest tests.
 """
 
 from __future__ import annotations
@@ -1219,7 +1219,7 @@ async def _analyze_new_documents(
     Emits a `"progress"` event at the START of each batch (before its LLM
     call) carrying the in-progress batch's filenames (basenames only) under
     `"current"` (V8a), and another `"progress"` event after each successfully
-    recorded batch (Q2) so the TUI progress bar advances incrementally instead
+    recorded batch (Q2) so the UI's progress bar advances incrementally instead
     of jumping at the end — the completion event's `"current"` is always `[]`
     so a finished batch doesn't leave a stale filename visible to whatever UI
     renders this later.

@@ -1,8 +1,8 @@
 """Shared, NiceGUI-free configuration-flow logic for the setup wizard (U2)
-and settings view (U3) — the TUI's SetupScreen/ConfigScreen equivalent, kept
-framework-agnostic so both the Textual TUI and the NiceGUI web UI read from
-one source of truth for profile options, service-specific hints, credential
-validation, and the plaintext-keyring-fallback warning copy.
+and settings view (U3) — originally the now-retired Textual TUI's
+SetupScreen/ConfigScreen equivalent, kept framework-agnostic so the NiceGUI
+web UI reads from one source of truth for profile options, service-specific
+hints, credential validation, and the plaintext-keyring-fallback warning copy.
 """
 
 from __future__ import annotations

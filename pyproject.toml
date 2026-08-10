@@ -18,7 +18,6 @@ dependencies = [
     "pydantic>=2.13",        # config + data validation
     "pydantic-settings>=2.14",  # Pydantic Settings integration
     "rich>=15.0",            # pretty CLI output / plan diffs
-    "textual>=0.80",         # full TUI framework (host app)
     "plyer>=2.1",            # cross-platform desktop notifications
     "keyring>=24.0",         # OS credential store for the API key
     "extract-msg>=0.55.0",
@@ -35,7 +34,6 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.15",
     "mypy>=2.1",
-    "textual-dev>=1.8.0",
 ]
 test = [
     "pytest>=8.0",
