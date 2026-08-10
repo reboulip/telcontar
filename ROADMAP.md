@@ -27,7 +27,7 @@ on open work.
 
 - [x] W1 · Delete `host/app.py` and `tests/test_app_ui.py`; remove the `--tui` flag.
 - [x] W2 · Drop `textual` and `textual-dev` from `pyproject.toml` (note: `textual-dev` transitively provides `textual-serve`, the terminal-in-a-browser fallback — removing it drops that too).
-- [ ] W3 · Docs sweep — 11 files currently mention Textual/TUI (42 occurrences), heaviest in `docs/user-guide/how-it-works.md`, `docs/getting-started/quickstart.md`, `docs/index.md`; prune the `test-select` scope-table rows for the deleted files.
+- [x] W3 · Docs sweep — 11 files currently mention Textual/TUI (42 occurrences), heaviest in `docs/user-guide/how-it-works.md`, `docs/getting-started/quickstart.md`, `docs/index.md`; prune the `test-select` scope-table rows for the deleted files.
 
 ---
 

@@ -57,9 +57,7 @@ reproduce locally if possible, and fix it for real. A test that's flaky
 under CI load specifically (passes locally, fails intermittently in CI) is a
 real bug in the test — chasing it with a bigger `sleep()` treats the symptom;
 find what invariant the fixed delay was actually standing in for and wait on
-that instead (see `tests/test_app_ui.py`'s own "gotchas" docstring for a
-worked example — a Textual `Button` click-debounce that silently swallows a
-too-fast re-click). Commit and push the fix directly (same PR/branch — do not
+that instead. Commit and push the fix directly (same PR/branch — do not
 open a new PR) and re-arm the CI wait.
 
 Do not proceed to Step 4 until every check is green.

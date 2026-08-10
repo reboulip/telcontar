@@ -36,10 +36,10 @@ git status --porcelain
 
 ## Step 2 — Cheap-suite escape hatch
 
-The full suite is currently **~91s for 868 tests** (measured 2026-08-08; was 63s/691 tests
-two days earlier — it grows as the roadmap adds tests, so re-measure occasionally rather
-than trusting this number indefinitely). **If the full suite would run in well under
-~120s, skip scope selection entirely and just run it:**
+The full suite is currently **~93s for 889 tests** (measured 2026-08-10, after Phase 22
+deleted the ~55-test Textual TUI suite — it grows as the roadmap adds tests, so re-measure
+occasionally rather than trusting this number indefinitely). **If the full suite would run
+in well under ~120s, skip scope selection entirely and just run it:**
 
 ```bash
 uv run --group test pytest -q
