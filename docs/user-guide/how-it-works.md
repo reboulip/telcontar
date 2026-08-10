@@ -6,7 +6,7 @@ Telcontar is built around two processes that communicate over the **Model Contex
 User
   │
   ▼
-MCP Host  (Textual TUI + agent loop)
+MCP Host  (NiceGUI web UI + agent loop)
   │  stdio transport
   ▼
 MCP Server  (guarded file tools, plan engine, registry)
@@ -21,9 +21,9 @@ Local filesystem  +  .organizer/ state
 
 When you run `telcontar`, the app checks whether a minimum configuration (AI service URL + API key) is present:
 
-- **First run** — the **setup wizard** (`SetupScreen`) appears automatically. It guides you through choosing an endpoint (Azure OpenAI or another OpenAI-compatible service), entering the service URL and API key, and selecting a document profile. The key is stored in the OS credential store (Windows Credential Manager / macOS Keychain); other settings go to `~/.telcontar/config.env`.
-- **Returning user** — the **startup screen** (`StartupScreen`) appears directly. It offers three actions: **Organize**, **Query**, and **⚙ Settings**. Press `s` or click **⚙ Settings** at any time to open the settings panel (`ConfigScreen`), where you can change the URL, API key, profile, and approval mode.
-- **From anywhere** — press `Ctrl+S` at any point in the app, on any screen, to open the same settings panel — not just from the startup screen. It even works while a modal (plan approval, cost estimate) is on screen; the settings panel stacks on top and pops back cleanly. It's a no-op if settings are already open, or during the first-run setup wizard (to avoid persisting a half-configured state that skips the wizard's guided keyring/plaintext-fallback flow).
+- **First run** — the **setup wizard** (`/setup`) appears automatically. It guides you through choosing an endpoint (Azure OpenAI or another OpenAI-compatible service), entering the service URL and API key, and selecting a document profile. The key is stored in the OS credential store (Windows Credential Manager / macOS Keychain); other settings go to `~/.telcontar/config.env`.
+- **Returning user** — the startup page appears directly, with a directory tree in the sidebar and **Use selected directory** / **Query** actions.
+- **From anywhere** — **⚙ Settings** in the sidebar is reachable from every page, including mid-run, to change the URL, API key, profile, and approval mode.
 
 ---
 
@@ -114,31 +114,9 @@ At any point before or while building the plan, the agent **may** call `ask_user
 
 One trigger isn't discretionary: if the agent identifies a file as unreadable — present on disk but missing from the registry, with the corpus digest's error count corroborating an extraction failure — it must **not** quarantine it unilaterally. It calls `ask_user` first, naming the file(s) in one batched question, and only stages `propose_quarantine` on confirmation, with the reason "unreadable — user confirmed disposable"; declining or skipping leaves the file exactly where it is. This rule is scoped to the unreadable case specifically — duplicates and superseded documents stay a deterministic judgement the agent makes and quarantines directly, no ask needed.
 
-This is a **host-side** capability, not an MCP server tool: `ask_user` is a synthetic tool the host injects into the model's tool list, and it is never forwarded to the MCP server. There is no once-per-run cap: the agent can check in as many times as it genuinely needs to. How you're asked differs by UI:
+This is a **host-side** capability, not an MCP server tool: `ask_user` is a synthetic tool the host injects into the model's tool list, and it is never forwarded to the MCP server. There is no once-per-run cap: the agent can check in as many times as it genuinely needs to.
 
-- **Textual TUI** — no dialog of its own: the question(s) render as a normal `telcontar` turn in the chat transcript, and the agent's tool call blocks on the exact same live-chat message queue described in [Chatting during and after a run](#chatting-during-and-after-a-run-live-chat-resumable-chat) below, so your next chat message is read as the reply.
-
-  ```
-  Agent hits genuine ambiguity, at any point before/while building the plan
-         │
-         ▼
-  Agent calls ask_user(questions)   (1-5 items; each may carry 2-5 options)
-         │
-         ▼
-  Question(s) rendered as a "telcontar" turn in the transcript
-         │
-         ▼
-  Agent's tool call blocks on the live-chat message queue
-         │
-     You type a reply in the chat box
-         │
-         ▼
-  Reply echoed as a "you" turn, returned to the agent as free text;
-  the agent continues — and may call ask_user again later if a new
-  ambiguity comes up
-  ```
-
-- **Web UI** — a modal dialog, matching the plan-approval and cost-estimate dialogs: each question gets its own radio-button choice (when the agent supplied options) plus one free-text "Additional comment" field, and **Submit** / **Skip — you decide** buttons. Submitting composes the reply from your selections — `"<question> → <selected option>"` per answered question, plus your comment if you added one — and sends it back to the agent; **Skip** tells the agent to proceed with its own best judgement instead.
+You're asked via a modal dialog, matching the plan-approval and cost-estimate dialogs: each question gets its own radio-button choice (when the agent supplied options) plus one free-text "Additional comment" field, and **Submit** / **Skip — you decide** buttons. Submitting composes the reply from your selections — `"<question> → <selected option>"` per answered question, plus your comment if you added one — and sends it back to the agent; **Skip** tells the agent to proceed with its own best judgement instead.
 
 The agent is instructed not to stall or use this to offload every decision — only for real, close judgement calls; otherwise it proceeds with its own best judgement.
 
@@ -153,7 +131,7 @@ Agent proposes plan
        │
        ▼
 Host writes the full ops list to .organizer/plan_ops.json,
-fetches plan details  →  shows ApprovalModal
+fetches plan details  →  shows the plan-approval dialog
        │
    User reviews
    ├── Approve (with optional per-op deselection)
@@ -201,19 +179,19 @@ Because the registry is keyed by checksum, moving or renaming a file does **not*
 
 ### Undoing an operation
 
-Undo is a **manual, user-only action** — the agent has no tool to trigger it. In the Textual TUI's Organizer screen, press **j** to open the operations-journal viewer, then **u** to revert the most recent journaled operation. In the web UI, click the **Journal** button in the toolbar (visible from the moment a run's page loads, before you even start organizing) to open the same viewer, then **Undo last operation** followed by a confirmation step. Both call `server.tools.undo_last` directly, bypassing the agent entirely. In the web UI, the Undo button is disabled — replaced with an explanatory label — while a tool call is actively in progress, since undo rewrites the whole journal file while the agent's own tool call may still be appending to it.
+Undo is a **manual, user-only action** — the agent has no tool to trigger it. Click the **Journal** button in the toolbar (visible from the moment a run's page loads, before you even start organizing) to open the operations-journal viewer, then **Undo last operation** followed by a confirmation step. This calls `server.tools.undo_last` directly, bypassing the agent entirely. The Undo button is disabled — replaced with an explanatory label — while a tool call is actively in progress, since undo rewrites the whole journal file while the agent's own tool call may still be appending to it.
 
 ---
 
 ## Chatting during and after a run (live chat + resumable chat)
 
-The chat box (`#organize-input`) at the bottom of the Organizer screen is enabled from the moment you press **Start organizing** — you don't have to wait for the agent to stop before you can type. The same MCP server subprocess stays open for as long as the screen does, whether the agent is actively working or fully idle.
+The chat box at the bottom of the run page is enabled from the moment you press **Start organizing** — you don't have to wait for the agent to stop before you can type. The same MCP server subprocess stays open for as long as the page does, whether the agent is actively working or fully idle.
 
 ### Live mid-run chat
 
 While the agent is still working — even during the pre-pass/analysis stage, before the first chat turn — a message you type is queued and woven into the run at the next opportunity, without waiting for it to finish: right before the run's first LLM call, after every turn's batch of tool calls completes, and — most importantly — at the moment the agent would otherwise stop (its response carries no more tool calls). At that last point, if a message is waiting, the agent takes it as a new instruction and keeps going instead of ending the run. This lets you course-correct an in-progress run, e.g. "actually, group by year instead", without waiting for it to finish first.
 
-In the **Textual TUI**, this is the same queue [the `ask_user` chat checkpoint](#the-ask_user-chat-checkpoint) blocks on when the agent has a question for you — there, an `ask_user` call is really just a special case of this mechanism, one where the agent is the one waiting on your next message. The **web UI**'s `ask_user` checkpoint uses its own modal dialog instead and never touches this queue.
+This queue is separate from [the `ask_user` chat checkpoint](#the-ask_user-chat-checkpoint) — `ask_user` uses its own modal dialog and never touches this queue.
 
 ```
 Run in progress (pre-pass / analysis / a turn's tool calls)
@@ -244,9 +222,9 @@ Run reaches a terminal state (done / error / max turns),
 nothing waiting in the queue
        │
        ▼
-"press g or keep chatting" cue shown once
+Status shows "Done"; Query this corpus / Browse corpus buttons appear
        │
-   You type a message
+   You type a message (chat box stays active)
        │
        ▼
 Message echoed as a "you" turn; the agent loop resumes on the SAME
@@ -258,12 +236,12 @@ plan gets a new approval) — the chat box stays enabled throughout,
 live for this continuation just like the initial run
 ```
 
-This is distinct from **query mode** (`g`): query mode opens a *separate* screen on a *separate* MCP session with a strictly read-only toolset — safe for "just asking" without risking a mutation. The chat box instead continues the mutating conversation in place. Query mode becomes available once a run reaches its first terminal state; the chat box is available for the whole run, live or stopped.
+This is distinct from **query mode**: query mode opens a *separate* page on a *separate* MCP session with a strictly read-only toolset — safe for "just asking" without risking a mutation. The chat box instead continues the mutating conversation in place. Query mode becomes available once a run reaches its first terminal state; the chat box is available for the whole run, live or stopped.
 
 A couple of things carry over differently on a continuation:
 
 - Each chat message gets its **own fresh turn budget**, not a share of the original run's. Since a continuation doesn't re-run the discovery/analysis stage, the adaptive turn-budget calculation (which scales with corpus size) resets to its floor of 50 turns — in practice not a limitation, since a follow-up message is normally a small, targeted ask rather than a fresh full-corpus analysis.
-- The desktop notification and the "press g / keep chatting" cue fire only once, on the *first* terminal state — not again after every subsequent chat turn.
+- The desktop notification fires only once, on the *first* terminal state — not again after every subsequent chat turn.
 - If a turn raises an unhandled error partway through a batch of tool calls, telcontar no longer crashes the conversation: any tool call left without a result is answered with a synthetic error so the history stays valid, and you can keep typing to try again.
 
 ---
@@ -274,12 +252,12 @@ After a corpus has been analyzed (its `.organizer/` memory exists), telcontar of
 
 ### How to start query mode
 
-- From the **startup screen**, press **Query**. The selected folder — or one of its parent folders — must contain a `.organizer/` from a previous Organize run; telcontar walks up from the folder you picked until it finds one, so choosing a subfolder of a previously-organized tree still resolves to that tree's memory. If none is found, an error asks you to run Organize first.
-- From the **Organizer screen**, press **g** once organizing completes.
+- From the startup page, click **Query**. The selected folder — or one of its parent folders — must contain a `.organizer/` from a previous Organize run; telcontar walks up from the folder you picked until it finds one, so choosing a subfolder of a previously-organized tree still resolves to that tree's memory. If none is found, an error asks you to run Organize first.
+- From the run page, click **Query this corpus** once organizing completes.
 
 ### What happens
 
-The host opens a `QueryScreen` — a chat-style TUI with a `RichLog` output area and an `Input` bar. A single MCP server subprocess stays open for the whole session, and conversation history is threaded across questions so the model retains context.
+The host opens the query page — the same chat-transcript layout as the Organize run page, with a question input and step-log strip in place of the steering-instructions starter pane. A single MCP server subprocess stays open for the whole session, and conversation history is threaded across questions so the model retains context.
 
 For each question:
 
@@ -299,13 +277,11 @@ For each question:
 
 The host exposes only the tools in `QUERY_ALLOWED_TOOLS` to the model — no plan, execution, write, `build_graph`, `create_event`, or archive tools are available. Even if the model were to name a mutating tool, the host blocks it before forwarding to the server (defense in depth). Query mode **cannot modify the corpus**.
 
-Press **Esc** to return to the previous screen.
-
 ---
 
 ## Browsing the corpus directly
 
-The web UI also has a **corpus browser** — a sortable, filterable table over every analyzed document, with no LLM call and no agent turn involved at all. It's reachable via the **Browse corpus** button beside **Query this corpus**, once a run finishes. There is no Textual TUI equivalent — inspecting a specific document there still means asking about it in query mode.
+The web UI also has a **corpus browser** — a sortable, filterable table over every analyzed document, with no LLM call and no agent turn involved at all. It's reachable via the **Browse corpus** button beside **Query this corpus**, once a run finishes.
 
 - **Search** filters the table as you type, matched against each document's full title, type, and summary text — not just the shortened preview shown in the table.
 - **Columns** — title, type, date, status, summary, entities — sort by clicking their header. The summary and entities columns show short previews (entities lists up to three names, then "+N" for the rest).
@@ -321,4 +297,4 @@ The MCP server enforces five non-negotiable rules in code:
 2. **No overwrite.** `check_no_overwrite` raises `FileExistsError` before any move or rename touches an existing destination.
 3. **Every destructive op is journaled.** `execute_plan` appends to the undo journal before returning success.
 4. **Hard-stop on repeated failures.** More than 3 failures in one `execute_plan` run triggers a hard stop and surfaces the failed ops to the user.
-5. **Every mutation goes through the plan flow.** There is no tool that writes, moves, renames, quarantines, or archives a file directly — the agent must always stage a `propose_*` op and apply it via `execute_plan`. Undo, correspondingly, is not something the agent can trigger at all: it's a manual action in the TUI (see [Persistence](#persistence) below).
+5. **Every mutation goes through the plan flow.** There is no tool that writes, moves, renames, quarantines, or archives a file directly — the agent must always stage a `propose_*` op and apply it via `execute_plan`. Undo, correspondingly, is not something the agent can trigger at all: it's a manual action in the web UI (see [Persistence](#persistence) below).

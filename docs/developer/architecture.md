@@ -13,14 +13,14 @@ User
 ┌─────────────────────────────────────────────────────┐
 │  MCP Host  (host/)                                  │
 │  ┌──────────────┐   ┌────────────────────────────┐  │
-│  │ Textual TUI  │   │  Agent loop (host/agent.py)│  │
-│  │ host/app.py  │←→│  - builds system prompt     │  │
-│  │              │   │  - tool-calling loop        │  │
-│  │ Startup/     │   │  - approval gate            │  │
-│  │ Organizer/   │   │  - query loop (read-only)  │  │
+│  │ Web UI       │   │  Agent loop (host/agent.py)│  │
+│  │ host/web/    │←→│  - builds system prompt     │  │
+│  │ (NiceGUI)    │   │  - tool-calling loop        │  │
+│  │ Landing/     │   │  - approval gate            │  │
+│  │ Organize/    │   │  - query loop (read-only)  │  │
 │  │ Query/       │   │  - MCP client (stdio)       │  │
-│  │ Approval     │   └────────────┬───────────────┘  │
-│  │ screens      │                │ stdio transport   │
+│  │ Settings     │   └────────────┬───────────────┘  │
+│  │ views        │                │ stdio transport   │
 │  └──────────────┘                ▼                   │
 └──────────────────────────────────┼──────────────────┘
                                    │ stdio transport
@@ -87,7 +87,7 @@ pending → approved → executing → done
                    → stopped
 ```
 
-The host can only call `execute_plan` on a plan in `approved` state. The `approved` transition requires an explicit `approve_plan` call, which the host gates on user approval in the TUI.
+The host can only call `execute_plan` on a plan in `approved` state. The `approved` transition requires an explicit `approve_plan` call, which the host gates on user approval in the web UI.
 
 ### No delete, ever
 
@@ -101,7 +101,7 @@ As of V10, every `propose_quarantine` call also carries a `reason` — a short, 
 
 As of the security-hardening pass that closed finding S1, there is no MCP tool that touches the filesystem directly. `move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`, `archive_document`, and `compress_quarantine` were removed as standalone tools; their functionality is reachable only by staging a `propose_create_file` / `propose_update_file` / `propose_create_dir` / `propose_archive_document` / `propose_compress_quarantine` op onto a plan and applying it via `execute_plan` — exactly the same path `propose_rename` / `propose_move` / `propose_quarantine` already used. `execute_plan`'s internal `_apply_op` dispatcher now handles all these op types directly, except `archive_document` and `compress_quarantine`, which are delegated to the pre-existing standalone functions of the same name (avoiding duplicated logic) and self-journal under their own `op_type` rather than the generic per-op entry.
 
-`undo_last` was removed from the MCP tool surface entirely — it is no longer callable by the agent under any circumstance. It survives only as a plain function in `server/tools.py`, invoked directly (bypassing MCP) by the TUI's `JournalScreen` when the user presses **u** — undo is now a deliberate, user-only action, never something the agent itself can trigger.
+`undo_last` was removed from the MCP tool surface entirely — it is no longer callable by the agent under any circumstance. It survives only as a plain function in `server/tools.py`, invoked directly (bypassing MCP) by the web UI's journal dialog (opened via the "Journal" toolbar button) when the user clicks "Undo last operation" — undo is now a deliberate, user-only action, never something the agent itself can trigger.
 
 ### Path confinement on every path-taking tool (M2)
 
@@ -208,11 +208,11 @@ Because it mutates the registry, it is *not* added to `QUERY_ALLOWED_TOOLS` (que
 
 `host/agent.py` tracks how many documents have been discovered versus analyzed over a run and emits a `"progress"` `AgentEvent` (text `"Analyzed {analyzed} / {total} documents"`, `data={"analyzed": int, "total": int}`, plus `"current": list[str]` on the analyzer's batch events as of V8a — see below) whenever those counts change. A `_ProgressTracker` dataclass accumulates two path sets, `discovered` and `analyzed` (`total` is their union, so a document recorded without ever surfacing via `walk_tree` still counts, and the total only grows monotonically).
 
-As of P6, both sets are populated **before the ORGANIZE turn loop starts**, from the pre-pass + analyzer results, rather than incrementally from live tool calls during the loop: `discovered` from every file `run_prepass` found (skipping telcontar's own output artifacts, dotfiles, OS junk, `.organizer`, and the configured quarantine directory — mirroring the `_SKIP` precedent in `server/tools.py`'s `write_index`), `analyzed` from `PrepassResult.known` plus whichever new documents the analyzer successfully recorded. As of Q2, `_analyze_new_documents` takes the `_ProgressTracker` directly via a required keyword-only `tracker` parameter and updates `analyzed` — emitting a fresh `"progress"` event right there — **once per analysis batch**, immediately after that batch's `record_document_batch` call returns, rather than accumulating silently across the whole analyzer loop and computing/emitting one snapshot at the end (the old post-loop tracking/emission block in `run_agent_loop`, and the `progress_after_prepass` snapshot variable it compared against, are both gone). So progress now fires once from `run_prepass` (the pre-analysis snapshot of `known`/`total-so-far`), plus once per `_ANALYZER_BATCH_SIZE`-sized batch of newly-recorded documents — giving the TUI's progress bar incremental movement through analysis instead of jumping straight from the pre-pass snapshot to ~100% at the end. Since the ORGANIZE-phase model's toolset structurally excludes `record_document`/`record_document_batch` (`ORGANIZE_DENIED_TOOLS`, see "ORGANIZE-only agent loop + corpus digest (P6)" below), the ORGANIZE turn loop itself still never drives progress incrementally on its own.
+As of P6, both sets are populated **before the ORGANIZE turn loop starts**, from the pre-pass + analyzer results, rather than incrementally from live tool calls during the loop: `discovered` from every file `run_prepass` found (skipping telcontar's own output artifacts, dotfiles, OS junk, `.organizer`, and the configured quarantine directory — mirroring the `_SKIP` precedent in `server/tools.py`'s `write_index`), `analyzed` from `PrepassResult.known` plus whichever new documents the analyzer successfully recorded. As of Q2, `_analyze_new_documents` takes the `_ProgressTracker` directly via a required keyword-only `tracker` parameter and updates `analyzed` — emitting a fresh `"progress"` event right there — **once per analysis batch**, immediately after that batch's `record_document_batch` call returns, rather than accumulating silently across the whole analyzer loop and computing/emitting one snapshot at the end (the old post-loop tracking/emission block in `run_agent_loop`, and the `progress_after_prepass` snapshot variable it compared against, are both gone). So progress now fires once from `run_prepass` (the pre-analysis snapshot of `known`/`total-so-far`), plus once per `_ANALYZER_BATCH_SIZE`-sized batch of newly-recorded documents — giving the progress bar incremental movement through analysis instead of jumping straight from the pre-pass snapshot to ~100% at the end. Since the ORGANIZE-phase model's toolset structurally excludes `record_document`/`record_document_batch` (`ORGANIZE_DENIED_TOOLS`, see "ORGANIZE-only agent loop + corpus digest (P6)" below), the ORGANIZE turn loop itself still never drives progress incrementally on its own.
 
-As of V8a, `data` also carries `"current": list[str]` — the basename(s) (never full paths, which would leak directory layout) of whichever document(s) the in-flight analyzer batch is currently processing. `_analyze_new_documents` now emits a `"progress"` event at the *start* of each batch, before its LLM call, with `current` populated from that batch's filenames, in addition to the existing post-batch event (Q2), whose `current` is always `[]` so a just-finished batch doesn't leave a stale filename on screen. The pre-pass's own one-shot snapshot event does not carry `current` at all — there is no "current" file during a deterministic walk, and `data.get("current")` throughout consumers is expected to handle its absence. `host/format.py`'s new `fmt_progress(progress: dict) -> str` renders any of these shapes defensively into a short status string (e.g. `"3/47 — report.pdf +2"`), though it remains unused by either UI — both format `current` themselves inline rather than calling it. As of V8b, the web UI is the first to actually surface `current` to the user: `host/web/main.py`'s `_refresh()` reads `session.progress["current"]` directly and renders it in a dedicated `progress-current` label (first filename plus a `" +N"` suffix). The Textual TUI still doesn't render `current` at all.
+As of V8a, `data` also carries `"current": list[str]` — the basename(s) (never full paths, which would leak directory layout) of whichever document(s) the in-flight analyzer batch is currently processing. `_analyze_new_documents` now emits a `"progress"` event at the *start* of each batch, before its LLM call, with `current` populated from that batch's filenames, in addition to the existing post-batch event (Q2), whose `current` is always `[]` so a just-finished batch doesn't leave a stale filename on screen. The pre-pass's own one-shot snapshot event does not carry `current` at all — there is no "current" file during a deterministic walk, and `data.get("current")` throughout consumers is expected to handle its absence. `host/format.py`'s new `fmt_progress(progress: dict) -> str` renders any of these shapes defensively into a short status string (e.g. `"3/47 — report.pdf +2"`), though it remains unused by the web UI, which formats `current` itself inline rather than calling it. As of V8b, the web UI surfaces `current` to the user: `host/web/main.py`'s `_refresh()` reads `session.progress["current"]` directly and renders it in a dedicated `progress-current` label (first filename plus a `" +N"` suffix).
 
-This is purely additive to the event stream — no MCP tool signature or tool list changed. As of O6, `host/app.py`'s `OrganizerScreen` consumes the `"progress"` event: a `#progress-row` (a numeric `#progress-label` plus a Textual `ProgressBar`) sits between `#ops-journal` and the status bar, hidden until the first progress event carrying a known `total > 0` arrives (an unknown/`None` total is never shown, since that would trigger Textual's indeterminate spinning-bar mode), and hidden again — without snapping to 100% first — once the run reaches `"done"` or `"error"`.
+This is purely additive to the event stream — no MCP tool signature or tool list changed. As of O6, the (now-deleted) Textual TUI's `OrganizerScreen` was the first consumer of the `"progress"` event; the web UI gained its own progress row later (V14, see below).
 
 ### Adaptive turn budget (O4)
 
@@ -286,12 +286,6 @@ At any point before or while building the plan, the agent may check in with the 
 
 The system prompt's two former paragraphs ("Optional clarification checkpoint" / "Optional multiple-option checkpoint") are now one "Optional chat checkpoint" paragraph referencing `ask_user`, and the `"question"`/`"options"` `EventKind`s are merged into one `"ask_user"` kind.
 
-### Settings from anywhere (P9)
-
-`OrganizerApp` (the root Textual `App`) carries an app-level `ctrl+s` binding, `action_open_settings`, that pushes `ConfigScreen` from *any* screen — not just via `StartupScreen`'s pre-existing local `s` binding/button. It is a no-op if `ConfigScreen` is already the current screen (no double-push), and a no-op if `SetupScreen` is current, since `ConfigScreen` could persist a half-configured state that bypasses `SetupScreen`'s guided keyring/plaintext-fallback flow.
-
-The binding must be declared as `Binding("ctrl+s", "open_settings", "Settings", priority=True)` (from `textual.binding`), not a plain tuple: Textual's non-priority key-binding resolution chain deliberately stops at the first `ModalScreen` it encounters, so that a modal fully captures input and a background shortcut (e.g. `q`/quit) can't fire accidentally while a confirmation dialog is open. Without `priority=True`, `ctrl+s` would silently not fire while `ApprovalModal` or `CostEstimateModal` is on screen. With it, the binding reaches `action_open_settings` regardless of what modal is stacked on top, and `ConfigScreen` stacks over it and pops back cleanly. Any future app-level binding meant to work while a modal is open needs the same `priority=True`.
-
 ### Output-sink abstraction
 
 `server/sinks.py` defines a `Sink` protocol (`name`, `external`, `write_summary`, `write_folder_readme`) and a `resolve_sinks(names, allow_external)` factory. The MCP handlers for `write_summary` and `write_folder_readme` call `resolve_sinks` at request time, passing the profile's `[sinks] default` list and the `egress_allow_external_sinks` setting, then fan the call out to each resolved sink.
@@ -347,9 +341,8 @@ Fixes an engine-level bug (Break 2) where the ORGANIZE-phase agent could finish
 building a plan — `create_plan`, the `propose_*` ops, `review_plan`,
 `set_plan_rationale`, `set_plan_folder_notes` — and then end its turn without
 ever calling `execute_plan`, so the plan was never presented for approval and
-the run went terminal silently. Lives entirely in `host/agent.py`, so it
-applies identically to the Textual TUI and the NiceGUI web UI; no UI-layer
-change was needed.
+the run went terminal silently. Lives entirely in `host/agent.py`; no
+UI-layer change was needed.
 
 Three parts:
 
@@ -385,25 +378,22 @@ Three parts:
 
 ### NiceGUI web UI foundations (S4-S6, extended by T2/T3/T5/T6/T7/T8, U1/U2/U3/U4/U6/U7/U10, V1/V5/V7/V11/V12/V13a/V13c/V15)
 
-`host/web/` is a package — the first piece of a planned Textual→NiceGUI web UI
-migration (ROADMAP Phase 18). As of S6, `telcontar --web` (`host/main.py`) launched
-it in place of the Textual TUI, which stayed the default with no flags; as of U10,
-that flag is gone and the relationship is inverted — bare `telcontar` (no flags)
-now launches the web UI by default, and `--tui` is the escape hatch back to the
-Textual TUI. The web UI's `from host.web.main import run_web` import is lazy —
-scoped to the default (no-`--tui`) branch — mirroring the existing lazy `from
-host.app import OrganizerApp` import on the `--tui` branch, so neither UI's
-dependency (`nicegui` vs. `textual`) is paid for unless that UI is actually
-launched. A `--target PATH` flag, ignored when `--tui` is passed, skips the
-landing page's directory picker and starts a run for that directory immediately.
-As of V1, the web UI also opens in a native `pywebview` window by default
-(Windows only — falls back to the system browser, with a stderr warning, if
-`pywebview` isn't installed or the platform isn't Windows) rather than a browser
-tab; a `--browser` flag, likewise ignored when `--tui` is passed, forces the
-browser instead — see `run_web()` below. It exists alongside `host/app.py`'s Textual TUI, not in place of it — both
-`textual` and `nicegui` are main dependencies in `pyproject.toml`. Feature parity
-with the TUI is close but not complete, even though the web UI is now the default
-entry point as of U10. As of U1, the landing page itself offers direct
+`host/web/` is a package — originally the first piece of a planned Textual→NiceGUI
+web UI migration (ROADMAP Phase 18). As of S6, `telcontar --web` (`host/main.py`)
+launched it in place of the then-default Textual TUI; as of U10, the relationship
+inverted — bare `telcontar` (no flags) launched the web UI by default, with `--tui`
+as an escape hatch back to the Textual TUI. As of Phase 22 (W1), the Textual TUI
+(`host/app.py`) and the `--tui` flag were deleted outright — telcontar now always
+launches the web UI, with no flag to opt out. The web UI's
+`from host.web.main import run_web` import in `host/main.py` is still deferred
+until after the startup `print()`, so the user sees "Loading telcontar…" before
+paying the cost of its heavier imports (`nicegui`, `mcp`, `openai`, …). A
+`--target PATH` flag skips the landing page's directory picker and starts a run
+for that directory immediately. As of V1, the web UI also opens in a native
+`pywebview` window by default (Windows only — falls back to the system browser,
+with a stderr warning, if `pywebview` isn't installed or the platform isn't
+Windows) rather than a browser tab; a `--browser` flag forces the browser instead
+— see `run_web()` below. As of U1, the landing page itself offers direct
 Organize/Query/Settings entry points, at parity with the TUI's `StartupScreen`:
 Settings was already reachable via U3's persistent sidebar button and the
 folder picker via Phase 19's T3 sidebar tree, so U1's remaining work was adding
@@ -545,9 +535,9 @@ below.
   `quarantine`/`archive_document` with no destination — fall back to an "Other
   operations" list below the tree, each still with its own checkbox: every op in
   the plan gets exactly one checkbox somewhere, preserving the `removed_op_ids`
-  safety contract. `render_target_layout` itself is unchanged — the TUI's
-  `ApprovalModal` still calls it directly for its own flat-text preview; only this
-  dialog's use of it was replaced. The card is now sized via an inline style
+  safety contract. `render_target_layout` itself was unchanged by V3 — the
+  now-deleted Textual `ApprovalModal` used to call it directly for its own
+  flat-text preview; only this dialog's use of it was replaced. The card is now sized via an inline style
   (`width: 90vw; max-width: 1400px`) rather than a Tailwind `max-w-3xl` class —
   Quasar's own dialog CSS outranks a same-specificity Tailwind swap. Then the
   `ops_json_path` label, a free-text refine input, and Approve/Refine/Reject
@@ -782,7 +772,9 @@ below.
   `plaintext_warning(button_label, recovery_action="go back")` — the shared
   warning-message builder that fixes U8's copy bug (the TUI wizard used to say
   "Press \"Finish\" again" while its button read "Save & continue →"). `host/app.py`
-  now imports from here instead of owning this logic itself.
+  used to import from here instead of owning this logic itself; as of Phase 22
+  (W1), `host/app.py` is deleted and the web UI's wizard/settings view are the
+  module's only consumers.
 - `host/web/forms.py` (U2, extended by U3) — shared NiceGUI form fragments:
   `credential_inputs(...)` renders the URL/API-key/model input triple (each
   `.mark()`ed for NiceGUI's headless `user` test fixture); as of U3 it takes a
@@ -1080,8 +1072,8 @@ can't resolve a pending request it was never actually shown.
    known + newly-analyzed documents — per-doc title/type/path (capped at 200
    listed) plus totals and any error count — and seeds it into the first
    ORGANIZE-phase user message in place of blank "please organize" instructions;
-   the OrganizerScreen starter pane's optional steering instructions, if the user
-   typed any, are appended to this same seed message
+   the organize view's starter-pane steering-instructions input, if the user
+   typed any, is appended to this same seed message
 5b. Host drains any chat message queued via message_queue since the run started
     (P7) — catches anything typed during steps 2-4 above — and appends each as
     a user turn before the first LLM call. The #organize-input chat box is
@@ -1125,8 +1117,9 @@ can't resolve a pending request it was never actually shown.
     staged, never applied directly
 15. On execute_plan call:
     a. Host fetches plan details (get_plan) and writes the full ops list to
-       .organizer/plan_ops.json (path shown in the modal)
-    b. Host shows ApprovalModal to user
+       .organizer/plan_ops.json (path shown in the dialog)
+    b. Host shows the approval dialog to the user (`build_approval_dialog`,
+       `host/web/dialogs.py`)
     c. User approves (optionally deselecting ops), refines with free text, or rejects
     d. On approve: host calls approve_plan → execute_plan; server applies ops,
        journals each, reconciles registry
@@ -1148,10 +1141,11 @@ can't resolve a pending request it was never actually shown.
 ## Data flow (one query session)
 
 ```
-1. User opens QueryScreen (from StartupScreen "Query" button, or "g" in OrganizerScreen)
-   — or, in the web UI (U7), the `/query/{run_id}` page (from the "Query this
-   corpus" button on the organize view, `host/web/query_view.py`'s `QueryBridge`
-   driving the same `run_query_loop` below)
+1. User opens the `/query/{run_id}` page — either directly (landing page's
+   "Query" button, resolved to the nearest `.organizer` ancestor via
+   `host.paths.find_organizer_root`) or from the "Query this corpus" button on
+   a finished organize run — which mounts `host/web/query_view.py`'s
+   `QueryBridge`, driving the same `run_query_loop` below
 2. Host launches server subprocess (stdio) — same MCP server, same registry
 3. Host calls session.list_tools() → filters to QUERY_ALLOWED_TOOLS (read-only subset)
 4. Host sends query-mode system prompt (built from active profile) + user's first question
@@ -1162,9 +1156,11 @@ can't resolve a pending request it was never actually shown.
 8. Host feeds result back to the model as a tool message — same untrusted-content
    delimiter wrapping as organize mode applies here too (M10)
 9. Steps 5-8 repeat until the model produces a final text answer
-10. Answer is displayed in the RichLog; conversation history is threaded across questions
-    within the same session (the MCP session stays open for the whole chat)
-11. User types another question (goto step 4) or presses Esc to return to the previous screen
+10. Answer is appended to `session.transcript` and rendered as a `ui.chat_message`
+    in the query view's conversation column; conversation history is threaded
+    across questions within the same session (the MCP session stays open for
+    the whole chat)
+11. User types another question (goto step 4) or navigates away via the sidebar
 ```
 
 The query loop uses the fixed `_MAX_TURNS = 50` ceiling; the organize loop (`run_agent_loop`) instead scales its ceiling with corpus size via `_analysis_turn_budget` (see "Adaptive turn budget (O4)" above) — `_MAX_TURNS` remains its floor. `QUERY_ALLOWED_TOOLS` is a

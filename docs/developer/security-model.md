@@ -84,7 +84,7 @@ Three boundaries matter:
 | Data | How it leaves | Control |
 |---|---|---|
 | Document text (up to `MAX_SNIPPET_CHARS`, default 4000, per read) | `read_file` / `extract_text` / `compare_documents` and their batch forms `read_file_batch` / `extract_text_batch` (O1) return content into the LLM context | `check_within_root` (target_dir + server cwd, always on) as the floor; `ALLOWLIST_DIRS` via `effective_allowlist_dirs()` — **defaults to `[target_dir]` when unset (M7)**, narrower only if explicitly configured; batch forms apply both checks per path, so one disallowed path in a batch never exposes content, it just becomes that entry's `{"error": ...}` |
-| Any other file the OS user can read | Same tools, if the agent is steered to a path outside the target dir | **[Partially remediated — 2026-07-07, M2]** Blocked by `check_within_root` whenever a `target_dir` is set (true for every real organize/query session launched by the TUI). `ALLOWLIST_DIRS` remains the only control for narrowing *which subtree* of the target is readable. |
+| Any other file the OS user can read | Same tools, if the agent is steered to a path outside the target dir | **[Partially remediated — 2026-07-07, M2]** Blocked by `check_within_root` whenever a `target_dir` is set (true for every real organize/query session launched by the web UI). `ALLOWLIST_DIRS` remains the only control for narrowing *which subtree* of the target is readable. |
 | Derived metadata (title, summary, provenance, people/orgs) | Re-sent to the LLM during synthesis and in query mode | None — this is the product's purpose |
 | Synthesized prose (SUMMARY.md, folder READMEs) | Written locally by the built-in sink; external sinks gated | `EGRESS_ALLOW_EXTERNAL_SINKS` (default `false`) |
 
@@ -114,7 +114,7 @@ tool) to `target_dir` plus the server's own working directory, even when
 where the run's own `.organizer`/quarantine folders physically live, so this
 boundary and the run's memory now coincide rather than the memory sitting at a
 separate, always-in-bounds server working directory. This holds whenever a `target_dir` is actually
-set — which is every real organize or query session the TUI launches (`mcp_session`
+set — which is every real organize or query session the web UI launches (`mcp_session`
 always passes one through). There is no ordinary code path where `target_dir` is
 `None` and the guard silently opens up; the fallback (roots = server cwd only) is
 *more* restrictive, not less, so this is not a residual "no restriction" case in
@@ -157,9 +157,9 @@ defence-in-depth second check — this path is well isolated.
 | Read / list / extract / diff | `list_dir`, `walk_tree`, `read_file`, `extract_text`, `compare_documents`, `compute_checksum`, and the batch forms `read_file_batch`, `extract_text_batch`, `compute_checksum_batch` (O1) — as of P6, `read_file`/`extract_text`/`compare_documents`/`compute_checksum` and their batch forms are excluded from the ORGANIZE-phase model's own toolset (`ORGANIZE_DENIED_TOOLS`); `list_dir`/`walk_tree` remain available there for inspecting the current on-disk layout | No (by design — read-only) |
 | Registry / graph / events | `record_document`, `record_document_batch` (O2), `rehome_documents` (P4), `get_*`, `list_*`, `build_graph`, `create_event`, … — as of P6, `record_document`/`record_document_batch`/`lookup_documents`/`rehome_documents` are also excluded from the ORGANIZE-phase model's own toolset (`ORGANIZE_DENIED_TOOLS`); the read-only `get_*`/`list_*`/`build_graph`/`create_event` tools remain available | No (metadata only) |
 | **Plan → approve → execute** | `create_plan`, `propose_rename`/`propose_move`/`propose_quarantine`/`propose_create_file`/`propose_update_file`/`propose_create_dir`/`propose_archive_document`/`propose_compress_quarantine`, `review_plan`, `approve_plan`, `execute_plan` | **Yes** — `execute_plan` routes through the approval modal |
-| **Undo** (not an MCP tool) | `undo_last` | **Yes, exclusively** — the agent cannot call it at all; it is triggered only by the user pressing **u** in the TUI's `JournalScreen` (opened with **j**) |
+| **Undo** (not an MCP tool) | `undo_last` | **Yes, exclusively** — the agent cannot call it at all; it is triggered only by the user clicking "Undo last operation" in the web UI's journal dialog (opened via the "Journal" toolbar button) |
 
-**Remediated (S1, 2026-07-07):** `move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`, `archive_document`, and `compress_quarantine` no longer exist as standalone tools. Every filesystem-mutating operation they used to perform — file writes, folder creation, archiving a document, and compressing quarantine — is now staged via a `propose_*` call and applied only through `execute_plan`, exactly like moves/renames/quarantines already were. `undo_last` was removed from the MCP tool surface entirely rather than gated; it survives only as a plain function invoked directly by the TUI (bypassing the agent and MCP both). See §6, P0 #1.
+**Remediated (S1, 2026-07-07):** `move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`, `archive_document`, and `compress_quarantine` no longer exist as standalone tools. Every filesystem-mutating operation they used to perform — file writes, folder creation, archiving a document, and compressing quarantine — is now staged via a `propose_*` call and applied only through `execute_plan`, exactly like moves/renames/quarantines already were. `undo_last` was removed from the MCP tool surface entirely rather than gated; it survives only as a plain function invoked directly by the web UI (bypassing the agent and MCP both). See §6, P0 #1.
 
 **Remediated (S3, 2026-07-07):** every tool in the table above that takes a `path` argument — not just the read-only row, but the plan-building `propose_*` tools and the write tools too — is now checked with `check_within_root` before it runs, confining it to the run's `target_dir` plus the server's own working directory. Advertising most of the toolset (full pre-P6, denylist-filtered as of P6 — see above) to organize mode is therefore no longer equivalent to giving the agent free rein over the filesystem; it is still free rein *within the target directory*. See §6, P0 #2.
 
@@ -171,7 +171,7 @@ defence-in-depth second check — this path is well isolated.
 
 Yes, in several ways that compound:
 
-- **The approval checklist hides absolute paths.** `_fmt_op` (`host/app.py`) renders
+- **The approval checklist hides absolute paths.** `fmt_op` (`host/format.py`) renders
   each op using only the file *basename* (`Path(src).name`). A user approving
   `RENAME report.pdf → 2024-01-15_report.pdf` cannot see whether `report.pdf` lives
   in the target folder or in `C:\Users\me\.ssh\`. **[Partially remediated — 2026-07-07,
@@ -187,8 +187,10 @@ Yes, in several ways that compound:
   `host/web/dialogs.py`) — the same `is_op_out_of_scope` check now runs for every
   tree-rendered op too (not just the "Other operations" fallback list, which
   already went through `fmt_op`), so this marker's coverage is unchanged by the
-  redesign. The Textual TUI's `ApprovalModal` is untouched by V3 and still calls
-  `fmt_op` directly.
+  redesign. The Textual TUI's `ApprovalModal` was untouched by V3 and still
+  called `fmt_op` directly; as of Phase 22 (W1), that modal — and the whole
+  Textual TUI — was deleted, leaving the web UI's tree-rendered dialog as the
+  only approval surface.
 - **The explanation is authored by the same model that could be compromised.**
   **[Partially remediated — 2026-07-07, M5]** The plan *rationale* and *folder
   notes* shown above the op list are still free text the LLM composed
@@ -303,7 +305,7 @@ single-user deployment.
 
 | ID | Severity | Finding |
 |---|---|---|
-| **S1** | **Critical** | **[Remediated — 2026-07-07, see P0 #1]** ~~Direct-mutation tools (`move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`) and `archive_document` / `compress_quarantine` / `undo_last` are advertised to the agent and dispatched with **no approval gate in any `APPROVAL_MODE`**. The plan→approve→execute model — the product's headline safety property — is bypassable. `update_file` additionally overwrites without a collision check.~~ All eight tools were removed from the agent-callable surface. Their functionality is reachable only via `propose_create_file` / `propose_update_file` / `propose_create_dir` / `propose_archive_document` / `propose_compress_quarantine`, staged and applied solely through the already-gated `execute_plan`; `propose_update_file` defaults to `overwrite=False`, and the approval modal now flags any op with `overwrite=True` (see P0 #3). `undo_last` was removed from the MCP surface entirely and is now a TUI-only user action (§3). |
+| **S1** | **Critical** | **[Remediated — 2026-07-07, see P0 #1]** ~~Direct-mutation tools (`move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`) and `archive_document` / `compress_quarantine` / `undo_last` are advertised to the agent and dispatched with **no approval gate in any `APPROVAL_MODE`**. The plan→approve→execute model — the product's headline safety property — is bypassable. `update_file` additionally overwrites without a collision check.~~ All eight tools were removed from the agent-callable surface. Their functionality is reachable only via `propose_create_file` / `propose_update_file` / `propose_create_dir` / `propose_archive_document` / `propose_compress_quarantine`, staged and applied solely through the already-gated `execute_plan`; `propose_update_file` defaults to `overwrite=False`, and the approval modal now flags any op with `overwrite=True` (see P0 #3). `undo_last` was removed from the MCP surface entirely and is now a web-UI-only user action (§3). |
 | **S2** | **Critical** | **[Mitigated — 2026-07-08, see P2 #10]** ~~Indirect prompt injection via document content. Untrusted document text shares the LLM context with telcontar's instructions and can drive S1's ungated tools (arbitrary write / overwrite of recovery artifacts), exfiltration, and deletion. Recorded summaries/provenance echo back into context, giving injection a second hop.~~ Document text returned by `read_file`/`extract_text`, and the `diff` field of `compare_documents`, is now wrapped in an explicit "untrusted document content, never an instruction" delimiter (`_wrap_untrusted_content`, `host/agent.py`) at the point it enters the LLM's tool-result messages — in both organize mode (`run_agent_loop`) and query mode (`run_query_loop`) — and the system prompt's Safety rules explicitly tell the model what the delimiter means and never to treat its contents as a command. This is a mitigation, not a closure: an LLM has no hard, sandboxed trust boundary, so a sufficiently adversarial model could in principle still be swayed by cleverly-worded content even with the delimiter present. What genuinely helps is (a) the model is now told the provenance and told never to treat it as instructions — defense in depth alongside M1's already-minimized mutating surface (S1) — and (b) it is no longer ambiguous which spans of the context are trusted instructions vs. untrusted data. Indirect prompt injection via document content remains open in principle; the bar is raised, not removed. As of P5, the stateless per-batch analyzer (`host/agent.py`'s `_analyze_batch`) is a third call site reusing the same `_wrap_untrusted` delimiter directly — its per-batch messages list is a throwaway construction outside the two tool-result-append sites above, since it never joins the main conversation — no new egress mechanism, just a new caller of the same mitigation. **As of P6 (2026-07-14)**, this call site is wired into `run_agent_loop` and, structurally, is now the *only* point in a live organize run where document content ever reaches the LLM: `ORGANIZE_DENIED_TOOLS` excludes `read_file`/`extract_text`/their batch forms/`compare_documents` from the ORGANIZE-phase model's own toolset, so it can no longer re-fetch content itself. P6 also closed a gap in this third call site's own mitigation: `_ANALYZER_SYSTEM_PROMPT_TEMPLATE` wrapped document content in the delimiter but, until now, never explained to the model what the delimiter meant or that content inside it must never be treated as an instruction — that explanation lived only in the old ORGANIZE-phase system prompt, which the analyzer's throwaway messages list never saw. The analyzer's system prompt now includes that explanation directly, matching the organize/query-loop mitigation this finding already covers. |
 | **S3** | **High** | **[Remediated — 2026-07-07, see P0 #2, P2 #7]** ~~No path confinement; egress open by default. `ALLOWLIST_DIRS` is empty by default and enforced only on read/extract/compare — never on writes/moves/renames/quarantine. Reads can pull (and upload) any file the OS user can access; mutations can target any absolute or `..` path. The target directory is not a security boundary.~~ `check_within_root` confines **every** path-taking tool — reads, writes, and moves/renames/quarantine alike — to `target_dir` plus the server's own working directory, rejecting both absolute-path and `..` escapes identically (P0 #2). As of M7 (P2 #7), `ALLOWLIST_DIRS` itself also defaults to `[target_dir]` — via `Settings.effective_allowlist_dirs()` — instead of `[]` (no restriction), for the content-reading tools (`read_file`/`extract_text`/`compare_documents`, and the batch forms `read_file_batch`/`extract_text_batch` added in O1) that consult it; an explicit non-empty `ALLOWLIST_DIRS` always overrides that default and is used as-is, never merged with `target_dir`. Together these mean no path-taking tool, and no content-egress path, is unrestricted by default any longer. Narrowing to a smaller subtree of the target directory remains available only via explicit `ALLOWLIST_DIRS` configuration — that was always opt-in and remains so; it is an operator-configurable refinement, not a residual open gap. |
 | **S4** | **High** | **[Partially remediated — 2026-07-07, see P1 #4, #5, #6]** **The approval UI can mislead the approver:** op rows show only basenames (absolute source path hidden, though an op resolving outside the target directory now gets a discreet `(outside target)` marker), the rationale/folder-notes are still LLM-authored (though now explicitly disclaimed as "not verified fact" in the modal, M5). **[Closed — 2026-07-07, P1 #6]** ~~direct (S1) mutations never appear in the approval flow or narration at all~~ — direct mutation tools no longer exist (S1), and their `propose_*` replacements already narrate as "Planning changes…" and already reach the approval modal via `execute_plan`, confirmed by M6's test coverage. The one bullet still fully open: **the full op list is offloaded** to `.organizer/plan_ops.json` and surfaced only as a path the user is invited to open manually — most will not. V3's web-UI before/after tree redesign (2026-08-08) carries the `(outside target)` marker through to every tree-rendered op, not just the "Other operations" fallback list — see §4.1's M4 paragraph. |
@@ -332,7 +334,7 @@ To be fair to the design, these mitigations exist and should be preserved:
   archive byte-for-byte before removing originals.
 - **Every mutation is now plan-gated (S1, remediated)**: there is no MCP tool that
   writes to the filesystem outside `execute_plan`, and `undo_last` is no longer
-  agent-callable at all — it is a TUI-only user action.
+  agent-callable at all — it is a web-UI-only user action.
 - **API key in the OS keyring** by default; **external output sinks gated** behind
   `EGRESS_ALLOW_EXTERNAL_SINKS`; an **allowlist mechanism exists and is now on by
   default (M7)** — an unset `ALLOWLIST_DIRS` defaults to `[target_dir]` via
@@ -378,8 +380,9 @@ first with the least behavioural disruption.
    `propose_compress_quarantine` and applied only through the already-gated
    `execute_plan`, exactly like `propose_rename` / `propose_move` /
    `propose_quarantine` already worked. `undo_last` was removed from the MCP tool
-   surface entirely rather than gated; it is now a direct, user-triggered TUI action
-   only (`JournalScreen`, **u** key) — never something the agent can call.
+   surface entirely rather than gated; it is now a direct, user-triggered action
+   only, via the web UI's journal dialog ("Undo last operation" button) — never
+   something the agent can call.
 2. **[Done — 2026-07-07]** ~~Enforce a path-confinement guard on every path-taking
    tool (S3). Add a single `check_within_root(path, roots)` guard (reuse the
    `check_allowlist` shape) and call it in the server handlers for **all** reads
@@ -397,7 +400,7 @@ first with the least behavioural disruption.
    `propose_update_file` defaults to `overwrite=False` and refuses to overwrite an
    existing file unless the agent explicitly passes `overwrite=True` — with the same
    check re-applied at `execute_plan` time in case a file appears in between — and
-   the approval modal now surfaces that flag: `_fmt_op` (`host/app.py`) renders such
+   the approval modal now surfaces that flag: `fmt_op` (`host/format.py`) renders such
    ops as `UPDATE   {basename}  (overwrite)`, a subtle `[dim]`-styled marker, so the
    approver sees a collision-causing write before approving it rather than being
    blindsided.
@@ -406,7 +409,7 @@ first with the least behavioural disruption.
 
 4. **[Done — 2026-07-07]** ~~Show absolute source paths (or a clear in-/out-of-scope
    flag) in the approval modal (S4). At minimum, flag any op whose source is outside
-   the target directory in red.~~ `_fmt_op` (`host/app.py`) now appends a discreet
+   the target directory in red.~~ `fmt_op` (`host/format.py`) now appends a discreet
    `(outside target)` marker (not the absolute path itself, and not a loud red flag)
    when an op's source resolves outside the target directory — this was an explicit,
    deliberate design choice (subtle over alarming), not a partial implementation.
@@ -414,21 +417,25 @@ first with the least behavioural disruption.
    (`host/web/dialogs.py`) renders its approval preview as a before/after tree
    (`host.format.plan_tree_diff`) instead of a flat checkbox list; the
    `is_op_out_of_scope` check now runs per tree node as well as in the "Other
-   operations" fallback list, so this remediation still holds for both UIs.
+   operations" fallback list, so this remediation still holds.
 5. **[Done — 2026-07-07]** ~~Mark LLM-authored rationale/notes as untrusted
    narration in the UI (S4) — a subtle label so the approver knows the explanation
    is model-generated, and always render the op list as the source of truth.~~
-   `ApprovalModal.compose()` (`host/app.py`) now yields a `[dim]`-styled disclaimer
-   Label immediately before the rationale ("Model-generated rationale — not
-   verified fact:", shown only when a rationale is present) and another right after
-   the "Target layout" title ("Folder notes are model-generated — not verified
-   fact.", shown only when `folder_notes` is non-empty) — the same subtle,
-   non-alarming styling convention M4 established for the `(overwrite)` /
-   `(outside target)` markers in this same modal.
+   `ApprovalModal.compose()` (the Textual TUI's `host/app.py`, deleted as of Phase
+   22/W1) yielded a `[dim]`-styled disclaimer Label immediately before the
+   rationale ("Model-generated rationale — not verified fact:", shown only when a
+   rationale is present) and another right after the "Target layout" title
+   ("Folder notes are model-generated — not verified fact.", shown only when
+   `folder_notes` is non-empty) — the same subtle, non-alarming styling convention
+   M4 established for the `(overwrite)` / `(outside target)` markers in this same
+   modal. The web UI's `build_approval_dialog` (`host/web/dialogs.py`) carries the
+   same two disclaimers and is now the only surviving implementation.
 6. **[Done — 2026-07-07]** ~~Surface direct/compress/archive operations in the
    transcript and (once gated) the approval flow (S4/S7) so no mutation is
    invisible.~~ Turned out to already be implemented by M1 itself: because
-   `_TOOL_NARRATION` (`host/app.py`) keys narration purely by tool name, adding
+   `_TOOL_NARRATION` (then in the Textual TUI's `host/app.py`, later factored into
+   the shared `host/narration.py` and used by the web UI's narration too) keys
+   narration purely by tool name, adding
    `propose_create_file` / `propose_update_file` / `propose_create_dir` /
    `propose_archive_document` / `propose_compress_quarantine` to that map — a
    necessary part of exposing the five new tools safely in the first place — was
@@ -489,21 +496,24 @@ first with the least behavioural disruption.
     if the keyring is unavailable, warn loudly and require an explicit opt-in for
     file storage; keep keys out of any CWD `.env` that could be committed.~~
     `save_user_config` (`config/settings.py`) now raises `PlaintextKeyFallbackNeeded`
-    instead of silently writing the key when the OS keyring is unavailable. Both UI
-    callers (`SetupScreen`, `ConfigScreen` in `host/app.py`) catch it, show a loud
-    inline warning, and require the user to press the save/finish button a second
-    time — an explicit, deliberate re-click — before the plaintext fallback actually
-    happens. The "keep keys out of any CWD `.env`" clause was already satisfied
-    before this item: `save_user_config` only ever writes to `~/.telcontar/config.env`,
-    never a CWD `.env`, and `.env`/`.envrc` are already gitignored. As of U2
-    (2026-08-07), the same catch/warn/re-confirm behaviour is shared via
+    instead of silently writing the key when the OS keyring is unavailable. Both
+    original UI callers (`SetupScreen`, `ConfigScreen` in the Textual TUI's
+    `host/app.py`) caught it, showed a loud inline warning, and required the user
+    to press the save/finish button a second time — an explicit, deliberate
+    re-click — before the plaintext fallback actually happened. The "keep keys out
+    of any CWD `.env`" clause was already satisfied before this item:
+    `save_user_config` only ever writes to `~/.telcontar/config.env`, never a CWD
+    `.env`, and `.env`/`.envrc` are already gitignored. As of U2
+    (2026-08-07), the same catch/warn/re-confirm behaviour was shared via
     `host/configflow.py`'s `plaintext_warning()` and exercised by a third caller —
     the NiceGUI web UI's setup wizard (`host/web/wizard.py`, through
-    `host/web/forms.py`'s `save_with_plaintext_guard`) — so the guard is no longer
+    `host/web/forms.py`'s `save_with_plaintext_guard`) — so the guard was no longer
     TUI-only. As of U3 (2026-08-07), the web UI's settings view (`host/web/settings.py`)
-    is a fourth caller of the same shared guard (`forms.save_with_plaintext_guard`),
+    became a fourth caller of the same shared guard (`forms.save_with_plaintext_guard`),
     keeping the blank-key-preserves-existing-key save path on the identical
-    warn-then-confirm flow.
+    warn-then-confirm flow. As of Phase 22 (W1), the Textual TUI and its two
+    original callers are deleted — the web UI's wizard and settings view are the
+    guard's only remaining callers.
 12. **[Done — 2026-07-09]** ~~Log egress (S8): record which files' contents were sent
     to the endpoint so an operator can audit what left the machine.~~ `read_file`,
     `extract_text`, and `compare_documents` now append an entry (path, size in

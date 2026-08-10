@@ -499,7 +499,7 @@ The built-in `local_markdown` sink writes to `README.md` inside the folder at `p
 
 ## Recovery
 
-`undo_last` is **not** an MCP tool — it is not registered with the server, so the agent has no way to call it. As of the plan-flow security hardening (M1), undo is a direct, user-triggered action in the TUI only: the operations-journal viewer (`JournalScreen`, opened with the **j** key in the Organizer screen) has a **u** ("Undo last") keybinding that calls `server.tools.undo_last` directly, bypassing the MCP layer entirely.
+`undo_last` is **not** an MCP tool — it is not registered with the server, so the agent has no way to call it. As of the plan-flow security hardening (M1), undo is a direct, user-triggered action in the web UI only: the journal dialog (`host/web/journal.py`, opened via the run page's "Journal" toolbar button) has an "Undo last operation" button that calls `server.tools.undo_last` directly, bypassing the MCP layer entirely.
 
 `undo_last(journal_path, plans_dir) -> dict` reverts the most recent journaled operation by inverting it and removing the journal entry:
 
@@ -806,4 +806,4 @@ The list is capped at `salient_cap` from the active profile (`[entities]` sectio
 | `list_archived` | — | — | — | — | — | ✓ | ✓ | ✓ |
 
 !!! note "Since removed / restructured (M1 security hardening)"
-    This table predates the plan-flow gating change and does not carry phase columns for it. `move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`, `archive_document`, `compress_quarantine`, and `undo_last` were removed from the agent-callable surface entirely. Their functionality now goes through `propose_create_file`, `propose_update_file`, `propose_create_dir`, and `propose_archive_document`/`propose_compress_quarantine` (staged like every other op, applied only via `execute_plan`); `undo_last` is now a TUI-only user action (see [Recovery](#recovery) above).
+    This table predates the plan-flow gating change and does not carry phase columns for it. `move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`, `archive_document`, `compress_quarantine`, and `undo_last` were removed from the agent-callable surface entirely. Their functionality now goes through `propose_create_file`, `propose_update_file`, `propose_create_dir`, and `propose_archive_document`/`propose_compress_quarantine` (staged like every other op, applied only via `execute_plan`); `undo_last` is now a web-UI-only user action (see [Recovery](#recovery) above).

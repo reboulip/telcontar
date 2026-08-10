@@ -53,7 +53,7 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 | Plan management | `create_plan`, `get_plan`, `list_plans`, `review_plan`, `approve_plan`, `set_plan_rationale`, `set_plan_folder_notes` |
 | Plan-building | `propose_rename`, `propose_move`, `propose_quarantine`, `propose_create_file`, `propose_update_file`, `propose_create_dir`, `propose_archive_document`, `propose_compress_quarantine` |
 | Gated execution | `execute_plan`, `write_index`, `write_summary` |
-| Recovery (not MCP tools) | `undo_last` — no longer registered as an MCP tool (M1); called directly by the TUI's `JournalScreen` |
+| Recovery (not MCP tools) | `undo_last` — no longer registered as an MCP tool (M1); called directly by the web UI's journal dialog (`host/web/journal.py`) |
 | Registry | `record_document`, `get_document`, `lookup_documents`, `rehome_documents`, `list_documents`, `get_registry`, `find_duplicates`, `find_modified_documents` |
 | Event journal | `create_event`, `list_events` |
 | Knowledge graph | `build_graph`, `get_graph`, `get_actors` |
@@ -204,30 +204,29 @@ The MCP server package. Launched as a subprocess by the host; communicates via s
 
 ## `host/`
 
-The MCP host package. Drives the agent loop and presents the Textual TUI.
+The MCP host package. Drives the agent loop and presents the web UI.
 
 ### `host/main.py`
 
-**Role:** CLI entrypoint. Parses arguments and routes to one of the two UIs.
+**Role:** CLI entrypoint. Parses arguments and launches the web UI.
 
 **Entry point:** `main()` is registered as the `telcontar` script in `pyproject.toml`.
 
-**Flags:** `--version` (prints the installed version and exits); `--tui` (`store_true` —
-launches the Textual TUI instead of the NiceGUI web UI; as of Phase 20's U10, the web
-UI is the default with no flags); `--target PATH` (skips the
-landing page's directory picker and starts a run for that directory immediately;
-ignored when `--tui` is passed); `--browser` (`store_true`, V1 — launches the web
-UI in the system browser instead of a native window; ignored when `--tui` is
-passed). Unrecognized args are tolerated (`parse_known_args`) so a bare
-launch keeps working.
+**Flags:** `--version` (prints the installed version and exits); `--target PATH`
+(skips the landing page's directory picker and starts a run for that directory
+immediately); `--browser` (`store_true`, V1 — launches the web UI in the system
+browser instead of a native window). Unrecognized args are tolerated
+(`parse_known_args`) so a bare launch keeps working.
 
-**Design note:** As of S6, each UI's dependency import is lazy and scoped to its own
-branch — `from host.app import OrganizerApp` for `--tui`, `from host.web.main import
-run_web` for the default (no-flag) path — so launching one UI never pays the other's import cost
-(`textual` vs. `nicegui`). As of V1, `main()` passes `native=not args.browser` to
-`run_web`, which opens a native `pywebview` window by default (Windows only,
-falling back to the system browser otherwise or if `pywebview` isn't installed —
-see `host/web/main.py` below).
+**Design note:** The web UI's `from host.web.main import run_web` import is
+deferred until after `main()` prints "Loading telcontar…", so the user sees
+something immediately instead of a frozen terminal during the ~1s cost of its
+heavier imports (`nicegui`, `mcp`, `openai`, …). As of V1, `main()` passes
+`native=not args.browser` to `run_web`, which opens a native `pywebview` window
+by default (Windows only, falling back to the system browser otherwise or if
+`pywebview` isn't installed — see `host/web/main.py` below). As of Phase 22
+(W1), the Textual TUI (`host/app.py`) and its `--tui` flag were deleted
+outright — telcontar now always launches the web UI, with no flag to opt out.
 
 ---
 
@@ -248,11 +247,11 @@ see `host/web/main.py` below).
 
 ### `host/agent.py`
 
-**Role:** The async agent loop — both organize and query modes. Fully decoupled from Textual — callers supply callbacks for events and approval so the module can be tested without a TUI.
+**Role:** The async agent loop — both organize and query modes. Fully decoupled from any UI framework — callers supply callbacks for events and approval so the module can be tested without a UI.
 
 **Key types:**
-- `AgentEvent` — `{kind: EventKind, text, data}` emitted at each step; `EventKind` includes `"ask_user"` (P8) for the chat checkpoint — merges the former `"question"`/`"options"` kinds — `"progress"` for the O5 document-analysis progress tracker (`data={"analyzed": int, "total": int, "current": list[str]}`; drives the O6 `OrganizerScreen` progress bar — `"current"` added V8a, basename(s) of the document(s) the in-flight analyzer batch is currently processing, `[]` when nothing is in flight or on the pre-pass's own snapshot event, which omits the key entirely; `host.format.fmt_progress` renders the dict to a short status string but isn't wired into either UI yet — as of V8b, the web UI surfaces `current` itself via its own inline formatting in `host/web/main.py`'s `_refresh()` (a `progress-current` label), not through this function; the TUI still doesn't render `current` at all), `"cost_estimate"` for the pre-analysis cost-approval gate (O8/P6), and `"tokens"` for running LLM token-usage updates, alongside `"thinking"`, `"tool_call"`, `"tool_result"`, `"plan_ready"`, `"done"`, `"warning"`, `"error"`. `"warning"` (U8) is non-terminal — currently emitted only when `_analyze_batch` retries once, still fails, and skips a batch: the run continues, unlike the three genuinely-terminal `"error"` emitters (the agent loop's own exception path, and the organize/query max-turns backstops). `"tool_call"` events carry `data={"tool": name}` in both the organize and query loops, so callers can key off the tool name (e.g. `OrganizerScreen._narrate`, F10) without parsing `text`
-- `ApprovalResult` — `{approved: bool, removed_op_ids: list[str], refinement: str | None}`. `refinement` (L6) carries free-text plan-editing feedback from the `ApprovalModal`'s Refine button; when set, the plan is not executed even though `approved` is `False` — see `_handle_execute_plan` below
+- `AgentEvent` — `{kind: EventKind, text, data}` emitted at each step; `EventKind` includes `"ask_user"` (P8) for the chat checkpoint — merges the former `"question"`/`"options"` kinds — `"progress"` for the O5 document-analysis progress tracker (`data={"analyzed": int, "total": int, "current": list[str]}`; drives the web UI's progress bar (V14, see `host/web/main.py` below) — `"current"` added V8a, basename(s) of the document(s) the in-flight analyzer batch is currently processing, `[]` when nothing is in flight or on the pre-pass's own snapshot event, which omits the key entirely; `host.format.fmt_progress` renders the dict to a short status string but isn't wired into the web UI, which surfaces `current` itself (V8b) via its own inline formatting in `host/web/main.py`'s `_refresh()` (a `progress-current` label), not through this function), `"cost_estimate"` for the pre-analysis cost-approval gate (O8/P6), and `"tokens"` for running LLM token-usage updates, alongside `"thinking"`, `"tool_call"`, `"tool_result"`, `"plan_ready"`, `"done"`, `"warning"`, `"error"`. `"warning"` (U8) is non-terminal — currently emitted only when `_analyze_batch` retries once, still fails, and skips a batch: the run continues, unlike the three genuinely-terminal `"error"` emitters (the agent loop's own exception path, and the organize/query max-turns backstops). `"tool_call"` events carry `data={"tool": name}` in both the organize and query loops, so callers can key off the tool name (e.g. `host/narration.py`'s `Narrator.narrate`, F10) without parsing `text`
+- `ApprovalResult` — `{approved: bool, removed_op_ids: list[str], refinement: str | None}`. `refinement` (L6) carries free-text plan-editing feedback from the approval dialog's Refine button (`build_approval_dialog`, `host/web/dialogs.py`); when set, the plan is not executed even though `approved` is `False` — see `_handle_execute_plan` below
 - `AskUserResult` (P8) — `{reply: str, provided: bool}`; the user's raw chat reply to an `ask_user` checkpoint call — however many questions/options were asked, the whole reply is one free-text string. `provided` is `False` when no reply was captured (degenerate/no-callback case), in which case the agent proceeds with its own best judgement. Replaces K1's `ClarificationResult` (`{answers: dict[str, str], provided: bool}`) and L7's `OptionsResult` (`{selections: dict[str, str], provided: bool}`)
 - `CostApprovalResult` — `{approved: bool}`; the user's yes/no on the pre-ANALYZE cost-estimate gate (O8)
 - `PrepassResult` — `{new: list[dict], known: list[dict], rehomed: list[str], errors: list[dict], total_files: int, sizes: dict[str, int]}`; the outcome of `run_prepass` (P4) — `new` is `{path, checksum}` per undiscovered document, `known` is `{path, checksum, record}` per already-registered document, `rehomed` lists checksums whose registry path was corrected, `sizes` maps `path -> size_bytes` for every discovered file (P5, additive — populated straight from `walk_tree`'s entries so the new-docs-only cost estimate below has sizes to work from without a second discovery pass)
@@ -273,10 +272,10 @@ see `host/web/main.py` below).
 
 **Key functions:**
 - `run_agent(target, settings, llm, on_event, on_approval_needed, on_ask_user_needed=None, on_cost_approval_needed=None, instructions=None, history=None, message=None) -> tuple[str, list[dict]]` — top-level organize entry; launches the MCP server subprocess via `mcp_session()`, then calls `run_agent_loop`, returning `(final_text, updated_history)`. `mcp_session(project_root, target=None)` sets `TARGET_DIR` on the server subprocess's env whenever `target` is given, so the server can confine path-taking tools to it (M2). `history`/`message` (O7) mirror `run_query_loop`'s shape — see `run_agent_loop` below; for a multi-turn chat, callers should instead keep a single session open and call `run_agent_loop` directly (`run_agent` launches a fresh subprocess per call). Does not accept `message_queue` (P7) — that's only meaningful on a session-holding caller like `run_agent_loop`. `on_ask_user_needed` (P8) replaces the old `on_questions_needed`/`on_options_needed` pair with one unified callback
-- `run_agent_loop(target, settings, llm, session, on_event, on_approval_needed, on_ask_user_needed=None, on_cost_approval_needed=None, project_root=None, instructions=None, history=None, message=None, message_queue=None, ledger=None) -> tuple[str, list[dict]]` — the actual LLM tool-calling loop for organize mode (injectable session for testing). `ledger` (R1, GH #27) lets a caller pass the same `_TokenLedger` across a run and its O7 follow-up continuations so the running token totals persist across turns instead of resetting to zero on every call; when `None` (the default — tests, one-shot callers), a fresh ledger is constructed for just this call. **ORGANIZE-only loop, pre-pass + analyzer wiring (P6):** on a fresh run (`history is None`), before any turn happens, this now runs `run_prepass` (P4) to partition the corpus into known/new documents, fires the cost-approval gate (`_handle_cost_approval`, O8/P6) scoped to only the new documents if there are any, runs `_analyze_new_documents` (P5) on approval, then seeds the conversation's first user message with a compact corpus digest (`_build_digest`) instead of blank "please organize" instructions — `instructions` (the user's optional pre-analysis steering text from the `OrganizerScreen` starter pane, L3) is appended to that same seed message when non-empty. The turn loop that follows discovers tools via `_discover_openai_tools(session, denied=ORGANIZE_DENIED_TOOLS)`, structurally excluding content-fetching/recording tools already used by the pre-pass/analyzer, and a defense-in-depth dispatch check rejects any hallucinated call to one of those tools even though none are advertised. `on_ask_user_needed` (P8) wires the unified chat checkpoint, unlimited per run; `on_cost_approval_needed` wires the O8/P6 pre-analysis cost-approval gate, now scoped to new documents only. **Resumable chat (O7):** when `history` is given (the list returned by a previous call), none of the pre-pass/analysis/digest work above repeats — the existing history is reused as-is and `message` — a new free-text user turn — is appended before resuming, so a run that finished, errored, or hit the turn ceiling can be continued with the same ORGANIZE-only toolset. A continuation gets its own fresh per-call turn budget and a fresh, empty `_ProgressTracker` (no new pre-pass happens), so its adaptive budget floors at `_MAX_TURNS` rather than reflecting the initial pass's corpus size. **Live mid-run chat (P7):** when `message_queue` is given, it's drained non-blockingly via `_drain_message_queue` at three points — before the first LLM call, after every turn's tool-call batch, and when the response carries no tool calls (the point that would otherwise end the run) — each drained message is appended as a user turn, and in the last case the loop `continue`s instead of returning if anything was waiting, so a live chat message can redirect an in-progress run. `message_queue=None` (the default) is byte-for-byte the pre-P7 behaviour; the mechanism is independent of and composes with `history`/`message`. `ask_user` (P8) blocks on this same queue for its reply, rather than a modal. The whole turn loop is wrapped in `try`/`except`: an unhandled exception is caught rather than propagating — any tool call left without a matching tool-result message is answered with a synthesized `{"error": ...}` entry (so `messages` stays valid for a follow-up call), an `"error"` event fires, and `(error_text, messages)` is returned
+- `run_agent_loop(target, settings, llm, session, on_event, on_approval_needed, on_ask_user_needed=None, on_cost_approval_needed=None, project_root=None, instructions=None, history=None, message=None, message_queue=None, ledger=None) -> tuple[str, list[dict]]` — the actual LLM tool-calling loop for organize mode (injectable session for testing). `ledger` (R1, GH #27) lets a caller pass the same `_TokenLedger` across a run and its O7 follow-up continuations so the running token totals persist across turns instead of resetting to zero on every call; when `None` (the default — tests, one-shot callers), a fresh ledger is constructed for just this call. **ORGANIZE-only loop, pre-pass + analyzer wiring (P6):** on a fresh run (`history is None`), before any turn happens, this now runs `run_prepass` (P4) to partition the corpus into known/new documents, fires the cost-approval gate (`_handle_cost_approval`, O8/P6) scoped to only the new documents if there are any, runs `_analyze_new_documents` (P5) on approval, then seeds the conversation's first user message with a compact corpus digest (`_build_digest`) instead of blank "please organize" instructions — `instructions` (the user's optional pre-analysis steering text from the organize view's starter pane, L3) is appended to that same seed message when non-empty. The turn loop that follows discovers tools via `_discover_openai_tools(session, denied=ORGANIZE_DENIED_TOOLS)`, structurally excluding content-fetching/recording tools already used by the pre-pass/analyzer, and a defense-in-depth dispatch check rejects any hallucinated call to one of those tools even though none are advertised. `on_ask_user_needed` (P8) wires the unified chat checkpoint, unlimited per run; `on_cost_approval_needed` wires the O8/P6 pre-analysis cost-approval gate, now scoped to new documents only. **Resumable chat (O7):** when `history` is given (the list returned by a previous call), none of the pre-pass/analysis/digest work above repeats — the existing history is reused as-is and `message` — a new free-text user turn — is appended before resuming, so a run that finished, errored, or hit the turn ceiling can be continued with the same ORGANIZE-only toolset. A continuation gets its own fresh per-call turn budget and a fresh, empty `_ProgressTracker` (no new pre-pass happens), so its adaptive budget floors at `_MAX_TURNS` rather than reflecting the initial pass's corpus size. **Live mid-run chat (P7):** when `message_queue` is given, it's drained non-blockingly via `_drain_message_queue` at three points — before the first LLM call, after every turn's tool-call batch, and when the response carries no tool calls (the point that would otherwise end the run) — each drained message is appended as a user turn, and in the last case the loop `continue`s instead of returning if anything was waiting, so a live chat message can redirect an in-progress run. `message_queue=None` (the default) is byte-for-byte the pre-P7 behaviour; the mechanism is independent of and composes with `history`/`message`. `ask_user` (P8) blocks on this same queue for its reply, rather than a modal. The whole turn loop is wrapped in `try`/`except`: an unhandled exception is caught rather than propagating — any tool call left without a matching tool-result message is answered with a synthesized `{"error": ...}` entry (so `messages` stays valid for a follow-up call), an `"error"` event fires, and `(error_text, messages)` is returned
 - `_drain_message_queue(message_queue) -> list[str]` (P7) — non-blocking drain of `message_queue` (an `asyncio.Queue[str] | None`): repeatedly calls `get_nowait()` until `asyncio.QueueEmpty`, returning drained messages in arrival order, or `[]` immediately if `message_queue` is `None` or nothing is waiting. Never blocks the turn loop
 - `run_query(question, settings, llm, on_event, history, target=None)` — convenience entry for one query, launching its own MCP session; `target` (the analyzed corpus's directory) is passed through to `mcp_session` so the server confines its read-only tools' path arguments (M2)
-- `run_query_loop(question, settings, llm, session, on_event, history, project_root, ledger=None)` — read-only tool-calling loop; threads `history` across calls for multi-turn context; returns `(answer, updated_history)`. `ledger` (R1, GH #27) works the same way as `run_agent_loop`'s: pass the same `_TokenLedger` across a chat's questions so the running total persists for the whole `QueryScreen` session instead of resetting per question; `None` (the default) constructs a fresh one for just this call
+- `run_query_loop(question, settings, llm, session, on_event, history, project_root, ledger=None)` — read-only tool-calling loop; threads `history` across calls for multi-turn context; returns `(answer, updated_history)`. `ledger` (R1, GH #27) works the same way as `run_agent_loop`'s: pass the same `_TokenLedger` across a chat's questions so the running total persists for the whole query session instead of resetting per question; `None` (the default) constructs a fresh one for just this call
 - `_discover_openai_tools(session, allowed=None, denied=None)` — lists MCP tools and converts to OpenAI function specs; when `allowed` is given, only tools in the set are exposed (used by query mode); when `denied` is given (P6), tools in the set are excluded instead (used by organize/ORGANIZE mode, `denied=ORGANIZE_DENIED_TOOLS`) — the two parameters are independent filters, not mutually exclusive
 - `_build_system_prompt(project_root, settings)` — assembles the organize-mode system prompt from the active profile, including one "Optional chat checkpoint" paragraph (P8) referencing `ask_user` — replaces the former separate clarification-checkpoint and multiple-option-checkpoint paragraphs
 - `_build_query_system_prompt(project_root, settings)` — assembles the read-only query-mode system prompt from the active profile
@@ -300,62 +299,7 @@ see `host/web/main.py` below).
 
 ---
 
-### `host/app.py`
-
-**Role:** Textual TUI — six screens/modals.
-
-| Class | Role |
-|---|---|
-| `OrganizerApp` | Root `App`; calls `is_configured()` on mount and routes to `SetupScreen` (first run) or `StartupScreen` (returning user). App-level `Binding("ctrl+s", "open_settings", "Settings", priority=True)` (P9) opens `ConfigScreen` from any screen via `action_open_settings`; no-op if `ConfigScreen` or `SetupScreen` is already the current screen. `priority=True` is required — Textual's non-priority binding-resolution chain stops at the first `ModalScreen` it encounters, so a plain-tuple binding would silently not fire while `ApprovalModal`/`CostEstimateModal` is on screen |
-| `SetupScreen` | First-run wizard: welcome → AI service choice → URL + API key → document profile → done. Profile options, credential validation, and the plaintext-keyring warning copy come from `host/configflow.py` (U2, shared with the web UI's `host/web/wizard.py`). Saves via `save_user_config()` / OS keyring. Transitions to `StartupScreen` when complete |
-| `ConfigScreen` | Settings panel accessible at any time from `StartupScreen`. Fields: URL, API key (password input), document profile (Select), approval mode (Select with friendly labels, options from `host/configflow.py`'s `APPROVAL_OPTIONS`, U3, shared with the web UI's `host/web/settings.py`). `_save` validates via `configflow.validate_credentials(..., key_required=False)` and builds its update dict via `configflow.build_settings_updates(...)` (U3) — same blank-key-preserves-existing rule as the web settings view — rather than its own inline logic; its plaintext-keyring warning also now comes from `configflow.plaintext_warning("Save", "cancel")`, no behavior change from before U3. Saves back to `~/.telcontar/config.env` via `save_user_config()` |
-| `StartupScreen` | Lets the user browse and pick the target folder via a `DirectoryTree` (`#target-tree`, rooted at `Path.home()`); the selected path (defaults to home) is shown in a "Selected: …" label and used by "Organize" and "Query". Offers "Organize", "Query", and "⚙ Settings" buttons. Keybinding `s` opens `ConfigScreen` (the app-level `ctrl+s` binding, P9, also opens it from here and every other screen). "Query" (P2) resolves the corpus via `_find_organizer_root(target)`, walking up from the selected folder through its parents until one containing a `.organizer` is found (a subfolder of a previously-organized tree still resolves to that tree's memory), showing an error if none is found |
-| `OrganizerScreen` | Main view. Opens on a **starter pane** (`#starter-pane`, L3) instead of auto-starting the agent: a `Static` rendering `_directory_overview(target)` — a code-generated, deterministic scan of names/structure only (file count, subfolder count, most common extensions; no content read, no LLM), excluding `.organizer` and the quarantine folder (P2, via `_quarantine_basename()`) from its own local `os.walk` the same way `walk_tree` does — plus an `#instructions-input` `Input` for optional free-text steering instructions and a `#proceed-btn` "Start organizing" button (or `Input.Submitted`). `_start_organizing()` hides the starter pane, shows `#main-split` (file-tree sidebar + a single chat-transcript `#conversation-pane`, `VerticalScroll`), and launches `_agent_worker(instructions)` as a Textual worker, passing the typed instructions (if any) through to `run_agent_loop(..., instructions=...)`. `_add_turn(speaker, text)` appends speaker-differentiated turns (`telcontar` / `you`) as styled `Static` widgets — the target line and any typed instructions are shown as the first turns; on each `tool_call` event, `_narrate(tool)` looks up the tool in the module-level `_TOOL_NARRATION` map and, if the macro-task phrase changed, emits a `telcontar` turn (e.g. "Reading documents…", "Planning changes…", "Applying the plan…") — deduping so consecutive calls in the same macro-task collapse to one turn. The raw tool calls/results themselves are appended via `_append_step(line)` into a click-to-expand `Collapsible` ("internal steps") interleaved in the transcript; a new speaker turn closes the currently-open group so the next tool call opens a fresh one. Below `#main-split`, a docked `#ops-journal` `RichLog` (L4, `wrap=False`, horizontally scrollable) renders the file operations recorded in the undo journal — one line per entry, newest last, via `_fmt_journal_entry` (the same formatter `JournalScreen` uses); multi-line hard-stop entries collapse to their summary line. `_refresh_ops_journal()` re-reads `.organizer/journal.jsonl` via `_resolve_journal_path` + `server.journal.all_entries` (swallowing read/config errors so the strip just shows nothing rather than breaking the screen) — `_resolve_journal_path`/`_resolve_plans_dir` (P2) resolve against the run's target directory via `Settings().for_target(target)`, rather than an ad-hoc project-root join; it runs on mount, after any tool in `_JOURNAL_WRITING_TOOLS` (now just `{"execute_plan"}` — the only tool left that can mutate the journal via the agent path, per M1) completes, and again on `done`. Below that, a `#progress-row` (O6, a `#progress-label` plus a Textual `ProgressBar`) renders the O5 `"progress"` event: `_update_progress(data)` reveals the row and updates both widgets, but only once a `total > 0` has been seen (an unknown/`None` total is never shown, avoiding Textual's indeterminate spinner); `_hide_progress()` re-hides it — without first snapping to 100% — on both `"done"` and `"error"`, so it disappears once the ANALYZE phase finishes rather than lingering through ORGANIZE. Status bar shows the current phase plus a running token-usage total (`N in (C cached) / M out`) once the LLM reports it, from a single `_TokenLedger` (R1, GH #27) built once via `_TokenLedger.new(settings)` and threaded through the initial `run_agent_loop` call and every subsequent chat-turn call, so the total accumulates for the screen's whole lifetime instead of resetting each call; keybinding `g` pushes `QueryScreen` once organizing completes, `j` pushes `JournalScreen` (the full modal journal view) via `action_view_journal`, which — as of U6 — runs inside a Textual worker (`self.run_worker(self._view_journal_worker(), exclusive=False)`); `push_screen_wait` requires a worker context and raised `NoActiveWorker` when called directly from the plain key-bound action (a real bug caught by a new test). `_view_journal_worker` awaits the modal and, if it dismissed with `True` (an undo happened), calls `_refresh_ops_journal()` so the bottom strip no longer goes stale after an undo. **Resumable chat (O7):** `_agent_worker` no longer calls the one-shot `run_agent` convenience wrapper — it opens `mcp_session(...)` itself and calls `run_agent_loop(...)` directly, keeping one MCP session (and one subprocess) open across the initial run and every subsequent chat turn. `self._history: list[dict] | None` carries the conversation returned by each call into the next; `self._messages: asyncio.Queue[str]` bridges the synchronous `Input.Submitted` handler on the bottom-docked `#organize-input` into the queue. Submitting echoes the message as a `user`-speaker turn via `_add_turn` before it is queued. `_note_terminal_state()` fires the "press g / keep chatting" cue and the desktop notification only on the *first* `"done"`/`"error"` event (tracked via `self._done`), not on every subsequent chat-turn completion. **Live mid-run chat (P7):** `#organize-input` is enabled right at the start of `_agent_worker`, before the first `run_agent_loop` call, rather than only once a terminal state is reached — both the initial call and every O7 continuation call pass `message_queue=self._messages`, so `run_agent_loop` itself drains and injects queued messages while it runs (see `host/agent.py` above). The worker's own `while True` loop (`await self._messages.get()` then `run_agent_loop(..., history=self._history, message=message, message_queue=self._messages)`) is unchanged in shape and still runs, but now only ever fires for a message that arrives strictly *after* a `run_agent_loop` call has already returned with nothing left pending in the queue — i.e. the agent is fully idle — rather than for every message regardless of timing |
-| `QueryScreen` | Chat-style read-only Q&A screen: `RichLog` output + `Input` bar; keeps one MCP session open for the whole chat and threads conversation history across questions; status bar also shows a running token-usage total (`N in (C cached) / M out`) from a single `_TokenLedger` (R1, GH #27) built once and threaded through every question's `run_query_loop` call, so the total persists across the whole chat; settings are resolved via `load_settings().for_target(self._target)` (R1 fix — previously unrebased, so query-mode paths including the token log resolved relative to the process CWD instead of the corpus's own `.organizer/` directory, unlike the organize path); `Esc` pops back to the previous screen |
-| `JournalScreen` | Modal view of the full undo journal (newest entries last), opened via `j`. Also the **only place `undo_last` can be triggered** (M1, S1): keybinding `u` calls `server.tools.undo_last` directly — bypassing MCP entirely, same pattern already used to read the journal — and shows a success/error status line; `Esc` or `j` closes it. `ModalScreen[bool]` (U6, was `ModalScreen[None]`): `action_close` dismisses with `self._undone_any` — whether at least one undo succeeded during this screen's lifetime — so the caller can tell whether the bottom ops-journal strip needs refreshing |
-| `ApprovalModal` | Plan review: renders the plan's `rationale` (if set via `set_plan_rationale`) as `#plan-rationale`, then — if the plan has any `move`/`quarantine` destinations — a "Target layout" tree (`_render_target_layout`, L5) built from the plan's op destinations with each folder's `folder_notes` purpose note beside it (bare nodes for folders with no note; rename-only plans show no tree), then per-op checkboxes, the `ops_json_path` (if present) shown as a `#ops-json-path` label, a free-text `#refine-input` `Input` for natural-language plan editing (L6), and Approve/Refine/Reject buttons; Approve dismisses with `ApprovalResult(approved=True, removed_op_ids=...)`, Refine (button or `Input.Submitted`) dismisses with `ApprovalResult(approved=False, refinement=<text>)` unless the field is blank (no-op, modal stays open), Reject/Escape dismiss with `ApprovalResult(approved=False)` |
-| `CostEstimateModal` | Pre-ANALYZE cost-approval gate (O8/P6/P8): constructor `(new_documents, already_analyzed, estimated_tokens, batch_size=10)`; shows "N new document(s) (M already analyzed, skipped), ~T input tokens estimated, batched in groups of 10 — proceed?" plus a disclaimer that it's a rough file-size estimate, not a real tokenization, and — since R1, GH #27 — that it "Covers analysis only — organizing the corpus afterward adds more", clarifying why this estimate is much smaller than the eventual session-total token count shown on the status bar (the estimate covers only the ANALYZE phase, not the ORGANIZE turn loop that follows). Proceed/Cancel buttons (Escape = Cancel), no op list or refinement. Returns a `CostApprovalResult`. Shown at most once per run, scoped to new documents only, wired via `OrganizerScreen`'s `on_cost_approval_needed` callback |
-
-`ClarificationModal` and `OptionsModal` (K1/L7's separate clarifying-question and multiple-option checkpoints) are **removed as of P8** — no modal replaces them. The unified `ask_user` checkpoint renders as a normal chat-transcript turn and awaits the next chat message on the same live-chat queue P7 wired up; see `_handle_ask_user`/`on_ask_user_needed` above and `OrganizerScreen`'s `on_ask_user_needed` closure below. The `RadioButton`/`RadioSet` widget imports, used only by the deleted `OptionsModal`, are gone too.
-
-**TUI layout (OrganizerScreen):**
-
-```
-┌─ Header ───────────────────────────────────────────────┐
-│ DirectoryTree (22%)  │  #conversation-pane (1fr)       │
-│                      │  telcontar/you turns, with      │
-│                      │  collapsed "internal steps"     │
-│                      │  groups interleaved             │
-├─ #ops-journal (RichLog, height 5, h-scroll) ────────────┤
-│ 12:03:04  rename      draft.docx  →  Report_2024.docx  │
-│ 12:03:05  move        Report_2024.docx  →  Reports/…   │
-├─ #progress-row (hidden until first known total) ───────┤
-│ 12 / 47 documents analyzed  [████████░░░░░░░░░░]       │
-├─ Status bar ───────────────────────────────────────────┤
-├─ #organize-input (enabled for the whole run, P7) ───────┤
-│ "Once done, keep chatting to refine…"                  │
-├──────────────────────────────────────────────────────────┤
-│ Footer  [q] Quit  [g] Query corpus  [j] Journal         │
-└────────────────────────────────────────────────────────┘
-```
-
-**TUI layout (QueryScreen):**
-
-```
-┌─ Header ───────────────────────────────────────────────┐
-│ RichLog (1fr)                                          │
-│ (answer stream + tool call log)                        │
-├─ Status bar ───────────────────────────────────────────┤
-│ Input  "Ask a question about this corpus…"             │
-│ Footer  [Esc] Back  [Ctrl+C] Quit                      │
-└────────────────────────────────────────────────────────┘
-```
-
-**Worker pattern:** `OrganizerScreen.on_mount` only shows the starter pane and focuses `#instructions-input`; `_start_organizing()` (triggered by `#proceed-btn` or `Input.Submitted` on the instructions field) launches `_agent_worker` as a Textual worker. The worker is `async`, so it can `await` the approval modal via `app.push_screen_wait(ApprovalModal(...))`. As of P8, when the agent calls `ask_user`, there is no modal to await — `on_ask_user_needed` instead renders the question(s)/option(s) as a `telcontar` transcript turn (`_add_turn`) and `await self._messages.get()`, blocking on the same queue live mid-run chat already uses, so the user's next chat message becomes the reply. As of O7, `_agent_worker` opens `mcp_session(...)` itself and calls `run_agent_loop` for the initial run, then enters a `while True` loop that awaits `self._messages.get()` (populated by the synchronous `Input.Submitted` handler on `#organize-input`) and calls `run_agent_loop(..., history=self._history, message=message, message_queue=self._messages)` — all on the same session, so the subprocess is never restarted between turns. As of P7, `#organize-input` is enabled once, right at the start of `_agent_worker`, and stays enabled for the whole run rather than being toggled per iteration of that loop — both the initial call and every continuation call pass `message_queue=self._messages`, so `run_agent_loop` drains and injects queued messages itself while it runs; the `while True` loop above now only fires for a message that arrives after a call has already returned with the queue empty. `QueryScreen` uses the same `asyncio.Queue` bridging pattern to feed the synchronous `Input.Submitted` event handler into the async `_query_worker` that drives `run_query_loop`.
-
----
-
-### `host/llm.py` (~18 lines)
+### `host/llm.py`
 
 **Role:** Factory function for the OpenAI-compatible client.
 
@@ -367,33 +311,34 @@ see `host/web/main.py` below).
 
 ### `host/configflow.py`
 
-**Role:** Framework-agnostic (no `nicegui`, no `textual`) configuration-flow logic shared by the Textual TUI's `SetupScreen`/`ConfigScreen` and the NiceGUI web UI's setup wizard (U2) and settings view (U3) — one source of truth for profile options, per-service hints, credential validation, approval-mode options, and the plaintext-keyring-fallback warning copy.
+**Role:** Framework-agnostic (no `nicegui`) configuration-flow logic used by the web UI's setup wizard (U2) and settings view (U3) — one source of truth for profile options, per-service hints, credential validation, approval-mode options, and the plaintext-keyring-fallback warning copy. Originally factored out of the (now-deleted) Textual TUI's `SetupScreen`/`ConfigScreen` so both UIs could share it; as of Phase 22 (W1), the web UI is its only consumer.
 
 **Key functions:**
 
 | Function | Description |
 |---|---|
-| `profile_options() -> list[tuple[str, str]]` | `[(display_label, profile_id), ...]` for a Select/dropdown; reads TOML files from `profiles/`, falling back to `[("General documents", "is_it_project")]` if the directory can't be found. Moved here from `host/app.py`'s old `_load_profile_options`/`_PROFILE_LABELS` (now gone from that module); `host/app.py` imports it aliased as `_load_profile_options` at its two existing call sites. |
+| `profile_options() -> list[tuple[str, str]]` | `[(display_label, profile_id), ...]` for a Select/dropdown; reads TOML files from `profiles/`, falling back to `[("General documents", "is_it_project")]` if the directory can't be found. Originally moved here from the deleted `host/app.py`'s old `_load_profile_options`/`_PROFILE_LABELS`. |
 | `validate_credentials(url, key, model, *, key_required) -> str \| None` | Validates url → key → model in that frozen order, returning the first error message or `None`. `key_required=True` is the wizard's stricter first-run case (a blank key is itself an error); `key_required=False` (U3) is the settings view's case — a blank key there means "keep the saved key" — which also changes the URL error's wording to match each screen's existing, test-pinned copy. |
 | `build_wizard_updates(url, key, model, profile, service) -> dict[str, str]` | Builds the settings-update dict for the wizard's save step; always includes the API key (the wizard requires one). Adds `llm_api_version` when `service == "azure"`. |
 | `build_settings_updates(url, key, model, profile, approval_mode) -> dict[str, str]` | (U3) The settings view's counterpart to `build_wizard_updates` — includes `llm_api_key` only when `key` is non-empty (the blank-key-preserves-existing rule) and, unlike the wizard's dict, carries `approval_mode` instead of a service/`llm_api_version` field (the settings view has no service picker). |
 | `plaintext_warning(button_label, recovery_action="go back") -> str` | The shared, plain-text (no Rich/HTML markup — this module is UI-agnostic) warning shown when the OS keyring is unavailable and the user must explicitly confirm a plaintext fallback. `button_label` must match the actual button the user is told to press again — fixes U8's copy bug, where the TUI wizard said `Press "Finish" again` while its button read "Save & continue →". |
 
-**Other exports:** `AZURE_API_VERSION` (`"2025-01-01-preview"`); `SERVICE_HINTS: dict[str, dict[str, str]]` — per-service URL/model hint and placeholder text for `"openai_compatible"` vs `"azure"`, consumed by both the TUI's API-details step and the web wizard's API-details step; `APPROVAL_OPTIONS: list[tuple[str, str]]` (U3) — the three `(label, value)` approval-mode choices ("Always ask before any changes"/`always`, "Only ask before moving or quarantining files"/`destructive_only`, "Never ask — full automatic mode"/`never`), moved out of `host/app.py`'s `ConfigScreen` so both `ConfigScreen` and `host/web/settings.py` share one list.
+**Other exports:** `AZURE_API_VERSION` (`"2025-01-01-preview"`); `SERVICE_HINTS: dict[str, dict[str, str]]` — per-service URL/model hint and placeholder text for `"openai_compatible"` vs `"azure"`, consumed by the web wizard's API-details step; `APPROVAL_OPTIONS: list[tuple[str, str]]` (U3) — the three `(label, value)` approval-mode choices ("Always ask before any changes"/`always`, "Only ask before moving or quarantining files"/`destructive_only`, "Never ask — full automatic mode"/`never`), originally moved out of the deleted `host/app.py`'s `ConfigScreen`, now shared by `host/web/settings.py`.
 
 ---
 
 ### `host/web/` (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7, Phase 20 U1-U7/U10, Phase 21 V1/V5/V7/V11/V12/V13a/V13c/V15)
 
-**Role:** NiceGUI-based web UI package — the first piece of a planned
+**Role:** NiceGUI-based web UI package — originally the first piece of a planned
 Textual→NiceGUI migration. As of S6, `telcontar --web` (`host/main.py`, lazy import)
-launched it in place of the Textual TUI, which stayed the default with no flags;
-as of U10, that flag is gone and the default is inverted — bare `telcontar` now
-launches the web UI, and `--tui` is the escape hatch back to the Textual TUI. As
-of V1, that launch opens in a native `pywebview` window by default rather than a
-browser tab (Windows only; falls back to the browser, with a stderr warning, if
-`pywebview` isn't installed or the platform isn't Windows) — `--browser` forces
-the browser tab. As
+launched it in place of the then-default Textual TUI; as of U10, that flag was
+gone and the default inverted — bare `telcontar` launched the web UI, with
+`--tui` as an escape hatch back to the Textual TUI. As of Phase 22 (W1), the
+Textual TUI and `--tui` were deleted outright — telcontar now always launches
+the web UI. As of V1, that launch opens in a native `pywebview` window by
+default rather than a browser tab (Windows only; falls back to the browser,
+with a stderr warning, if `pywebview` isn't installed or the platform isn't
+Windows) — `--browser` forces the browser tab. As
 of U2 it has its own first-run setup wizard, at parity with the TUI's; U3 a settings
 view reachable from every screen; U4 a TUI-faithful approval dialog plus a
 sidebar tree that refreshes itself after `execute_plan`; U5 a TUI-faithful cost
@@ -489,7 +434,7 @@ telcontar is single-user so there's no other viewer's preference it could clobbe
 the clamped value actually stored.
 
 **`host/web/bridge.py`** — `AgentBridge(session)`, also `nicegui`-free. Implements
-the same callback contract `host.app.OrganizerScreen` uses:
+the same callback contract the (now-deleted) Textual TUI's `OrganizerScreen` used:
 `on_event`/`on_approval_needed`/`on_cost_approval_needed`/`on_ask_user_needed`. As
 of V12, `on_ask_user_needed` creates an `"ask"`-kind `PendingRequest`
 (`session.new_pending("ask", {"questions": questions})`) and awaits its future —
@@ -565,7 +510,7 @@ op count), the rationale (if any) with its "model-generated — not verified fac
 disclaimer, then a folder-notes disclaimer when folder notes are present. As of
 V3, what follows is an actual before/after file tree instead of the old flat
 `render_target_layout` text block plus a separate flat checkbox list (`render_target_layout`
-itself is unchanged and unused here now — the TUI's `ApprovalModal` still calls
+itself was unchanged by V3 — the now-deleted Textual `ApprovalModal` used to call
 it directly for its own preview; only this dialog's use of it was replaced).
 `host.format.plan_tree_diff(ops, folder_notes, target) -> (before_lines,
 after_lines, other_ops)` is a pure function (no filesystem I/O — the plan's ops
@@ -662,16 +607,17 @@ mirroring how `host/web/tree.py` relates to `host/web/shell.py`: this module
 owns the filesystem/MCP-adjacent logic, `host/web/dialogs.py` owns the
 rendering. `load_entries(target) -> list[dict]` wraps `server.journal.all_entries`
 via `host.paths.resolve_journal_path`, wrapped in a defensive `try`/`except`
-that returns `[]` on any error — mirrors `host.app.JournalScreen`'s existing
+that returns `[]` on any error — mirrors the deleted `host.app.JournalScreen`'s
 defensive handling, so a broken `Settings()`/config never blanks the view.
 `do_undo(target) -> dict` wraps `server.tools.undo_last` via
 `host.paths.resolve_journal_path`/`resolve_plans_dir`, returning its raw result
 dict verbatim. Both `server.journal`/`server.tools` imports are late (inside
-the functions), matching the TUI's own existing discipline for these same
-imports — avoids dragging their heavier dependency chains in at module import
-time. Undo stays user-only and out of MCP by design: this module calls
-`server.tools.undo_last` directly (a local function call, same machine), the
-same way `host.app.JournalScreen` does; there is no agent-reachable path to it.
+the functions), matching the same discipline the deleted Textual TUI used for
+these same imports — avoids dragging their heavier dependency chains in at
+module import time. Undo stays user-only and out of MCP by design: this module
+calls `server.tools.undo_last` directly (a local function call, same machine),
+the same way the deleted `host.app.JournalScreen` did; there is no
+agent-reachable path to it.
 
 **`host/web/steplog.py`** (U4) — the internal-step log-strip rendering lifted out
 of `run_page`'s closure, originally intended so later screens (a journal view,

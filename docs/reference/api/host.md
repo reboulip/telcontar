@@ -1,6 +1,6 @@
 # host — API Reference
 
-Python API for the MCP host package. The host orchestrates the agent loop and presents the Textual TUI.
+Python API for the MCP host package. The host orchestrates the agent loop and presents the web UI.
 
 ---
 
@@ -8,17 +8,9 @@ Python API for the MCP host package. The host orchestrates the agent loop and pr
 
 Async agent loop — MCP client, LLM tool-calling loop, and approval callback protocol.
 
-The module is fully decoupled from Textual so it can be tested with plain `pytest-asyncio` tests. Callers supply async callbacks for events and approval.
+The module is fully decoupled from any UI framework so it can be tested with plain `pytest-asyncio` tests. Callers supply async callbacks for events and approval.
 
 ::: host.agent
-
----
-
-## host.app
-
-Textual TUI screens and widgets.
-
-::: host.app
 
 ---
 
