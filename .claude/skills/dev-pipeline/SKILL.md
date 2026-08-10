@@ -343,14 +343,23 @@ that is wasted and, worse, produces a doc describing a state that never existed.
 `docs/developer/architecture.md` are ~880 lines each (~54k tokens together) and are touched
 by nearly every wave. A fresh agent re-reads them from cold every time. So:
 
-- **Wave 1** — spawn it with `Agent`, `run_in_background: true`.
-- **Waves 2..N** — continue that **same** agent with `SendMessage`, addressed **by name**
-  (`to: "doc-keeper"`), passing the same prompt body. A send resumes the agent from its
-  transcript, so its context still holds the big docs and later waves skip the cold read
-  entirely. Addressing by name also works after a context compaction or a sprint resume —
-  do not persist or print a raw agent id.
-- Spawn a fresh `doc-keeper` only if the send fails to reach one, or if it reports that its
-  in-context copy of a doc no longer matches disk.
+- **Wave 1** — spawn it with `Agent`, `run_in_background: true`, then immediately persist
+  the returned agent id as a `Doc-keeper agent id:` line in `sprint-brief.md` (or in
+  `docs-pending.md` if planning was skipped).
+- **Waves 2..N** — continue that **same** agent with `SendMessage`, addressed **by the
+  persisted agent id** (`to: "[id from sprint-brief.md]"`), passing the same prompt body.
+  **Do not address it by name** (`to: "doc-keeper"`) — a real sprint tried that and it
+  failed outright ("No agent named 'doc-keeper' is reachable"); the sprint fell back to the
+  raw agent id for the rest of its waves with no further problems. Don't revert to
+  name-addressing without first re-confirming the harness actually supports it. A send
+  resumes the agent from its transcript, so its context still holds the big docs and later
+  waves skip the cold read entirely.
+- If the persisted id is lost (a context compaction that dropped `sprint-brief.md`, or a
+  sprint resume where the interrupted session's doc-keeper is gone), spawn a fresh
+  `doc-keeper`, overwrite the persisted id, and accept one cold read rather than guessing at
+  a stale id.
+- Spawn a fresh `doc-keeper` also if a send to the persisted id fails to reach one, or if it
+  reports that its in-context copy of a doc no longer matches disk.
 
 **Give it the diff and the targets — do not make it search.** The main session already read
 the source and already knows which docs the change lands in. Passing that removes a whole
@@ -372,10 +381,11 @@ Agent({
   description: "Update docs for [milestone] wave [N]",
   prompt: "Items in this wave:\n[label — title, one per item]\n\nChanged files:\n[list of files edited/created in Step 4]\n\nTarget docs:\n[page § section, one per line, or \"unknown\"]\n\nSummary of change:\n[1-2 sentences per item: what the implementation did — new/changed MCP tools, signatures, config keys, behaviour]\n\nDiff:\n```diff\n[committed unified diff of the wave's source changes]\n```"
 })
+# Then append "Doc-keeper agent id: [returned id]" to sprint-brief.md before moving on.
 
-# Waves 2..N — same agent, context still warm
+# Waves 2..N — same agent, addressed by its persisted id (NOT by name — see above)
 SendMessage({
-  to: "doc-keeper",
+  to: "[doc-keeper agent id from sprint-brief.md]",
   summary: "docs for [milestone] wave [N]",
   message: "[same prompt body, this wave's values]"
 })
@@ -406,6 +416,16 @@ doc-keeper that is still working on the previous wave; the harness does not docu
 case. Treat a wave as delivered only once it appears in a doc-keeper report. If a wave sits
 in `Docs pending:` across two later waves with no report mentioning it, assume the send was
 lost: join, then re-send that wave's prompt on its own.
+
+**Explicit hard failure — do not retry, do it yourself.** If a doc-keeper `Agent`/
+`SendMessage` call comes back (or is reported via notification) with an explicit
+hard-failure status — an API error, a session/rate-limit message, anything other than
+silence — do not retry it and do not wait for it to clear. A real 30-hour sprint hit this
+three times (doc-keeper's own session/rate limit) and resolved it the same way each time:
+make the doc edit directly in the main session, using the same `Diff:`/`Target docs:`
+information already prepared for that wave's prompt, mark that wave resolved in
+`Docs pending:` (note it was done directly, not by doc-keeper), and continue to the next
+wave. This is distinct from the silence/lost-send case above, which still gets a re-send.
 
 ---
 

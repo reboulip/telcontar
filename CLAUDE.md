@@ -246,13 +246,13 @@ Task orchestration for non-trivial work is delegated to specialized agents and s
 
 - **`sprint-planner`** (Opus subagent, xhigh reasoning): Strategic, up-front sprint planner. At the start of a non-trivial sprint, `/dev-pipeline` partitions the in-scope ROADMAP items into feature clusters and spawns one `sprint-planner` per cluster (up to 4, in parallel) to deep-read the code and return a Planning Report — recommended approach/sequencing, cross-cutting decisions, open questions, proposed roadmap adjustments, risks, and a required `Files touched & dependencies` table (`Writes` / `Depends on` / `Notes`) per item. The root unions those tables across clusters to compute the sprint's wave plan, aggregates open questions, asks the user once (consolidated), and writes an uncommitted `sprint-brief.md` (in gitignored `.claude/tmp/dev-pipeline/<slug>/`) that the rest of the sprint follows and that a resumed sprint reuses. Read-only; never edits, never asks the user directly. This replaces the old standalone design-clarification step.
 
-- **`doc-keeper`** (Sonnet subagent): Documentation maintainer. Runs once per wave in `/dev-pipeline` — Step 4.5 spawns it in the background on wave 1 and continues that **same** agent with `SendMessage` on later waves, so the two big developer docs are read from cold once per sprint rather than once per wave. It runs concurrently with the wave's test run and is joined before the commit, so docs land in the same commit as the code. It is given the wave's diff and the target doc pages, reads narrowly (grep + offset reads on large pages), and makes surgical updates to `README.md` and `docs/**`. Edits docs only — never source, `ROADMAP.md`, or `CLAUDE.md`.
+- **`doc-keeper`** (Sonnet subagent): Documentation maintainer. Step 5.5 spawns it in the background on wave 1 and continues that **same** agent for the rest of the sprint (addressed by its persisted agent id — name-addressing was tried and failed), so the two big developer docs are read from cold once per sprint rather than once per wave. It is fired **after** each wave's code-only commit, fire-and-forget — never joined per wave — and its edits land in one docs-only commit at Step 6.5, after the last wave. It is given the wave's diff and the target doc pages, reads narrowly (grep + offset reads on large pages), and makes surgical updates to `README.md` and `docs/**`. Edits docs only — never source, `ROADMAP.md`, or `CLAUDE.md`.
 
 - **`/test-select`**: Select and run the minimal pytest scope for the current branch's changes. Call before every commit. Blocks commit if any test fails.
 
 - **`/dev-pipeline`**: Full sprint orchestrator. Reads `ROADMAP.md`, batches independent unchecked items into dependency-ordered waves, and implements them on a `feat/` branch using the agents above — one commit per wave. Fast-forward-merges into `develop` by default, preserving per-wave commits (squash only on request). Start here when working through the roadmap. (Parallel git worktrees were evaluated and rejected for this repo — see `dev-pipeline/SKILL.md`'s "Why waves and not parallel git worktrees" if this comes up again.) End-of-session improvement reflection is not part of this skill — see `/learn` below.
 
-- **`/learn`**: End-of-session reflection, triggered by the user only. Reads the session transcript in a subagent and writes improvement proposals to `~/.claude/pending-improvements/` and learning notes to `~/.claude/pending-learnings/` — notes only, no review. Review happens later via `/experience-feedback` and `/teach-me-things`. It replaced a global Stop hook that fired too early in a session; never re-wire it as a hook and never run it on your own initiative.
+- **`/learn`**: End-of-session reflection, triggered by the user only. Reads the session transcript in a subagent and writes improvement proposals to `~/.claude/pending-improvements/`. Any learning note it produces is rendered in the same run as a permanent one-pager Artifact — no separate `/teach-me-things` step needed any more. Proposals still just wait for `/experience-feedback`. It replaced a global Stop hook that fired too early in a session; never re-wire it as a hook and never run it on your own initiative.
 
 ## ROADMAP conventions
 
@@ -274,6 +274,10 @@ mid-sprint while another edits the roadmap or a skill file). This applies to
   itself, re-read it once at the start of the pass rather than trusting an earlier read
   from the same session (see `/dev-pipeline` Step 1's roadmap re-read rule for the
   canonical example).
+- If you route around an instruction from a skill/agent file or this file because it failed
+  in practice (e.g. a documented call form or addressing scheme doesn't work), say so
+  explicitly in the run summary and propose the correction — a silent workaround leaves a
+  known-bad rule in the repo for the next session to hit the same way.
 
 ## Roadmap / Future
 
