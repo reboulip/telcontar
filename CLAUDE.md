@@ -2,11 +2,23 @@
 
 ## Project Overview
 
-A locally-run, **profile-driven document-intelligence engine**. Given a directory of documents dumped in bulk, it analyzes each one (title, date, type, summary, author, mentioned people, why it's here), records them in a persistent content-addressed memory registry, detects duplicates and modified versions, organizes the tree (rename / move / quarantine), and synthesizes an overall summary — all locally. Everything domain-specific (the document-type vocabulary, entity/role model, extraction guardrails, naming, synthesis template, output sinks) is externalized into a declarative **domain profile**, so the same engine serves different kinds of corpora. The **IS/IT-project profile** (`profiles/is_it_project.toml`) ships as profile #1. Intelligence comes from an LLM via any OpenAI-compatible endpoint; the server stays deterministic (it persists what the model reasons out).
+A locally-run, **profile-driven document-intelligence engine**. Given a directory of documents dumped in bulk, it analyzes each one (title, date, type, summary, author, mentioned people, why it's here), records them in a persistent content-addressed memory registry, detects duplicates and modified versions, organizes the tree (rename / move / quarantine), and synthesizes an overall summary — all locally. Everything domain-specific (the document-type vocabulary, entity/role model, extraction guardrails, naming, synthesis template, output sinks) is externalized into a declarative **domain profile**, so the same engine serves different kinds of corpora. Three profiles ship today: **IS/IT-project** (`profiles/is_it_project.toml`, the default), **personal files**, and **research papers** (see `docs/user-guide/profiles.md`). Intelligence comes from an LLM via any OpenAI-compatible endpoint; the server stays deterministic (it persists what the model reasons out).
 
 **Architecture:** MCP-based (Stack B1).
 - A custom Python MCP server exposes guarded file-system tools.
 - A thin custom Python MCP host runs the agent loop and routes to any OpenAI-compatible endpoint (Azure OpenAI, Mammouth, or another compatible provider).
+
+## Communication Style
+
+Write all chat replies to the user in **ASD-STE100 Simplified Technical English**: short sentences, one idea per sentence, active voice, no idioms, no jargon.
+
+Also follow Zinsser's four principles of quality writing:
+1. **Simplicity** — strip each sentence to its main parts.
+2. **Brevity** — use the fewest words that carry the meaning.
+3. **Clarity** — make the point easy to find and easy to understand.
+4. **Humanity** — write like a person talking to a person.
+
+This applies to chat replies. It does not require rewriting existing docs/code comments in this style.
 
 ## Core Principles
 
@@ -82,7 +94,7 @@ ALLOWLIST_DIRS=          # optional: restrict content upload to these dirs
 
 ## Domain Profiles
 
-Everything domain-specific lives in a declarative TOML profile under `profiles/` (e.g. `profiles/is_it_project.toml`). A profile defines the document-type vocabulary, the entity/role taxonomy and salient-actor cap, the extraction fields (required vs optional "IF POSSIBLE" guardrails), the naming convention, the synthesis template, and the output sinks. The active profile is chosen by the `profile` setting (default `is_it_project`); the host composes its system prompt from it and `record_document` validates against it. Add a sibling `.toml` to adapt telcontar to a different corpus — no code change.
+Everything domain-specific lives in a declarative TOML profile under `profiles/`. A profile defines the document-type vocabulary, the entity/role taxonomy and salient-actor cap, the extraction fields (required vs optional "IF POSSIBLE" guardrails), the naming convention, the synthesis template, and the output sinks. The active profile is chosen by the `profile` setting (default `is_it_project`); the host composes its system prompt from it and `record_document` validates against it. Three profiles ship today — `is_it_project.toml` (default), `personal_files.toml`, `research_papers.toml` — see `docs/user-guide/profiles.md`. Add a sibling `.toml` to adapt telcontar to a different corpus — no code change.
 
 ## Safety Model
 
@@ -164,7 +176,9 @@ project/
 ├── config/
 │   └── settings.py         # env loading + validation
 ├── profiles/
-│   └── is_it_project.toml  # domain profile #1
+│   ├── is_it_project.toml  # default domain profile
+│   ├── personal_files.toml
+│   └── research_papers.toml
 ├── docs/developer/         # architecture/, modules/ — maintained source of truth
 └── tests/
 ```
@@ -174,20 +188,50 @@ project/
 > `docs/developer/modules/` are the maintained, current source of truth; see the pointer
 > under "## Architecture" above.
 
+## Documentation Ownership
+
+Which doc owns which topic — the `doc-keeper` agent (and anyone editing docs by hand) uses this to route a change to the right page instead of guessing or duplicating content.
+
+| File | Scope |
+|------|-------|
+| `README.md` | User-facing: setup, prerequisites, usage, config env vars, high-level feature list. |
+| `docs/developer/architecture/core.md` | Components, responsibilities, data flow — everything except the web UI. |
+| `docs/developer/architecture/web-ui.md` | The NiceGUI web UI's own architecture and design decisions (`host/web/`). |
+| `docs/reference/mcp-tools.md` | Per-tool reference: signature, description, inputs, outputs, safety category. One entry per MCP tool. |
+| `docs/developer/internals/plan-lifecycle.md` | Design doc for the plan + journal system (states, transitions, reconciliation). |
+| `docs/developer/modules/core.md` | Per-module reference for `config/`, `server/`, and `host/`'s non-web modules (key types/functions, design notes). No `(~NNN lines)` annotations — these go stale and are never maintained; strip them on sight rather than correcting the number. |
+| `docs/developer/modules/web-ui.md` | Per-module reference for `host/web/*.py`. Same no-line-count-annotation rule. |
+| `docs/developer/security-model.md` | Living security audit: trust boundaries, egress/capability surface, threat model, findings register (§5), remediation plan (§6). When a change closes or partially closes a finding, mark the affected remediation item `**[Status — YYYY-MM-DD, see Px #N]**` (Status: Done / Mitigated / Remediated / Partially remediated), strike through the closed portion with `~~...~~` and replace it with what actually changed, then apply the same marker to the corresponding §5 row. Touch only the specific finding/remediation item a change affects — never rewrite unrelated rows, never rewrite history. |
+| `docs/user-guide/*.md`, `docs/getting-started/*.md`, `docs/index.md` | User-facing guides (approval modes, how-it-works, outputs, quickstart, configuration) and the docs home page. |
+| New `docs/**/*.md` pages | Create one only when a change introduces a substantial subsystem with no home above. **Every new page needs a `nav:` entry in `mkdocs.yml` in the same edit that creates it** — `mkdocs build --strict` (the CI docs gate) fails on any page present on disk but missing from `nav:`. |
+
+Match the existing format of whatever page you're editing (the tools reference uses a fixed per-tool template; architecture uses bold component headers and an ASCII data-flow block) — mirror heading levels, tone, and code-fence style rather than reformatting. Document only what is true in the code as it stands, not intended or planned behaviour.
+
 ## Development Setup
 
 ```bash
-# Install Python + deps via uv
-uv sync
+# Install Python + dev + test deps via uv (one call — see docs/developer/contributing.md
+# for why separate `uv sync --group X` calls fight each other instead of adding up)
+uv sync --group dev --group test
+
+# Activate the pre-commit hook (one-time per clone)
+uv run pre-commit install
 
 # Run the MCP server (stdio) — usually launched by the host
 uv run python -m server.main
 
 # Run the host (agent loop) against a target directory
 uv run python -m host.main --target "C:\path\to\messy\dir"
+
+# Run the test suite
+uv run --group test pytest -q --tb=short
 ```
 
 For dev, point `LLM_BASE_URL`/`LLM_API_KEY` at Mammouth. For prod, point them at the Azure OpenAI private endpoint. Nothing else changes.
+
+**Toolchain:** ruff (lint + format), mypy (type check, CI gate: `uv run mypy host server config`), ty (fast local type check: `uv run ty check host server config`), pytest (tests). All four run in `.pre-commit-config.yaml`; pytest is the exception kept out of the git hook (too slow per-commit) — it's gated instead by `/test-select` before each commit and by CI on every PR. Full reference: `docs/developer/contributing.md`.
+
+**Full test suite runtime:** ~104s for 960 tests (measured 2026-08-11 — grows as the roadmap adds tests; re-measure occasionally). `/test-select` uses this figure to decide whether to just run the full suite instead of computing a scoped subset — see that skill for the current threshold logic.
 
 ## Conventions for Claude / the Agent
 
@@ -229,6 +273,7 @@ Releases are **automated** by `.github/workflows/release.yml`, which triggers on
 Releases are always tagged on `main`: first merge the `develop` → `main` PR (per the Branch Model), then bump the version and tag.
 
 1. Bump `version` in `pyproject.toml` (PEP 440 — e.g. `1.0.0`, or `0.1.0b2` for a beta), commit.
+   Commit message: `chore: bump version to X.Y.Z (beta)` — drop " (beta)" for a stable release.
 2. Push the branch, then push an annotated tag `vX.Y.Z[abrc]N` (e.g. `v0.1.0b2`).
 
 CI then runs `uv build` and creates a GitHub Release with the wheel + sdist attached and auto-generated notes — marked **prerelease** when the tag contains `a`, `b`, or `rc`. It also publishes to PyPI when the `PYPI_ENABLED` repo variable is `true` (otherwise that job is skipped).
@@ -244,6 +289,8 @@ ROADMAP items that resolve a GitHub issue must tag it inline: `[#N]` at the end 
 
 Task orchestration for non-trivial work is delegated to specialized agents and skills; git operations run directly in the main session (see Branch Model's Hard rules).
 
+All seven — `feature-forecast`, `sprint-planner`, `doc-keeper`, `/test-select`, `/gh-issues`, `/release`, and `/dev-pipeline` — are installed globally (`~/.claude/agents/`, `~/.claude/skills/`) — shared across every project on this machine, not telcontar-specific files. They read this file (and `ROADMAP.md`) for telcontar's own conventions (branch model, ROADMAP format, doc ownership, toolchain commands) rather than hardcoding them.
+
 - **`feature-forecast`** (Haiku subagent, background): Pre-reads the codebase for the next ROADMAP item while the current item is being implemented. Invoked automatically by `/dev-pipeline` with `run_in_background: true`.
 
 - **`sprint-planner`** (Opus subagent, xhigh reasoning): Strategic, up-front sprint planner. At the start of a non-trivial sprint, `/dev-pipeline` partitions the in-scope ROADMAP items into feature clusters and spawns one `sprint-planner` per cluster (up to 4, in parallel) to deep-read the code and return a Planning Report — recommended approach/sequencing, cross-cutting decisions, open questions, proposed roadmap adjustments, risks, and a required `Files touched & dependencies` table (`Writes` / `Depends on` / `Notes`) per item. The root unions those tables across clusters to compute the sprint's wave plan, aggregates open questions, asks the user once (consolidated), and writes an uncommitted `sprint-brief.md` (in gitignored `.claude/tmp/dev-pipeline/<slug>/`) that the rest of the sprint follows and that a resumed sprint reuses. Read-only; never edits, never asks the user directly. This replaces the old standalone design-clarification step.
@@ -253,6 +300,10 @@ Task orchestration for non-trivial work is delegated to specialized agents and s
 - **`/test-select`**: Select and run the minimal pytest scope for the current branch's changes. Call before every commit. Blocks commit if any test fails.
 
 - **`/dev-pipeline`**: Full sprint orchestrator. Reads `ROADMAP.md`, batches independent unchecked items into dependency-ordered waves, and implements them on a `feat/` branch using the agents above — one commit per wave. Fast-forward-merges into `develop` by default, preserving per-wave commits (squash only on request). Start here when working through the roadmap. (Parallel git worktrees were evaluated and rejected for this repo — see `dev-pipeline/SKILL.md`'s "Why waves and not parallel git worktrees" if this comes up again.) End-of-session improvement reflection is not part of this skill — see `/learn` below.
+
+- **`/gh-issues`**: Triages the open GitHub issue backlog with the user (implement / defer / drop, applying the disposition immediately), then plans *implement* issues into `ROADMAP.md` following the ROADMAP conventions below, and labels/comments each issue in GH. Feeds `/dev-pipeline` — planned issues become roadmap items a later sprint implements.
+
+- **`/release`**: Cuts a release per the Branch Model and Releases sections above — bumps the version, opens the `develop` → `main` PR, waits for CI (fixing any real failure rather than retrying), merges without squashing, tags `main`, and verifies the GitHub Release publishes.
 
 - **`/learn`**: End-of-session reflection, triggered by the user only. Reads the session transcript in a subagent and writes improvement proposals to `~/.claude/pending-improvements/`. Any learning note it produces is rendered in the same run as a permanent one-pager Artifact — no separate `/teach-me-things` step needed any more. Proposals still just wait for `/experience-feedback`. It replaced a global Stop hook that fired too early in a session; never re-wire it as a hook and never run it on your own initiative.
 
@@ -265,21 +316,25 @@ Task orchestration for non-trivial work is delegated to specialized agents and s
 ## Concurrent sessions
 
 More than one Claude Code session may work in this repo at once (e.g. one session
-mid-sprint while another edits the roadmap or a skill file). This applies to
-`ROADMAP.md`, `CLAUDE.md`, and everything under `.claude/skills/**` and
-`.claude/agents/**` — files an agent reads once into context and then edits by anchor.
+mid-sprint while another edits the roadmap). This applies to `ROADMAP.md` and
+`CLAUDE.md` — files an agent reads once into context and then edits by anchor.
 
 - If an `Edit` result reports the file was modified on disk since it was last read,
   **re-read the file before making any further edit to it** — do not chain more
   anchor-based edits off a stale in-context view.
-- Before starting a multi-edit pass on `ROADMAP.md`, a skill/agent file, or `CLAUDE.md`
-  itself, re-read it once at the start of the pass rather than trusting an earlier read
-  from the same session (see `/dev-pipeline` Step 1's roadmap re-read rule for the
-  canonical example).
-- If you route around an instruction from a skill/agent file or this file because it failed
-  in practice (e.g. a documented call form or addressing scheme doesn't work), say so
-  explicitly in the run summary and propose the correction — a silent workaround leaves a
-  known-bad rule in the repo for the next session to hit the same way.
+- Before starting a multi-edit pass on `ROADMAP.md` or `CLAUDE.md` itself, re-read it
+  once at the start of the pass rather than trusting an earlier read from the same
+  session (see `/dev-pipeline` Step 1's roadmap re-read rule for the canonical example).
+- If you route around an instruction from `CLAUDE.md` or one of the global workflow
+  agents/skills because it failed in practice (e.g. a documented call form or addressing
+  scheme doesn't work), say so explicitly in the run summary and propose the correction —
+  a silent workaround leaves a known-bad rule for the next session to hit the same way.
+
+The workflow agents/skills themselves (`~/.claude/agents/`, `~/.claude/skills/`) are
+global, not project files — the same re-read-before-multi-edit discipline still applies
+if you're editing one of them directly (e.g. during a genericization pass), but the
+concurrency risk is lower: they're shared across projects and edited far less often than
+`ROADMAP.md`.
 
 ## Roadmap / Future
 
