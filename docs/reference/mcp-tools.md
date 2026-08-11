@@ -306,7 +306,7 @@ Append proposed file operations to an existing `pending` plan. Each call perform
 propose_rename(path: str, new_name: str, plan_id: str) -> dict
 ```
 
-Stage a rename of `path` to `new_name` (basename only, not a full path). Raises `FileExistsError` if `{parent}/{new_name}` already exists.
+Stage a rename of `path` to `new_name` (basename only, not a full path). Raises `FileExistsError` if `{parent}/{new_name}` already exists. Also raises `ValueError` (X8) if the resulting name collides with the configured quarantine folder — its own name or a known quarantine/discard-word alias, case/locale-insensitive — so a taxonomy rename can never shadow the server-managed quarantine folder.
 
 **Returns:** `{plan_id, op_id, op_type, src, dst, status, ops_count}`
 
@@ -318,7 +318,7 @@ Stage a rename of `path` to `new_name` (basename only, not a full path). Raises 
 propose_move(path: str, dest_dir: str, plan_id: str) -> dict
 ```
 
-Stage moving `path` into `dest_dir`. Raises `FileExistsError` if `dest_dir/filename` already exists. Raises `ValueError` if `dest_dir` is not an existing directory **and** no `propose_create_dir` op for that exact path is already queued earlier in the same pending plan — this lets the agent propose "create a folder, then move a file into it" within a single plan, regardless of the two ops' relative order: `execute_plan` runs every `create_dir` op before any other op type, so the dependent `move` always finds its destination already created (and self-heals via its own `mkdir` even if it doesn't).
+Stage moving `path` into `dest_dir`. Raises `FileExistsError` if `dest_dir/filename` already exists. Raises `ValueError` if `dest_dir` is not an existing directory **and** no `propose_create_dir` op for that exact path is already queued earlier in the same pending plan — this lets the agent propose "create a folder, then move a file into it" within a single plan, regardless of the two ops' relative order: `execute_plan` runs every `create_dir` op before any other op type, so the dependent `move` always finds its destination already created (and self-heals via its own `mkdir` even if it doesn't). Also raises `ValueError` (X8) if `dest_dir`'s basename collides with the quarantine folder (same alias/case-fold check as `propose_rename`) or `dest_dir` resolves inside the quarantine directory itself — checked on the destination only, never the source, so moving a file *out of* quarantine stays legal.
 
 ---
 
@@ -362,7 +362,7 @@ Stage writing `content` to `path`, whether or not it already exists. Refuses to 
 propose_create_dir(path: str, plan_id: str) -> dict
 ```
 
-Stage creating a directory (and any missing parents) at `path`. Idempotent and collision-safe at execution time — creating a directory that already exists is a no-op, not an error. Raises `ValueError` at proposal time if `path` already exists as a file.
+Stage creating a directory (and any missing parents) at `path`. Idempotent and collision-safe at execution time — creating a directory that already exists is a no-op, not an error. Raises `ValueError` at proposal time if `path` already exists as a file. Also raises `ValueError` (X8) if `path`'s basename collides with the configured quarantine folder or resolves inside it — an agent-proposed taxonomy folder can never collide with the server-managed quarantine folder; use `propose_quarantine` to set a document aside instead.
 
 **Returns:** same shape as `propose_create_file`.
 

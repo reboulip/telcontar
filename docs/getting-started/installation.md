@@ -51,7 +51,7 @@ telcontar
 The wizard asks for your AI service URL and API key, then saves them securely (OS credential store on Windows and macOS, or `~/.telcontar/config.env` as fallback). No manual editing of config files required.
 
 !!! tip
-    You can re-open the settings at any time from any page using the **⚙ Settings** entry in the sidebar.
+    You can re-open the settings at any time from any page using the nav bar's **Settings** tab or the **⚙ Settings** entry in the sidebar.
 
 ---
 

@@ -23,7 +23,7 @@ When you run `telcontar`, the app checks whether a minimum configuration (AI ser
 
 - **First run** — the **setup wizard** (`/setup`) appears automatically. It guides you through choosing an endpoint (Azure OpenAI or another OpenAI-compatible service), entering the service URL and API key, and selecting a document profile. The key is stored in the OS credential store (Windows Credential Manager / macOS Keychain); other settings go to `~/.telcontar/config.env`.
 - **Returning user** — the startup page appears directly, with a directory tree in the sidebar and **Use selected directory** / **Query** actions.
-- **From anywhere** — **⚙ Settings** in the sidebar is reachable from every page, including mid-run, to change the URL, API key, profile, and approval mode.
+- **From anywhere** — a persistent nav bar at the top of every page offers **Conversation / Corpus / Query / Settings** tabs, each enabling as a run or an analyzed corpus becomes available (Settings is always enabled). **⚙ Settings**, also reachable from the sidebar on every page, lets you change the URL, API key, profile, and approval mode, including mid-run.
 
 ---
 
@@ -36,6 +36,8 @@ Pressing **Organize** does not launch the agent immediately. The `OrganizerScree
 - A **Start organizing** button (pressing Enter in the instructions field works too).
 
 Only once you proceed does the chat transcript appear and the agent loop start. Any instructions you typed are shown as a `you` turn in the transcript and passed to `run_agent_loop(..., instructions=...)`, which appends them to the agent's first user message so the run follows your intent instead of organizing blind.
+
+The full path of the directory being organized stays visible above the transcript for the whole run, not just on the starter pane, and the sidebar tree highlights the matching folder — so it's always clear which directory a long-running organize is actually working on.
 
 ---
 
@@ -155,6 +157,8 @@ fetches plan details  →  shows the plan-approval dialog
        Agent receives "Plan rejected" and revises
 ```
 
+The approval dialog also shows the path to the full ops JSON snapshot (`.organizer/plan_ops.json`) it just wrote, next to a **Reveal in file explorer** button that opens your OS file manager with that file selected (on Linux, its containing folder, since there's no portable "select this file" command there) — a shortcut for inspecting the raw plan without navigating there by hand.
+
 The gate is controlled by `APPROVAL_MODE`. See [Approval Modes](approval-modes.md).
 
 The plan is only ever shown when the agent calls `execute_plan` — if it finishes staging and reviewing a plan but ends its turn without calling `execute_plan`, telcontar recognises the still-pending plan and re-prompts the agent once to submit it, instead of silently ending the run with an unpresented plan. If that single re-prompt still doesn't get the agent to call `execute_plan`, the run ends normally but its final message names the unexecuted plan rather than losing it without a trace.
@@ -254,6 +258,9 @@ After a corpus has been analyzed (its `.organizer/` memory exists), telcontar of
 
 - From the startup page, click **Query**. The selected folder — or one of its parent folders — must contain a `.organizer/` from a previous Organize run; telcontar walks up from the folder you picked until it finds one, so choosing a subfolder of a previously-organized tree still resolves to that tree's memory. If none is found, an error asks you to run Organize first.
 - From the run page, click **Query this corpus** once organizing completes.
+- From the nav bar's **Query** tab, available on any page once telcontar can resolve an analyzed corpus for the current directory.
+
+Clicking **Query this corpus** or the nav bar's **Query** tab reuses an existing query session for the same directory if one is already open, so returning to it resumes the same conversation instead of starting a fresh one; the startup page's **Query** button always starts a new session.
 
 ### What happens
 
@@ -279,13 +286,20 @@ The host exposes only the tools in `QUERY_ALLOWED_TOOLS` to the model — no pla
 
 ---
 
+## Document preview while organizing
+
+Once a run has started, clicking a file in the sidebar tree opens a live preview pane beside the conversation. If the file has already been analyzed, the pane shows the same fields as the corpus browser's detail pane — title, type, date, status, summary, provenance, and entities. If it hasn't been analyzed yet, the pane instead shows just the filename plus basic filesystem details (size, last modified) — no content is read or sent anywhere for an unanalyzed file. Clicking a folder, or nothing at all, collapses the pane back to its placeholder.
+
+---
+
 ## Browsing the corpus directly
 
 The web UI also has a **corpus browser** — a sortable, filterable table over every analyzed document, with no LLM call and no agent turn involved at all. It's reachable via the **Browse corpus** button beside **Query this corpus**, once a run finishes.
 
 - **Search** filters the table as you type, matched against each document's full title, type, and summary text — not just the shortened preview shown in the table.
 - **Columns** — title, type, date, status, summary, entities — sort by clicking their header. The summary and entities columns show short previews (entities lists up to three names, then "+N" for the rest).
-- **Selecting a row** opens a detail pane beside the table with that document's full summary, full provenance, and every recorded entity (name, role, kind) — nothing truncated.
+- **Clicking a row** opens a detail pane beside the table with that document's location (its path within the organized folder), full summary, full provenance, and every recorded entity (name, role, kind) — nothing truncated.
+- The table refreshes itself automatically every few seconds, so it stays in sync as a plan is approved and files get renamed or moved elsewhere — press the refresh button beside the heading for an immediate update instead of waiting.
 
 ---
 

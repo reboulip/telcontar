@@ -39,7 +39,7 @@ Pick the vocabulary that best matches what you'll organize:
 The wizard saves your settings and takes you straight to the startup page. You will not see it again on subsequent launches.
 
 !!! tip
-    You can update any of these settings at any time from **⚙ Settings**, reachable from the sidebar on every page.
+    You can update any of these settings at any time from **⚙ Settings** — reachable from the nav bar's **Settings** tab or the sidebar, on every page.
 
 ---
 
@@ -64,7 +64,7 @@ Below that, an optional field invites steering instructions — e.g. "group by w
 
 The run page shows the directory tree in the left sidebar (which live-updates as files are renamed, moved, or quarantined) and a chat transcript on the right, with a progress bar and status line above the chat box.
 
-Before any chat turn appears, telcontar deterministically discovers and checksums the whole directory tree, silently — no LLM call, and no transcript turn for this step, just the **progress bar** (e.g. "12 / 47 documents analyzed", with the document currently being read). If it finds documents it hasn't seen before, it pauses once to show a cost estimate scoped to just those new documents (see [How It Works](../user-guide/how-it-works.md#the-cost-estimate-approval-gate)) before reading and analyzing them. `telcontar` narrates the steps that follow in plain language, one entry per macro-task, in a compact activity strip pinned below the transcript (e.g. "Reading documents…", "Recording documents in memory…", "Checking for duplicates…") — each entry can be expanded to see the raw tool calls and results behind it.
+Before any chat turn appears, telcontar deterministically discovers and checksums the whole directory tree, silently — no LLM call, and no transcript turn for this step, just the **progress bar** (e.g. "12 / 47 documents analyzed", with the document currently being read). If it finds documents it hasn't seen before, it pauses once to show a cost estimate scoped to just those new documents (see [How It Works](../user-guide/how-it-works.md#the-cost-estimate-approval-gate)) before reading and analyzing them. `telcontar` narrates the steps that follow in plain language, one entry per macro-task (e.g. "Reading documents…", "Recording documents in memory…", "Checking for duplicates…") — interleaved right into the chat transcript, in the order things actually happened. Below that, a separate compact strip lists every individual tool call telcontar makes, one line each — each entry can be expanded to see the raw call and result behind it.
 
 New documents are analyzed in isolated batches of 10 — read/extract, then one forced-tool LLM call returning a structured record per document, then recorded into the registry in one `record_document_batch` call per batch. Only once every new document is recorded does the chat loop begin; the agent (now working from a digest of the whole corpus, not raw file content) calls `find_duplicates` while planning to spot the copy.
 

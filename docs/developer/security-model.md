@@ -158,6 +158,7 @@ defence-in-depth second check — this path is well isolated.
 | Registry / graph / events | `record_document`, `record_document_batch` (O2), `rehome_documents` (P4), `get_*`, `list_*`, `build_graph`, `create_event`, … — as of P6, `record_document`/`record_document_batch`/`lookup_documents`/`rehome_documents` are also excluded from the ORGANIZE-phase model's own toolset (`ORGANIZE_DENIED_TOOLS`); the read-only `get_*`/`list_*`/`build_graph`/`create_event` tools remain available | No (metadata only) |
 | **Plan → approve → execute** | `create_plan`, `propose_rename`/`propose_move`/`propose_quarantine`/`propose_create_file`/`propose_update_file`/`propose_create_dir`/`propose_archive_document`/`propose_compress_quarantine`, `review_plan`, `approve_plan`, `execute_plan` | **Yes** — `execute_plan` routes through the approval modal |
 | **Undo** (not an MCP tool) | `undo_last` | **Yes, exclusively** — the agent cannot call it at all; it is triggered only by the user clicking "Undo last operation" in the web UI's journal dialog (opened via the "Journal" toolbar button) |
+| **Reveal in file explorer** (not an MCP tool, X5) | `reveal_in_file_manager` (`host/paths.py`) | **Yes, exclusively** — spawns a native OS file-manager process (Explorer's `/select,`, `open -R`, or `xdg-open`) only from the user clicking the approval dialog's "Reveal in file explorer" button. The agent has no path to it; the button operates on `ops_json_path`, a host-authoritative value the model never supplies, and the call site still confines it to `session.target` defensively before spawning |
 
 **Remediated (S1, 2026-07-07):** `move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`, `archive_document`, and `compress_quarantine` no longer exist as standalone tools. Every filesystem-mutating operation they used to perform — file writes, folder creation, archiving a document, and compressing quarantine — is now staged via a `propose_*` call and applied only through `execute_plan`, exactly like moves/renames/quarantines already were. `undo_last` was removed from the MCP tool surface entirely rather than gated; it survives only as a plain function invoked directly by the web UI (bypassing the agent and MCP both). See §6, P0 #1.
 
@@ -329,6 +330,13 @@ To be fair to the design, these mitigations exist and should be preserved:
   `propose_create_file`/`create_file` (`check_no_overwrite`, re-checked again at
   `execute_plan` time); `propose_update_file` defaults to `overwrite=False`;
   quarantine picks a collision-safe name.
+- **Quarantine-name collision guarded (X8)**: `propose_rename`, `propose_move`
+  (destination only — never the source, so un-quarantining stays legal), and
+  `propose_create_dir` reject any destination whose basename reads as
+  quarantine-like (`server/guards.py`'s locale/case-insensitive fold plus a fixed
+  set of French/Spanish/English discard-word aliases) or that resolves inside the
+  configured quarantine directory — an agent-proposed taxonomy folder can never
+  shadow or nest inside the server-managed quarantine folder.
 - **Reversibility**: the undo journal + archive log make plan ops undoable, and
   `compress_quarantine` (now staged via `propose_compress_quarantine`) verifies the
   archive byte-for-byte before removing originals.
