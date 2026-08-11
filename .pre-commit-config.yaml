@@ -1,0 +1,45 @@
+# Vendored third-party assets (font files, license text) should stay
+# byte-identical to upstream — never auto-fixed by hygiene hooks.
+exclude: ^host/web/assets/
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-merge-conflict
+      - id: check-added-large-files
+      - id: check-toml
+      - id: check-yaml
+
+  # Local hooks run through `uv run`, not pre-commit's own isolated installs,
+  # so the hook always uses the exact ruff/mypy/ty versions pinned in
+  # uv.lock — the same ones CI runs — instead of a second, driftable set.
+  - repo: local
+    hooks:
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format
+        language: system
+        types: [python]
+
+      - id: ruff-check
+        name: ruff check --fix
+        entry: uv run ruff check --fix
+        language: system
+        types: [python]
+
+      - id: mypy
+        name: mypy (host server config)
+        entry: uv run mypy host server config
+        language: system
+        types: [python]
+        pass_filenames: false
+
+      - id: ty
+        name: ty check (host server config)
+        entry: uv run ty check host server config
+        language: system
+        types: [python]
+        pass_filenames: false

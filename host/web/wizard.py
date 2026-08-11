@@ -44,13 +44,13 @@ async def build_setup_wizard(*, on_finish: Callable[[], None]) -> None:
     @ui.refreshable
     def steps() -> None:
         if state.step == 0:
-            _step_welcome(state, steps.refresh)
+            _step_welcome(state, steps.refresh)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         elif state.step == 1:
-            _step_service(state, steps.refresh)
+            _step_service(state, steps.refresh)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         elif state.step == 2:
-            _step_api(state, steps.refresh)
+            _step_api(state, steps.refresh)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         elif state.step == 3:
-            _step_profile(state, steps.refresh, options)
+            _step_profile(state, steps.refresh, options)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
         else:
             _step_done(on_finish)
 

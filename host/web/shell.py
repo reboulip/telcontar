@@ -259,7 +259,7 @@ def app_shell(
                 # only) is about LLM/corpus-derived text, which this is not.
                 ui.html(theme.LOGO_SVG).classes("tc-logo")
                 ui.label("telcontar").classes("text-h6 tc-display")
-            with ui.tabs(value=active).props("dense") as tabs:
+            with ui.tabs(value=active or None).props("dense") as tabs:  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]  # NiceGUI Tabs accepts str|None at runtime; its stub only lists Tab|TabPanel|None
                 conversation_tab = ui.tab("conversation", label="Conversation").mark(
                     "nav-conversation"
                 )
@@ -301,7 +301,7 @@ def app_shell(
         )
         with ui.row().classes("w-full items-center justify-between q-px-sm"):
             ui.label("telcontar").classes("text-subtitle2 tc-display")
-            ui.button(icon="refresh", on_click=lambda: shell.reload_tree()).props(
+            ui.button(icon="refresh", on_click=lambda: shell.reload_tree()).props(  # type: ignore[has-type]
                 "flat dense round"
             ).mark("btn-tree-refresh").tooltip("Refresh file tree")
 
@@ -316,9 +316,9 @@ def app_shell(
             with ui.row().classes("w-full items-center q-px-sm q-gutter-xs"):
 
                 def _go_up() -> None:
-                    parent = shell.target.parent if shell.target else root.parent
-                    if shell.target is not None and parent != shell.target:
-                        shell.refresh_tree(parent)
+                    parent = shell.target.parent if shell.target else root.parent  # type: ignore[has-type]
+                    if shell.target is not None and parent != shell.target:  # type: ignore[has-type]
+                        shell.refresh_tree(parent)  # type: ignore[has-type]
 
                 ui.button(icon="arrow_upward", on_click=_go_up).props("flat dense").tooltip(
                     "Up one level"
@@ -327,7 +327,7 @@ def app_shell(
                 if drives:
                     ui.select(
                         {str(d): str(d) for d in drives},
-                        on_change=lambda e: shell.refresh_tree(Path(e.value)),
+                        on_change=lambda e: shell.refresh_tree(Path(e.value)),  # type: ignore[has-type]
                     ).props("dense borderless").classes("flex-grow")
 
         nodes = web_tree.build_nodes(root)
@@ -353,7 +353,7 @@ def app_shell(
             ui.separator()
             with ui.row().classes("w-full items-center justify-between q-px-sm"):
                 detail_title = ui.label().classes("text-subtitle2 ellipsis").mark("detail-title")
-                ui.button(icon="close", on_click=lambda: shell.hide_detail()).props(
+                ui.button(icon="close", on_click=lambda: shell.hide_detail()).props(  # type: ignore[has-type]
                     "flat dense round size=sm"
                 ).mark("btn-detail-close")
             detail_content = (

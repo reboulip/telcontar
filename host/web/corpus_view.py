@@ -28,7 +28,9 @@ from host.web.session import RunSession
 
 _SUMMARY_PREVIEW_CHARS = 120
 
-_COLUMNS = [
+_COLUMNS: list[
+    dict
+] = [  # explicit annotation avoids mypy inferring list[object] from the mixed-value dict literal
     {"name": "title", "label": "Title", "field": "title", "align": "left", "sortable": True},
     {"name": "type", "label": "Type", "field": "type", "align": "left", "sortable": True},
     {"name": "date", "label": "Date", "field": "date", "align": "left", "sortable": True},

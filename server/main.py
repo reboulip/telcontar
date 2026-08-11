@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
@@ -15,7 +16,7 @@ _settings = None
 _profile = None
 
 
-def _get_settings():
+def _get_settings() -> Any:
     global _settings
     if _settings is None:
         from config.settings import load
@@ -24,7 +25,7 @@ def _get_settings():
     return _settings
 
 
-def _get_profile():
+def _get_profile() -> Any:
     global _profile
     if _profile is None:
         from server.profile import load_profile
@@ -34,7 +35,7 @@ def _get_profile():
     return _profile
 
 
-def _confinement_roots(cfg) -> list[Path]:
+def _confinement_roots(cfg: Any) -> list[Path]:
     """Roots every path-taking tool is confined to (M2/S3): the run's target
     directory (if the host set one via TARGET_DIR) plus the server's own working
     directory, where `.organizer` and the quarantine dir live by default."""
@@ -45,19 +46,19 @@ def _confinement_roots(cfg) -> list[Path]:
     return roots
 
 
-def _check_within_root(path: str, cfg) -> None:
+def _check_within_root(path: str, cfg: Any) -> None:
     from server.guards import check_within_root
 
     check_within_root(Path(path), _confinement_roots(cfg))
 
 
-def _check_not_quarantine(path: str, cfg) -> None:
+def _check_not_quarantine(path: str, cfg: Any) -> None:
     from server.guards import check_not_quarantine_collision
 
     check_not_quarantine_collision(Path(path), cfg.quarantine_dir)
 
 
-def _log_egress(path: str, content: str, tool: str, cfg) -> None:
+def _log_egress(path: str, content: str, tool: str, cfg: Any) -> None:
     """Record a file whose content was sent to the LLM endpoint (S8/M12).
 
     ``content`` is what the tool actually returned (post-truncation), so the
@@ -70,7 +71,7 @@ def _log_egress(path: str, content: str, tool: str, cfg) -> None:
     _egress.append(cfg.egress_path, _egress.EgressEntry.new(path, size, tool))
 
 
-def _log_egress_from_disk(path: str, tool: str, cfg) -> None:
+def _log_egress_from_disk(path: str, tool: str, cfg: Any) -> None:
     """Like ``_log_egress``, but sizes from the file itself rather than a
     returned string — used where a tool doesn't expose each input's individual
     contribution to its output (e.g. ``compare_documents``' combined diff).

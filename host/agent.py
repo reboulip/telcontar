@@ -1155,10 +1155,10 @@ async def _analyze_batch(
     last_error: Exception | None = None
     for _attempt in range(2):  # one retry on a transient failure
         try:
-            response = await llm.chat.completions.create(
+            response = await llm.chat.completions.create(  # type: ignore[call-overload]
                 model=settings.llm_model,
-                messages=messages,  # type: ignore[arg-type]
-                tools=[_SUBMIT_RECORDS_TOOL_SPEC],
+                messages=messages,  # ty: ignore[invalid-argument-type]
+                tools=[_SUBMIT_RECORDS_TOOL_SPEC],  # ty: ignore[invalid-argument-type]
                 tool_choice={
                     "type": "function",
                     "function": {"name": _SUBMIT_RECORDS_TOOL_NAME},
@@ -1675,10 +1675,10 @@ async def run_agent_loop(
             on_event(AgentEvent("thinking", "Calling LLM…"))
             est_in = len(json.dumps(messages, default=str)) // 4
 
-            response = await llm.chat.completions.create(
+            response = await llm.chat.completions.create(  # type: ignore[call-overload]
                 model=settings.llm_model,
-                messages=messages,  # type: ignore[arg-type]
-                tools=openai_tools,  # type: ignore[arg-type]
+                messages=messages,  # ty: ignore[invalid-argument-type]
+                tools=openai_tools,  # ty: ignore[invalid-argument-type]
                 tool_choice="auto",
             )
             ledger.record(response, phase="organize", step=turn, on_event=on_event, est_in=est_in)
@@ -1915,10 +1915,10 @@ async def run_query_loop(
         on_event(AgentEvent("thinking", "Calling LLM…"))
         est_in = len(json.dumps(messages, default=str)) // 4
 
-        response = await llm.chat.completions.create(
+        response = await llm.chat.completions.create(  # type: ignore[call-overload]
             model=settings.llm_model,
-            messages=messages,  # type: ignore[arg-type]
-            tools=openai_tools,  # type: ignore[arg-type]
+            messages=messages,  # ty: ignore[invalid-argument-type]
+            tools=openai_tools,  # ty: ignore[invalid-argument-type]
             tool_choice="auto",
         )
         ledger.record(response, phase="query", step=_turn, on_event=on_event, est_in=est_in)

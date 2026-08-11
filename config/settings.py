@@ -238,7 +238,7 @@ def _read_config_file() -> dict[str, str]:
 def _keyring_get() -> str:
     """Return the API key from the OS credential store, or '' on any failure."""
     try:
-        import keyring  # type: ignore[import-untyped]
+        import keyring
 
         return keyring.get_password("telcontar", "llm_api_key") or ""
     except Exception:
@@ -248,7 +248,7 @@ def _keyring_get() -> str:
 def _keyring_set(api_key: str) -> bool:
     """Store api_key in the OS credential store. Returns True on success."""
     try:
-        import keyring  # type: ignore[import-untyped]
+        import keyring
 
         keyring.set_password("telcontar", "llm_api_key", api_key)
         return True

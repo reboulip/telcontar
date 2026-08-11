@@ -40,7 +40,7 @@ async def build_settings_view(*, on_done: Callable[[], None]) -> None:
 
     @ui.refreshable
     def form() -> None:
-        _render_form(state, form.refresh, on_done, profile_choices, current)
+        _render_form(state, form.refresh, on_done, profile_choices, current)  # type: ignore[arg-type]  # ty: ignore[invalid-argument-type]
 
     form()
 

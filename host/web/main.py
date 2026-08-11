@@ -192,6 +192,7 @@ async def run_page(run_id: str) -> None:
                 "Run not found — it may have finished and been cleared, or the link is wrong."
             ).classes("text-negative")
             return
+        run_session: web_session.RunSession = session  # non-None local so closures below type-check
 
         # Dynamic per-request title — ui.page(title=...) is bound at
         # decoration time and can't see the target directory, which is only
@@ -444,15 +445,19 @@ async def run_page(run_id: str) -> None:
                 if shell.selected is None:
                     doc_pane.clear()
                 else:
-                    is_file, record, meta_line = await run.io_bound(
-                        _load_preview, session.target, shell.selected
-                    )
-                    if not is_file:
+                    preview = await run.io_bound(_load_preview, run_session.target, shell.selected)
+                    if (
+                        preview is None
+                    ):  # io_bound returns None on cancellation/shutdown (NiceGUI interim shape)
                         doc_pane.clear()
-                    elif record is not None:
-                        doc_pane.show(record)
                     else:
-                        doc_pane.show_unanalyzed(shell.selected, meta_line)
+                        is_file, record, meta_line = preview
+                        if not is_file:
+                            doc_pane.clear()
+                        elif record is not None:
+                            doc_pane.show(record)
+                        else:
+                            doc_pane.show_unanalyzed(shell.selected, meta_line)
 
         ui.timer(web_session.REFRESH_INTERVAL, _refresh)
 

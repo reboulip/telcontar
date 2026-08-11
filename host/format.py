@@ -301,9 +301,10 @@ def _chain_ops(ops: list[dict], target: Path | None) -> tuple[list[_FileChain], 
         # this, a move immediately following a rename would recompute its
         # destination from the op's own (now-stale) `src.name` instead of
         # the file's actual current name on disk.
-        primary = resolved.get(_norm_key(src))
+        primary: str | None = resolved.get(_norm_key(src))
         chained = primary is not None and primary in chains
-        current_path = chains[primary].final_path if chained else src
+        resolved_primary: str = primary or op_id
+        current_path = chains[resolved_primary].final_path if chained else src
 
         if op_type == "rename":
             new_path = str(Path(current_path).parent / dst) if dst else current_path
@@ -323,15 +324,14 @@ def _chain_ops(ops: list[dict], target: Path | None) -> tuple[list[_FileChain], 
             continue
 
         if chained:
-            chain = chains[primary]
+            chain = chains[resolved_primary]
             chain.op_ids.append(op_id)
             chain.final_path = new_path
             chain.outside_target = chain.outside_target or out_of_scope
             if reason is not None and chain.quarantine_reason_text is None:
                 chain.quarantine_reason_text = reason
         else:
-            primary = op_id
-            chains[primary] = _FileChain(
+            chains[op_id] = _FileChain(
                 op_ids=[op_id],
                 original_path=src if op_type != "create_file" else None,
                 final_path=new_path,
@@ -343,8 +343,8 @@ def _chain_ops(ops: list[dict], target: Path | None) -> tuple[list[_FileChain], 
         # literal original src, mirroring execute_plan's `moved` dict; or
         # the just-computed destination, the common case of a plan that
         # accurately tracks the file's intermediate state).
-        resolved[_norm_key(src)] = primary
-        resolved[_norm_key(new_path)] = primary
+        resolved[_norm_key(src)] = resolved_primary if chained else op_id
+        resolved[_norm_key(new_path)] = resolved_primary if chained else op_id
 
     return list(chains.values()), other_ops
 

@@ -54,16 +54,16 @@ def _extract_msg(path: Path) -> str:
     msg = extract_msg.openMsg(str(path))
     try:
         headers = [
-            f"From: {msg.sender or ''}",
-            f"To: {msg.to or ''}",
+            f"From: {msg.sender or ''}",  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            f"To: {msg.to or ''}",  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
         ]
-        if msg.cc:
-            headers.append(f"Cc: {msg.cc}")
-        if msg.bcc:
-            headers.append(f"Bcc: {msg.bcc}")
-        headers.append(f"Date: {msg.date or ''}")
-        headers.append(f"Subject: {msg.subject or ''}")
-        return "\n".join(headers) + "\n\n" + (msg.body or "")
+        if msg.cc:  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            headers.append(f"Cc: {msg.cc}")  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        if msg.bcc:  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+            headers.append(f"Bcc: {msg.bcc}")  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        headers.append(f"Date: {msg.date or ''}")  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        headers.append(f"Subject: {msg.subject or ''}")  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
+        return "\n".join(headers) + "\n\n" + (msg.body or "")  # type: ignore[attr-defined]  # ty: ignore[unresolved-attribute]
     finally:
         msg.close()
 
