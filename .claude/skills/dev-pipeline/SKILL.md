@@ -339,9 +339,12 @@ Firing before the test gate means doc-keeper can document an implementation that
 fix then changed, or an item that Step 4's collision rule pushed into the next wave — work
 that is wasted and, worse, produces a doc describing a state that never existed.
 
-**One doc-keeper per sprint, not per wave.** `docs/developer/modules.md` and
-`docs/developer/architecture.md` are ~880 lines each (~54k tokens together) and are touched
-by nearly every wave. A fresh agent re-reads them from cold every time. So:
+**One doc-keeper per sprint, not per wave.** `docs/developer/modules/` and
+`docs/developer/architecture/` are each split into a `core.md` and a `web-ui.md` page
+(Phase 23 X14) precisely because they're touched by nearly every wave and a fresh agent
+re-reads whichever page(s) it touches from cold every time — the split caps that cold-read
+cost per page, but keeping one agent alive for the sprint still avoids paying it more than
+once per page. So:
 
 - **Wave 1** — spawn it with `Agent`, `run_in_background: true`, then immediately persist
   the returned agent id as a `Doc-keeper agent id:` line in `sprint-brief.md` (or in
@@ -369,9 +372,10 @@ exploration pass:
   (`git show --stat` for orientation plus `git diff HEAD~1 HEAD -- host server config profiles`).
   With this, doc-keeper needs **zero** source Reads.
 - `Target docs:` the specific pages **and sections** you expect to change, for example
-  `docs/developer/modules.md § host/web/session.py`, `docs/developer/architecture.md § Data flow`.
-  Write "unknown" only when you genuinely cannot tell; doc-keeper stays free to correct you
-  and to touch a page you did not list.
+  `docs/developer/modules/web-ui.md § host/web/session.py`,
+  `docs/developer/architecture/core.md § Data flow`. Write "unknown" only when you
+  genuinely cannot tell; doc-keeper stays free to correct you and to touch a page you did
+  not list.
 
 ```
 # Wave 1

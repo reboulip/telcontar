@@ -48,7 +48,7 @@ on open work.
 - [x] X11 · Add persistent shell navigation (tabs: Conversation | Corpus | Query | Settings) so users can move freely between views. [#51]
 - [x] X12 · In the corpus browser, trigger the document detail pane from a title/row click instead of the selection checkbox; remove the checkbox. [#52]
 - [x] X13 · Design and wire in an SVG telcontar logo (White Tree of Gondor + branching roots) matching the gold/silver theme and elvish display face (Phase 19 T8), in the browser tab/header. [#54]
-- [ ] X14 · Split `docs/developer/modules.md` and `docs/developer/architecture.md` (~880 lines each) into smaller per-area pages and rebuild the `mkdocs.yml` nav — doc-keeper cost scales with page size and both files are touched by nearly every wave. [deferred]
+- [x] X14 · Split `docs/developer/modules.md` and `docs/developer/architecture.md` (~880 lines each) into smaller per-area pages and rebuild the `mkdocs.yml` nav — doc-keeper cost scales with page size and both files are touched by nearly every wave. [deferred]
 
 *Once Phase 22 and Phase 23 are both done, telcontar is ready to cut its first official release.*
 

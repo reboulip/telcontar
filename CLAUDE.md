@@ -30,9 +30,11 @@ A locally-run, **profile-driven document-intelligence engine**. Given a director
 ## Architecture
 
 > **For any architecture-level, effort-estimate, or "how does X work" question, read
-> `docs/developer/architecture.md` and `docs/developer/modules.md` first** — they are the
+> `docs/developer/architecture/` and `docs/developer/modules/` first** — they are the
 > maintained, current source of truth (kept up to date by the `doc-keeper` subagent) for
-> component boundaries, data flow, and per-file responsibilities. Prefer those two reads
+> component boundaries, data flow, and per-file responsibilities. Each is split into a
+> `core.md` (config/server/non-web host) and a `web-ui.md` (`host/web/`) page; read
+> whichever matches the area in question, or both for a full picture. Prefer those reads
 > over Glob/Grep-exploring `host/`/`server/` from scratch.
 
 ### Components
@@ -163,13 +165,13 @@ project/
 │   └── settings.py         # env loading + validation
 ├── profiles/
 │   └── is_it_project.toml  # domain profile #1
-├── docs/developer/         # architecture.md, modules.md — maintained source of truth
+├── docs/developer/         # architecture/, modules/ — maintained source of truth
 └── tests/
 ```
 
 > **Note:** this tree is a rough map, not authoritative — it has drifted before (e.g. it once
-> omitted `host/web/` entirely). `docs/developer/architecture.md` and
-> `docs/developer/modules.md` are the maintained, current source of truth; see the pointer
+> omitted `host/web/` entirely). `docs/developer/architecture/` and
+> `docs/developer/modules/` are the maintained, current source of truth; see the pointer
 > under "## Architecture" above.
 
 ## Development Setup

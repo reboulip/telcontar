@@ -82,8 +82,12 @@ nav:
       - host: reference/api/host.md
       - config: reference/api/config.md
   - Developer Guide:
-    - Architecture: developer/architecture.md
-    - Module Reference: developer/modules.md
+    - Architecture:
+      - Core: developer/architecture/core.md
+      - Web UI: developer/architecture/web-ui.md
+    - Module Reference:
+      - Core: developer/modules/core.md
+      - Web UI: developer/modules/web-ui.md
     - Adding a Profile: developer/adding-profiles.md
     - Contributing: developer/contributing.md
     - Security Model: developer/security-model.md

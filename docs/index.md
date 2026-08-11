@@ -38,7 +38,7 @@ All file I/O stays on your machine. Only the text content needed for reasoning i
 
     Complete reference for all tools exposed by the MCP server, grouped by safety category.
 
-- **[Developer Guide](developer/architecture.md)**
+- **[Developer Guide](developer/architecture/core.md)**
 
     Internals, module-by-module breakdown, and how to extend or contribute.
 

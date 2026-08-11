@@ -1,336 +1,10 @@
-# Module Reference
+# Module Reference — Web UI
 
-Detailed breakdown of every Python module in the codebase. For auto-generated API docs (docstrings, signatures), see the [API Reference](../reference/api/server.md).
-
----
-
-## `config/`
-
-### `config/settings.py`
-
-**Role:** Single source of truth for all runtime configuration. Loads from `.env` (project-local, highest priority) then `~/.telcontar/config.env` (user-level fallback for installed-tool use) via Pydantic Settings; real environment variables override both.
-
-**Key class:** `Settings` — a `BaseSettings` subclass with fields for LLM endpoint, safety, domain profile, document memory, and egress settings. `llm_base_url` and `llm_api_key` default to `""` so `Settings()` can be instantiated before the wizard runs. `target_dir: Path | None = None` holds the directory being organized this run — populated from a `TARGET_DIR` env var set by the host (`mcp_session`) when it launches the server subprocess; `None` outside a real run (e.g. some test harnesses), in which case path-confinement guards fall back to just the server's own working directory (M2). `effective_allowlist_dirs() -> list[Path]` (M7) returns `allowlist_dirs` unchanged if it's non-empty — an explicit operator config always wins outright, never merged with `target_dir` — otherwise defaults to `[target_dir]` if set, else `[]`; `server/main.py`'s `read_file`, `extract_text`, `compare_documents`, and the batch forms `read_file_batch`/`extract_text_batch` (O1) call this instead of the raw `allowlist_dirs` field. `for_target(target: Path) -> Settings` (P2, per-directory memory) returns a copy with `quarantine_dir`/`journal_path`/`events_path`/`plans_dir`/`registry_path`/`graph_path`/`archive_path`/`egress_path` rebased onto `target.resolve()` when they're relative (an already-absolute override passes through unchanged), so a run's memory lives inside the directory being organized rather than telcontar's project root; `profiles_dir` is deliberately left untouched. `load()` calls `for_target(settings.target_dir)` itself whenever `target_dir` is set.
-
-**Public functions:**
-
-| Function | Description |
-|---|---|
-| `load() -> Settings` | Instantiates `Settings`, injects the API key from the OS keyring if not in env/files, then validates that both `llm_base_url` and `llm_api_key` are present. Called once per process by the agent/query workers. |
-| `is_configured() -> bool` | Returns `True` if the minimum required settings (URL + API key from env, file, or keyring) are present. Called by `OrganizerApp.on_mount` to choose the startup screen. |
-| `save_user_config(updates: dict[str, str]) -> None` | Writes non-sensitive keys to `~/.telcontar/config.env`; stores the API key in the OS keyring (falls back to the config file if keyring is unavailable). |
-| `read_user_config() -> dict[str, str]` | Returns the raw key→value pairs from `~/.telcontar/config.env` (lowercase keys, no API key). |
-
-**Why it's structured this way:** Both the host and the server import this module independently (they run in different processes). There is no shared singleton across the stdio boundary.
+Per-file breakdown of `host/web/`, the NiceGUI-based web UI package. This page is the `host/web/`-specific continuation of the [Module Reference](core.md), which covers `config/`, `server/`, and `host/`'s other (non-web) modules. For auto-generated API docs, see the [API Reference](../../reference/api/server.md).
 
 ---
 
-## `server/`
-
-The MCP server package. Launched as a subprocess by the host; communicates via stdio. Owns all file I/O, guardrails, and persistent state.
-
-### `server/main.py`
-
-**Role:** MCP server entrypoint. Registers all tools with FastMCP and wires each handler to `server/tools.py`. Lazy-initialises `Settings` and the active `Profile` on first use.
-
-**Key object:** `mcp = FastMCP("directory-organizer")` — the FastMCP server instance.
-
-**Entrypoint:** `main()` calls `mcp.run(transport="stdio")`.
-
-**Design note:** This module is deliberately thin — it delegates all logic to `server/tools.py`. Tool parameters injected from config (e.g. `plans_dir`, `journal_path`) are resolved here and passed into the tool functions. `_confinement_roots(cfg)` and `_check_within_root(path, cfg)` (M2) wrap `server/guards.py`'s `check_within_root` and are called at the top of every path-taking tool handler to confine it to `[cfg.target_dir, Path.cwd()]`. The batch tools (O1) apply this — plus `check_allowlist` for the two content tools — per path, before delegating to `server/tools.py`, so a rejected path becomes that entry's `{"error": ...}` instead of aborting the whole call. The `walk_tree` handler additionally passes `hidden_names={os.path.normcase(".organizer"), os.path.normcase(cfg.quarantine_dir.name)}` (P2, case-normalized as of X8) into `tools.walk_tree`, so the agent's own memory folder and the quarantine folder are excluded from every discovery result at every depth regardless of on-disk casing — now that both live inside `target_dir` (see `config/settings.py`'s `for_target` above); `server/tools.py`'s own hidden-name comparison normcases each entry's `name` to match. `rehome_documents` (P4) applies `_check_within_root` to every value (new path) in its `paths: dict[str, str]` argument before delegating — same per-path confinement pattern as `record_document_batch`. `_check_not_quarantine(path, cfg)` (X8) wraps `server/guards.py`'s `check_not_quarantine_collision` (above) and is called by `propose_rename` (on the computed new path), `propose_move` (on `dest_dir` only — deliberately never the move's own source, since un-quarantining a file is a legitimate move that must stay legal), and `propose_create_dir` (on `path`) — a proposed taxonomy folder can never collide with the server-managed quarantine folder.
-
----
-
-### `server/tools.py`
-
-**Role:** All MCP tool implementations. Pure functions with no global state — they receive everything they need as arguments, making them directly testable without spawning an MCP server.
-
-**Groups of functions:**
-
-| Group | Functions |
-|---|---|
-| Read-only | `list_dir`, `walk_tree`, `read_file`, `extract_text`, `compute_checksum`, `read_file_batch`, `extract_text_batch`, `compute_checksum_batch` |
-| Plan management | `create_plan`, `get_plan`, `list_plans`, `review_plan`, `approve_plan`, `set_plan_rationale`, `set_plan_folder_notes` |
-| Plan-building | `propose_rename`, `propose_move`, `propose_quarantine`, `propose_create_file`, `propose_update_file`, `propose_create_dir`, `propose_archive_document`, `propose_compress_quarantine` |
-| Gated execution | `execute_plan`, `write_index`, `write_summary` |
-| Recovery (not MCP tools) | `undo_last` — no longer registered as an MCP tool (M1); called directly by the web UI's journal dialog (`host/web/journal.py`) |
-| Registry | `record_document`, `get_document`, `lookup_documents`, `rehome_documents`, `list_documents`, `get_registry`, `find_duplicates`, `find_modified_documents` |
-| Event journal | `create_event`, `list_events` |
-| Knowledge graph | `build_graph`, `get_graph`, `get_actors` |
-| Archive | `archive_document` (no longer an MCP tool; called by `execute_plan` for `archive_document` ops), `list_archived` |
-| Quarantine compression | `compress_quarantine` (no longer an MCP tool; called by `execute_plan` for `compress_quarantine` ops) |
-
-**Internal helpers:** `_apply_op` executes a single `PlanOp` against the filesystem, dispatching `rename`/`move`/`quarantine`/`create_file`/`update_file`/`create_dir` directly (`archive_document`/`compress_quarantine` ops are handled inline in `execute_plan` itself, calling the standalone functions above); `_reconcile_op` updates the registry record's path/status after execution; `_load_pending_plan` loads a plan and raises unless it is still `pending`, shared by all five newer `propose_*` functions.
-
-**Design note (O1):** `read_file_batch`/`extract_text_batch`/`compute_checksum_batch` are the batch counterparts of `read_file`/`extract_text`/`compute_checksum` — each loops over its `paths` list, calling the singular function per path and catching any exception into that path's `{"error": str(exc)}` entry rather than letting one bad path abort the whole batch. `server/main.py`'s wrappers apply the same guard sequence per path *before* delegating here, so a guard rejection (allowlist/confinement) also surfaces as a per-path error rather than raising.
-
-**Design note (V10):** `propose_quarantine` takes a new optional `reason: str = ""`, stored stripped in the op's `params` (`{"reason": ...}`) rather than validated — an empty string is accepted the same as any other. The concrete-reason requirement ("duplicate of X", not "unreadable" alone) is enforced only by the ORGANIZE system prompt in `host/agent.py`, not by the server. `host/format.py`'s `quarantine_reason(op)`/`fmt_op` render it at approval time, defaulting to "no reason given" when blank.
-
----
-
-### `server/plan.py`
-
-**Role:** Plan data model and disk persistence. Defines the state machine, serialization, and plan/op CRUD.
-
-**Key types:**
-- `PlanState` — `Literal["pending", "approved", "executing", "done", "failed", "stopped"]`
-- `OpType` — `Literal["rename", "move", "quarantine", "create_file", "update_file", "create_dir", "archive_document", "compress_quarantine"]`
-- `PlanOp` — dataclass with `op_id` (UUID), `op_type`, `src`, `dst`, `status`, `error`, `retries`, `params: dict | None` (op-specific data that doesn't fit `src`/`dst` — e.g. `{"content": ...}` for `create_file`/`update_file`, `{"reason": ...}` for `quarantine` (V10), `{"checksum": ..., "reason": ...}` for `archive_document`, `{"delete_originals": ...}` for `compress_quarantine`)
-- `Plan` — dataclass with `plan_id`, `state`, `ops: list[PlanOp]`, timestamps, `rationale: str = ""` (agent's plain-language explanation, set via `set_plan_rationale`), `folder_notes: dict[str, str] = {}` (agent-supplied per-folder purpose notes for the approval-view target-layout preview, set via `set_plan_folder_notes`) — both round-trip through `to_dict`/`from_dict`, backward-compatible with older plan files via `d.get`
-
-**State machine:** `_VALID_TRANSITIONS` dict enforces which state transitions are legal. `Plan.transition()` validates and applies.
-
-**Persistence:** One JSON file per plan at `{plans_dir}/{plan_id}.json`. `save()`, `load()`, `list_all()`.
-
----
-
-### `server/registry.py`
-
-**Role:** The engine's persistent document memory. Content-addressed (sha256 → `DocumentRecord`). Profile-agnostic — type validation lives in `tools.py`.
-
-**Key types:**
-- `DocumentRecord` — one analyzed document. Fields: `checksum`, `path`, `title`, `type`, `summary`, `provenance`, `date`, `entities`, `attributes`, `status`, `first_seen`, `last_analyzed`.
-- `Registry` — in-memory view, keyed by checksum. Methods: `upsert`, `get`, `records`, `update_path`, `rehome`, `find_duplicates`, `find_modified`.
-
-**`update_path`:** Called by `execute_plan` after each successful op to reconcile the record's stored path with the file's new location. Matches the record whose *current* `path` equals the op's old path (an O(n) scan), then rewrites it. Normalized path comparison (`os.path.normcase`/`normpath`) for Windows compatibility.
-
-**`rehome`** (P4): `rehome(checksum, new_path)` looks a record up directly by checksum (O(1)) and rewrites its `path` — the counterpart `update_path` can't serve, since that method matches by the file's *old* path rather than its identity. Backs the `rehome_documents` MCP tool, used by the deterministic host pre-pass (`host/agent.py`'s `run_prepass`) to reconcile records whose on-disk location no longer matches the registry, independently of any plan/`execute_plan` run. Returns `None` if no record exists for `checksum`.
-
-**`find_duplicates`:** Union-find clustering by title-token Jaccard similarity (threshold 0.6) within the same type, or exact normalized-title match across types.
-
-**Persistence:** Single JSON file at `registry_path`. `load()` returns an empty `Registry` if the file doesn't exist; `save()` writes pretty JSON with Unicode preserved.
-
----
-
-### `server/profile.py` (~122 lines)
-
-**Role:** Load and validate a domain profile TOML file. Expose typed accessors used by the tools layer and the host's system prompt builder.
-
-**Key types:**
-- `DocumentType` — `{id, label, description}`
-- `Profile` — fully parsed profile with accessors: `document_type_ids()`, `entity_roles()`, `extraction_fields()`, `naming()`
-
-**`load_profile(name, profiles_dir)`:** Reads `{profiles_dir}/{name}.toml`, parses with `tomllib`, validates required fields (name, at least one document type, no duplicate type IDs), and returns a `Profile`.
-
----
-
-### `server/guards.py`
-
-**Role:** Guardrail functions enforced before any file operation.
-
-| Function | What it guards |
-|---|---|
-| `check_no_overwrite(dest)` | Raises `FileExistsError` if `dest` already exists |
-| `safe_quarantine_path(src, quarantine_dir)` | Returns a collision-safe path in quarantine (suffixes `_1`, `_2`, …) |
-| `check_allowlist(path, allowlist_dirs)` | Raises `PermissionError` if `path` is not under any allowlisted directory. Empty `allowlist_dirs` = no restriction (opt-in). |
-| `check_within_root(path, roots)` | Raises `PermissionError` if `path` does not resolve inside any of `roots` (M2). Fail-closed — an empty `roots` list raises rather than allowing everything, the opposite default from `check_allowlist`. Called by `server/main.py`'s `_check_within_root` on every path-taking tool handler, with `roots = [target_dir, Path.cwd()]`. |
-| `normalize_dir_name(name)` | (X8) Folds a directory name to a locale/case-insensitive comparison key: NFKD-decomposes and drops combining marks (accented variants fold together), casefolds, strips a leading ordering prefix (`"01_"`, `"2. "`), trims, and collapses inner separator runs to a single underscore. |
-| `is_quarantine_like_name(name, quarantine_dir_name)` | (X8) True if `name` normalizes to the configured quarantine folder's name, or to a known quarantine/discard alias — `_QUARANTINE_ALIASES`, a fixed set covering French/Spanish/English discard words (quarantine, quarantaine, quarantena, cuarentena, trash, corbeille, poubelle, a_supprimer, to_delete, a_jeter, junk). Whole-normalized-basename match only, never substring — a real taxonomy folder like `"quarantaine_sanitaire"` or `"archives"` stays usable. |
-| `check_not_quarantine_collision(dest, quarantine_dir)` | (X8) Raises `ValueError` if `dest`'s basename is quarantine-like (`is_quarantine_like_name`) or `dest` resolves inside `quarantine_dir` itself (catches a nested taxonomy folder proposed *under* quarantine). Proposal-time only — never wraps `propose_quarantine`/`propose_archive_document`/`propose_compress_quarantine`, which legitimately target the quarantine dir. Called by `server/main.py`'s `_check_not_quarantine` from `propose_rename`, `propose_move` (`dest_dir` only, never the move's source), and `propose_create_dir`. |
-
-**Why separate:** These rules are invariants that must hold across multiple tools. Centralising them in one module makes them easy to audit and test independently.
-
----
-
-### `server/journal.py` (~48 lines)
-
-**Role:** Append-only JSONL helpers for the undo journal.
-
-| Function | Description |
-|---|---|
-| `append(journal_path, entry)` | Appends one JSON entry + newline; creates parent dirs |
-| `last(journal_path)` | Returns the last entry without removing it; `None` if empty |
-| `all_entries(journal_path)` | Returns all entries in chronological order |
-| `pop_last(journal_path)` | Removes and returns the last entry; rewrites the file |
-
-**Design note:** `pop_last` rewrites the entire file minus the last line. For typical journal sizes (hundreds of entries) this is fine; for very large corpora a more efficient structure could be introduced later.
-
----
-
-### `server/archive.py` (~64 lines)
-
-**Role:** Append-only JSONL log of documents withdrawn from active memory — the "retirer de la mémoire" audit trail. Distinct from the undo journal (which records reversible file ops) and the event journal (project narrative).
-
-**Key type:** `ArchiveEntry` — dataclass with `{checksum, title, reason, src, dst, archived_at}`. `dst` is `null` when the file was already absent at archive time.
-
-| Function | Description |
-|---|---|
-| `append(archive_path, entry)` | Appends one archive entry as a JSONL line; creates parent dirs |
-| `all_entries(archive_path)` | Returns all entries in chronological order; empty list if no file |
-
-**Design note:** `archive_document` in `server/tools.py` coordinates the status flip in the registry, the quarantine move (journaled in the undo log for reversibility), and the append here. This module owns only the serialization.
-
----
-
-### `server/egress.py`
-
-**Role:** Append-only JSONL audit trail (S8/M12) of document content sent to the LLM endpoint — distinct from the undo journal, event journal, and archive log.
-
-**Key type:** `EgressEntry` — dataclass with `{path, size_bytes, tool, timestamp}`.
-
-| Function | Description |
-|---|---|
-| `append(egress_path, entry)` | Appends one egress entry as a JSONL line; creates parent dirs |
-| `all_entries(egress_path)` | Returns all entries in chronological order; empty list if no file |
-
-**Design note:** Logged from `server/main.py`'s `read_file`/`extract_text`/`compare_documents` handlers via `_log_egress`/`_log_egress_from_disk`, after a successful call. Not exposed as an MCP tool — it's an audit trail of the agent's own information exposure, meant for the operator, not the agent.
-
----
-
-### `server/sinks.py` (~76 lines)
-
-**Role:** Output-sink abstraction — defines where the engine's synthesized Markdown artifacts are emitted.
-
-**Key types:**
-- `Sink` — `runtime_checkable` Protocol with attributes `name: str`, `external: bool` and methods `write_summary(target_dir, content) -> dict`, `write_folder_readme(folder, content) -> dict`.
-- `LocalMarkdownSink` — the built-in sink (`name="local_markdown"`, `external=False`). Delegates to `tools.write_summary` and `tools.write_folder_readme`; writes files to the local filesystem.
-
-**Key function:** `resolve_sinks(names, *, allow_external) -> list[Sink]` — instantiates the sinks named in the profile's `[sinks] default` list. Built-in sinks are created directly. Any unrecognised name is treated as an external sink: raises `PermissionError` if `allow_external=False`, or `NotImplementedError` if `True` (external sinks are separate MCP integrations, not built into this codebase).
-
-**Design note:** `server/main.py` calls `resolve_sinks` inside `write_summary` and `write_folder_readme` handlers, passing `egress_allow_external_sinks` from `Settings`. A single-sink result is unwrapped; multiple sinks return `{"sinks": [...]}`.
-
----
-
-### `server/extract.py`
-
-**Role:** Bounded wrapper around markitdown (and, for `.msg`, `extract-msg`) for text extraction from binary formats — S5 hardening: a crash/DoS/zip-bomb guard, not a sandbox.
-
-**Key function:** `extract(path, max_chars, max_file_bytes=200_000_000, timeout_secs=30.0) -> str` — rejects the input with `ValueError` if it exceeds `max_file_bytes`, runs `_check_not_a_zip_bomb` for zip-based formats (`.docx`/`.xlsx`/`.pptx`/`.zip`), then inside a `ThreadPoolExecutor` bounded by `timeout_secs` (raises `TimeoutError` on expiry) either calls `_extract_msg(path)` for a `.msg` suffix or `MarkItDown().convert(path)` otherwise, and returns the resulting text truncated to `max_chars`.
-
-**Key helper:** `_check_not_a_zip_bomb(path)` — for zip-based suffixes, opens the archive and raises `ValueError` if any entry's uncompressed:compressed ratio exceeds 100x while its uncompressed size is at least 10MB; an invalid zip despite the extension is let through silently so markitdown's own parser reports the real error. `.msg` files are OLE compound documents, not zip containers, so this check does not apply to them.
-
-**Key helper:** `_extract_msg(path)` — parses an Outlook `.msg` file via `extract_msg.openMsg`, returning `From`/`To`/`Cc`/`Bcc` (when present)/`Date`/`Subject` headers followed by a blank line and the message body, instead of markitdown's lossy conversion.
-
-**Single module-level instance:** `_md = MarkItDown()` — markitdown is initialized once per server process.
-
----
-
-## `host/`
-
-The MCP host package. Drives the agent loop and presents the web UI.
-
-### `host/main.py`
-
-**Role:** CLI entrypoint. Parses arguments and launches the web UI.
-
-**Entry point:** `main()` is registered as the `telcontar` script in `pyproject.toml`.
-
-**Flags:** `--version` (prints the installed version and exits); `--target PATH`
-(skips the landing page's directory picker and starts a run for that directory
-immediately); `--browser` (`store_true`, V1 — launches the web UI in the system
-browser instead of a native window). Unrecognized args are tolerated
-(`parse_known_args`) so a bare launch keeps working.
-
-**Design note:** The web UI's `from host.web.main import run_web` import is
-deferred until after `main()` prints "Loading telcontar…", so the user sees
-something immediately instead of a frozen terminal during the ~1s cost of its
-heavier imports (`nicegui`, `mcp`, `openai`, …). As of V1, `main()` passes
-`native=not args.browser` to `run_web`, which opens a native `pywebview` window
-by default (Windows only, falling back to the system browser otherwise or if
-`pywebview` isn't installed — see `host/web/main.py` below). As of Phase 22
-(W1), the Textual TUI (`host/app.py`) and its `--tui` flag were deleted
-outright — telcontar now always launches the web UI, with no flag to opt out.
-
----
-
-### `host/tokenlog.py`
-
-**Role:** Append-only JSONL profiling log (R2, GH #27) of per-LLM-call token usage — distinct from the egress log (which records document *content* sent, not token counts) and the undo journal.
-
-**Key type:** `TokenLogEntry` — dataclass with `{ts, run_id, phase, step, call, model, docs, in_, cached_in, out, est_in, total_in, total_out, duration_ms}` (`duration_ms` unwired, always `None`). `.new(...)` is the constructor (stamps `ts`); `.to_dict()` renames the `in_` field to `in` at serialization time only (`in` is a Python keyword).
-
-| Function | Description |
-|---|---|
-| `append(token_log_path, entry)` | Appends one token-log entry as a JSONL line; creates parent dirs |
-| `all_entries(token_log_path)` | Returns all entries in chronological order; empty list if no file |
-
-**Design note:** Written from `host/agent.py`'s `_TokenLedger.record`/`.log_estimate` after each LLM call. Not exposed as an MCP tool — it's a host-side profiling trail for token-spend optimization analysis, always on (no config flag).
-
----
-
-### `host/agent.py`
-
-**Role:** The async agent loop — both organize and query modes. Fully decoupled from any UI framework — callers supply callbacks for events and approval so the module can be tested without a UI.
-
-**Key types:**
-- `AgentEvent` — `{kind: EventKind, text, data}` emitted at each step; `EventKind` includes `"ask_user"` (P8) for the chat checkpoint — merges the former `"question"`/`"options"` kinds — `"progress"` for the O5 document-analysis progress tracker (`data={"analyzed": int, "total": int, "current": list[str]}`; drives the web UI's progress bar (V14, see `host/web/main.py` below) — `"current"` added V8a, basename(s) of the document(s) the in-flight analyzer batch is currently processing, `[]` when nothing is in flight or on the pre-pass's own snapshot event, which omits the key entirely; `host.format.fmt_progress` renders the dict to a short status string but isn't wired into the web UI, which surfaces `current` itself (V8b) via its own inline formatting in `host/web/main.py`'s `_refresh()` (a `progress-current` label), not through this function), `"cost_estimate"` for the pre-analysis cost-approval gate (O8/P6), and `"tokens"` for running LLM token-usage updates, alongside `"thinking"`, `"tool_call"`, `"tool_result"`, `"plan_ready"`, `"done"`, `"warning"`, `"error"`. `"warning"` (U8) is non-terminal — currently emitted only when `_analyze_batch` retries once, still fails, and skips a batch: the run continues, unlike the three genuinely-terminal `"error"` emitters (the agent loop's own exception path, and the organize/query max-turns backstops). `"tool_call"` events carry `data={"tool": name}` in both the organize and query loops, so callers can key off the tool name (e.g. `host/narration.py`'s `Narrator.narrate`, F10) without parsing `text`
-- `ApprovalResult` — `{approved: bool, removed_op_ids: list[str], refinement: str | None}`. `refinement` (L6) carries free-text plan-editing feedback from the approval dialog's Refine button (`build_approval_dialog`, `host/web/dialogs.py`); when set, the plan is not executed even though `approved` is `False` — see `_handle_execute_plan` below
-- `AskUserResult` (P8) — `{reply: str, provided: bool}`; the user's raw chat reply to an `ask_user` checkpoint call — however many questions/options were asked, the whole reply is one free-text string. `provided` is `False` when no reply was captured (degenerate/no-callback case), in which case the agent proceeds with its own best judgement. Replaces K1's `ClarificationResult` (`{answers: dict[str, str], provided: bool}`) and L7's `OptionsResult` (`{selections: dict[str, str], provided: bool}`)
-- `CostApprovalResult` — `{approved: bool}`; the user's yes/no on the pre-ANALYZE cost-estimate gate (O8)
-- `PrepassResult` — `{new: list[dict], known: list[dict], rehomed: list[str], errors: list[dict], total_files: int, sizes: dict[str, int]}`; the outcome of `run_prepass` (P4) — `new` is `{path, checksum}` per undiscovered document, `known` is `{path, checksum, record}` per already-registered document, `rehomed` lists checksums whose registry path was corrected, `sizes` maps `path -> size_bytes` for every discovered file (P5, additive — populated straight from `walk_tree`'s entries so the new-docs-only cost estimate below has sizes to work from without a second discovery pass)
-- `EventCallback` — `Callable[[AgentEvent], None]`
-- `ApprovalCallback` — `Callable[[str, dict], Awaitable[ApprovalResult]]`
-- `AskUserCallback` (P8) — `Callable[[list[dict]], Awaitable[AskUserResult]]`; each item is `{"text": str, "options": [str, ...]}` (`"options"` omitted for an open question). Replaces K1's `QuestionsCallback` and L7's `OptionsCallback`
-- `CostApprovalCallback` — `Callable[[str, dict], Awaitable[CostApprovalResult]]`; given the summary text plus `{"new": int, "already_analyzed": int, "estimated_tokens": int, "batch_size": int}` (P8 finishes the data-shape migration P6 deferred — the dict originally carried `{"documents": int, "estimated_tokens": int}`; `batch_size` added U5 — previously omitted from `data` entirely, so both UIs' cost dialogs fell back to a hardcoded display default of 10 regardless of `_ANALYZER_BATCH_SIZE`'s real value, and `host/app.py`'s call site didn't even forward the fallback through to `CostEstimateModal`)
-
-**Key constants:**
-- `QUERY_ALLOWED_TOOLS` — `frozenset` of read-only tool names exposed to the model in query mode (list/read/inspect tools; no plan, execute, write, build_graph, create_event, or archive tools)
-- `ORGANIZE_DENIED_TOOLS` (P6) — `frozenset` of content-fetching/recording tool names EXCLUDED from the model's toolset in organize (ORGANIZE-only) mode: `read_file`, `extract_text`, `read_file_batch`, `extract_text_batch`, `compute_checksum`, `compute_checksum_batch`, `record_document`, `record_document_batch`, `compare_documents`, `lookup_documents`, `rehome_documents`. A denylist (unlike `QUERY_ALLOWED_TOOLS`'s allowlist) since ORGANIZE needs almost every other tool; the corpus is already analyzed by the pre-pass/analyzer before the loop starts, so the model has no legitimate reason to reach these
-- `_ASK_USER_TOOL_NAME` / `_ASK_USER_TOOL_SPEC` (P8) — the host-side synthetic tool `ask_user`, merging K1's `ask_clarification` and L7's `propose_options` into one. Never registered with or forwarded to the MCP server; appended to the OpenAI tool list only when an `AskUserCallback` is wired in. Schema takes 1-5 `questions`, each `{text, options?}` — `options` (2-5 mutually-exclusive strings) makes an item multiple-choice, omitting it makes it an open question. No once-per-run cap
-- `_PREPASS_CHUNK_SIZE = 300` — round-trip size for `run_prepass`'s `compute_checksum_batch`/`lookup_documents` calls (P4), bounding per-call memory/latency on a large corpus
-- `_ANALYZER_EXTRACT_EXTENSIONS` — `frozenset` of `{".pdf", ".docx", ".xlsx", ".pptx", ".msg"}`; the stateless analyzer's (P5) host-side file-type dispatch — these go to `extract_text_batch`, everything else to `read_file_batch` — mirroring the split the old in-loop ANALYZE prompt used to leave to the model's own judgement
-- `_ANALYZER_BATCH_SIZE = 10` — the stateless analyzer's (P5) batch size for NEW documents, matching the batch size the old in-loop ANALYZE instructions used
-- `_SUBMIT_RECORDS_TOOL_NAME` / `_SUBMIT_RECORDS_TOOL_SPEC` — the host-side-only synthetic tool `submit_document_records` (P5), never forwarded to the MCP server; forced via `tool_choice` on every analyzer LLM call (the only forced-`tool_choice` call site in this codebase — every other call uses `tool_choice="auto"`). Its schema carries only model-derived fields (title/type/summary/provenance/date/entities) — deliberately no `path`/`checksum`, which are host-authoritative and rejoined by position, never trusted from the model's own output
-- `_DIGEST_MAX_LISTED_DOCS = 200` (P6) — above this many documents, `_build_digest`'s per-doc listing truncates and points the agent at `list_documents`/`get_registry` instead — a fat digest would defeat its own purpose (avoiding a context blowup) on a large corpus
-
-**Key functions:**
-- `run_agent(target, settings, llm, on_event, on_approval_needed, on_ask_user_needed=None, on_cost_approval_needed=None, instructions=None, history=None, message=None) -> tuple[str, list[dict]]` — top-level organize entry; launches the MCP server subprocess via `mcp_session()`, then calls `run_agent_loop`, returning `(final_text, updated_history)`. `mcp_session(project_root, target=None)` sets `TARGET_DIR` on the server subprocess's env whenever `target` is given, so the server can confine path-taking tools to it (M2). `history`/`message` (O7) mirror `run_query_loop`'s shape — see `run_agent_loop` below; for a multi-turn chat, callers should instead keep a single session open and call `run_agent_loop` directly (`run_agent` launches a fresh subprocess per call). Does not accept `message_queue` (P7) — that's only meaningful on a session-holding caller like `run_agent_loop`. `on_ask_user_needed` (P8) replaces the old `on_questions_needed`/`on_options_needed` pair with one unified callback
-- `run_agent_loop(target, settings, llm, session, on_event, on_approval_needed, on_ask_user_needed=None, on_cost_approval_needed=None, project_root=None, instructions=None, history=None, message=None, message_queue=None, ledger=None) -> tuple[str, list[dict]]` — the actual LLM tool-calling loop for organize mode (injectable session for testing). `ledger` (R1, GH #27) lets a caller pass the same `_TokenLedger` across a run and its O7 follow-up continuations so the running token totals persist across turns instead of resetting to zero on every call; when `None` (the default — tests, one-shot callers), a fresh ledger is constructed for just this call. **ORGANIZE-only loop, pre-pass + analyzer wiring (P6):** on a fresh run (`history is None`), before any turn happens, this now runs `run_prepass` (P4) to partition the corpus into known/new documents, fires the cost-approval gate (`_handle_cost_approval`, O8/P6) scoped to only the new documents if there are any, runs `_analyze_new_documents` (P5) on approval, then seeds the conversation's first user message with a compact corpus digest (`_build_digest`) instead of blank "please organize" instructions — `instructions` (the user's optional pre-analysis steering text from the organize view's starter pane, L3) is appended to that same seed message when non-empty. The turn loop that follows discovers tools via `_discover_openai_tools(session, denied=ORGANIZE_DENIED_TOOLS)`, structurally excluding content-fetching/recording tools already used by the pre-pass/analyzer, and a defense-in-depth dispatch check rejects any hallucinated call to one of those tools even though none are advertised. `on_ask_user_needed` (P8) wires the unified chat checkpoint, unlimited per run; `on_cost_approval_needed` wires the O8/P6 pre-analysis cost-approval gate, now scoped to new documents only. **Resumable chat (O7):** when `history` is given (the list returned by a previous call), none of the pre-pass/analysis/digest work above repeats — the existing history is reused as-is and `message` — a new free-text user turn — is appended before resuming, so a run that finished, errored, or hit the turn ceiling can be continued with the same ORGANIZE-only toolset. A continuation gets its own fresh per-call turn budget and a fresh, empty `_ProgressTracker` (no new pre-pass happens), so its adaptive budget floors at `_MAX_TURNS` rather than reflecting the initial pass's corpus size. **Live mid-run chat (P7):** when `message_queue` is given, it's drained non-blockingly via `_drain_message_queue` at three points — before the first LLM call, after every turn's tool-call batch, and when the response carries no tool calls (the point that would otherwise end the run) — each drained message is appended as a user turn, and in the last case the loop `continue`s instead of returning if anything was waiting, so a live chat message can redirect an in-progress run. `message_queue=None` (the default) is byte-for-byte the pre-P7 behaviour; the mechanism is independent of and composes with `history`/`message`. `ask_user` (P8) blocks on this same queue for its reply, rather than a modal. The whole turn loop is wrapped in `try`/`except`: an unhandled exception is caught rather than propagating — any tool call left without a matching tool-result message is answered with a synthesized `{"error": ...}` entry (so `messages` stays valid for a follow-up call), an `"error"` event fires, and `(error_text, messages)` is returned
-- `_drain_message_queue(message_queue) -> list[str]` (P7) — non-blocking drain of `message_queue` (an `asyncio.Queue[str] | None`): repeatedly calls `get_nowait()` until `asyncio.QueueEmpty`, returning drained messages in arrival order, or `[]` immediately if `message_queue` is `None` or nothing is waiting. Never blocks the turn loop
-- `run_query(question, settings, llm, on_event, history, target=None)` — convenience entry for one query, launching its own MCP session; `target` (the analyzed corpus's directory) is passed through to `mcp_session` so the server confines its read-only tools' path arguments (M2)
-- `run_query_loop(question, settings, llm, session, on_event, history, project_root, ledger=None)` — read-only tool-calling loop; threads `history` across calls for multi-turn context; returns `(answer, updated_history)`. `ledger` (R1, GH #27) works the same way as `run_agent_loop`'s: pass the same `_TokenLedger` across a chat's questions so the running total persists for the whole query session instead of resetting per question; `None` (the default) constructs a fresh one for just this call
-- `_discover_openai_tools(session, allowed=None, denied=None)` — lists MCP tools and converts to OpenAI function specs; when `allowed` is given, only tools in the set are exposed (used by query mode); when `denied` is given (P6), tools in the set are excluded instead (used by organize/ORGANIZE mode, `denied=ORGANIZE_DENIED_TOOLS`) — the two parameters are independent filters, not mutually exclusive
-- `_build_system_prompt(project_root, settings)` — assembles the organize-mode system prompt from the active profile, including one "Optional chat checkpoint" paragraph (P8) referencing `ask_user` — replaces the former separate clarification-checkpoint and multiple-option-checkpoint paragraphs. As of X8, rendering (`_render_system_prompt(profile, project_root, quarantine_name)`, the shared step `composed_system_prompts` also reuses) fills a `{quarantine_name}` placeholder with `_resolve_quarantine_name(settings)` — the configured quarantine folder's basename, falling back to `"_quarantine"` on any lookup failure (e.g. a bare `MagicMock` settings stub in tests) — so the taxonomy-design step's quarantine-collision prohibition and the folder-notes example's quarantine key match the real configured name instead of assuming the default (see `server/guards.py`'s `check_not_quarantine_collision`, above, which the prompt text now describes). Drive-by fix (X8): `_should_skip_discovery`'s quarantine-name comparison is now case-normalized (`os.path.normcase`) on both sides — previously case-sensitive, so a differently-cased configured quarantine dir could leak quarantined files back into corpus discovery on Windows
-- `_build_query_system_prompt(project_root, settings)` — assembles the read-only query-mode system prompt from the active profile
-- `composed_system_prompts(settings, project_root=None) -> dict[str, str]` (V11) — read-only introspection for the Settings "What telcontar tells the model" panel: renders and returns all three system prompts (`{"organize": ..., "query": ..., "analyze": ...}`) from a single profile load, reusing the same rendering steps `_build_system_prompt`/`_build_query_system_prompt`/`_analyze_batch` already use (factored into `_render_system_prompt`/`_render_query_system_prompt`/`_build_analyzer_system_prompt`) rather than duplicating them or loading the profile three times. `project_root` defaults to the exact expression `run_agent_loop` uses when omitted (`Path(__file__).resolve().parent.parent`) — load-bearing, since `_load_naming_conventions` reads `.organizer/NAMING.md` relative to the repo root, not any run's target directory, so a different default would silently display a prompt telcontar does not actually send. The ANALYZE prompt is rendered for a full `_ANALYZER_BATCH_SIZE`-document batch, illustrative rather than any real run's actual (often smaller) batch size. Deliberately does not reflect the two things composed at runtime from a live run — the corpus digest and the user's own pre-analysis steering instructions — since this view is target-free and must work before any directory has been analyzed
-- `_resolved_profile_name(settings, project_root=None) -> str | None` (V11) — the active profile's real name once loaded, or `None` on a load failure. `_try_load_profile` swallows that same failure and prompt-building falls back to a generic "default" profile name so the prompts stay renderable — convenient for the LLM-facing text, but it would hide the failure from a transparency view; this surfaces the same pass/fail outcome instead. Same `project_root` default as `composed_system_prompts`
-- `_handle_execute_plan(...)` — intercepts `execute_plan` calls to insert the approval gate before forwarding to the server. Fetches the plan via `get_plan`, writes its full ops (plan id, rationale, folder notes, ops) to `.organizer/plan_ops.json` via `_write_ops_json` and attaches the path as `ops_json_path` on the event data, then awaits `on_approval_needed`. If the returned `ApprovalResult.refinement` is set (non-blank), the plan is NOT approved or executed — the tool result instead carries the refinement text back to the agent as a note instructing it to revise the plan (ops/rationale/folder notes) and call `execute_plan` again. Otherwise falls back to the plain approved/rejected path
-- `_write_ops_json(plan_data, plans_dir)` — writes `{plan_id, rationale, folder_notes, ops}` to `<plans_dir>/../plan_ops.json` (i.e. `.organizer/plan_ops.json`), latest-plan-wins; returns the path, or `None` on an `OSError`
-- `_handle_ask_user(*, args, on_event, on_ask_user_needed) -> Any` (P8) — intercepts calls to the host-side `ask_user` tool; merges K1's `_handle_clarification` and L7's `_handle_options` into one handler. Drops malformed/empty items, emits an `"ask_user"` `AgentEvent` with the well-formed questions, and awaits the callback; no once-per-run guard (unlimited calls per run); never raises — degenerate input (no callback wired, no well-formed questions, no reply captured) returns a note telling the agent to proceed with its own best judgement
-- `_handle_cost_approval(*, doc_count, already_analyzed, estimated_tokens, settings, on_event, on_cost_approval_needed) -> bool` (O8/P6, `already_analyzed` added P8) — relocated from a mid-loop tool-call interception to a one-time gate run once before `_analyze_new_documents` processes any new documents; emits a `"cost_estimate"` `AgentEvent` with `data={"new": doc_count, "already_analyzed": already_analyzed, "estimated_tokens": estimated_tokens, "batch_size": _ANALYZER_BATCH_SIZE}` (from `_new_docs_cost_estimate`, new-docs-only, plus the known-doc count; `batch_size` added U5 — previously the real `_ANALYZER_BATCH_SIZE` never reached `data` at all, so both UIs' cost dialogs always displayed a hardcoded 10 regardless of the configured value, and the `summary` string interpolated a literal `10` rather than the constant), and — unless `approval_mode == "never"` or no callback is wired — awaits `on_cost_approval_needed`. Returns `True` if analysis should proceed; the event is always emitted, even when auto-approved, for observability
-- `_TokenLedger` (dataclass, R2/GH #27, `totals["in"]` accumulation fixed U8) — replaces the old free-standing `_accumulate_tokens`/`token_totals` pair; tracks a run's running token totals and persists a per-call entry to `host/tokenlog.py`'s log as it goes. Fields: `log_path`, `model`, `run_id` (`uuid.uuid4().hex[:12]`), `calls`, `totals` (`{in, out, cached_in}`). `_TokenLedger.new(settings)` builds one from a `Settings` instance, guarding with `isinstance` checks against `token_log_path`/`llm_model` not being a real `Path`/`str` (e.g. a `MagicMock` in tests that stub settings wholesale). `.record(response, *, phase, step, on_event, docs=None, est_in=None)` reads `response.usage.prompt_tokens`/`completion_tokens` (and `prompt_tokens_details.cached_tokens` when present) after an LLM call (organize, query, and analyzer calls alike) and folds `prompt_tokens` into `totals["in"]` via two private accumulators kept separately and always summed together (`totals["in"] = analyze_in + conversation_in`): `analyze_in` sums every `phase="analyze"` call's `prompt_tokens` — analyzer calls are independent, throwaway per-batch conversations with no shared history, so their prompt counts are genuinely additive; `conversation_in` is *replaced* (not summed) on every other phase (`"organize"`, `"query"`) call with that call's `prompt_tokens` — confirmed against a real API journal that within one growing multi-turn conversation the endpoint's `usage.prompt_tokens` is already a cumulative session-wide total (the whole resent history so far), so summing it across turns was compounding an already-cumulative number. The R1 fix above got the per-phase policy right but still replaced the single shared `totals["in"]` outright on an organize/query call, so an analyze phase's accumulated cost visibly vanished from the displayed running total the moment the first organize/query call landed afterward; splitting the two accumulators (U8) closes that gap while keeping R1's per-conversation replace-not-sum reasoning intact. `totals["out"]` always sums (a fresh per-call value) and `totals["cached_in"]` always sums across every call regardless of phase. Appends a `TokenLogEntry` (swallowing `OSError`) and emits a `"tokens"` `AgentEvent` whose text is `_fmt_tokens`'s compact rendering of the running totals, now including the cumulative cached count (e.g. `"42.3K in (5.0K cached) / 5.1K out"`), and whose `data` carries the running `{in, out}` totals, this call's own `cached_in`/`call_in`/`call_out`, and a cumulative `total_cached_in`; a no-op when the endpoint's response omits `usage` or reports non-int counts. `.log_estimate(*, step, docs, est_in)` writes a `phase="estimate"` entry (no event) at the pre-analysis cost-approval gate, so the estimate-vs-actual gap is auditable from the same log. Threaded through as `ledger` in `_analyze_batch`/`_analyze_new_documents` (`phase="analyze"`), `run_agent_loop`'s ORGANIZE loop (`phase="organize"`), and `run_query_loop` (`phase="query"`) — as of R1, callers (`OrganizerScreen`, `QueryScreen`) construct one ledger per screen/session and pass it into every call via the new `ledger` parameter, so the running totals persist for that screen's whole lifetime instead of resetting on each call
-- `_fmt_tokens(n)` — compact human-readable token count: `512`, `12K`, `12.3K`, `3.5M`
-- `run_prepass(*, session, settings, target, on_event) -> PrepassResult` (P4) — deterministic, LLM-free corpus discovery. Walks `target` to exhaustion (re-walking every `truncated` subdirectory via `_collect_truncated_dirs`), checksums every discovered file in `_PREPASS_CHUNK_SIZE`-sized `compute_checksum_batch` chunks, dedupes by checksum, partitions into known/new by chunked `lookup_documents` calls (P3), and batches a single `rehome_documents` call for any `known` document whose registry path drifted from where it was actually found. Emits exactly one `"progress"` `AgentEvent` once discovery + partitioning finishes. Runs entirely through MCP tool calls, no local file I/O. As of P6, `run_agent_loop` calls this first thing on every fresh run (`history is None`)
-- `_collect_truncated_dirs(walk_result)` — recursively collects the paths of every directory a `walk_tree` result marked `truncated` (`children` is `None`, depth limit reached); each needs its own `walk_tree` call to be fully discovered. Used by `run_prepass`'s exhaustive-walk loop
-- `_new_docs_cost_estimate(new_docs, sizes, max_snippet_chars) -> tuple[int, int]` (P5) — `(new_doc_count, estimated_input_tokens)` computed from only `new_docs`' sizes (looked up in `PrepassResult.sizes`), mirroring `_ProgressTracker.cost_estimate`'s chars-per-token heuristic but scoped to new documents only; as of P6, feeds `_handle_cost_approval` directly
-- `_fetch_batch_content(session, settings, batch, on_event) -> dict` (P5) — fetches content for one analyzer batch, splitting paths into `extract_text_batch` (`_ANALYZER_EXTRACT_EXTENSIONS`) vs. `read_file_batch` calls by extension and merging the two results keyed by path; emits `tool_call`/`tool_result` events for both calls
-- `_analyze_batch(*, session, llm, settings, profile, batch, ledger, on_event) -> tuple[list[dict], list[dict]]` (P5) — analyzes one batch (≤10 NEW docs) with a single isolated, forced-`submit_document_records`-tool LLM call. Fetches content via `_fetch_batch_content`, wraps each document's text with `_wrap_untrusted` (S2), builds a throwaway messages list (never threaded into the main conversation), retries the LLM call once on a transient failure then skips the batch (`errors`), and rejoins the model's returned records to the batch's `{path, checksum}` entries strictly **by positional index** — never by any value the model returns — so an under-returning model produces `errors` entries for the unmatched tail rather than a silent misalignment. Returns `(documents, errors)`, where `documents` is ready for `record_document_batch`
-- `_analyze_new_documents(*, session, llm, settings, profile, new_docs, ledger, on_event, tracker) -> dict` (P5) — the stateless analyzer's entry point: splits `new_docs` (P4's `PrepassResult.new`) into `_ANALYZER_BATCH_SIZE`-sized batches, calls `_analyze_batch` on each, and persists each batch's successfully-rejoined `documents` via the existing `record_document_batch` tool (no new registry-write code). As of Q2, `tracker` (a required keyword-only `_ProgressTracker`) is updated with each successfully recorded batch's paths and a `"progress"` `AgentEvent` is emitted right after — once per batch, not once for the whole call — so `run_agent_loop` no longer computes/emits progress itself after this returns. Returns `{"recorded": [...], "errors": [...]}` across all batches combined, matching `record_document_batch`'s own shape. As of P6, `run_agent_loop` calls this right after `run_prepass`, gated by `_handle_cost_approval`
-- `_build_digest(prepass_result, analysis_result) -> str` (P6) — compact corpus summary seeded into the first ORGANIZE-phase user message in place of blank "please organize" instructions: per-document `title · type · path` line (drawn from `prepass_result.known`'s records and `analysis_result["recorded"]`), plus totals (`N document(s) recorded (K already known, M newly analyzed this run)`) and an error/unanalyzed count when either the pre-pass or the analyzer reported errors. Above `_DIGEST_MAX_LISTED_DOCS` listed documents, the per-doc listing truncates with a pointer to `list_documents`/`get_registry` for the rest. Deliberately NOT full per-document summaries — just enough for the ORGANIZE agent to plan a taxonomy without re-reading content, with the registry read tools available for anything more
-
-**Turn limit:** `run_query_loop` raises an error event if the model has not produced a final (no-tool-call) response within `_MAX_TURNS = 50` turns. `run_agent_loop` (organize mode) instead uses an adaptive budget, `_analysis_turn_budget(total_discovered)` — `max(_MAX_TURNS, min(_MAX_TURN_BUDGET, _TURN_BUDGET_BASE + _TURN_BUDGET_PER_DOCUMENT * total_discovered))`, i.e. floor 50, ceiling `_MAX_TURN_BUDGET = 2000`, `_TURN_BUDGET_BASE = 30` plus `_TURN_BUDGET_PER_DOCUMENT = 3` turns per document discovered so far — recomputed each iteration as the O5 progress tracker's discovered count grows. It's a backstop against a runaway/looping agent, not the primary cost control — that's the O8 pre-ANALYZE cost-approval gate (`_handle_cost_approval`, above), which gates the first real batch-tool call of the run.
-
----
-
-### `host/llm.py`
-
-**Role:** Factory function for the OpenAI-compatible client.
-
-**Key function:** `make_client(settings) -> AsyncOpenAI` — creates an `AsyncOpenAI` instance pointed at `settings.llm_base_url`. For Azure, it also injects `default_query={"api-version": ...}` so the Azure API version parameter is sent on every request.
-
-**Design note:** No provider-specific code is needed for most endpoints — only Azure requires the extra `api-version` query parameter; any other OpenAI-compatible provider (Mammouth, OpenAI, etc.) works with just the `base_url` and `api_key` overrides.
-
----
-
-### `host/configflow.py`
-
-**Role:** Framework-agnostic (no `nicegui`) configuration-flow logic used by the web UI's setup wizard (U2) and settings view (U3) — one source of truth for profile options, per-service hints, credential validation, approval-mode options, and the plaintext-keyring-fallback warning copy. Originally factored out of the (now-deleted) Textual TUI's `SetupScreen`/`ConfigScreen` so both UIs could share it; as of Phase 22 (W1), the web UI is its only consumer.
-
-**Key functions:**
-
-| Function | Description |
-|---|---|
-| `profile_options() -> list[tuple[str, str]]` | `[(display_label, profile_id), ...]` for a Select/dropdown; reads TOML files from `profiles/`, falling back to `[("General documents", "is_it_project")]` if the directory can't be found. Originally moved here from the deleted `host/app.py`'s old `_load_profile_options`/`_PROFILE_LABELS`. |
-| `validate_credentials(url, key, model, *, key_required) -> str \| None` | Validates url → key → model in that frozen order, returning the first error message or `None`. `key_required=True` is the wizard's stricter first-run case (a blank key is itself an error); `key_required=False` (U3) is the settings view's case — a blank key there means "keep the saved key" — which also changes the URL error's wording to match each screen's existing, test-pinned copy. |
-| `build_wizard_updates(url, key, model, profile, service) -> dict[str, str]` | Builds the settings-update dict for the wizard's save step; always includes the API key (the wizard requires one). Adds `llm_api_version` when `service == "azure"`. |
-| `build_settings_updates(url, key, model, profile, approval_mode) -> dict[str, str]` | (U3) The settings view's counterpart to `build_wizard_updates` — includes `llm_api_key` only when `key` is non-empty (the blank-key-preserves-existing rule) and, unlike the wizard's dict, carries `approval_mode` instead of a service/`llm_api_version` field (the settings view has no service picker). |
-| `plaintext_warning(button_label, recovery_action="go back") -> str` | The shared, plain-text (no Rich/HTML markup — this module is UI-agnostic) warning shown when the OS keyring is unavailable and the user must explicitly confirm a plaintext fallback. `button_label` must match the actual button the user is told to press again — fixes U8's copy bug, where the TUI wizard said `Press "Finish" again` while its button read "Save & continue →". |
-
-**Other exports:** `AZURE_API_VERSION` (`"2025-01-01-preview"`); `SERVICE_HINTS: dict[str, dict[str, str]]` — per-service URL/model hint and placeholder text for `"openai_compatible"` vs `"azure"`, consumed by the web wizard's API-details step; `APPROVAL_OPTIONS: list[tuple[str, str]]` (U3) — the three `(label, value)` approval-mode choices ("Always ask before any changes"/`always`, "Only ask before moving or quarantining files"/`destructive_only`, "Never ask — full automatic mode"/`never`), originally moved out of the deleted `host/app.py`'s `ConfigScreen`, now shared by `host/web/settings.py`.
-
----
-
-### `host/web/` (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7, Phase 20 U1-U7/U10, Phase 21 V1/V5/V7/V11/V12/V13a/V13c/V15)
+## `host/web/` (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7, Phase 20 U1-U7/U10, Phase 21 V1/V5/V7/V11/V12/V13a/V13c/V15)
 
 **Role:** NiceGUI-based web UI package — originally the first piece of a planned
 Textual→NiceGUI migration. As of S6, `telcontar --web` (`host/main.py`, lazy import)
@@ -352,7 +26,7 @@ also offers direct Organize/Query/Settings entry points at parity with the TUI's
 `StartupScreen` — Settings (U3's sidebar button) and the folder picker (Phase
 19's T3 sidebar tree) were already in place, so U1's remaining piece was a Query
 button beside Organize's, both now reporting real validation errors instead of
-silently no-op'ing — see `host/main.py`, above. As of V5, it also has a corpus
+silently no-op'ing — see `host/main.py`, [core module reference](core.md). As of V5, it also has a corpus
 browser at `/corpus/{run_id}` — a sortable, filterable table over the document
 registry with a per-document detail pane, reached via a "Browse corpus" button
 beside "Query this corpus" once a run finishes — merging what used to be the
@@ -418,6 +92,7 @@ call is silently ignored — stops a stale dialog (another browser tab, or one l
 over after a reload) from resolving a different, newer pending request than the one
 it was actually shown. `request_id` is optional so the app-shutdown hook (which has
 no dialog and just rejects whatever is pending) keeps working unchanged.
+
 `bump_fs_revision()` (U4) increments `fs_revision`, a counter signalling "the
 target directory's contents changed on disk" — bumped by `AgentBridge` after a
 tree-mutating tool result (see below) and, as of U6, also called directly by
@@ -1294,124 +969,197 @@ no agent turn, since it reads the registry directly (`host/web/corpus.py`)
 rather than through the model. It reuses the *same* session/run_id the
 organize run already created rather than minting a new one, since the corpus
 page only ever reads `session.target`. Once configured, folder selection is the
-sidebar tree, which now doubles as the collapsible directory picker (T3,
-superseding the flat browse-view half of Phase 20's U1 — see the ROADMAP
-note there): clicking a node sets `shell.selected`, which may now be a file since
-the tree lists files as well as folders, so the "Use selected directory" button
-only starts a run when `shell.selected.is_dir()`. This replaced S4/S5's flat
-one-button-per-folder `_list_subdirs` browser (a `Path.iterdir()` walk offloaded
-via `run.io_bound`), which T2 had already removed outright pending T3's real tree.
-
-**Startup Query entry point (U1):** `index_page` renders a "Query"
-button (`.mark("btn-startup-query")`) beside "Use selected directory"
-(`.mark("btn-startup-organize")`). Both now validate `shell.selected` first and,
-on an invalid or missing selection, set a shared `error_label`
-(`.mark("startup-error")`) instead of silently doing nothing — TUI parity with
-`StartupScreen`'s own validation message ("Please choose a folder to organize."
-/ "Please choose a folder to query."). The Query button additionally resolves the
-selection through `host.paths.find_organizer_root` — mirroring
-`StartupScreen._query()` — since per-directory memory means the picked folder
-may be a subfolder of what was actually organized, so the query session must be
-rooted at the found ancestor, not the raw selection; if no ancestor has a
-`.organizer`, it reports "No analyzed corpus found in {path} or any parent
-folder. Run Organize first." On success it calls `web_session.create(
-organizer_root, mode="query")` and navigates to `/query/{run_id}`, the same
-transition the run page's "Query this corpus" button (U7, below) makes once a
-run finishes.
-
-**Target-directory visibility (X1):** immediately after `app_shell` mounts
-(and the not-found early return), `run_page` calls `shell.tree.select(str(
-session.target))` to highlight the run's root in the sidebar tree from the
-moment the page loads — `reload_tree()`/the periodic tree poll only ever
-replace the `nodes` prop, never `selected`, so the highlight survives every
-subsequent poll tick without needing to be re-applied. It also renders a
-plain (non-clickable — X5 landed a reveal-in-explorer affordance on the
-approval dialog's ops JSON path instead, `host/web/dialogs.py`, not here)
-`ui.label(str(session.target)).mark("run-target-path")`,
-with a matching `.tooltip(...)` for a long path, above `starter_column`/
-`main_column` — so the target directory stays visible in the main content
-area for the whole run, not just on the pre-start starter pane.
-
-The run page (`/run/{run_id}`, S5) opens on a starter pane — hidden once
-`session.started` — showing a directory overview (`host.paths.directory_overview`,
-also dispatched via `run.io_bound`) and an optional free-text steering-instructions
-input mirroring the Textual TUI's pre-analysis steering box. Only its
-"Start organizing" button constructs `AgentBridge(session)` and calls
-`start(instructions=...)`, which is what actually launches the agent task; S4's
-version began the run as soon as a directory was picked. Once `session.started`
-flips, the starter pane hides and the main view (status/progress-bar/chat-input/
-approval-cost-ask-dialog) takes over. As of V14, the progress bar is a `ui.row()`
-(`.mark("progress-row")`) pairing the `ui.linear_progress` with a sibling
-`ui.label()` (`.mark("progress-percent")`) showing a rounded integer percent
-(`f"{round(fraction * 100)}%"`) instead of NiceGUI's raw 0–1 float — the row's
-own `.visible` (not the bar's) is what's toggled on `session.progress["total"]`,
-and the row is deliberately generic so a later current-document label (V8b) can
-join as a third sibling without another restructure. As of V8b, that third
-sibling exists: `ui.label().mark("progress-current")`, read from the O5/V8a
-`session.progress["current"]` list — the first filename plus a `" +N"` suffix
-when more than one document is in flight in the same analyzer batch, or `""`
-when the list is empty (between batches, or on the pre-pass's own snapshot
-event, which omits the `current` key entirely rather than sending `[]`).
-
-**Document preview pane (X9):** `main_column`'s first line now wraps
-`conversation_column` in a `ui.row()` beside a sibling `ui.column().mark(
-"doc-preview")` holding a `host.web.docpane.build_doc_pane()` (above) — a
-2/3-width conversation side and a 1/3-width preview side. This is
-deliberately not wired through `app_shell`/`host/web/shell.py`'s sidebar tree
-directly; it polls the same `shell.selected` attribute `_handle_select` (X11)
-already populates on every tree click. `_RenderState` gained
-`last_preview_path: Path | None = None`; `_refresh()` compares it against
-`shell.selected` on every tick and only acts when they differ (i.e. on an
-actual sidebar-tree selection change, never every poll tick) — `None` clears
-the pane, otherwise it calls the new module-level `_load_preview(target,
-path) -> tuple[bool, dict | None, str]` via `run.io_bound` (a stat or
-registry read on a possibly-network path must never block the UI event
-loop). `_load_preview` returns `(False, None, "")` if `path` isn't a file;
-otherwise it looks the path up via `corpus.find_by_path` (above) — a hit
-returns `(True, record, "")`; a miss falls back to filesystem-only metadata
-(`f"{size:,} bytes · modified {mtime}"`, swallowing `OSError` down to `""`)
-so an unanalyzed file still shows something. `_refresh()` then calls
-`doc_pane.clear()` (not a file), `doc_pane.show(record)` (analyzed), or
-`doc_pane.show_unanalyzed(path, meta_line)` (not yet analyzed) accordingly.
-
-As of T5/T6, that main view splits telcontar's own tool activity out of the chat
-stream: `conversation_column` (turns only, `ui.chat_message`, rendering
-`session.transcript` exactly as S4 did) sits above a separator and a
-pinned-bottom, scrolling `log_column` (`max-height: 25vh`) for the internal-step
-log strip. V16 added a third stream, `session.activity_log`, originally
-rendered (`.mark("activity-column")`) into its own `activity_column` between the
-two, replacing the old single-line `activity_label`. As of X3, that separate
-column is gone: `_render_thread_item(item)` dispatches each item from the
-merged `session.thread()` (`host/web/session.py`, above) to either
-`_render_turn` (a `TranscriptItem` — unchanged `ui.chat_message` rendering) or
-`_render_activity` (an `ActivityEntry` — still `.mark("activity-entry")`, now a
-small centered caption, `.classes("text-xs text-grey-6 self-center")`), both
-rendering into `conversation_column` itself so a phase-change note appears
-inline, immediately after whichever turn it chronologically follows, instead of
-in a visually separate column. `_RenderState`'s former `turn_seq`/`activity_seq`
-pair collapsed into one `thread_seq`, and `_refresh()` now walks
-`session.thread()` once — rendering any item whose `.seq` exceeds `thread_seq`
-via `_render_thread_item` and advancing the cursor to it — instead of two
-separate loops over `session.transcript`/`session.activity_log`. `session.activity`
-(the scalar) and the `activity_log`/`transcript` lists themselves are all
-unchanged by X3 — only the *rendering* merged; the two lists stay physically
-separate for the reasons `host/web/session.py`'s docstring gives above.
-`log_column`'s own step-log rendering is untouched: telcontar's tool-call
-activity never renders as a chat bubble or an inline caption, staying the
-finer-grained one-line-per-tool-call history with its own detail-toggle. As of V13a,
-each `ui.chat_message` bubble also gets `.classes("w-full")` — without it,
-NiceGUI's `.nicegui-column` CSS (`align-items: flex-start`) shrink-wraps every
-bubble to its content width regardless of `sent=`, hiding the left/right
-alignment `sent=` was already computing correctly — plus explicit
-`bg-color`/`text-color` Quasar props resolved against `theme.PALETTE`
-(`secondary`/`dark` for the user, `primary`/`dark` for telcontar), fixing
-low-contrast white-on-gold bubble text. As of U4, the
-log column's rendering (row-building, glyphs, the truncating cap) is no longer
-inline here — it's `host/web/steplog.py`'s `sync_steps`/`StepLogState`, above;
-`run_page` just owns a `steplog.StepLogState()` instance and calls
-`steplog.sync_steps(log_column, shell, step_log_state, session.steps)` once per
-tick. `run_page`'s `with app_shell(...) as shell:` captures the `Shell` handle so
+sidebar tree, which now doubles as the directory picker (T3, superseding the
+browse-view half of Phase 20's U1): clicking a node sets `shell.selected`
+(which may now be a file, since the tree shows files too), and a "Use selected
+directory" button starts the run only if `shell.selected.is_dir()`. As of U1, a
+second "Query" button sits next to it: it applies the same `is_dir()` check,
+then resolves the selection to the nearest `.organizer` ancestor via
+`host.paths.find_organizer_root` (TUI parity with `StartupScreen._query` — a
+picked folder may be a subfolder of what was actually organized, so the query
+session is rooted at the found ancestor, not the raw selection) and creates a
+query-mode session there; if no ancestor has a `.organizer`, it reports "No
+analyzed corpus found ... Run Organize first." instead of starting one. Both
+buttons now show a real message in a shared error label
+(`.mark("startup-error")`) instead of silently no-op'ing when nothing valid is
+selected. As of X1, `run_page` calls `shell.tree.select(str(session.target))`
+right after `app_shell` mounts, highlighting the run's root in the sidebar
+tree from first load — the periodic tree poll only ever replaces the `nodes`
+prop, never `selected`, so the highlight survives every poll tick — and
+renders a plain `ui.label(str(session.target)).mark("run-target-path")`
+(with a tooltip for a long path) above the starter/main columns, so the
+target directory stays visible in the main content area for the whole run,
+not just on the pre-start starter pane. The organizer view (`/run/{run_id}`) now opens on a
+**starter pane** shown before the run begins: a directory overview (reusing
+`host.paths.directory_overview`, also offloaded via `run.io_bound`) plus an
+optional free-text steering-instructions input (mirrors the Textual TUI's
+pre-analysis steering box) and a "Start organizing" button. Only clicking that
+button constructs the `AgentBridge` and calls `start(instructions=...)` — S4's
+version started the run immediately on directory selection. Once started
+(`session.started`), the starter pane hides and the main view (status/progress
+bar/chat input/approval-cost-ask dialogs, now via `host/web/dialogs.py`,
+U4/V12) takes
+over. As of V14, the progress bar is a `ui.row()` (`.mark("progress-row")`)
+pairing the `ui.linear_progress` with a sibling `ui.label()`
+(`.mark("progress-percent")`) showing a rounded integer percent instead of
+NiceGUI's raw 0–1 float — the row's own `.visible` is what's toggled on
+`session.progress["total"]`, kept generic so a later current-document label
+(V8b) can join as a third sibling. As of V8b, that third sibling exists:
+`ui.label().mark("progress-current")` shows the in-flight document name(s)
+from the O5/V8a `session.progress["current"]` list — the first filename plus
+a `" +N"` suffix when more than one file is in flight, or `""` when the list
+is empty (between batches, or on the pre-pass snapshot event, which omits
+the key entirely). As of U7, the main view also shows a "Query this corpus" button, hidden
+until `session.done` — mirroring the TUI's `OrganizerScreen`'s `g` keybinding,
+gated the same way — that, as of X11, first reuses an existing query session
+for the target via `web_session.find_by_target(session.target, mode="query")`
+and only falls back to `web_session.create(...)` if none exists yet, before
+navigating to
+`/query/{run_id}`. As of V5, a "Browse corpus" button
+(`.mark("btn-browse-corpus")`) sits beside it, gated the same `session.done`
+way — set both at build time and again on every `_refresh()` tick, the same
+two-places-set pattern the query button already needed — navigating to
+`/corpus/{session.run_id}`: the same session, not a new one. As of X9, the
+main view's conversation area sits in a `ui.row()` at 2/3 width beside a new
+1/3-width document-preview pane (`.mark("doc-preview")`, built via
+`host/web/docpane.py`'s `build_doc_pane()`, above) — polling `shell.selected`
+(the same attribute the sidebar tree click handler, X11, already populates)
+rather than being wired through the tree directly: `_refresh()` reacts only
+when the selection actually changes since the last tick, offloading the
+stat/registry lookup (`_load_preview`, new module-level helper) via
+`run.io_bound` and showing either the matching registry record
+(`host/web/corpus.py`'s `find_by_path`), a "not analyzed yet" placeholder
+with filesystem metadata, or clearing the pane, depending on what's found.
+As of T5/T6, that main view splits telcontar's own tool activity out of one
+interleaved stream: a
+`conversation_column` (turns only, `ui.chat_message`, rendering `session.transcript`)
+sits above a separator and a scrolling
+`log_column` (~25vh) rendering
+`session.steps` as one compact line each — a status glyph (▶ running / · ok /
+✗ error) plus the step's summary — with a small "code" icon button per row that
+calls `shell.show_detail(step.summary, step.detail)` to open the full payload in
+the step-detail section (T6, stacked in the left sidebar below the tree as of
+V13b — no longer a right-side drawer). V16 added a third history,
+`session.activity_log`, originally rendered (`.mark("activity-column")`) into
+its own `activity_column` between the two, replacing the old single-line
+`activity_label`. As of X3, that separate column is gone: `session.thread()`
+(`session.py`, above) merges `transcript` and `activity_log` chronologically,
+and `run_page` renders each item — via `_render_turn`/`_render_activity` — into
+`conversation_column` itself, so a phase-change note (still `.mark(
+"activity-entry")`, now a small centered caption rather than its own row)
+appears inline right after whichever turn it chronologically followed, instead
+of in a visually separate column; `_RenderState`'s former
+`turn_seq`/`activity_seq` pair collapsed into one `thread_seq` walking
+`session.thread()` once per tick. `session.activity` (the scalar) and the
+underlying `transcript`/`activity_log` lists are unchanged by this — only the
+rendering merged. `log_column`'s own step rendering is untouched: tool-call
+activity still never renders as a chat bubble or inline caption.
+As of V13a, each rendered bubble also carries
+`.classes("w-full")`: NiceGUI's `.nicegui-column` CSS (`align-items: flex-start`)
+otherwise shrink-wraps every `ui.chat_message` to its content width regardless of
+`sent=`, hiding the left/right alignment `sent=` was already choosing correctly —
+plus explicit `bg-color`/`text-color` Quasar props resolved against
+`theme.PALETTE` (`secondary`/`dark` for the user, `primary`/`dark` for
+telcontar), fixing low-contrast white-on-gold bubble text. As of U4 this rendering is
+`host/web/steplog.py`'s `sync_steps`/`StepLogState` (above), not inline: `run_page`
+owns one `steplog.StepLogState()` and calls `steplog.sync_steps(log_column, shell,
+step_log_state, session.steps)` once per tick, which caps the DOM at
+`_MAX_LOG_ROWS = 500` (oldest row deleted first) and lets an already-rendered
+"running" step's line update in place once it closes — unlike `TranscriptItem`s,
+`StepRecord`s mutate after creation.
+`run_page`'s `with app_shell(...) as shell:` captures the `Shell` handle so
 `steplog.render_step_row` can reach `shell.show_detail()`.
+
+**Sidebar tree refresh (U4, extended by V7):** `_refresh()` is now `async`. On each tick, if
+`session.fs_revision` has changed since the render cursor last saw it, `run_page`
+now (V7) just awaits `shell.reload_tree()` — the expansion-preserving
+rebuild-from-disk logic that used to live inline here (`host/web/shell.py`, above)
+moved onto `Shell` itself, since it's now also reachable from a manual refresh
+button and `app_shell`'s own periodic poll timer, neither of which has this
+render loop's `fs_revision`/`RenderState` bookkeeping to key off. This
+`fs_revision`-gated path only fires when a tree-mutating tool actually closed
+since the last tick (see `bridge.py`'s
+`_TREE_MUTATING_TOOLS` above), never on every 0.5s poll of this timer specifically
+— but as of V7 the tree also refreshes on its own independent
+`TREE_POLL_INTERVAL` timer and via the manual button, regardless of whether a
+run is active at all, with `reload_tree()`'s own skip-if-unchanged check
+preventing any of these from colliding or resetting scroll/selection needlessly.
+It never collapses whatever the user had expanded — closing the gap where the sidebar tree
+(Phase 19 T3) never updated as the agent moved/renamed/quarantined files.
+
+`run_web(target: Path | None = None, *, native: bool = True)` (V1 added the
+keyword-only `native` parameter) still binds an ephemeral local port and calls
+`ui.run(host="127.0.0.1", ..., show=False if effective_native else True,
+reload=False, title=..., dark=True, favicon=..., native=effective_native,
+window_size=(1280, 860) if effective_native else None)` — never `0.0.0.0`, to
+avoid exposing the approval gate on the LAN. `native` (default `True` — "one
+command, one window") requests a native `pywebview` window instead of the
+system browser; `host/main.py`'s `--browser` flag is the escape hatch that
+passes `False`. Rather than trust the argument blindly, `run_web` re-checks
+actual availability itself: `effective_native = native and sys.platform ==
+"win32" and importlib.util.find_spec("webview") is not None` — `pywebview` is a
+Windows-only dependency (gated `; sys_platform == 'win32'` in
+`pyproject.toml`) and may still be missing even on Windows. If native was
+requested but isn't usable, `run_web` prints a warning to stderr and falls back
+to the browser instead of hard-exiting — NiceGUI's own native-mode path calls
+`sys.exit(1)` on a missing `webview`, unacceptable now that this is the default
+entry point (U10). `favicon=` is `str(_ICON_PATH)` (the vendored
+`host/web/assets/telcontar.ico`) when `effective_native` and that file exists,
+else `theme.FAVICON_SVG` unchanged — NiceGUI's `favicon=` kwarg is dual-purpose:
+in native mode, a local file path is also applied as the native window/taskbar
+icon (there is no separate "icon" kwarg), while the browser-mode favicon is
+untouched. `reload=False` is load-bearing, not a style choice: with `reload=True`,
+uvicorn forces a `SelectorEventLoop` on Windows, where
+`asyncio.create_subprocess_exec` (used to launch the MCP server subprocess) raises
+`NotImplementedError`. `dark=True` is load-bearing too (T8): Quasar only honours
+the `dark`/`dark_page` `PALETTE` tokens in dark mode. Before `ui.run()`, `run_web`
+applies telcontar's visual identity globally and exactly once — `app.colors(
+**theme.PALETTE)` (never a per-page `ui.colors()`, which would silently override
+this and fragment the identity across routes), `app.add_static_files(
+theme.FONT_URL_PATH, theme.FONT_DIR)` to serve the vendored Cinzel woff2 when the
+fonts directory exists, and `ui.add_css(theme.css(), shared=True)`. As of U7,
+`run_web`'s `@app.on_shutdown` hook also cancels every session's driving task
+(`session.task.cancel()`), alongside its existing pending-future rejection — an
+organize or query session's MCP server subprocess previously had no lifecycle at
+all past shutdown; a full lifecycle/reaper (nothing ever calls
+`web_session.close()` today) is still future work, this is minimal hardening
+only. In native mode, `run_web` points the window at the running server via
+`app.native.window_args.update(_native_window_args(url))` — as of X2, no
+longer a direct dict-key assignment. `_native_window_args(url: str) -> dict`
+is a pure helper (`{"url": url, "text_select": True}`) split out so its
+content stays unit-testable on Linux CI, where native mode never actually
+activates. `text_select=True` is the **primary fix** for a "chat text not
+selectable/copyable" bug report: pywebview's own default is
+`text_select=False` for the whole native window, independent of any in-page
+CSS — the `_RESIZE_JS` drag bug (above) was the originally-suspected cause
+but turned out to be secondary. No automated coverage exercises the real
+native window end to end (CI has no `webview`, and the headless test harness
+never executes JavaScript); manual verification in a real native window is a
+known, documented gap. The browser tab/native window
+title (T7) comes from `host.web.theme.window_title`: `ui.run(...)`'s `title=`
+supplies the global default (no target yet), and `run_page` separately calls
+`ui.page_title(theme.window_title(session.target))` from inside the page body —
+`@ui.page(title=...)` is bound at decoration/import time and can't see the
+per-request session's target, so the call is made live instead, landing the
+target's name in the very first HTML response. `index_page` (the picker) never
+calls `ui.page_title()`, since no directory is "selected" until a run exists.
+
+**Reload-safe design:** a page reload creates a new NiceGUI client, but `RunSession`
+(looked up by run_id from the URL) persists independently of any one client, and a
+pending approval/cost/ask request is an `asyncio.Future` parked on the session rather
+than an awaited NiceGUI dialog — so a reload re-attaches to an in-flight approval
+instead of orphaning it. This was validated in a pre-implementation spike (see
+ROADMAP.md's "Break 1" note ahead of Phase 18), which found that a bare reload does
+**not** kill the background run — it silently orphans it, and any UI element the
+run's task then tries to touch afterward targets a dead client, which can
+permanently deadlock an approval gate with no visible symptom. As of U4 — and,
+for `ask_user`'s dialog, V12 — the approval/cost/ask dialogs themselves
+(`host/web/dialogs.py`) close the same failure class's other door: they're
+`.props("persistent")` (no backdrop-click or Esc
+dismissal) and resolve through `session.resolve_pending(result,
+request_id=pending.request_id)`, so a dismissed-without-resolving dialog can no
+longer deadlock a run, and a stale dialog from another tab or a pre-reload client
+can't resolve a pending request it was never actually shown.
 
 **Journal toolbar affordance (U6):** `run_page` renders a "Journal (N)" button
 (`.mark("btn-open-journal")`) above `starter_column`, so it's usable before a
@@ -1450,80 +1198,7 @@ gone too — it now just tracks which `pending.request_id` has already been show
 Proceed/Cancel, or — V12 — Submit/Skip) resolve `session.pending` directly (see
 `dialogs.py` above).
 
-**Sidebar tree refresh (U4, extended by V7):** `_RenderState` gained an `fs_revision: int` field
-(the step log's own render cursor moved out to `steplog.StepLogState`, above).
-`run_page`'s `_refresh()` is now `async`; on each tick, if `session.fs_revision`
-has changed since `render_state.fs_revision`, it now (V7) just calls `await
-shell.reload_tree()` — the expansion-preserving rebuild-from-disk logic this
-used to inline here (reading the `expanded` Quasar prop, calling
-`web_tree.rebuild_nodes` via `run.io_bound`, guarding against `None` on
-shutdown/cancel, replacing `shell.tree.props["nodes"]`) moved onto `Shell`
-itself (`host/web/shell.py`, above), since V7 needed the identical logic
-reachable from two more call sites — a manual refresh button and a periodic
-poll timer — that have no `RenderState` of their own to key off. `main.py` no
-longer imports `host.web.tree` directly as a result. This `fs_revision`-gated
-call still only fires when a tree-mutating tool actually closed since the last
-tick (see `bridge.py`'s `_TREE_MUTATING_TOOLS` above), not on every 0.5s
-`REFRESH_INTERVAL` tick — but the tree no longer depends on that path alone to
-stay current: `app_shell`'s own `TREE_POLL_INTERVAL` timer and the sidebar's
-manual refresh button both call `reload_tree()` independently of `fs_revision`
-and of any run being active at all. `reload_tree()`'s own skip-if-unchanged
-check is what keeps all of this from colliding or thrashing the DOM, and it
-never collapses whatever the user had expanded.
-
-`_pick_port()` binds an ephemeral `127.0.0.1` port. As of V1, `run_web(target:
-Path | None = None, *, native: bool = True)` gained the keyword-only `native`
-parameter (default `True` — "one command, one window"); `host/main.py` passes
-`native=not args.browser`. Rather than trust the argument blindly, `run_web`
-re-derives `effective_native = native and sys.platform == "win32" and
-importlib.util.find_spec("webview") is not None` — `pywebview` is a Windows-only
-dependency (`pyproject.toml`'s `; sys_platform == 'win32'` marker) and may still
-be missing even on Windows. If native was requested but isn't actually usable, a
-warning is printed to stderr and the call falls back to the browser rather than
-hard-exiting — NiceGUI's own native-mode path calls `sys.exit(1)` on a missing
-`webview`, unacceptable now that this is the default entry point (U10). `run_web`
-calls `ui.run(host="127.0.0.1", port=port, show=False if effective_native else
-True, reload=False, dark=True, favicon=..., native=effective_native,
-window_size=(1280, 860) if effective_native else None)`. `favicon=` is
-`str(_ICON_PATH)` — the vendored `host/web/assets/telcontar.ico` — when
-`effective_native` and that file exists, else `theme.FAVICON_SVG` unchanged;
-NiceGUI's `favicon=` kwarg is dual-purpose, also applying a local file path as
-the native window/taskbar icon in native mode (there is no separate "icon"
-kwarg), while the browser-mode favicon is untouched. `reload=False` is required,
-not stylistic:
-`reload=True` forces uvicorn onto a `SelectorEventLoop` on Windows, where
-`asyncio.create_subprocess_exec` (the MCP server subprocess launch) raises
-`NotImplementedError`. `dark=True` is likewise load-bearing (T8): Quasar only
-honours the `dark`/`dark_page` palette tokens in dark mode. Before `ui.run()`,
-`run_web` applies the visual identity globally and exactly once: `app.colors(
-**theme.PALETTE)` (never a per-page `ui.colors()`, which would silently
-override this and fragment the identity across routes), `app.add_static_files(
-theme.FONT_URL_PATH, theme.FONT_DIR)` when the vendored-fonts directory exists,
-and `ui.add_css(theme.css(), shared=True)`. As of U7, `run_web`'s
-`@app.on_shutdown` hook also calls `session.task.cancel()` for every session,
-alongside its existing pending-future rejection — an organize or query session's
-MCP server subprocess previously had no lifecycle at all past shutdown, since
-nothing ever calls `web_session.close()`. A full lifecycle/reaper is still future
-work; this is minimal hardening only.
-
-In native mode, `run_web` points the native window at the running server via
-`app.native.window_args.update(_native_window_args(f"http://127.0.0.1:{port}/
-?token={token}"))` — as of X2, no longer a direct `app.native.window_args["url"]
-= ...` dict-key assignment. `_native_window_args(url: str) -> dict` is a pure
-helper (`{"url": url, "text_select": True}`) split out so its content is
-unit-testable on Linux CI, where native mode never actually activates.
-`text_select=True` is the **primary fix** for a live bug report that chat text
-(and everything else in the native window) wasn't selectable/copyable:
-pywebview's own default is `text_select=False` for the whole native window,
-independent of any in-page CSS — the sidebar-resize drag bug fixed the same
-sprint (`_RESIZE_JS`, `host/web/shell.py`, above) was the originally-suspected
-cause but turned out to be secondary. No automated coverage exercises the real
-native window end to end (CI has no `webview`, and the headless test harness
-never executes JavaScript) — coverage is limited to a dict-content assertion on
-`_native_window_args`, string-content assertions on `_RESIZE_JS`, and a
-CSS-string assertion on `theme.css()`'s new rule (below); manual verification
-in a real native window is still required and is a known gap, not a silent
-omission.
+`_pick_port()` binds an ephemeral `127.0.0.1` port.
 
 Note: the ROADMAP text for S5 also names `_load_profile_options` (now
 `host.configflow.profile_options`), journal reads, and `server.tools.undo_last` as
