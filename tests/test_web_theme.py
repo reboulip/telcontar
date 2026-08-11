@@ -129,6 +129,23 @@ def test_css_makes_chat_message_text_selectable() -> None:
     assert "user-select: text" in result
 
 
+# ── tree connectors and density (X7) ────────────────────────────────────────
+
+
+def test_css_styles_sidebar_tree_connectors() -> None:
+    result = css()
+
+    assert ".tc-tree" in result
+    assert "q-tree__node" in result
+
+
+def test_css_styles_plan_tree_guides() -> None:
+    result = css()
+
+    assert ".tc-tree-guide" in result
+    assert ".tc-tree-row" in result
+
+
 # ── font_face_css / css ──────────────────────────────────────────────────
 
 

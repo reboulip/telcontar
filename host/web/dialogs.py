@@ -44,6 +44,17 @@ from host.web import journal
 from host.web.session import PendingRequest, RunSession
 
 
+def _render_tree_guides(depth: int) -> None:
+    """X7: ``depth`` per-level vertical guide lines for the plan tree —
+    CSS-only (`.tc-tree-guide`, host/web/theme.py's `css()`), mirroring the
+    sidebar file tree's Quasar connector lines so both tree views read as
+    one visual system. Deliberately not ASCII box-drawing baked into
+    ``PlanTreeLine.label`` — keeps `host/format.py` free of connector
+    state."""
+    for _ in range(depth):
+        ui.element("div").classes("tc-tree-guide")
+
+
 def _make_resolver(
     session: RunSession, pending: PendingRequest, dialog: ui.dialog
 ) -> Callable[[Any], None]:
@@ -104,9 +115,9 @@ def build_approval_dialog(session: RunSession, pending: PendingRequest) -> ui.di
                     ui.label("Before").classes("text-subtitle2")
                     with ui.column().classes("gap-0").mark("before-tree"):
                         for line in before_lines:
-                            ui.label(line.label).classes("whitespace-pre font-mono text-xs").style(
-                                f"margin-left: {line.depth * 16}px"
-                            )
+                            with ui.row().classes("items-center gap-1 no-wrap tc-tree-row"):
+                                _render_tree_guides(line.depth)
+                                ui.label(line.label).classes("whitespace-pre font-mono text-xs")
                 with ui.column().classes("flex-1 max-h-96 overflow-auto gap-0"):
                     ui.label("After").classes("text-subtitle2")
                     ui.label("Unchecking a box excludes that change from execution.").classes(
@@ -114,11 +125,8 @@ def build_approval_dialog(session: RunSession, pending: PendingRequest) -> ui.di
                     ).mark("after-checkbox-hint")
                     with ui.column().classes("gap-0").mark("after-tree"):
                         for line in after_lines:
-                            with (
-                                ui.row()
-                                .classes("items-center gap-1 no-wrap")
-                                .style(f"margin-left: {line.depth * 16}px")
-                            ):
+                            with ui.row().classes("items-center gap-1 no-wrap tc-tree-row"):
+                                _render_tree_guides(line.depth)
                                 if line.op_ids:
                                     # X4: a chained file (e.g. rename+move)
                                     # carries every op_id in the chain — one

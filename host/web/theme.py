@@ -172,6 +172,35 @@ def css(font_dir: Path | None = None) -> str:
         "  user-select: text;\n"
         "  -webkit-user-select: text;\n"
         "}\n"
+        # X7: connector lines + denser rows on every tree view. `.tc-tree`
+        # (the sidebar file tree, host/web/shell.py — its `no-connectors`
+        # prop was dropped so Quasar's own built-in connector CSS renders)
+        # gets its connector color muted here rather than left at Quasar's
+        # default mid-grey; `.tc-tree-guide`/`.tc-tree-row` are the plan
+        # approval dialog's before/after tree (host/web/dialogs.py), which
+        # is hand-rolled indented labels, not a real ui.tree — CSS-only
+        # guide lines there, never ASCII connectors baked into label text,
+        # so both trees read as one visual system.
+        ".tc-tree .q-tree__node:after,\n"
+        ".tc-tree .q-tree__node-header:before {\n"
+        "  border-color: rgba(174, 182, 196, 0.35);\n"  # PALETTE["secondary"], muted
+        "}\n"
+        ".tc-tree .q-tree__node {\n"
+        "  padding-bottom: 0;\n"
+        "}\n"
+        ".tc-tree .q-tree__node-header {\n"
+        "  min-height: 0;\n"
+        "  padding: 2px 4px;\n"
+        "}\n"
+        ".tc-tree-guide {\n"
+        "  width: 16px;\n"
+        "  flex-shrink: 0;\n"
+        "  align-self: stretch;\n"
+        "  border-left: 1px solid rgba(174, 182, 196, 0.35);\n"
+        "}\n"
+        ".tc-tree-row {\n"
+        "  padding: 1px 0;\n"
+        "}\n"
     )
 
 

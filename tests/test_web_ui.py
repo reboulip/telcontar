@@ -622,6 +622,33 @@ async def test_approval_dialog_every_op_gets_exactly_one_checkbox_regardless_of_
     assert set(result.removed_op_ids) == {"op1", "op2"}
 
 
+async def test_approval_dialog_tree_rows_render_guide_lines(user: User, tmp_path: Path) -> None:
+    """X7: each PlanTreeLine.depth level renders a `.tc-tree-guide` spacer
+    div (CSS-only connector lines, theme.py's css()) instead of a bare
+    margin-left indent — consistent with the sidebar tree's connectors."""
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.new_pending(
+        "approval",
+        {
+            "plan_id": "plan-1",
+            "plan_data": _plan_data(
+                ops=[{"op_id": "op1", "op_type": "move", "src": "/in/a.txt", "dst": "/sorted/2024"}]
+            ),
+        },
+    )
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="after-tree")
+
+    guides = [
+        e
+        for e in user.find(kind=ui.element).elements
+        if type(e) is ui.element and "tc-tree-guide" in e.classes
+    ]
+    assert len(guides) > 0
+
+
 async def test_approval_dialog_shows_checkbox_hint_captions(user: User, tmp_path: Path) -> None:
     """X6: a visible caption (not just a tooltip, unreliable in the headless
     harness) explains what unchecking a box does."""
@@ -1487,6 +1514,22 @@ def test_sidebar_resize_js_is_an_invoked_iife() -> None:
     code = web_shell._RESIZE_JS.strip()
     assert code.startswith("("), "must be an expression, not a bare statement"
     assert code.endswith(")()"), "must be self-invoking (IIFE) so eval() actually calls it"
+
+
+async def test_sidebar_tree_has_connector_lines_enabled(user: User, tmp_path: Path) -> None:
+    """X7: no-connectors was dropped so Quasar's own built-in connector
+    lines render; .tc-tree (theme.py's css()) styles their color/density."""
+    session = web_session.create(tmp_path)
+    session.started = True
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see(marker="btn-tree-refresh")
+
+    [tree] = user.find(kind=ui.tree).elements
+    assert "no-connectors" not in tree.props
+    assert "tc-tree" in tree.classes
+    # X1 (an earlier wave) must survive this change untouched.
+    assert tree.props.get("selected-color") == "primary"
 
 
 def test_native_window_args_enables_text_select() -> None:

@@ -335,9 +335,13 @@ def app_shell(
             ui.tree(nodes, node_key="id", label_key="label", children_key="children")
             # selected-color=primary (X1): highlights the run's target
             # folder once app_shell()'s caller selects it — a Quasar prop,
-            # no CSS needed, so this stays out of theme.py.
-            .props("dense no-connectors selected-color=primary")
-            .classes("w-full")
+            # no CSS needed, so this stays out of theme.py. X7: dropped
+            # no-connectors so Quasar's own built-in connector lines
+            # render — .tc-tree (theme.py's css()) styles their color and
+            # the tree's row density; no ASCII connectors baked into node
+            # labels anywhere in this codebase.
+            .props("dense selected-color=primary")
+            .classes("w-full tc-tree")
             .style("max-height: 45vh; overflow-y: auto")
         )
 
