@@ -48,10 +48,13 @@ Every page keeps a persistent header nav bar — **Conversation / Corpus / Query
 ## Development
 
 ```bash
-uv run pytest          # run tests
-uv run ruff check .    # lint
-uv run mypy .          # type check
+uv run --group test pytest          # run tests
+uv run ruff check .                 # lint
+uv run mypy host server config      # type check (CI gate)
+uv run ty check host server config  # type check (fast local check)
 ```
+
+Contributor setup, including the pre-commit hooks that wire these in, is covered in [docs/developer/contributing.md](docs/developer/contributing.md).
 
 ## Safety model
 

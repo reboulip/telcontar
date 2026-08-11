@@ -94,3 +94,5 @@ uv sync --all-groups
 ```
 
 For dev, point `LLM_BASE_URL`/`LLM_API_KEY` at your endpoint via a `.env` file in the project root.  See [Configuration](configuration.md) for the full reference.
+
+For the full toolchain (ruff, mypy, ty, pre-commit hooks) and contribution workflow, see [Contributing](../developer/contributing.md).
