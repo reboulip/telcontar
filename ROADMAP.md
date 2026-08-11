@@ -36,7 +36,7 @@ on open work.
 *(French-language UX feedback from the full user test that resolved Break 4 above: organize-screen clarity, plan-review polish, corpus browser navigation, and related polish. Session switching (mentioned in that feedback) is deferred to Phase 24 as V7 — it needs its own design pass.)*
 
 - [x] X1 · Keep the target directory visible in the main content area for the whole run (not just before it starts, `host/web/main.py`'s `directory_overview()`), and highlight the selected folder in the sidebar treeview. [#41]
-- [ ] X2 · Investigate and fix chat text not being selectable/copyable — likely lead: the sidebar-resize drag handler's `document.body.style.userSelect = 'none'` not resetting when a drag ends outside the browser window. [#42]
+- [x] X2 · Investigate and fix chat text not being selectable/copyable — likely lead: the sidebar-resize drag handler's `document.body.style.userSelect = 'none'` not resetting when a drag ends outside the browser window. [#42]
 - [x] X3 · Interleave V16 activity/stage messages chronologically into the conversation thread itself (merge `session.transcript` and `session.activity_log` in `host/web/main.py`), instead of a separate column; `steplog.py`'s per-tool-call step log stays in its own drawer. [#43]
 - [x] X4 · Teach `plan_tree_diff` (`host/format.py`) to chain same-file rename+move ops the way `execute_plan` (`server/tools.py`) already does, so each file appears once in the before/after view. [#44]
 - [x] X5 · Add a "Reveal in file explorer" action to the plan approval dialog that opens the OS file manager with `plan_ops.json` selected. [#45]

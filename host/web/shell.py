@@ -77,6 +77,16 @@ from host.web.session import RunSession
 # the handlers below were never bound, in any browser). The min/max clamp is
 # interpolated from web_session.SIDEBAR_WIDTH_MIN/MAX (V13b) rather than
 # duplicated as JS literals, so the two can never silently drift apart again.
+# X2: pointerdown captures the pointer on the resize handle
+# (setPointerCapture) so pointermove/pointerup keep targeting it even once
+# the cursor leaves the browser window mid-drag — without this, a drag
+# released outside the window bounds never delivers a 'pointerup' to
+# document, so the userSelect='none' set below at drag-start never gets
+# reset, and chat text stays unselectable until the page reloads (the
+# ROADMAP-reported bug's real trigger). endDrag() is shared cleanup, bound
+# to every way a drag can end: a normal release (pointerup), the browser
+# revoking capture on its own (pointercancel/lostpointercapture), and the
+# whole window losing focus mid-drag, e.g. alt-tab (blur).
 _RESIZE_JS = """
 (() => {
   if (window.__tcSidebarResizeWired) return;
@@ -85,6 +95,15 @@ _RESIZE_JS = """
   let startX = 0;
   let startWidth = 0;
   let drawer = null;
+  const endDrag = () => {
+    if (!dragging || !drawer) return;
+    dragging = false;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    const width = Math.round(drawer.getBoundingClientRect().width);
+    emitEvent('tc_sidebar_resized', width);
+    drawer = null;
+  };
   document.addEventListener('pointerdown', (e) => {
     if (!e.target.closest('.tc-sidebar-resize')) return;
     drawer = document.querySelector('.tc-sidebar');
@@ -94,6 +113,7 @@ _RESIZE_JS = """
     startWidth = drawer.offsetWidth;
     document.body.style.cursor = 'ew-resize';
     document.body.style.userSelect = 'none';
+    e.target.setPointerCapture(e.pointerId);
     e.preventDefault();
   });
   document.addEventListener('pointermove', (e) => {
@@ -101,15 +121,10 @@ _RESIZE_JS = """
     const width = Math.max(__MIN__, Math.min(__MAX__, startWidth + (e.clientX - startX)));
     drawer.style.width = width + 'px';
   });
-  document.addEventListener('pointerup', () => {
-    if (!dragging || !drawer) return;
-    dragging = false;
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-    const width = Math.round(drawer.getBoundingClientRect().width);
-    emitEvent('tc_sidebar_resized', width);
-    drawer = null;
-  });
+  document.addEventListener('pointerup', endDrag);
+  document.addEventListener('pointercancel', endDrag);
+  document.addEventListener('lostpointercapture', endDrag);
+  window.addEventListener('blur', endDrag);
 })()
 """.replace("__MIN__", str(web_session.SIDEBAR_WIDTH_MIN)).replace(
     "__MAX__", str(web_session.SIDEBAR_WIDTH_MAX)

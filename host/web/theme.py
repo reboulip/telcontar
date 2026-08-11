@@ -160,6 +160,18 @@ def css(font_dir: Path | None = None) -> str:
         "  display: inline-flex;\n"
         "  align-items: center;\n"
         "}\n"
+        # X2 defense-in-depth: a rule on the message content beats an
+        # inherited `user-select: none` (no `!important` needed — a more
+        # specific descendant selector always wins) — belt-and-braces on
+        # top of the native-window text_select fix (host/web/main.py) and
+        # the resize-drag pointer-capture fix (this module's _RESIZE_JS).
+        # `.q-message-text`/`.q-message-text-content` are Quasar's own
+        # QChatMessage content classes — verify they still exist if a
+        # future Quasar upgrade ever changes this.
+        ".q-message-text, .q-message-text-content {\n"
+        "  user-select: text;\n"
+        "  -webkit-user-select: text;\n"
+        "}\n"
     )
 
 

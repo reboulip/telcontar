@@ -1489,6 +1489,37 @@ def test_sidebar_resize_js_is_an_invoked_iife() -> None:
     assert code.endswith(")()"), "must be self-invoking (IIFE) so eval() actually calls it"
 
 
+def test_native_window_args_enables_text_select() -> None:
+    """X2: pywebview's own default is text_select=False, which disables
+    text selection for the WHOLE native window regardless of any in-page
+    CSS — this is the primary fix for chat text not being
+    selectable/copyable. Testable directly (unlike the JS-based fixes
+    below): this is a plain function, no NiceGUI page render involved, and
+    the runpy-double-module gotcha (#1 above) is about *patching* main.py's
+    state, not about importing a pure function from it."""
+    from host.web.main import _native_window_args
+
+    args = _native_window_args("http://127.0.0.1:8080/?token=abc")
+
+    assert args["url"] == "http://127.0.0.1:8080/?token=abc"
+    assert args["text_select"] is True
+
+
+def test_sidebar_resize_js_captures_the_pointer_and_covers_every_drag_end() -> None:
+    """X2: a drag released outside the browser window never delivers a
+    'pointerup' to document, so without pointer capture and the extra
+    cleanup events below, the drag-time userSelect='none' sticks until the
+    page reloads — this is the ROADMAP-reported bug's real trigger.
+    Behaviorally unverifiable here (gotcha in the class docstring above:
+    the headless harness never executes JavaScript), so this stays a
+    string-shape assertion, same as the IIFE check above."""
+    code = web_shell._RESIZE_JS
+    assert "setPointerCapture" in code
+    assert "pointercancel" in code
+    assert "lostpointercapture" in code
+    assert "'blur'" in code or '"blur"' in code
+
+
 async def test_progress_row_hidden_when_no_batch_is_running(user: User, tmp_path: Path) -> None:
     session = web_session.create(tmp_path)
     session.started = True

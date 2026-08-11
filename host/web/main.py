@@ -84,6 +84,21 @@ def _start_run(target: Path) -> web_session.RunSession:
     return web_session.create(target)
 
 
+def _native_window_args(url: str) -> dict:
+    """The dict spread into pywebview's ``create_window(**window_args)``
+    (X2) — split out as a pure function so its content is unit-testable on
+    Linux CI, where native mode is never actually active (no `webview`).
+
+    ``text_select=True`` is the PRIMARY fix for chat text not being
+    selectable/copyable: pywebview's own default is `text_select=False`
+    (``webview.window.Window.__init__``), which disables text selection for
+    the whole native window regardless of any in-page CSS — independent of
+    the sidebar-resize drag bug fixed separately in `shell.py`'s
+    `_RESIZE_JS` below.
+    """
+    return {"url": url, "text_select": True}
+
+
 def _load_preview(target: Path, path: Path) -> tuple[bool, dict | None, str]:
     """(is_file, record_or_None, meta_line) for the X9 document preview
     pane — runs off the event loop thread via run.io_bound: a stat or
@@ -655,7 +670,9 @@ def run_web(target: Path | None = None, *, native: bool = True) -> None:
         # app.native.window_args after its own default `url` key — an
         # explicit `url` here wins. Must be set before ui.run() spawns the
         # native-window process (window_args needs to survive the pickle).
-        app.native.window_args["url"] = f"http://127.0.0.1:{port}/?token={token}"
+        app.native.window_args.update(
+            _native_window_args(f"http://127.0.0.1:{port}/?token={token}")
+        )
 
     # reload=False is load-bearing, not a style choice: with reload=True,
     # uvicorn forces a SelectorEventLoop on Windows (its `use_subprocess`

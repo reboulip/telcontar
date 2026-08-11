@@ -115,6 +115,20 @@ def test_css_sizes_the_header_logo() -> None:
     assert ".tc-logo" in css()
 
 
+# ── chat text selectability (X2, defense-in-depth) ──────────────────────────
+
+
+def test_css_makes_chat_message_text_selectable() -> None:
+    """X2 layer 3: a rule on the message content beats an inherited
+    `user-select: none` — belt-and-braces on top of the native-window
+    text_select fix (host/web/main.py) and the resize-drag pointer-capture
+    fix (host/web/shell.py's _RESIZE_JS)."""
+    result = css()
+
+    assert ".q-message-text" in result
+    assert "user-select: text" in result
+
+
 # ── font_face_css / css ──────────────────────────────────────────────────
 
 

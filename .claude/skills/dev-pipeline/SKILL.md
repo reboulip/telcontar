@@ -417,15 +417,21 @@ case. Treat a wave as delivered only once it appears in a doc-keeper report. If 
 in `Docs pending:` across two later waves with no report mentioning it, assume the send was
 lost: join, then re-send that wave's prompt on its own.
 
-**Explicit hard failure — do not retry, do it yourself.** If a doc-keeper `Agent`/
-`SendMessage` call comes back (or is reported via notification) with an explicit
-hard-failure status — an API error, a session/rate-limit message, anything other than
-silence — do not retry it and do not wait for it to clear. A real 30-hour sprint hit this
-three times (doc-keeper's own session/rate limit) and resolved it the same way each time:
-make the doc edit directly in the main session, using the same `Diff:`/`Target docs:`
-information already prepared for that wave's prompt, mark that wave resolved in
-`Docs pending:` (note it was done directly, not by doc-keeper), and continue to the next
-wave. This is distinct from the silence/lost-send case above, which still gets a re-send.
+**Explicit hard failure — respawn doc-keeper, never do its work yourself.** If a
+doc-keeper `Agent`/`SendMessage` call comes back (or is reported via notification) with
+an explicit hard-failure status — an API error, a session/rate-limit message, anything
+other than silence — do not retry the same agent and do not wait for it to clear; that
+agent id is gone for the rest of the sprint. doc-keeper is the doc-keeper: spawn a fresh
+`Agent({subagent_type: "doc-keeper", run_in_background: true})` (the same recovery as a
+lost persisted id, below), overwrite the `Doc-keeper agent id:` line in `sprint-brief.md`
+(or `docs-pending.md`) with the new one, and pass it the same `Diff:`/`Target docs:`
+information already prepared for that wave's prompt — plus the same for any other
+wave(s) still listed in `Docs pending:`, since the dead agent may have been mid-flight on
+more than one. The main session never edits `README.md`/`docs/**` itself as a substitute
+for doc-keeper, even after a respawn — a real sprint tried that once and it was reverted;
+docs stay doc-keeper's output. This is distinct from the silence/lost-send case above,
+which still gets a plain re-send to the same (presumably still-alive) agent id — only an
+explicit failure status forces a respawn.
 
 ---
 
