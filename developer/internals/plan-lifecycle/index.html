@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, GPT-5 backed">
+        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, backend-agnostic">
       
       
       
@@ -303,8 +303,17 @@
   
     
     
+      
+  
+  
+  
+    
+  
+  
+    
+    
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="../../architecture/" class="md-tabs__link">
+        <a href="../../architecture/core/" class="md-tabs__link">
           
   
   
@@ -312,6 +321,9 @@
 
         </a>
       </li>
+    
+  
+
     
   
 
@@ -1026,15 +1038,70 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../../architecture/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_1" id="__nav_5_1_label" tabindex="">
+            
   
   
   <span class="md-ellipsis">
     
   
     Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
   
 
     
@@ -1055,8 +1122,63 @@
   
   
     <li class="md-nav__item">
-      <a href="../../modules/" class="md-nav__link">
+      <a href="../../architecture/web-ui/" class="md-nav__link">
         
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_2" id="__nav_5_2_label" tabindex="">
+            
   
   
   <span class="md-ellipsis">
@@ -1070,7 +1192,79 @@
   
   
 
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Module Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modules/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modules/web-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1328,10 +1522,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#propose_quarantinepath-str-dict" class="md-nav__link">
+  <a href="#propose_quarantinepath-str-reason-str-dict" class="md-nav__link">
     <span class="md-ellipsis">
       
-        propose_quarantine(path: str) -&gt; dict
+        propose_quarantine(path: str, reason: str = "") -&gt; dict
       
     </span>
   </a>
@@ -1538,6 +1732,7 @@
 <h3 id="state-descriptions">State Descriptions<a class="headerlink" href="#state-descriptions" title="Permanent link">&para;</a></h3>
 <p><strong>pending</strong>
 Initial state after propose_<em> calls. The plan contains a list of proposed operations but has not been approved by the user. Multiple proposals may accumulate in a single pending plan via repeated propose_</em> calls with the same plan_id.</p>
+<p>A pending plan only ever reaches the user when the agent calls execute_plan — that call is what triggers the host's approval UI, not something that happens after approval. If the agent's turn ends with a plan still pending and execute_plan was never called this run (the T1 bug: the plan was fully staged/reviewed but the turn ended anyway), the host's agent loop (<code>host/agent.py::run_agent_loop</code>) detects this by live-checking the plan's state and re-prompts the agent once to call execute_plan, rather than leaving the plan invisible to the user. This is a host-side reliability guard, not a plan-engine state transition — the plan itself stays in pending exactly as before.</p>
 <p><strong>approved</strong>
 User has reviewed the plan and explicitly approved it. Only plans in approved state may be executed. Approval is recorded but not persisted in this design—the host manages it in memory.</p>
 <p><strong>executing</strong>
@@ -1596,7 +1791,7 @@ Reserved for future use: if execute_plan is called on a plan that is already in 
   - src: Absolute path to the source file or directory.
   - new_name (rename only): New name for the file (not a path).
   - dest_dir (move only): Absolute path to the destination directory.
-  - params: Op-specific data that doesn't fit src/dst — e.g. <code>{"content": ...}</code> for create_file/update_file, <code>{"content": ..., "overwrite": ...}</code> for update_file, <code>{"checksum": ..., "reason": ...}</code> for archive_document, <code>{"delete_originals": ...}</code> for compress_quarantine. <code>null</code> for op types that carry no extra data (rename, move, quarantine, create_dir).
+  - params: Op-specific data that doesn't fit src/dst — e.g. <code>{"content": ...}</code> for create_file/update_file, <code>{"content": ..., "overwrite": ...}</code> for update_file, <code>{"reason": ...}</code> for quarantine (V10 — a user-facing justification such as "duplicate of X"; empty string if the agent supplied none), <code>{"checksum": ..., "reason": ...}</code> for archive_document, <code>{"delete_originals": ...}</code> for compress_quarantine. <code>null</code> for op types that carry no extra data (rename, move, create_dir).
   - proposed_at: ISO 8601 timestamp when the operation was proposed.
   - status: Current status of the operation within the plan. May be pending, completed, or failed.</p>
 <p><strong>All mutating tools are staged this way.</strong> As of the M1 security-hardening pass, there is no tool that touches the filesystem directly — <code>propose_create_file</code>, <code>propose_update_file</code>, <code>propose_create_dir</code>, <code>propose_archive_document</code>, and <code>propose_compress_quarantine</code> stage ops onto a plan exactly like <code>propose_rename</code>/<code>propose_move</code>/<code>propose_quarantine</code>, and only <code>execute_plan</code> applies them. <code>archive_document</code> and <code>compress_quarantine</code> ops reuse the pre-existing standalone functions of the same name at execution time rather than duplicating their logic; both self-journal under their own <code>op_type</code> (<code>quarantine</code> and <code>compress</code> respectively) instead of the generic entry <code>execute_plan</code> writes for other op types.</p>
@@ -1664,14 +1859,15 @@ Reserved for future use: if execute_plan is called on a plan that is already in 
 2. Check for collision: if a file with the same name already exists in dest_dir, raise FileExistsError.
 3. Append the operation to the plan.
 4. Write the plan file.</p>
-<h3 id="propose_quarantinepath-str-dict">propose_quarantine(path: str) -&gt; dict<a class="headerlink" href="#propose_quarantinepath-str-dict" title="Permanent link">&para;</a></h3>
+<h3 id="propose_quarantinepath-str-reason-str-dict">propose_quarantine(path: str, reason: str = "") -&gt; dict<a class="headerlink" href="#propose_quarantinepath-str-reason-str-dict" title="Permanent link">&para;</a></h3>
 <p>Propose moving a file to the quarantine directory.</p>
 <p><strong>Inputs:</strong>
-- path: Absolute path to the file.</p>
+- path: Absolute path to the file.
+- reason (V10): Short, concrete justification for quarantining the file — duplicate of X, superseded by Y, unreadable <em>and</em> superfluous, etc. Not validated or required by the server (an empty string is accepted), but the host's ORGANIZE system prompt instructs the agent to always supply one and no longer accepts "unreadable" alone as sufficient; a blank reason displays to the user as "no reason given" at approval time.</p>
 <p><strong>Processing:</strong>
 1. Validate that path is a file.
 2. Generate a safe destination path in QUARANTINE_DIR using safe_quarantine_path (handles collisions by suffixing).
-3. Append the operation to the plan.
+3. Append the operation to the plan, storing <code>reason</code> (stripped of surrounding whitespace) in <code>params.reason</code>.
 4. Write the plan file.</p>
 <h3 id="propose_create_filepath-content-plan_id-dict-propose_update_filepath-content-plan_id-overwritefalse-dict-propose_create_dirpath-plan_id-dict-propose_archive_documentchecksum-plan_id-reason-dict-propose_compress_quarantineplan_id-delete_originalstrue-dict">propose_create_file(path, content, plan_id) -&gt; dict / propose_update_file(path, content, plan_id, overwrite=False) -&gt; dict / propose_create_dir(path, plan_id) -&gt; dict / propose_archive_document(checksum, plan_id, reason="") -&gt; dict / propose_compress_quarantine(plan_id, delete_originals=True) -&gt; dict<a class="headerlink" href="#propose_create_filepath-content-plan_id-dict-propose_update_filepath-content-plan_id-overwritefalse-dict-propose_create_dirpath-plan_id-dict-propose_archive_documentchecksum-plan_id-reason-dict-propose_compress_quarantineplan_id-delete_originalstrue-dict" title="Permanent link">&para;</a></h3>
 <p>Added by the M1 security-hardening pass, these stage the create_file, update_file, create_dir, archive_document, and compress_quarantine op types the same way: an eager check at proposal time (collision check for create_file/create_dir; existence check for update_file unless <code>overwrite=True</code>; registry lookup for archive_document), then append the op — with any op-specific data in <code>params</code> (see the op schema above) — to the plan and write it back to disk. None of the five touches the filesystem at proposal time; all five only take effect when the plan is approved and executed.</p>
@@ -1681,7 +1877,7 @@ Reserved for future use: if execute_plan is called on a plan that is already in 
 <p><strong>Processing:</strong>
 1. Load the plan file for plan_id.
 2. Scan all operations for duplicate (src, op_type) pairs. Flag these as conflicts.
-3. Validate that all source files still exist.
+3. Validate that all source files still exist, except for <code>create_dir</code> ops — their <code>src</code> holds the not-yet-created destination directory, not an existing path, so they are skipped by this check.
 4. Return a report.</p>
 <h2 id="executing-a-plan">Executing a Plan<a class="headerlink" href="#executing-a-plan" title="Permanent link">&para;</a></h2>
 <h3 id="execute_planplan_id-plans_dir-journal_path-registry_pathnone-quarantine_dirnone-archive_pathnone-dict">execute_plan(plan_id, plans_dir, journal_path, registry_path=None, quarantine_dir=None, archive_path=None) -&gt; dict<a class="headerlink" href="#execute_planplan_id-plans_dir-journal_path-registry_pathnone-quarantine_dirnone-archive_pathnone-dict" title="Permanent link">&para;</a></h3>
@@ -1704,7 +1900,7 @@ Reserved for future use: if execute_plan is called on a plan that is already in 
 <h2 id="undoing-operations">Undoing Operations<a class="headerlink" href="#undoing-operations" title="Permanent link">&para;</a></h2>
 <h3 id="undo_lastjournal_path-plans_dir-dict">undo_last(journal_path, plans_dir) -&gt; dict<a class="headerlink" href="#undo_lastjournal_path-plans_dir-dict" title="Permanent link">&para;</a></h3>
 <p>Revert the most recent journaled operation.</p>
-<p><strong>Not an MCP tool.</strong> As of the M1 security-hardening pass, <code>undo_last</code> is no longer registered with the server, so the agent has no way to call it. It exists purely as a plain function in <code>server/tools.py</code>, invoked directly (bypassing MCP) from the TUI's <code>JournalScreen</code> — press <strong>j</strong> in the Organizer screen to open it, then <strong>u</strong> to trigger undo. This makes undo a deliberate, user-only action.</p>
+<p><strong>Not an MCP tool.</strong> As of the M1 security-hardening pass, <code>undo_last</code> is no longer registered with the server, so the agent has no way to call it. It exists purely as a plain function in <code>server/tools.py</code>, invoked directly (bypassing MCP) from the NiceGUI web UI's journal dialog (<code>host/web/journal.py</code>'s <code>do_undo</code>, opened via the run page's "Journal" toolbar button, U6) — the "Undo last operation" button, gated on <code>RunSession.has_open_step()</code> and disabled while a tool call is in flight, since <code>pop_last</code> (below) rewrites the whole journal file while the MCP server subprocess may still be appending to it. This makes undo a deliberate, user-only action. Prior to Phase 22 (W1), the Textual TUI's <code>JournalScreen</code> offered the same action; that UI is now deleted.</p>
 <p><strong>Processing:</strong>
 1. Load the journal.
 2. Call last() to read the most recent entry without removing it. If empty, return an error.

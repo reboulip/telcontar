@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, GPT-5 backed">
+        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, backend-agnostic">
       
       
       
@@ -305,8 +305,17 @@
   
     
     
+      
+  
+  
+  
+    
+  
+  
+    
+    
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="../architecture/" class="md-tabs__link">
+        <a href="../architecture/core/" class="md-tabs__link">
           
   
   
@@ -314,6 +323,9 @@
 
         </a>
       </li>
+    
+  
+
     
   
 
@@ -1028,15 +1040,70 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../architecture/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_1" id="__nav_5_1_label" tabindex="">
+            
   
   
   <span class="md-ellipsis">
     
   
     Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
   
 
     
@@ -1057,8 +1124,63 @@
   
   
     <li class="md-nav__item">
-      <a href="../modules/" class="md-nav__link">
+      <a href="../architecture/web-ui/" class="md-nav__link">
         
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_2" id="__nav_5_2_label" tabindex="">
+            
   
   
   <span class="md-ellipsis">
@@ -1072,7 +1194,79 @@
   
   
 
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Module Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/web-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1367,6 +1561,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#p4-local-server-hardening-phase-21-2026-08-08" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        P4 — local-server hardening (Phase 21, 2026-08-08)
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1461,7 +1666,7 @@ the known weak points, and gives operators a way to run it safely today.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>   Untrusted                    Semi-trusted                    Trusted-but-remote
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a> ┌───────────┐   extract/read  ┌──────────────┐   tool calls   ┌──────────────────┐
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a> │ Documents │ ───────────────▶│  MCP Host    │◀──────────────▶│  LLM endpoint    │
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a> │ in target │                 │ (GPT-5 loop) │   file content │ (Azure / Mammouth│
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a> │ in target │                 │ (agent loop) │   file content │ (Azure / Mammouth│
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a> │  directory│                 │              │  + metadata    │  / any base_url) │
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a> └───────────┘                 └──────┬───────┘                └──────────────────┘
 <a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>      ▲                               │ stdio (all tool calls)
@@ -1494,6 +1699,33 @@ the known weak points, and gives operators a way to run it safely today.</p>
    beyond) this same <code>check_within_root</code> floor, for the tools that consult it
    (<code>read_file</code>/<code>extract_text</code>/<code>compare_documents</code>, and the batch forms
    <code>read_file_batch</code>/<code>extract_text_batch</code> added in O1).</li>
+<li><strong>The web UI's local HTTP server is reachable by any local process, not just
+   the browser tab that opened it.</strong> <code>telcontar</code> binds <code>127.0.0.1</code> only (never
+   <code>0.0.0.0</code> — see §7's operator checklist), which keeps it off the LAN, but
+   loopback-only binding does not mean single-consumer: any other program
+   running as the same OS user can still open a socket to that port and drive
+   the app — browse the file tree, start a run, reach the approval gate. <strong>As of
+   V2 (2026-08-08)</strong>, this is treated as a real boundary with its own guard, not
+   an implicit trust extension of "it's just localhost." <code>host/web/security.py</code>'s
+   <code>authorize()</code> — a pure, NiceGUI-free decision function — and a pure-ASGI
+   middleware wired around the entire app (<code>host/web/main.py</code>'s
+   <code>_AuthMiddleware</code>, covering the socket.io <code>/_nicegui_ws/</code> upgrade too, not
+   just the initial page load) check, per request: the <code>Host</code> header (must be
+   <code>127.0.0.1:&lt;port&gt;</code> or <code>localhost:&lt;port&gt;</code> — this closes a DNS-rebinding gap an
+   Origin check alone would leave open, since a page served from an
+   attacker-controlled domain that resolves to <code>127.0.0.1</code> is same-origin as far
+   as the browser's Origin header is concerned), the <code>Origin</code> header (if
+   present, must match; a top-level browser navigation often omits it entirely,
+   so absence is allowed rather than denied), and a per-launch token
+   (<code>secrets.token_urlsafe(32)</code>, regenerated every launch — never persisted,
+   never configurable — delivered via the opened URL's query string on first
+   navigation, then via an <code>HttpOnly; SameSite=Strict</code> cookie for every request
+   after). A denied HTTP request gets <code>403</code>; a denied websocket upgrade is
+   closed with code <code>1008</code>. Every response also carries
+   <code>X-Frame-Options: DENY</code> and <code>Content-Security-Policy: frame-ancestors 'none'</code>,
+   closing a clickjacking path against the approval dialog specifically — the
+   highest-trust screen in the product. See finding <strong>S9</strong> below for what this
+   does and does not close.</li>
 </ol>
 <hr />
 <h2 id="2-what-leaves-the-machine-egress-surface">2. What leaves the machine (egress surface)<a class="headerlink" href="#2-what-leaves-the-machine-egress-surface" title="Permanent link">&para;</a></h2>
@@ -1514,7 +1746,7 @@ the known weak points, and gives operators a way to run it safely today.</p>
 <tr>
 <td>Any other file the OS user can read</td>
 <td>Same tools, if the agent is steered to a path outside the target dir</td>
-<td><strong>[Partially remediated — 2026-07-07, M2]</strong> Blocked by <code>check_within_root</code> whenever a <code>target_dir</code> is set (true for every real organize/query session launched by the TUI). <code>ALLOWLIST_DIRS</code> remains the only control for narrowing <em>which subtree</em> of the target is readable.</td>
+<td><strong>[Partially remediated — 2026-07-07, M2]</strong> Blocked by <code>check_within_root</code> whenever a <code>target_dir</code> is set (true for every real organize/query session launched by the web UI). <code>ALLOWLIST_DIRS</code> remains the only control for narrowing <em>which subtree</em> of the target is readable.</td>
 </tr>
 <tr>
 <td>Derived metadata (title, summary, provenance, people/orgs)</td>
@@ -1553,7 +1785,7 @@ tool) to <code>target_dir</code> plus the server's own working directory, even w
 where the run's own <code>.organizer</code>/quarantine folders physically live, so this
 boundary and the run's memory now coincide rather than the memory sitting at a
 separate, always-in-bounds server working directory. This holds whenever a <code>target_dir</code> is actually
-set — which is every real organize or query session the TUI launches (<code>mcp_session</code>
+set — which is every real organize or query session the web UI launches (<code>mcp_session</code>
 always passes one through). There is no ordinary code path where <code>target_dir</code> is
 <code>None</code> and the guard silently opens up; the fallback (roots = server cwd only) is
 <em>more</em> restrictive, not less, so this is not a residual "no restriction" case in
@@ -1614,18 +1846,23 @@ defence-in-depth second check — this path is well isolated.</p>
 <tr>
 <td><strong>Undo</strong> (not an MCP tool)</td>
 <td><code>undo_last</code></td>
-<td><strong>Yes, exclusively</strong> — the agent cannot call it at all; it is triggered only by the user pressing <strong>u</strong> in the TUI's <code>JournalScreen</code> (opened with <strong>j</strong>)</td>
+<td><strong>Yes, exclusively</strong> — the agent cannot call it at all; it is triggered only by the user clicking "Undo last operation" in the web UI's journal dialog (opened via the "Journal" toolbar button)</td>
+</tr>
+<tr>
+<td><strong>Reveal in file explorer</strong> (not an MCP tool, X5)</td>
+<td><code>reveal_in_file_manager</code> (<code>host/paths.py</code>)</td>
+<td><strong>Yes, exclusively</strong> — spawns a native OS file-manager process (Explorer's <code>/select,</code>, <code>open -R</code>, or <code>xdg-open</code>) only from the user clicking the approval dialog's "Reveal in file explorer" button. The agent has no path to it; the button operates on <code>ops_json_path</code>, a host-authoritative value the model never supplies, and the call site still confines it to <code>session.target</code> defensively before spawning</td>
 </tr>
 </tbody>
 </table>
-<p><strong>Remediated (S1, 2026-07-07):</strong> <code>move_file</code>, <code>rename_file</code>, <code>create_file</code>, <code>update_file</code>, <code>create_dir</code>, <code>archive_document</code>, and <code>compress_quarantine</code> no longer exist as standalone tools. Every filesystem-mutating operation they used to perform — file writes, folder creation, archiving a document, and compressing quarantine — is now staged via a <code>propose_*</code> call and applied only through <code>execute_plan</code>, exactly like moves/renames/quarantines already were. <code>undo_last</code> was removed from the MCP tool surface entirely rather than gated; it survives only as a plain function invoked directly by the TUI (bypassing the agent and MCP both). See §6, P0 #1.</p>
+<p><strong>Remediated (S1, 2026-07-07):</strong> <code>move_file</code>, <code>rename_file</code>, <code>create_file</code>, <code>update_file</code>, <code>create_dir</code>, <code>archive_document</code>, and <code>compress_quarantine</code> no longer exist as standalone tools. Every filesystem-mutating operation they used to perform — file writes, folder creation, archiving a document, and compressing quarantine — is now staged via a <code>propose_*</code> call and applied only through <code>execute_plan</code>, exactly like moves/renames/quarantines already were. <code>undo_last</code> was removed from the MCP tool surface entirely rather than gated; it survives only as a plain function invoked directly by the web UI (bypassing the agent and MCP both). See §6, P0 #1.</p>
 <p><strong>Remediated (S3, 2026-07-07):</strong> every tool in the table above that takes a <code>path</code> argument — not just the read-only row, but the plan-building <code>propose_*</code> tools and the write tools too — is now checked with <code>check_within_root</code> before it runs, confining it to the run's <code>target_dir</code> plus the server's own working directory. Advertising most of the toolset (full pre-P6, denylist-filtered as of P6 — see above) to organize mode is therefore no longer equivalent to giving the agent free rein over the filesystem; it is still free rein <em>within the target directory</em>. See §6, P0 #2.</p>
 <hr />
 <h2 id="4-threat-model-the-three-questions">4. Threat model — the three questions<a class="headerlink" href="#4-threat-model-the-three-questions" title="Permanent link">&para;</a></h2>
 <h3 id="41-can-a-user-be-fooled-by-the-system">4.1 Can a user be fooled by the system?<a class="headerlink" href="#41-can-a-user-be-fooled-by-the-system" title="Permanent link">&para;</a></h3>
 <p>Yes, in several ways that compound:</p>
 <ul>
-<li><strong>The approval checklist hides absolute paths.</strong> <code>_fmt_op</code> (<code>host/app.py</code>) renders
+<li><strong>The approval checklist hides absolute paths.</strong> <code>fmt_op</code> (<code>host/format.py</code>) renders
   each op using only the file <em>basename</em> (<code>Path(src).name</code>). A user approving
   <code>RENAME report.pdf → 2024-01-15_report.pdf</code> cannot see whether <code>report.pdf</code> lives
   in the target folder or in <code>C:\Users\me\.ssh\</code>. <strong>[Partially remediated — 2026-07-07,
@@ -1636,7 +1873,15 @@ defence-in-depth second check — this path is well isolated.</p>
   advisory — the real boundary is still the server's <code>check_within_root</code>, M2). This
   is deliberately a quiet cue, not a red flag; a determined attacker who also controls
   the rationale text could still draw the approver's attention elsewhere, so this is
-  a mitigation, not a closure, of the bullet.</li>
+  a mitigation, not a closure, of the bullet. <strong>V3</strong> (2026-08-08) rebuilt the web
+  UI's version of this modal as a before/after tree (<code>host.format.plan_tree_diff</code>,
+  <code>host/web/dialogs.py</code>) — the same <code>is_op_out_of_scope</code> check now runs for every
+  tree-rendered op too (not just the "Other operations" fallback list, which
+  already went through <code>fmt_op</code>), so this marker's coverage is unchanged by the
+  redesign. The Textual TUI's <code>ApprovalModal</code> was untouched by V3 and still
+  called <code>fmt_op</code> directly; as of Phase 22 (W1), that modal — and the whole
+  Textual TUI — was deleted, leaving the web UI's tree-rendered dialog as the
+  only approval surface.</li>
 <li><strong>The explanation is authored by the same model that could be compromised.</strong>
   <strong>[Partially remediated — 2026-07-07, M5]</strong> The plan <em>rationale</em> and <em>folder
   notes</em> shown above the op list are still free text the LLM composed
@@ -1756,7 +2001,7 @@ single-user deployment.</p>
 <tr>
 <td><strong>S1</strong></td>
 <td><strong>Critical</strong></td>
-<td><strong>[Remediated — 2026-07-07, see P0 #1]</strong> ~~Direct-mutation tools (<code>move_file</code>, <code>rename_file</code>, <code>create_file</code>, <code>update_file</code>, <code>create_dir</code>) and <code>archive_document</code> / <code>compress_quarantine</code> / <code>undo_last</code> are advertised to the agent and dispatched with <strong>no approval gate in any <code>APPROVAL_MODE</code></strong>. The plan→approve→execute model — the product's headline safety property — is bypassable. <code>update_file</code> additionally overwrites without a collision check.~~ All eight tools were removed from the agent-callable surface. Their functionality is reachable only via <code>propose_create_file</code> / <code>propose_update_file</code> / <code>propose_create_dir</code> / <code>propose_archive_document</code> / <code>propose_compress_quarantine</code>, staged and applied solely through the already-gated <code>execute_plan</code>; <code>propose_update_file</code> defaults to <code>overwrite=False</code>, and the approval modal now flags any op with <code>overwrite=True</code> (see P0 #3). <code>undo_last</code> was removed from the MCP surface entirely and is now a TUI-only user action (§3).</td>
+<td><strong>[Remediated — 2026-07-07, see P0 #1]</strong> ~~Direct-mutation tools (<code>move_file</code>, <code>rename_file</code>, <code>create_file</code>, <code>update_file</code>, <code>create_dir</code>) and <code>archive_document</code> / <code>compress_quarantine</code> / <code>undo_last</code> are advertised to the agent and dispatched with <strong>no approval gate in any <code>APPROVAL_MODE</code></strong>. The plan→approve→execute model — the product's headline safety property — is bypassable. <code>update_file</code> additionally overwrites without a collision check.~~ All eight tools were removed from the agent-callable surface. Their functionality is reachable only via <code>propose_create_file</code> / <code>propose_update_file</code> / <code>propose_create_dir</code> / <code>propose_archive_document</code> / <code>propose_compress_quarantine</code>, staged and applied solely through the already-gated <code>execute_plan</code>; <code>propose_update_file</code> defaults to <code>overwrite=False</code>, and the approval modal now flags any op with <code>overwrite=True</code> (see P0 #3). <code>undo_last</code> was removed from the MCP surface entirely and is now a web-UI-only user action (§3).</td>
 </tr>
 <tr>
 <td><strong>S2</strong></td>
@@ -1771,7 +2016,7 @@ single-user deployment.</p>
 <tr>
 <td><strong>S4</strong></td>
 <td><strong>High</strong></td>
-<td><strong>[Partially remediated — 2026-07-07, see P1 #4, #5, #6]</strong> <strong>The approval UI can mislead the approver:</strong> op rows show only basenames (absolute source path hidden, though an op resolving outside the target directory now gets a discreet <code>(outside target)</code> marker), the rationale/folder-notes are still LLM-authored (though now explicitly disclaimed as "not verified fact" in the modal, M5). <strong>[Closed — 2026-07-07, P1 #6]</strong> ~~direct (S1) mutations never appear in the approval flow or narration at all~~ — direct mutation tools no longer exist (S1), and their <code>propose_*</code> replacements already narrate as "Planning changes…" and already reach the approval modal via <code>execute_plan</code>, confirmed by M6's test coverage. The one bullet still fully open: <strong>the full op list is offloaded</strong> to <code>.organizer/plan_ops.json</code> and surfaced only as a path the user is invited to open manually — most will not.</td>
+<td><strong>[Partially remediated — 2026-07-07, see P1 #4, #5, #6]</strong> <strong>The approval UI can mislead the approver:</strong> op rows show only basenames (absolute source path hidden, though an op resolving outside the target directory now gets a discreet <code>(outside target)</code> marker), the rationale/folder-notes are still LLM-authored (though now explicitly disclaimed as "not verified fact" in the modal, M5). <strong>[Closed — 2026-07-07, P1 #6]</strong> ~~direct (S1) mutations never appear in the approval flow or narration at all~~ — direct mutation tools no longer exist (S1), and their <code>propose_*</code> replacements already narrate as "Planning changes…" and already reach the approval modal via <code>execute_plan</code>, confirmed by M6's test coverage. The one bullet still fully open: <strong>the full op list is offloaded</strong> to <code>.organizer/plan_ops.json</code> and surfaced only as a path the user is invited to open manually — most will not. V3's web-UI before/after tree redesign (2026-08-08) carries the <code>(outside target)</code> marker through to every tree-rendered op, not just the "Other operations" fallback list — see §4.1's M4 paragraph.</td>
 </tr>
 <tr>
 <td><strong>S5</strong></td>
@@ -1793,6 +2038,11 @@ single-user deployment.</p>
 <td><strong>Low</strong></td>
 <td><strong>[Partially remediated — 2026-07-09, see P3 #11, #12]</strong> Credential &amp; endpoint trust: ~~the API key falls back to plaintext <code>~/.telcontar/config.env</code> when the OS keyring is unavailable~~ — that fallback is no longer silent; it now requires an explicit, warned, second confirmation (<code>PlaintextKeyFallbackNeeded</code>, P3 #11). What actually left the machine is now auditable: every <code>read_file</code>/<code>extract_text</code>/<code>compare_documents</code> call (and, since O1, every successful file in a <code>read_file_batch</code>/<code>extract_text_batch</code> call) is logged to <code>.organizer/egress.jsonl</code> with path, size, tool, and timestamp (P3 #12). Still open: the key is also read from a CWD <code>.env</code> (a legitimate dev-workflow input path, but one an operator might not realize is being consulted), and egress goes to any user-set <code>base_url</code> (a third party in dev, e.g. Mammouth) — neither is addressed by these items. Worth stating explicitly as a trust boundary.</td>
 </tr>
+<tr>
+<td><strong>S9</strong></td>
+<td><strong>Medium</strong></td>
+<td><strong>[Mitigated — 2026-08-08, see V2]</strong> The web UI's local HTTP server (<code>host/web/main.py</code>) had no per-request authentication: <code>127.0.0.1</code>-only binding keeps it off the LAN, but any other local process — any other program running as the same OS user — could reach the port, browse the file tree, start a run, and drive the approval gate to completion. A per-launch token (cookie/query-string, checked by <code>host/web/security.py</code>'s <code>authorize()</code> via a pure-ASGI middleware covering both HTTP and the socket.io websocket upgrade), a Host-header check (closes a DNS-rebinding gap an Origin check alone leaves open), an Origin check, and anti-clickjacking response headers (<code>X-Frame-Options: DENY</code>, <code>frame-ancestors 'none'</code>) now gate every request. This is a mitigation, not a sandbox: the auth cookie is scoped by name, not by port, at the browser level, so it is sent to any local HTTP server on <code>127.0.0.1</code> the user's browser separately visits — <code>HttpOnly</code> stops a JS read but not another local server simply receiving it; a native-window (pywebview) launch mostly sidesteps this by using its own browser profile. <code>storage_secret</code> is also now set per launch (<code>secrets.token_urlsafe(32)</code>) — <code>telcontar</code> doesn't use <code>app.storage.*</code> today, so this is enablement plus defence-in-depth rather than closing an existing gap.</td>
+</tr>
 </tbody>
 </table>
 <h3 id="what-already-works-defence-that-is-in-place">What already works (defence that is in place)<a class="headerlink" href="#what-already-works-defence-that-is-in-place" title="Permanent link">&para;</a></h3>
@@ -1808,12 +2058,19 @@ single-user deployment.</p>
   <code>propose_create_file</code>/<code>create_file</code> (<code>check_no_overwrite</code>, re-checked again at
   <code>execute_plan</code> time); <code>propose_update_file</code> defaults to <code>overwrite=False</code>;
   quarantine picks a collision-safe name.</li>
+<li><strong>Quarantine-name collision guarded (X8)</strong>: <code>propose_rename</code>, <code>propose_move</code>
+  (destination only — never the source, so un-quarantining stays legal), and
+  <code>propose_create_dir</code> reject any destination whose basename reads as
+  quarantine-like (<code>server/guards.py</code>'s locale/case-insensitive fold plus a fixed
+  set of French/Spanish/English discard-word aliases) or that resolves inside the
+  configured quarantine directory — an agent-proposed taxonomy folder can never
+  shadow or nest inside the server-managed quarantine folder.</li>
 <li><strong>Reversibility</strong>: the undo journal + archive log make plan ops undoable, and
   <code>compress_quarantine</code> (now staged via <code>propose_compress_quarantine</code>) verifies the
   archive byte-for-byte before removing originals.</li>
 <li><strong>Every mutation is now plan-gated (S1, remediated)</strong>: there is no MCP tool that
   writes to the filesystem outside <code>execute_plan</code>, and <code>undo_last</code> is no longer
-  agent-callable at all — it is a TUI-only user action.</li>
+  agent-callable at all — it is a web-UI-only user action.</li>
 <li><strong>API key in the OS keyring</strong> by default; <strong>external output sinks gated</strong> behind
   <code>EGRESS_ALLOW_EXTERNAL_SINKS</code>; an <strong>allowlist mechanism exists and is now on by
   default (M7)</strong> — an unset <code>ALLOWLIST_DIRS</code> defaults to <code>[target_dir]</code> via
@@ -1827,6 +2084,20 @@ single-user deployment.</p>
   in a <code>read_file_batch</code> / <code>extract_text_batch</code> call — is logged to
   <code>.organizer/egress.jsonl</code> (path, size, tool, timestamp) — an operator can review
   exactly what left the machine after any run.</li>
+<li><strong>The web UI's internal-step detail view never renders untrusted content as
+  markup (T6)</strong>: <code>host/web/shell.py</code>'s <code>Shell.show_detail</code> — which shows the raw
+  args/result of a tool call, potentially including document text pulled via
+  <code>read_file_batch</code>/<code>extract_text_batch</code> — deliberately uses
+  <code>ui.codemirror(...).disable()</code> rather than <code>ui.code</code>/<code>ui.markdown</code>, both of which
+  render through a markdown fenced-code path; <code>ui.codemirror</code> takes the content as
+  a plain value/prop, so there is no path from document content to interpreted
+  markup in the browser. The same discipline is applied everywhere else
+  LLM-derived, attacker-influenceable text reaches the browser: <code>host/web/settings.py</code>'s
+  prompt-inspection panels (V11, also disabled <code>ui.codemirror</code>) and, as of V5,
+  the corpus browser's table and document-detail pane
+  (<code>host/web/corpus_view.py</code>) — every registry field shown there (title, type,
+  summary, provenance, entity names) is rendered via plain <code>ui.label</code>/<code>ui.table</code>
+  row values only, never <code>ui.markdown</code>/<code>ui.html</code>/<code>ui.code</code>.</li>
 </ul>
 <hr />
 <h2 id="6-remediation-plan">6. Remediation plan<a class="headerlink" href="#6-remediation-plan" title="Permanent link">&para;</a></h2>
@@ -1842,8 +2113,9 @@ first with the least behavioural disruption.</p>
    <code>propose_compress_quarantine</code> and applied only through the already-gated
    <code>execute_plan</code>, exactly like <code>propose_rename</code> / <code>propose_move</code> /
    <code>propose_quarantine</code> already worked. <code>undo_last</code> was removed from the MCP tool
-   surface entirely rather than gated; it is now a direct, user-triggered TUI action
-   only (<code>JournalScreen</code>, <strong>u</strong> key) — never something the agent can call.</li>
+   surface entirely rather than gated; it is now a direct, user-triggered action
+   only, via the web UI's journal dialog ("Undo last operation" button) — never
+   something the agent can call.</li>
 <li><strong>[Done — 2026-07-07]</strong> ~~Enforce a path-confinement guard on every path-taking
    tool (S3). Add a single <code>check_within_root(path, roots)</code> guard (reuse the
    <code>check_allowlist</code> shape) and call it in the server handlers for <strong>all</strong> reads
@@ -1861,7 +2133,7 @@ first with the least behavioural disruption.</p>
    <code>propose_update_file</code> defaults to <code>overwrite=False</code> and refuses to overwrite an
    existing file unless the agent explicitly passes <code>overwrite=True</code> — with the same
    check re-applied at <code>execute_plan</code> time in case a file appears in between — and
-   the approval modal now surfaces that flag: <code>_fmt_op</code> (<code>host/app.py</code>) renders such
+   the approval modal now surfaces that flag: <code>fmt_op</code> (<code>host/format.py</code>) renders such
    ops as <code>UPDATE   {basename}  (overwrite)</code>, a subtle <code>[dim]</code>-styled marker, so the
    approver sees a collision-causing write before approving it rather than being
    blindsided.</li>
@@ -1870,24 +2142,33 @@ first with the least behavioural disruption.</p>
 <ol>
 <li><strong>[Done — 2026-07-07]</strong> ~~Show absolute source paths (or a clear in-/out-of-scope
    flag) in the approval modal (S4). At minimum, flag any op whose source is outside
-   the target directory in red.~~ <code>_fmt_op</code> (<code>host/app.py</code>) now appends a discreet
+   the target directory in red.~~ <code>fmt_op</code> (<code>host/format.py</code>) now appends a discreet
    <code>(outside target)</code> marker (not the absolute path itself, and not a loud red flag)
    when an op's source resolves outside the target directory — this was an explicit,
-   deliberate design choice (subtle over alarming), not a partial implementation.</li>
+   deliberate design choice (subtle over alarming), not a partial implementation.
+   As of <strong>V3</strong> (2026-08-08), the web UI's <code>build_approval_dialog</code>
+   (<code>host/web/dialogs.py</code>) renders its approval preview as a before/after tree
+   (<code>host.format.plan_tree_diff</code>) instead of a flat checkbox list; the
+   <code>is_op_out_of_scope</code> check now runs per tree node as well as in the "Other
+   operations" fallback list, so this remediation still holds.</li>
 <li><strong>[Done — 2026-07-07]</strong> ~~Mark LLM-authored rationale/notes as untrusted
    narration in the UI (S4) — a subtle label so the approver knows the explanation
    is model-generated, and always render the op list as the source of truth.~~
-   <code>ApprovalModal.compose()</code> (<code>host/app.py</code>) now yields a <code>[dim]</code>-styled disclaimer
-   Label immediately before the rationale ("Model-generated rationale — not
-   verified fact:", shown only when a rationale is present) and another right after
-   the "Target layout" title ("Folder notes are model-generated — not verified
-   fact.", shown only when <code>folder_notes</code> is non-empty) — the same subtle,
-   non-alarming styling convention M4 established for the <code>(overwrite)</code> /
-   <code>(outside target)</code> markers in this same modal.</li>
+   <code>ApprovalModal.compose()</code> (the Textual TUI's <code>host/app.py</code>, deleted as of Phase
+   22/W1) yielded a <code>[dim]</code>-styled disclaimer Label immediately before the
+   rationale ("Model-generated rationale — not verified fact:", shown only when a
+   rationale is present) and another right after the "Target layout" title
+   ("Folder notes are model-generated — not verified fact.", shown only when
+   <code>folder_notes</code> is non-empty) — the same subtle, non-alarming styling convention
+   M4 established for the <code>(overwrite)</code> / <code>(outside target)</code> markers in this same
+   modal. The web UI's <code>build_approval_dialog</code> (<code>host/web/dialogs.py</code>) carries the
+   same two disclaimers and is now the only surviving implementation.</li>
 <li><strong>[Done — 2026-07-07]</strong> ~~Surface direct/compress/archive operations in the
    transcript and (once gated) the approval flow (S4/S7) so no mutation is
    invisible.~~ Turned out to already be implemented by M1 itself: because
-   <code>_TOOL_NARRATION</code> (<code>host/app.py</code>) keys narration purely by tool name, adding
+   <code>_TOOL_NARRATION</code> (then in the Textual TUI's <code>host/app.py</code>, later factored into
+   the shared <code>host/narration.py</code> and used by the web UI's narration too) keys
+   narration purely by tool name, adding
    <code>propose_create_file</code> / <code>propose_update_file</code> / <code>propose_create_dir</code> /
    <code>propose_archive_document</code> / <code>propose_compress_quarantine</code> to that map — a
    necessary part of exposing the five new tools safely in the first place — was
@@ -1948,13 +2229,24 @@ first with the least behavioural disruption.</p>
     if the keyring is unavailable, warn loudly and require an explicit opt-in for
     file storage; keep keys out of any CWD <code>.env</code> that could be committed.~~
     <code>save_user_config</code> (<code>config/settings.py</code>) now raises <code>PlaintextKeyFallbackNeeded</code>
-    instead of silently writing the key when the OS keyring is unavailable. Both UI
-    callers (<code>SetupScreen</code>, <code>ConfigScreen</code> in <code>host/app.py</code>) catch it, show a loud
-    inline warning, and require the user to press the save/finish button a second
-    time — an explicit, deliberate re-click — before the plaintext fallback actually
-    happens. The "keep keys out of any CWD <code>.env</code>" clause was already satisfied
-    before this item: <code>save_user_config</code> only ever writes to <code>~/.telcontar/config.env</code>,
-    never a CWD <code>.env</code>, and <code>.env</code>/<code>.envrc</code> are already gitignored.</li>
+    instead of silently writing the key when the OS keyring is unavailable. Both
+    original UI callers (<code>SetupScreen</code>, <code>ConfigScreen</code> in the Textual TUI's
+    <code>host/app.py</code>) caught it, showed a loud inline warning, and required the user
+    to press the save/finish button a second time — an explicit, deliberate
+    re-click — before the plaintext fallback actually happened. The "keep keys out
+    of any CWD <code>.env</code>" clause was already satisfied before this item:
+    <code>save_user_config</code> only ever writes to <code>~/.telcontar/config.env</code>, never a CWD
+    <code>.env</code>, and <code>.env</code>/<code>.envrc</code> are already gitignored. As of U2
+    (2026-08-07), the same catch/warn/re-confirm behaviour was shared via
+    <code>host/configflow.py</code>'s <code>plaintext_warning()</code> and exercised by a third caller —
+    the NiceGUI web UI's setup wizard (<code>host/web/wizard.py</code>, through
+    <code>host/web/forms.py</code>'s <code>save_with_plaintext_guard</code>) — so the guard was no longer
+    TUI-only. As of U3 (2026-08-07), the web UI's settings view (<code>host/web/settings.py</code>)
+    became a fourth caller of the same shared guard (<code>forms.save_with_plaintext_guard</code>),
+    keeping the blank-key-preserves-existing-key save path on the identical
+    warn-then-confirm flow. As of Phase 22 (W1), the Textual TUI and its two
+    original callers are deleted — the web UI's wizard and settings view are the
+    guard's only remaining callers.</li>
 <li><strong>[Done — 2026-07-09]</strong> ~~Log egress (S8): record which files' contents were sent
     to the endpoint so an operator can audit what left the machine.~~ <code>read_file</code>,
     <code>extract_text</code>, and <code>compare_documents</code> now append an entry (path, size in
@@ -1969,6 +2261,22 @@ first with the least behavioural disruption.</p>
     and <code>extract_text_batch</code>, log the same way, once per successful file in the
     batch (under the <code>read_file_batch</code>/<code>extract_text_batch</code> tool name), so a batched
     fetch is exactly as auditable as the same files fetched one at a time.</li>
+</ol>
+<h3 id="p4-local-server-hardening-phase-21-2026-08-08">P4 — local-server hardening (Phase 21, 2026-08-08)<a class="headerlink" href="#p4-local-server-hardening-phase-21-2026-08-08" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>[Done — 2026-08-08, V2]</strong> Add authentication to the web UI's local HTTP
+    server (S9): confirm <code>127.0.0.1</code>-only binding, add a per-launch token
+    checked on every request, add an Origin check, and set <code>storage_secret</code>.
+    New <code>host/web/security.py</code> (NiceGUI-free, pure <code>authorize()</code> decision
+    function) and a pure-ASGI <code>_AuthMiddleware</code> (<code>host/web/main.py</code>, wraps the
+    whole app including the socket.io websocket upgrade, not just the initial
+    page load) check, per request: the <code>Host</code> header, the <code>Origin</code> header (if
+    present), and a per-launch token (cookie-or-query-string,
+    <code>secrets.token_urlsafe(32)</code>, regenerated every launch). Denied HTTP
+    requests get <code>403</code>; denied websocket upgrades close with code <code>1008</code>.
+    Every response also carries <code>X-Frame-Options: DENY</code> and
+    <code>Content-Security-Policy: frame-ancestors 'none'</code>. <code>ui.run(...)</code> now also
+    sets <code>storage_secret=secrets.token_urlsafe(32)</code> per launch. See S9.</li>
 </ol>
 <hr />
 <h2 id="7-operator-hardening-checklist-how-to-run-it-safely-today">7. Operator hardening checklist (how to run it safely today)<a class="headerlink" href="#7-operator-hardening-checklist-how-to-run-it-safely-today" title="Permanent link">&para;</a></h2>
@@ -1985,17 +2293,19 @@ first with the least behavioural disruption.</p>
       password exports). Move those out first.</li>
 <li>[ ] Only organize documents you trust the <em>origin</em> of. A PDF from an untrusted
       source is executable input to the agent.</li>
-<li>[ ] In dev, remember the endpoint (Mammouth or any pasted URL) is a third party —
-      use non-sensitive corpora there. Reserve real data for the private Azure endpoint.</li>
+<li>[ ] In dev, remember the endpoint is likely a third party (e.g. Mammouth, OpenAI, or
+      a custom URL) — use non-sensitive corpora there. Reserve real data for a private,
+      vetted endpoint (e.g. a dedicated Azure OpenAI deployment).</li>
 <li>[ ] Back up the target tree before the first run; <code>undo_last</code> is best-effort and
       per-operation, not a substitute for a snapshot.</li>
 <li>[ ] Leave <code>EGRESS_ALLOW_EXTERNAL_SINKS=false</code> unless you have vetted the external
       sink.</li>
 </ul>
 <hr />
-<p><em>This page reflects a static review of the code as of the <code>feat/phase-11-interactive-ux</code>
-branch. It should be revisited whenever a new tool is added to the MCP server or the
-approval flow changes.</em></p>
+<p><em>This page was last revised 2026-08-08 (<code>feat/phase-21-experience-delivery</code>, item V2),
+adding the web UI's local-server auth boundary (§1 #4, S9, P4 #13). It should be
+revisited whenever a new tool is added to the MCP server, the approval flow changes, or
+a new local-network-reachable surface is introduced.</em></p>
 
 
 

@@ -6,33 +6,33 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, GPT-5 backed">
+        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, backend-agnostic">
       
       
       
       
-        <link rel="prev" href="../../reference/api/config/">
+        <link rel="prev" href="../../../reference/api/config/">
       
       
-        <link rel="next" href="../modules/">
+        <link rel="next" href="../web-ui/">
       
       
         
       
       
-      <link rel="icon" href="../../assets/images/favicon.png">
+      <link rel="icon" href="../../../assets/images/favicon.png">
       <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
-        <title>Architecture - Telcontar</title>
+        <title>Core - Telcontar</title>
       
     
     
-      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
       
         
-        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
       
       
 
@@ -51,9 +51,9 @@
       
     
     
-      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+      <link rel="stylesheet" href="../../../assets/_mkdocstrings.css">
     
-    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
     
       
 
@@ -92,7 +92,7 @@
 
 <header class="md-header" data-md-component="header">
   <nav class="md-header__inner md-grid" aria-label="Header">
-    <a href="../.." title="Telcontar" class="md-header__button md-logo" aria-label="Telcontar" data-md-component="logo">
+    <a href="../../.." title="Telcontar" class="md-header__button md-logo" aria-label="Telcontar" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -112,7 +112,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Architecture
+              Core
             
           </span>
         </div>
@@ -223,7 +223,7 @@
   
   
     <li class="md-tabs__item">
-      <a href="../.." class="md-tabs__link">
+      <a href="../../.." class="md-tabs__link">
         
   
   
@@ -244,7 +244,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../getting-started/installation/" class="md-tabs__link">
+        <a href="../../../getting-started/installation/" class="md-tabs__link">
           
   
   
@@ -264,7 +264,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../user-guide/how-it-works/" class="md-tabs__link">
+        <a href="../../../user-guide/how-it-works/" class="md-tabs__link">
           
   
   
@@ -284,7 +284,7 @@
     
     
       <li class="md-tabs__item">
-        <a href="../../reference/mcp-tools/" class="md-tabs__link">
+        <a href="../../../reference/mcp-tools/" class="md-tabs__link">
           
   
   
@@ -305,6 +305,15 @@
   
     
     
+      
+  
+  
+  
+    
+  
+  
+    
+    
       <li class="md-tabs__item md-tabs__item--active">
         <a href="./" class="md-tabs__link">
           
@@ -314,6 +323,9 @@
 
         </a>
       </li>
+    
+  
+
     
   
 
@@ -342,7 +354,7 @@
 
 <nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
   <label class="md-nav__title" for="__drawer">
-    <a href="../.." title="Telcontar" class="md-nav__button md-logo" aria-label="Telcontar" data-md-component="logo">
+    <a href="../../.." title="Telcontar" class="md-nav__button md-logo" aria-label="Telcontar" data-md-component="logo">
       
   
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
@@ -372,7 +384,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../.." class="md-nav__link">
+      <a href="../../.." class="md-nav__link">
         
   
   
@@ -451,7 +463,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../getting-started/installation/" class="md-nav__link">
+      <a href="../../../getting-started/installation/" class="md-nav__link">
         
   
   
@@ -479,7 +491,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../getting-started/configuration/" class="md-nav__link">
+      <a href="../../../getting-started/configuration/" class="md-nav__link">
         
   
   
@@ -507,7 +519,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../getting-started/quickstart/" class="md-nav__link">
+      <a href="../../../getting-started/quickstart/" class="md-nav__link">
         
   
   
@@ -594,7 +606,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/how-it-works/" class="md-nav__link">
+      <a href="../../../user-guide/how-it-works/" class="md-nav__link">
         
   
   
@@ -622,7 +634,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/profiles/" class="md-nav__link">
+      <a href="../../../user-guide/profiles/" class="md-nav__link">
         
   
   
@@ -650,7 +662,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/approval-modes/" class="md-nav__link">
+      <a href="../../../user-guide/approval-modes/" class="md-nav__link">
         
   
   
@@ -678,7 +690,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../user-guide/outputs/" class="md-nav__link">
+      <a href="../../../user-guide/outputs/" class="md-nav__link">
         
   
   
@@ -765,7 +777,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../reference/mcp-tools/" class="md-nav__link">
+      <a href="../../../reference/mcp-tools/" class="md-nav__link">
         
   
   
@@ -793,7 +805,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../reference/profile-schema/" class="md-nav__link">
+      <a href="../../../reference/profile-schema/" class="md-nav__link">
         
   
   
@@ -873,7 +885,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../reference/api/server/" class="md-nav__link">
+      <a href="../../../reference/api/server/" class="md-nav__link">
         
   
   
@@ -901,7 +913,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../reference/api/host/" class="md-nav__link">
+      <a href="../../../reference/api/host/" class="md-nav__link">
         
   
   
@@ -929,7 +941,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../reference/api/config/" class="md-nav__link">
+      <a href="../../../reference/api/config/" class="md-nav__link">
         
   
   
@@ -1030,6 +1042,63 @@
   
   
   
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_1" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5_1" id="__nav_5_1_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_1_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
     <li class="md-nav__item md-nav__item--active">
       
       <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
@@ -1045,7 +1114,7 @@
   <span class="md-ellipsis">
     
   
-    Architecture
+    Core
   
 
     
@@ -1063,7 +1132,7 @@
   <span class="md-ellipsis">
     
   
-    Architecture
+    Core
   
 
     
@@ -1233,10 +1302,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#document-analysis-progress-tracking-o5-updated-by-p6" class="md-nav__link">
+  <a href="#document-analysis-progress-tracking-o5-updated-by-p6-q2-v8a" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Document-analysis progress tracking (O5, updated by P6)
+        Document-analysis progress tracking (O5, updated by P6, Q2, V8a)
       
     </span>
   </a>
@@ -1321,17 +1390,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#settings-from-anywhere-p9" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Settings from anywhere (P9)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#output-sink-abstraction" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1369,6 +1427,28 @@
     <span class="md-ellipsis">
       
         ORGANIZE-only agent loop + corpus digest (P6)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plan-completion-guard-t1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Plan-completion guard (T1)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#nicegui-web-ui-foundations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        NiceGUI web UI foundations
       
     </span>
   </a>
@@ -1440,14 +1520,105 @@
   
   
     <li class="md-nav__item">
-      <a href="../modules/" class="md-nav__link">
+      <a href="../web-ui/" class="md-nav__link">
         
   
   
   <span class="md-ellipsis">
     
   
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_2" id="__nav_5_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
     Module Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Module Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../modules/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
   
 
     
@@ -1468,7 +1639,43 @@
   
   
     <li class="md-nav__item">
-      <a href="../adding-profiles/" class="md-nav__link">
+      <a href="../../modules/web-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adding-profiles/" class="md-nav__link">
         
   
   
@@ -1496,7 +1703,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../contributing/" class="md-nav__link">
+      <a href="../../contributing/" class="md-nav__link">
         
   
   
@@ -1524,7 +1731,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../security-model/" class="md-nav__link">
+      <a href="../../security-model/" class="md-nav__link">
         
   
   
@@ -1552,7 +1759,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../internals/plan-lifecycle/" class="md-nav__link">
+      <a href="../../internals/plan-lifecycle/" class="md-nav__link">
         
   
   
@@ -1601,7 +1808,8 @@
 
 
 <h1 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Permanent link">&para;</a></h1>
-<p>Telcontar is a locally-run AI directory organizer built on the <strong>Model Context Protocol (MCP)</strong>. Two Python processes communicate over stdio: a <strong>host</strong> that runs the GPT-5 agent loop and a <strong>server</strong> that owns all file operations.</p>
+<p>Telcontar is a locally-run AI directory organizer built on the <strong>Model Context Protocol (MCP)</strong>. Two Python processes communicate over stdio: a <strong>host</strong> that runs the agent loop and a <strong>server</strong> that owns all file operations.</p>
+<p>This page covers the MCP host/server components, the core design decisions (plan state machine, registry, security guards, agent loop, journals), and data flow. For the NiceGUI web UI's own foundational design (routing/session model, dialogs, sidebar tree, theming, reload-safety), see <a href="../web-ui/">Architecture — Web UI</a>.</p>
 <hr />
 <h2 id="component-overview">Component overview<a class="headerlink" href="#component-overview" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>User
@@ -1610,14 +1818,14 @@
 <a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>┌─────────────────────────────────────────────────────┐
 <a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>│  MCP Host  (host/)                                  │
 <a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>│  ┌──────────────┐   ┌────────────────────────────┐  │
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│  │ Textual TUI  │   │  Agent loop (host/agent.py)│  │
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>│  │ host/app.py  │←→│  - builds system prompt     │  │
-<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>│  │              │   │  - tool-calling loop        │  │
-<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>│  │ Startup/     │   │  - approval gate            │  │
-<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>│  │ Organizer/   │   │  - query loop (read-only)  │  │
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>│  │ Web UI       │   │  Agent loop (host/agent.py)│  │
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>│  │ host/web/    │←→│  - builds system prompt     │  │
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>│  │ (NiceGUI)    │   │  - tool-calling loop        │  │
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>│  │ Landing/     │   │  - approval gate            │  │
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>│  │ Organize/    │   │  - query loop (read-only)  │  │
 <a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>│  │ Query/       │   │  - MCP client (stdio)       │  │
-<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│  │ Approval     │   └────────────┬───────────────┘  │
-<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>│  │ screens      │                │ stdio transport   │
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>│  │ Settings     │   └────────────┬───────────────┘  │
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>│  │ views        │                │ stdio transport   │
 <a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>│  └──────────────┘                ▼                   │
 <a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>└──────────────────────────────────┼──────────────────┘
 <a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>                                   │ stdio transport
@@ -1648,8 +1856,8 @@
 <a id="__codelineno-0-42" name="__codelineno-0-42" href="#__codelineno-0-42"></a>                          ▲
 <a id="__codelineno-0-43" name="__codelineno-0-43" href="#__codelineno-0-43"></a>                          │ API calls
 <a id="__codelineno-0-44" name="__codelineno-0-44" href="#__codelineno-0-44"></a>┌─────────────────────────┴───────────────────────────┐
-<a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a>│  OpenAI-compatible endpoint (Azure / Mammouth)      │
-<a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a>│  GPT-5 — chat completions with tool use             │
+<a id="__codelineno-0-45" name="__codelineno-0-45" href="#__codelineno-0-45"></a>│  OpenAI-compatible endpoint                         │
+<a id="__codelineno-0-46" name="__codelineno-0-46" href="#__codelineno-0-46"></a>│  chat completions with tool use                     │
 <a id="__codelineno-0-47" name="__codelineno-0-47" href="#__codelineno-0-47"></a>└─────────────────────────────────────────────────────┘
 </code></pre></div>
 <hr />
@@ -1675,13 +1883,14 @@
 <a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>                               → failed
 <a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>                   → stopped
 </code></pre></div>
-<p>The host can only call <code>execute_plan</code> on a plan in <code>approved</code> state. The <code>approved</code> transition requires an explicit <code>approve_plan</code> call, which the host gates on user approval in the TUI.</p>
+<p>The host can only call <code>execute_plan</code> on a plan in <code>approved</code> state. The <code>approved</code> transition requires an explicit <code>approve_plan</code> call, which the host gates on user approval in the web UI.</p>
 <h3 id="no-delete-ever">No delete, ever<a class="headerlink" href="#no-delete-ever" title="Permanent link">&para;</a></h3>
 <p>The MCP server has no delete tool. The <code>propose_quarantine</code> / <code>quarantine</code> path is the only way to remove files from the working tree. Quarantined files are moved to <code>QUARANTINE_DIR</code> and journaled — they can be recovered manually or via <code>undo_last</code> (see below).</p>
+<p>As of V10, every <code>propose_quarantine</code> call also carries a <code>reason</code> — a short, concrete justification (duplicate of X, superseded by Y, unreadable <em>and</em> superfluous, etc.) stored on the op (<code>PlanOp.params["reason"]</code>) and shown beside the file in the approval view (<code>host.format.quarantine_reason</code>/<code>fmt_op</code>, capped at 120 chars for display — the full text is always in <code>plan_ops.json</code>). The server itself does not enforce this: an empty string is accepted like any other. The requirement lives entirely in the ORGANIZE system prompt (<code>host/agent.py</code>), which now mandates a concrete reason on every quarantine and explicitly rejects "unreadable" alone as sufficient, since the reason is what the user actually judges at approval time. As of V17, one case is escalated further: an unreadable file (present on disk, missing from the registry, corroborated by the corpus digest's error count) may not be quarantined unilaterally at all — the agent must call <code>ask_user</code> first and may only stage the op on explicit confirmation, with reason <code>"unreadable — user confirmed disposable"</code>; declining or skipping leaves the file untouched. Duplicates/superseded documents are unaffected — those stay a deterministic judgement, quarantined directly, no ask needed.</p>
 <p><code>compress_quarantine</code> is the only other operation that removes bytes from disk (the original loose files in <code>QUARANTINE_DIR</code>, after a verified archive is produced) — staged via <code>propose_compress_quarantine</code> and applied only through <code>execute_plan</code>, like every other mutation. It is still fully reversible: <code>undo_last</code> restores each original from the archive and deletes the zip. No bytes leave the machine — compression only reclaims space within the local quarantine folder.</p>
 <h3 id="every-mutation-goes-through-the-plan-flow-m1">Every mutation goes through the plan flow (M1)<a class="headerlink" href="#every-mutation-goes-through-the-plan-flow-m1" title="Permanent link">&para;</a></h3>
 <p>As of the security-hardening pass that closed finding S1, there is no MCP tool that touches the filesystem directly. <code>move_file</code>, <code>rename_file</code>, <code>create_file</code>, <code>update_file</code>, <code>create_dir</code>, <code>archive_document</code>, and <code>compress_quarantine</code> were removed as standalone tools; their functionality is reachable only by staging a <code>propose_create_file</code> / <code>propose_update_file</code> / <code>propose_create_dir</code> / <code>propose_archive_document</code> / <code>propose_compress_quarantine</code> op onto a plan and applying it via <code>execute_plan</code> — exactly the same path <code>propose_rename</code> / <code>propose_move</code> / <code>propose_quarantine</code> already used. <code>execute_plan</code>'s internal <code>_apply_op</code> dispatcher now handles all these op types directly, except <code>archive_document</code> and <code>compress_quarantine</code>, which are delegated to the pre-existing standalone functions of the same name (avoiding duplicated logic) and self-journal under their own <code>op_type</code> rather than the generic per-op entry.</p>
-<p><code>undo_last</code> was removed from the MCP tool surface entirely — it is no longer callable by the agent under any circumstance. It survives only as a plain function in <code>server/tools.py</code>, invoked directly (bypassing MCP) by the TUI's <code>JournalScreen</code> when the user presses <strong>u</strong> — undo is now a deliberate, user-only action, never something the agent itself can trigger.</p>
+<p><code>undo_last</code> was removed from the MCP tool surface entirely — it is no longer callable by the agent under any circumstance. It survives only as a plain function in <code>server/tools.py</code>, invoked directly (bypassing MCP) by the web UI's journal dialog (opened via the "Journal" toolbar button) when the user clicks "Undo last operation" — undo is now a deliberate, user-only action, never something the agent itself can trigger.</p>
 <h3 id="path-confinement-on-every-path-taking-tool-m2">Path confinement on every path-taking tool (M2)<a class="headerlink" href="#path-confinement-on-every-path-taking-tool-m2" title="Permanent link">&para;</a></h3>
 <p>As of the security-hardening pass that closed finding S3, <code>server/guards.py</code> exposes
 <code>check_within_root(path, roots)</code>, a fail-closed sibling of <code>check_allowlist</code>: an
@@ -1758,25 +1967,26 @@ organize/query loops' — see <code>docs/developer/security-model.md</code> (S2)
 <li><strong>Discovery hiding:</strong> because <code>.organizer</code>/quarantine now live physically inside the organized tree, they must be hidden from the agent so it doesn't propose moving or quarantining its own memory — see <code>walk_tree</code>'s <code>hidden_names</code> above. <code>write_index</code>'s output-file skip set (<code>_SKIP</code> in <code>server/tools.py</code>) also now excludes <code>.organizer</code>, so it never appears in the written <code>INDEX.md</code>; the quarantine folder deliberately stays <em>visible</em> there, since a human reviewing results should be able to see it — only agent-facing discovery hides it. <code>host/app.py</code>'s starter-pane <code>_directory_overview</code> applies the same two-name hide to its own local <code>os.walk</code>.</li>
 <li><strong>No migration:</strong> there is no migration path for a pre-existing project-root <code>.organizer</code> folder from before this change — a fresh run against a new target simply starts that target's memory from scratch.</li>
 </ul>
-<p>This does not change the security model — <code>target_dir</code> was already the confinement boundary enforced by <code>check_within_root</code> (M2); this only changes where <code>.organizer</code>/quarantine physically resolve to <em>within</em> that already-covered boundary. See <a href="../security-model/">Security Model</a> for the confinement mechanism itself.</p>
+<p>This does not change the security model — <code>target_dir</code> was already the confinement boundary enforced by <code>check_within_root</code> (M2); this only changes where <code>.organizer</code>/quarantine physically resolve to <em>within</em> that already-covered boundary. See <a href="../../security-model/">Security Model</a> for the confinement mechanism itself.</p>
 <h3 id="batch-document-content-tools-o1">Batch document-content tools (O1)<a class="headerlink" href="#batch-document-content-tools-o1" title="Permanent link">&para;</a></h3>
 <p><code>read_file_batch</code>, <code>extract_text_batch</code>, and <code>compute_checksum_batch</code> in <code>server/tools.py</code> are batch counterparts of <code>read_file</code>/<code>extract_text</code>/<code>compute_checksum</code>: each takes a <code>paths: list[str]</code> instead of a single <code>path</code> and returns one dict keyed by the exact input path string, <code>{path: content_or_checksum | {"error": message}}</code>. A failure on one path (guard rejection, missing file, extraction error) never fails the whole batch — it just becomes that path's <code>{"error": ...}</code> entry, so the caller (host or agent) must discriminate a successful entry from a failed one by type (<code>str</code> vs <code>dict</code>). The <code>server/main.py</code> wrappers apply the same per-path guard sequence as their singular counterparts (allowlist + <code>check_within_root</code> for the two content tools, <code>check_within_root</code> alone for the checksum tool) before delegating to <code>server.tools</code>, and log egress per successful file the same way <code>read_file</code>/<code>extract_text</code> do.</p>
 <p>These tools exist to cut MCP round trips: fetching N files one at a time costs N request/response cycles (and N LLM turns, if the agent reasons between each), while a batch call fetches them all in one. They are read-only and available in query mode (added to <code>QUERY_ALLOWED_TOOLS</code>). As of O3, the (now-removed) in-loop ANALYZE-phase prompt directed the agent to use these batch forms (plus <code>record_document_batch</code>, O2) itself, working through discovered documents in batches of 10 rather than one document per turn — as of P6, that batching still happens in exactly those group sizes, but is driven host-side by the stateless analyzer's <code>_fetch_batch_content</code> (<code>_ANALYZER_BATCH_SIZE = 10</code>) rather than by the model's own tool calls; <code>ORGANIZE_DENIED_TOOLS</code> excludes <code>read_file_batch</code>/<code>extract_text_batch</code>/<code>compute_checksum_batch</code> from the ORGANIZE-phase model's own toolset entirely (see "ORGANIZE-only agent loop + corpus digest (P6)" below).</p>
 <h3 id="batch-document-registry-tool-o2">Batch document-registry tool (O2)<a class="headerlink" href="#batch-document-registry-tool-o2" title="Permanent link">&para;</a></h3>
 <p><code>record_document_batch</code> (<code>server/tools.py</code>) is the mutating counterpart to O1's read-only batch tools: it upserts many analyzed documents into the registry in one call instead of one <code>record_document</code> call per document. Validation is shared with the singular tool via a factored-out <code>_validate_and_build_record(doc, profile)</code> helper, so both enforce identical rules and identical error strings. A validation failure on one document (bad <code>type</code>, bad entity <code>role</code>, a missing entity <code>name</code>) is collected into an <code>errors</code> list keyed by the document's positional index rather than aborting the batch; valid documents are still upserted and returned in <code>recorded</code>. The registry is loaded once and saved once for the whole batch rather than once per document — an efficiency trade-off that means a mid-batch crash persists nothing.</p>
 <p>Because it mutates the registry, it is <em>not</em> added to <code>QUERY_ALLOWED_TOOLS</code> (query mode stays strictly read-only). Its path-confinement behaviour also diverges from the O1 read-only batch tools: the <code>server/main.py</code> wrapper runs <code>_check_within_root</code> on every document's <code>path</code> before delegating to <code>server.tools</code>, and — unlike <code>read_file_batch</code>/<code>extract_text_batch</code>/<code>compute_checksum_batch</code>, which turn a disallowed path into that entry's <code>{"error": ...}</code> — a <code>PermissionError</code> here propagates and aborts the whole call, since registry validation errors and confinement errors are handled at different layers (<code>server.tools</code> vs. the <code>server.main</code> wrapper).</p>
-<h3 id="document-analysis-progress-tracking-o5-updated-by-p6">Document-analysis progress tracking (O5, updated by P6)<a class="headerlink" href="#document-analysis-progress-tracking-o5-updated-by-p6" title="Permanent link">&para;</a></h3>
-<p><code>host/agent.py</code>'s <code>run_agent_loop</code> tracks how many documents have been discovered versus analyzed over a run and emits a <code>"progress"</code> <code>AgentEvent</code> (text <code>"Analyzed {analyzed} / {total} documents"</code>, <code>data={"analyzed": int, "total": int}</code>) whenever those counts change. A <code>_ProgressTracker</code> dataclass accumulates two path sets, <code>discovered</code> and <code>analyzed</code> (<code>total</code> is their union, so a document recorded without ever surfacing via <code>walk_tree</code> still counts, and the total only grows monotonically).</p>
-<p>As of P6, both sets are populated <strong>before the ORGANIZE turn loop starts</strong>, from the pre-pass + analyzer results, rather than incrementally from live tool calls during the loop: <code>discovered</code> from every file <code>run_prepass</code> found (skipping telcontar's own output artifacts, dotfiles, OS junk, <code>.organizer</code>, and the configured quarantine directory — mirroring the <code>_SKIP</code> precedent in <code>server/tools.py</code>'s <code>write_index</code>), <code>analyzed</code> from <code>PrepassResult.known</code> plus whichever new documents the analyzer successfully recorded. Progress therefore fires <strong>at most twice per fresh run</strong>, never more: once from <code>run_prepass</code> itself (a pre-analysis snapshot of <code>known</code>/<code>total-so-far</code>), and once more from <code>run_agent_loop</code> only if the analyzer's results actually moved the counts (never an identical duplicate event). Since the ORGANIZE-phase model's toolset structurally excludes <code>record_document</code>/<code>record_document_batch</code> (<code>ORGANIZE_DENIED_TOOLS</code>, see "ORGANIZE-only agent loop + corpus digest (P6)" below), the ORGANIZE turn loop itself no longer drives progress incrementally the way it used to.</p>
-<p>This is purely additive to the event stream — no MCP tool signature or tool list changed. As of O6, <code>host/app.py</code>'s <code>OrganizerScreen</code> consumes the <code>"progress"</code> event: a <code>#progress-row</code> (a numeric <code>#progress-label</code> plus a Textual <code>ProgressBar</code>) sits between <code>#ops-journal</code> and the status bar, hidden until the first progress event carrying a known <code>total &gt; 0</code> arrives (an unknown/<code>None</code> total is never shown, since that would trigger Textual's indeterminate spinning-bar mode), and hidden again — without snapping to 100% first — once the run reaches <code>"done"</code> or <code>"error"</code>.</p>
+<h3 id="document-analysis-progress-tracking-o5-updated-by-p6-q2-v8a">Document-analysis progress tracking (O5, updated by P6, Q2, V8a)<a class="headerlink" href="#document-analysis-progress-tracking-o5-updated-by-p6-q2-v8a" title="Permanent link">&para;</a></h3>
+<p><code>host/agent.py</code> tracks how many documents have been discovered versus analyzed over a run and emits a <code>"progress"</code> <code>AgentEvent</code> (text <code>"Analyzed {analyzed} / {total} documents"</code>, <code>data={"analyzed": int, "total": int}</code>, plus <code>"current": list[str]</code> on the analyzer's batch events as of V8a — see below) whenever those counts change. A <code>_ProgressTracker</code> dataclass accumulates two path sets, <code>discovered</code> and <code>analyzed</code> (<code>total</code> is their union, so a document recorded without ever surfacing via <code>walk_tree</code> still counts, and the total only grows monotonically).</p>
+<p>As of P6, both sets are populated <strong>before the ORGANIZE turn loop starts</strong>, from the pre-pass + analyzer results, rather than incrementally from live tool calls during the loop: <code>discovered</code> from every file <code>run_prepass</code> found (skipping telcontar's own output artifacts, dotfiles, OS junk, <code>.organizer</code>, and the configured quarantine directory — mirroring the <code>_SKIP</code> precedent in <code>server/tools.py</code>'s <code>write_index</code>), <code>analyzed</code> from <code>PrepassResult.known</code> plus whichever new documents the analyzer successfully recorded. As of Q2, <code>_analyze_new_documents</code> takes the <code>_ProgressTracker</code> directly via a required keyword-only <code>tracker</code> parameter and updates <code>analyzed</code> — emitting a fresh <code>"progress"</code> event right there — <strong>once per analysis batch</strong>, immediately after that batch's <code>record_document_batch</code> call returns, rather than accumulating silently across the whole analyzer loop and computing/emitting one snapshot at the end (the old post-loop tracking/emission block in <code>run_agent_loop</code>, and the <code>progress_after_prepass</code> snapshot variable it compared against, are both gone). So progress now fires once from <code>run_prepass</code> (the pre-analysis snapshot of <code>known</code>/<code>total-so-far</code>), plus once per <code>_ANALYZER_BATCH_SIZE</code>-sized batch of newly-recorded documents — giving the progress bar incremental movement through analysis instead of jumping straight from the pre-pass snapshot to ~100% at the end. Since the ORGANIZE-phase model's toolset structurally excludes <code>record_document</code>/<code>record_document_batch</code> (<code>ORGANIZE_DENIED_TOOLS</code>, see "ORGANIZE-only agent loop + corpus digest (P6)" below), the ORGANIZE turn loop itself still never drives progress incrementally on its own.</p>
+<p>As of V8a, <code>data</code> also carries <code>"current": list[str]</code> — the basename(s) (never full paths, which would leak directory layout) of whichever document(s) the in-flight analyzer batch is currently processing. <code>_analyze_new_documents</code> now emits a <code>"progress"</code> event at the <em>start</em> of each batch, before its LLM call, with <code>current</code> populated from that batch's filenames, in addition to the existing post-batch event (Q2), whose <code>current</code> is always <code>[]</code> so a just-finished batch doesn't leave a stale filename on screen. The pre-pass's own one-shot snapshot event does not carry <code>current</code> at all — there is no "current" file during a deterministic walk, and <code>data.get("current")</code> throughout consumers is expected to handle its absence. <code>host/format.py</code>'s new <code>fmt_progress(progress: dict) -&gt; str</code> renders any of these shapes defensively into a short status string (e.g. <code>"3/47 — report.pdf +2"</code>), though it remains unused by the web UI, which formats <code>current</code> itself inline rather than calling it. As of V8b, the web UI surfaces <code>current</code> to the user: <code>host/web/main.py</code>'s <code>_refresh()</code> reads <code>session.progress["current"]</code> directly and renders it in a dedicated <code>progress-current</code> label (first filename plus a <code>" +N"</code> suffix).</p>
+<p>This is purely additive to the event stream — no MCP tool signature or tool list changed. As of O6, the (now-deleted) Textual TUI's <code>OrganizerScreen</code> was the first consumer of the <code>"progress"</code> event; the web UI gained its own progress row later (V14, see below).</p>
 <h3 id="adaptive-turn-budget-o4">Adaptive turn budget (O4)<a class="headerlink" href="#adaptive-turn-budget-o4" title="Permanent link">&para;</a></h3>
 <p><code>run_agent_loop</code>'s turn ceiling scales with corpus size instead of a flat cap, so a large directory doesn't hit an artificial wall mid-analysis. <code>_analysis_turn_budget(total_discovered)</code> returns <code>max(_MAX_TURNS, min(_MAX_TURN_BUDGET, _TURN_BUDGET_BASE + _TURN_BUDGET_PER_DOCUMENT * total_discovered))</code> — floor <code>_MAX_TURNS = 50</code>, ceiling <code>_MAX_TURN_BUDGET = 2000</code>, <code>_TURN_BUDGET_BASE = 30</code> plus <code>_TURN_BUDGET_PER_DOCUMENT = 3</code> turns per document discovered so far (the O5 <code>_ProgressTracker</code>'s <code>total</code> count). The loop recomputes the budget every iteration, though as of P6 the tracker's <code>total</code> is populated upfront by the pre-pass + analyzer and no longer grows during the ORGANIZE loop itself (which no longer calls <code>walk_tree</code>/<code>record_document</code> — see O5 above), so in practice the same ceiling — computed once, from the pre-loop pre-pass/analysis totals — holds for the whole ORGANIZE loop of a fresh run. The "reached maximum turns" error event/return string reports the actual computed budget rather than a hard-coded number.</p>
 <p>This is a backstop against a misbehaving or looping agent, not the primary cost control — that role belongs to the pre-analysis cost-approval gate (O8/P6), described next. <code>run_query_loop</code> (query/chat mode) is untouched and still uses the fixed <code>_MAX_TURNS = 50</code> ceiling — see the query data-flow section below.</p>
 <h3 id="pre-analysis-cost-approval-gate-o8p6">Pre-analysis cost-approval gate (O8/P6)<a class="headerlink" href="#pre-analysis-cost-approval-gate-o8p6" title="Permanent link">&para;</a></h3>
 <p>This is the <strong>primary</strong> cost control for an organize run — the adaptive turn budget above is a secondary runaway-loop backstop, not the primary lever. As of P6, the gate is no longer an interception of the first live batch-tool call inside the turn loop (<code>_COST_GATED_BATCH_TOOLS</code> was deleted); it fires once, host-side, <strong>before the ORGANIZE turn loop even starts</strong> — between the deterministic pre-pass (<code>run_prepass</code>, P4) and the stateless analyzer (<code>_analyze_new_documents</code>, P5). <code>run_prepass</code> itself always runs unconditionally and is never gated — it walks the whole tree and checksums every file via <code>compute_checksum_batch</code>, which is needed just to tell already-known documents from new ones before any cost decision can even be made. The gate decides only whether the analyzer is then allowed to fetch and record the resulting <code>new</code> set.</p>
 <p>The estimate is scoped to <strong>new documents only</strong>: <code>_new_docs_cost_estimate(new_docs, sizes, max_snippet_chars) -&gt; (doc_count, estimated_tokens)</code> (P5) mirrors <code>_ProgressTracker.cost_estimate</code>'s chars-per-token heuristic (<code>sum(min(size, max_snippet_chars) // 4 for size in sizes.values())</code>, 4 chars/token) but sums only over <code>PrepassResult.new</code>'s sizes — a re-run where most of the corpus is already known no longer estimates cost for the whole tree the way the pre-P6 gate did. <code>_handle_cost_approval</code> emits a <code>"cost_estimate"</code> <code>AgentEvent</code> with this estimate, then — unless <code>settings.approval_mode == "never"</code> or no <code>on_cost_approval_needed</code> callback is wired — awaits the host's <code>CostApprovalCallback</code> (<code>Callable[[str, dict], Awaitable[CostApprovalResult]]</code>). Rejection skips <code>_analyze_new_documents</code> entirely for this run — the new documents are neither fetched nor recorded, and surface in the corpus digest's error/unanalyzed count rather than as recorded documents; approval runs the analyzer normally. The gate fires <strong>at most once per run</strong>, and is skipped entirely — no event, no callback — when <code>run_prepass</code> finds no new documents at all.</p>
-<p>As of P8, the <code>"cost_estimate"</code> event's <code>data</code> dict is <code>{"new": doc_count, "already_analyzed": already_analyzed_count, "estimated_tokens": estimated_tokens}</code> — <code>already_analyzed</code> (the <code>PrepassResult.known</code> count) sits alongside the new-doc estimate so the approval summary text reads "N new document(s) (M already analyzed, skipped), ~T input tokens estimated…" instead of leaving the skipped majority of a re-run corpus unmentioned. This completes the data-shape migration P6 deferred (the dict originally carried <code>{"documents": N, "estimated_tokens": T}</code>).</p>
-<p><code>host/app.py</code> wires the callback to <code>CostEstimateModal</code>, whose constructor is <code>(new_documents, already_analyzed, estimated_tokens, batch_size=10)</code> — matching the P8 data shape above — and narrates the estimate and the user's choice into the transcript. The status bar shows "Awaiting cost approval…" while the modal is open.</p>
+<p>As of P8, the <code>"cost_estimate"</code> event's <code>data</code> dict is <code>{"new": doc_count, "already_analyzed": already_analyzed_count, "estimated_tokens": estimated_tokens}</code> — <code>already_analyzed</code> (the <code>PrepassResult.known</code> count) sits alongside the new-doc estimate so the approval summary text reads "N new document(s) (M already analyzed, skipped), ~T input tokens estimated…" instead of leaving the skipped majority of a re-run corpus unmentioned. This completes the data-shape migration P6 deferred (the dict originally carried <code>{"documents": N, "estimated_tokens": T}</code>). As of U5, <code>data</code> also carries <code>"batch_size": _ANALYZER_BATCH_SIZE</code> — previously the real batch size never reached <code>data</code> at all (nor did the <code>summary</code> string, which interpolated a hardcoded literal <code>10</code>), so both UIs' cost dialogs always displayed a hardcoded default regardless of the actually-configured batch size.</p>
+<p><code>host/app.py</code> wires the callback to <code>CostEstimateModal</code>, whose constructor is <code>(new_documents, already_analyzed, estimated_tokens, batch_size=10)</code>, passing <code>data.get("batch_size", 10)</code> for the fourth argument — as of U5, this now actually forwards the real value from <code>data</code> instead of silently relying on the constructor's own <code>=10</code> default regardless of the true configured batch size (the "always claims groups of 10" bug) — and narrates the estimate and the user's choice into the transcript. The status bar shows "Awaiting cost approval…" while the modal is open. The web UI's <code>build_cost_dialog</code> (<code>host/web/dialogs.py</code>) reached the same faithful-content and <code>batch_size</code>-aware state in the same U5 change — see <a href="../../modules/web-ui/">Module Reference — Web UI</a>.</p>
 <h3 id="resumable-chat-after-a-stop-o7">Resumable chat after a stop (O7)<a class="headerlink" href="#resumable-chat-after-a-stop-o7" title="Permanent link">&para;</a></h3>
 <p><code>run_agent</code>/<code>run_agent_loop</code> take trailing <code>history: list[dict[str, Any]] | None = None</code> and <code>message: str | None = None</code> parameters and now return <code>tuple[str, list[dict[str, Any]]]</code> (<code>(final_text, updated_history)</code>) at all three exit points — the no-tool-calls "done" path, the new exception-recovery path (below), and the turn-budget-exhausted path — mirroring the shape <code>run_query_loop</code> already used. When <code>history</code> is <code>None</code> (the default), a run seeds fresh exactly as before. When <code>history</code> is given (the list returned by a previous call), it is reused in place and <code>message</code> — a new free-text user turn — is appended before the loop resumes, so a run that finished, errored, or hit the turn ceiling can be continued with a new chat message using the same full mutating toolset, rather than only offering read-only query mode.</p>
 <p>Each call gets its own fresh per-call turn budget — a continuation does not share the initiating run's allowance. This also means a continuation call starts with a fresh, empty <code>_ProgressTracker</code> (no new <code>walk_tree</code> survey happens on a continuation), so <code>_analysis_turn_budget</code> floors at <code>_MAX_TURNS = 50</code> on a continuation rather than reflecting the full corpus size the initial ANALYZE pass discovered — an accepted trade-off, since a follow-up chat message is typically a small, targeted ask rather than a fresh full-corpus ANALYZE.</p>
@@ -1839,9 +2049,6 @@ organize/query loops' — see <code>docs/developer/security-model.md</code> (S2)
 <li>If the callback is unavailable or no well-formed questions were provided, the tool result is a note telling the agent to proceed with its own best judgement — the agent is instructed not to stall or offload every decision onto this checkpoint.</li>
 </ul>
 <p>The system prompt's two former paragraphs ("Optional clarification checkpoint" / "Optional multiple-option checkpoint") are now one "Optional chat checkpoint" paragraph referencing <code>ask_user</code>, and the <code>"question"</code>/<code>"options"</code> <code>EventKind</code>s are merged into one <code>"ask_user"</code> kind.</p>
-<h3 id="settings-from-anywhere-p9">Settings from anywhere (P9)<a class="headerlink" href="#settings-from-anywhere-p9" title="Permanent link">&para;</a></h3>
-<p><code>OrganizerApp</code> (the root Textual <code>App</code>) carries an app-level <code>ctrl+s</code> binding, <code>action_open_settings</code>, that pushes <code>ConfigScreen</code> from <em>any</em> screen — not just via <code>StartupScreen</code>'s pre-existing local <code>s</code> binding/button. It is a no-op if <code>ConfigScreen</code> is already the current screen (no double-push), and a no-op if <code>SetupScreen</code> is current, since <code>ConfigScreen</code> could persist a half-configured state that bypasses <code>SetupScreen</code>'s guided keyring/plaintext-fallback flow.</p>
-<p>The binding must be declared as <code>Binding("ctrl+s", "open_settings", "Settings", priority=True)</code> (from <code>textual.binding</code>), not a plain tuple: Textual's non-priority key-binding resolution chain deliberately stops at the first <code>ModalScreen</code> it encounters, so that a modal fully captures input and a background shortcut (e.g. <code>q</code>/quit) can't fire accidentally while a confirmation dialog is open. Without <code>priority=True</code>, <code>ctrl+s</code> would silently not fire while <code>ApprovalModal</code> or <code>CostEstimateModal</code> is on screen. With it, the binding reaches <code>action_open_settings</code> regardless of what modal is stacked on top, and <code>ConfigScreen</code> stacks over it and pops back cleanly. Any future app-level binding meant to work while a modal is open needs the same <code>priority=True</code>.</p>
 <h3 id="output-sink-abstraction">Output-sink abstraction<a class="headerlink" href="#output-sink-abstraction" title="Permanent link">&para;</a></h3>
 <p><code>server/sinks.py</code> defines a <code>Sink</code> protocol (<code>name</code>, <code>external</code>, <code>write_summary</code>, <code>write_folder_readme</code>) and a <code>resolve_sinks(names, allow_external)</code> factory. The MCP handlers for <code>write_summary</code> and <code>write_folder_readme</code> call <code>resolve_sinks</code> at request time, passing the profile's <code>[sinks] default</code> list and the <code>egress_allow_external_sinks</code> setting, then fan the call out to each resolved sink.</p>
 <p>The only built-in sink is <code>local_markdown</code> (<code>external=False</code>) — it delegates directly to <code>tools.write_summary</code> / <code>tools.write_folder_readme</code> and writes Markdown files to the local filesystem. It is always allowed regardless of <code>egress_allow_external_sinks</code>.</p>
@@ -1859,7 +2066,7 @@ organize/query loops' — see <code>docs/developer/security-model.md</code> (S2)
 </ol>
 <p>Returns a <code>PrepassResult</code> dataclass: <code>new</code> (list of new-document dicts), <code>known</code> (list of known-document dicts, each carrying its current registry <code>record</code>), <code>rehomed</code> (checksums whose path was actually updated), <code>errors</code> (list of <code>{path, error}</code>), <code>total_files</code> (raw discovered-file count before dedup), and <code>sizes</code> (<code>{path: size_bytes}</code> for every discovered file, taken straight from <code>walk_tree</code>'s entries) — <code>sizes</code> is additive to P4's original shape, added so P5's new-docs-only cost estimate (below) has per-file sizes to work from without a second discovery pass.</p>
 <h3 id="stateless-per-batch-analyzer-p5">Stateless per-batch analyzer (P5)<a class="headerlink" href="#stateless-per-batch-analyzer-p5" title="Permanent link">&para;</a></h3>
-<p><code>host/agent.py</code>'s <code>_analyze_new_documents(*, session, llm, settings, profile, new_docs, token_totals, on_event) -&gt; dict</code> is the piece that makes "each document's content is uploaded to the LLM at most once, ever" actually true: it analyzes only P4's <code>new_docs</code> (<code>PrepassResult.new</code>, host-authoritative <code>{path, checksum}</code> pairs) in isolated, per-batch LLM calls, rather than as part of the main ORGANIZE conversation where content could in principle be re-read or re-uploaded across turns. As of P6, <code>run_agent_loop</code> calls this right after <code>run_prepass</code>, gated by the cost-approval check above — and its structural half, <code>ORGANIZE_DENIED_TOOLS</code> (below), is what makes the guarantee actually hold end-to-end: without it, nothing would stop the ORGANIZE-phase model from calling <code>read_file</code>/<code>extract_text</code> on a document a second time.</p>
+<p><code>host/agent.py</code>'s <code>_analyze_new_documents(*, session, llm, settings, profile, new_docs, ledger, on_event) -&gt; dict</code> is the piece that makes "each document's content is uploaded to the LLM at most once, ever" actually true: it analyzes only P4's <code>new_docs</code> (<code>PrepassResult.new</code>, host-authoritative <code>{path, checksum}</code> pairs) in isolated, per-batch LLM calls, rather than as part of the main ORGANIZE conversation where content could in principle be re-read or re-uploaded across turns. As of P6, <code>run_agent_loop</code> calls this right after <code>run_prepass</code>, gated by the cost-approval check above — and its structural half, <code>ORGANIZE_DENIED_TOOLS</code> (below), is what makes the guarantee actually hold end-to-end: without it, nothing would stop the ORGANIZE-phase model from calling <code>read_file</code>/<code>extract_text</code> on a document a second time.</p>
 <p><code>new_docs</code> is split into batches of at most <code>_ANALYZER_BATCH_SIZE = 10</code> (matching the batch size the old in-loop ANALYZE instructions used). For each batch:</p>
 <ol>
 <li><strong>Fetch content</strong> (<code>_fetch_batch_content</code>): dispatches each path to <code>extract_text_batch</code> (<code>.pdf</code>/<code>.docx</code>/<code>.xlsx</code>/<code>.pptx</code>/<code>.msg</code>, <code>_ANALYZER_EXTRACT_EXTENSIONS</code>) or <code>read_file_batch</code> (everything else) by file extension. This file-type split used to be left to the model's own judgement during the in-loop ANALYZE phase (see "Batch document-content tools (O1)" above) — the pre-pass/analyzer flow makes it a host-side decision instead, since there is no per-document agent turn left to reason it out.</li>
@@ -1875,6 +2082,47 @@ organize/query loops' — see <code>docs/developer/security-model.md</code> (S2)
 <p><strong>Corpus digest (<code>_build_digest(prepass_result, analysis_result) -&gt; str</code>):</strong> a compact, host-composed summary seeded into the first ORGANIZE-phase user message in place of blank "please organize" instructions — one line per document (<code>title · type · path</code>, drawn from <code>PrepassResult.known</code>'s records and the analyzer's newly-recorded documents), plus totals (<code>N document(s) recorded (K already known, M newly analyzed this run)</code>) and an error/unanalyzed count when the pre-pass or analyzer reported any. Above <code>_DIGEST_MAX_LISTED_DOCS = 200</code> listed documents, the digest truncates the per-doc listing and points the agent at <code>list_documents</code>/<code>get_registry</code> for the rest — a fat digest would defeat its own purpose (avoiding a context blowup) on a large corpus. Deliberately NOT full per-document summaries, which would blow up context; the ORGANIZE agent reaches for the registry read tools (<code>list_documents</code>, <code>get_registry</code>, <code>get_document</code>, <code>find_duplicates</code>, <code>find_modified_documents</code>) for anything beyond title/type/path.</p>
 <p><strong><code>ORGANIZE_DENIED_TOOLS</code></strong> (<code>frozenset</code> in <code>host/agent.py</code>) is the structural half of the "content uploaded once" guarantee — not just a prompt instruction. <code>_discover_openai_tools</code> gained a <code>denied: frozenset[str] | None = None</code> parameter (alongside the existing <code>allowed</code>, used by query mode): when set, matching tool names are excluded from the OpenAI function-spec list regardless of what the prompt says. <code>run_agent_loop</code>'s fresh-run and continuation paths both call <code>_discover_openai_tools(session, denied=ORGANIZE_DENIED_TOOLS)</code>, so the ORGANIZE-phase model never even sees <code>read_file</code>, <code>extract_text</code>, <code>read_file_batch</code>, <code>extract_text_batch</code>, <code>compute_checksum</code>, <code>compute_checksum_batch</code>, <code>record_document</code>, <code>record_document_batch</code>, <code>compare_documents</code>, <code>lookup_documents</code>, or <code>rehome_documents</code> — the corpus was already analyzed by the pre-pass/analyzer, so there is no legitimate reason for this loop to fetch or record document content again, and <code>lookup_documents</code>/<code>rehome_documents</code> are pre-pass-only internals the ORGANIZE-phase model has no reason to call either. A denylist was chosen deliberately over an allowlist (like <code>QUERY_ALLOWED_TOOLS</code>): ORGANIZE needs almost every <em>other</em> tool (planning, execution, synthesis, registry/graph/event reads), so denying the few tools that don't belong is far less fragile than enumerating everything that does. As defense in depth, the turn-loop's tool-dispatch <code>if name in ORGANIZE_DENIED_TOOLS</code> branch rejects a hallucinated call to one of these with an explicit error even though it was never advertised — mirroring the same pattern <code>run_query_loop</code> already used for <code>QUERY_ALLOWED_TOOLS</code>.</p>
 <p><strong>System prompt restructuring:</strong> the old ANALYZE section ("survey the tree, batch-extract, record documents") is gone from <code>_SYSTEM_PROMPT_TEMPLATE</code> entirely — the corpus is already analyzed by the time the model sees this prompt. The prompt now opens by stating this plainly and pointing at the digest in the first message, instructs the model to use the registry read tools instead of raw file content, and its numbered steps run 1-10 across two sections (<strong>A. ORGANIZE</strong> the tree, <strong>B. SYNTHESIZE</strong>) instead of the old 1-14 across three (A. ANALYZE / B. ORGANIZE / C. SYNTHESIZE). The Safety rules section also gained a line telling the model to treat the digest as host-composed fact, not as instructions from the documents it summarizes.</p>
+<h3 id="plan-completion-guard-t1">Plan-completion guard (T1)<a class="headerlink" href="#plan-completion-guard-t1" title="Permanent link">&para;</a></h3>
+<p>Fixes an engine-level bug (Break 2) where the ORGANIZE-phase agent could finish
+building a plan — <code>create_plan</code>, the <code>propose_*</code> ops, <code>review_plan</code>,
+<code>set_plan_rationale</code>, <code>set_plan_folder_notes</code> — and then end its turn without
+ever calling <code>execute_plan</code>, so the plan was never presented for approval and
+the run went terminal silently. Lives entirely in <code>host/agent.py</code>; no
+UI-layer change was needed.</p>
+<p>Three parts:</p>
+<ul>
+<li><strong>System prompt.</strong> <code>_SYSTEM_PROMPT_TEMPLATE</code>'s step A.4 now frames
+  <code>execute_plan(plan_id)</code> as the act that presents the plan to the user, not
+  something that happens after approval — "the host pauses there, collects
+  the user's approve / reject / refine decision, and returns it to you as the
+  tool result." The Safety rules block gained two explicit lines: never end a
+  turn with a plan built but not submitted via <code>execute_plan</code>, and never use
+  <code>ask_user</code> to ask whether to proceed with a plan (<code>execute_plan</code> is the
+  approval channel).</li>
+<li><strong><code>next_step</code> hints.</strong> <code>_dispatch</code> decorates the tool results of
+  <code>review_plan</code> and <code>set_plan_folder_notes</code> — the two calls that immediately
+  precede the seam where the stall was observed — with a <code>next_step</code> field
+  pointing the model at <code>execute_plan</code>. Host-side only; the underlying MCP
+  tool's own return shape is unchanged.</li>
+<li><strong>Loop-level guard.</strong> In <code>run_agent_loop</code>, when a turn ends with no tool
+  calls and no message queued (P7's usual reasons to keep going don't apply),
+  the loop tracks <code>last_plan_id</code> (the most recent plan seen in this call's
+  tool traffic, or seeded from <code>history</code> on a resumed/O7 conversation via
+  <code>_seed_last_plan_id</code>) and, if <code>execute_plan</code> hasn't actually been dispatched
+  yet this call, live-checks it with <code>_peek_pending_plan</code> (a <code>get_plan</code> call —
+  never inferred from call-local state alone, since that can't distinguish
+  "never submitted" from "already executed in an earlier call" on a resumed
+  conversation). If the plan is still genuinely <code>pending</code> with at least one
+  op, the loop re-prompts the model once (injected as a <code>"user"</code> role
+  message) instead of stopping silently. The guard is permanently inert for
+  the rest of the call once <code>execute_plan</code> has actually been dispatched
+  (approved, rejected, or refined — doesn't matter) and fires at most once per
+  <code>run_agent_loop</code> call; if the one re-prompt still doesn't get the model to
+  call <code>execute_plan</code>, the run ends normally but the final text names the
+  unexecuted plan id instead of losing it silently.</li>
+</ul>
+<h3 id="nicegui-web-ui-foundations">NiceGUI web UI foundations<a class="headerlink" href="#nicegui-web-ui-foundations" title="Permanent link">&para;</a></h3>
+<p>The web UI's own foundational design decisions — routing/session model, the persistent nav header, dialogs, sidebar tree, reload-safety, theming, and the native-window launch — are documented separately, since they make up roughly two-thirds of this document's original content: see <a href="../web-ui/">Architecture — Web UI</a>.</p>
 <hr />
 <h2 id="data-flow-one-organize-session">Data flow (one organize session)<a class="headerlink" href="#data-flow-one-organize-session" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>1. Host launches server subprocess (stdio)
@@ -1891,92 +2139,108 @@ organize/query loops' — see <code>docs/developer/security-model.md</code> (S2)
 <a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>   documents in batches of ≤10, each analyzed by one isolated, forced-tool LLM
 <a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>   call (submit_document_records) whose messages list is throwaway and never
 <a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a>   joins the conversation below; document content is wrapped in the
-<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>   untrusted-content delimiter (M10) before being sent. Results are persisted via
-<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>   record_document_batch. A second &quot;progress&quot; AgentEvent fires only if analysis
-<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>   changed the discovered/analyzed counts (never a duplicate of step 2&#39;s event).
-<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>   On rejection, the new documents are neither fetched nor recorded this run
-<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>5. Host builds a compact corpus digest (_build_digest, P6) from the combined
-<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>   known + newly-analyzed documents — per-doc title/type/path (capped at 200
-<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>   listed) plus totals and any error count — and seeds it into the first
-<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>   ORGANIZE-phase user message in place of blank &quot;please organize&quot; instructions;
-<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>   the OrganizerScreen starter pane&#39;s optional steering instructions, if the user
-<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a>   typed any, are appended to this same seed message
-<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a>5b. Host drains any chat message queued via message_queue since the run started
-<a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a>    (P7) — catches anything typed during steps 2-4 above — and appends each as
-<a id="__codelineno-2-27" name="__codelineno-2-27" href="#__codelineno-2-27"></a>    a user turn before the first LLM call. The #organize-input chat box is
-<a id="__codelineno-2-28" name="__codelineno-2-28" href="#__codelineno-2-28"></a>    enabled from the very start of the run, not just after it stops
-<a id="__codelineno-2-29" name="__codelineno-2-29" href="#__codelineno-2-29"></a>6. Host calls session.list_tools(denied=ORGANIZE_DENIED_TOOLS) → discovers the
-<a id="__codelineno-2-30" name="__codelineno-2-30" href="#__codelineno-2-30"></a>   ORGANIZE-phase toolset, structurally excluding the content-fetching/recording
-<a id="__codelineno-2-31" name="__codelineno-2-31" href="#__codelineno-2-31"></a>   tools already used in steps 2-4 (P6); if the caller wired in an
-<a id="__codelineno-2-32" name="__codelineno-2-32" href="#__codelineno-2-32"></a>   on_ask_user_needed callback, the host also appends its own host-side ask_user
-<a id="__codelineno-2-33" name="__codelineno-2-33" href="#__codelineno-2-33"></a>   tool spec (P8; never forwarded to the server)
-<a id="__codelineno-2-34" name="__codelineno-2-34" href="#__codelineno-2-34"></a>7. Host sends the ORGANIZE-only system prompt (built from config + active
-<a id="__codelineno-2-35" name="__codelineno-2-35" href="#__codelineno-2-35"></a>   profile: document types, naming conventions, and synthesis template — no
-<a id="__codelineno-2-36" name="__codelineno-2-36" href="#__codelineno-2-36"></a>   ANALYZE section, since the corpus is already analyzed) + the digest-seeded
-<a id="__codelineno-2-37" name="__codelineno-2-37" href="#__codelineno-2-37"></a>   user message from step 5
-<a id="__codelineno-2-38" name="__codelineno-2-38" href="#__codelineno-2-38"></a>8. GPT-5 responds with tool calls
-<a id="__codelineno-2-39" name="__codelineno-2-39" href="#__codelineno-2-39"></a>9. Host dispatches to server via MCP — a hallucinated call to one of
-<a id="__codelineno-2-40" name="__codelineno-2-40" href="#__codelineno-2-40"></a>   ORGANIZE_DENIED_TOOLS is rejected with an explicit error instead of being
-<a id="__codelineno-2-41" name="__codelineno-2-41" href="#__codelineno-2-41"></a>   forwarded, even though none of them were advertised in step 6 (defense in
-<a id="__codelineno-2-42" name="__codelineno-2-42" href="#__codelineno-2-42"></a>   depth, P6)
-<a id="__codelineno-2-43" name="__codelineno-2-43" href="#__codelineno-2-43"></a>10. Server executes tool, returns result
-<a id="__codelineno-2-44" name="__codelineno-2-44" href="#__codelineno-2-44"></a>11. Host feeds result back to GPT-5 as tool message — any document content a
-<a id="__codelineno-2-45" name="__codelineno-2-45" href="#__codelineno-2-45"></a>    tool result still carries (e.g. compare_documents&#39;s diff field, in query
-<a id="__codelineno-2-46" name="__codelineno-2-46" href="#__codelineno-2-46"></a>    mode only — ORGANIZE mode no longer exposes it) is wrapped in the
-<a id="__codelineno-2-47" name="__codelineno-2-47" href="#__codelineno-2-47"></a>    untrusted-content delimiter first (M10)
-<a id="__codelineno-2-48" name="__codelineno-2-48" href="#__codelineno-2-48"></a>12. Host drains message_queue again (P7) — catches anything typed during this
-<a id="__codelineno-2-49" name="__codelineno-2-49" href="#__codelineno-2-49"></a>    turn&#39;s tool calls (step 9-11) — appending each queued message as a user
-<a id="__codelineno-2-50" name="__codelineno-2-50" href="#__codelineno-2-50"></a>    turn; steps 8-11 then repeat (up to the adaptive turn budget — see above,
-<a id="__codelineno-2-51" name="__codelineno-2-51" href="#__codelineno-2-51"></a>    effectively static for a fresh run since the O5 progress tracker no longer
-<a id="__codelineno-2-52" name="__codelineno-2-52" href="#__codelineno-2-52"></a>    grows once the ORGANIZE loop starts)
-<a id="__codelineno-2-53" name="__codelineno-2-53" href="#__codelineno-2-53"></a>13. At any point before or while building the plan, the agent MAY call ask_user
-<a id="__codelineno-2-54" name="__codelineno-2-54" href="#__codelineno-2-54"></a>    (P8) with 1-5 items — plain questions, multiple-choice ones (2-5 options), or
-<a id="__codelineno-2-55" name="__codelineno-2-55" href="#__codelineno-2-55"></a>    a mix; the host emits an &quot;ask_user&quot; AgentEvent, renders the item(s) as a
-<a id="__codelineno-2-56" name="__codelineno-2-56" href="#__codelineno-2-56"></a>    transcript turn, and blocks on the live-chat message queue (P7) for the
-<a id="__codelineno-2-57" name="__codelineno-2-57" href="#__codelineno-2-57"></a>    user&#39;s next chat reply (or a &quot;proceed with best judgement&quot; note if the
-<a id="__codelineno-2-58" name="__codelineno-2-58" href="#__codelineno-2-58"></a>    callback is unavailable or nothing well-formed was asked) — unlimited per
-<a id="__codelineno-2-59" name="__codelineno-2-59" href="#__codelineno-2-59"></a>    run, no once-per-run guard
-<a id="__codelineno-2-60" name="__codelineno-2-60" href="#__codelineno-2-60"></a>14. Agent designs a target taxonomy from the types/themes already recorded in the
-<a id="__codelineno-2-61" name="__codelineno-2-61" href="#__codelineno-2-61"></a>    digest, opens a plan (create_plan), and stages propose_create_dir for each
-<a id="__codelineno-2-62" name="__codelineno-2-62" href="#__codelineno-2-62"></a>    folder (idempotent; no folder created for absent categories) alongside
-<a id="__codelineno-2-63" name="__codelineno-2-63" href="#__codelineno-2-63"></a>    propose_rename / propose_move / propose_quarantine / propose_create_file /
-<a id="__codelineno-2-64" name="__codelineno-2-64" href="#__codelineno-2-64"></a>    propose_update_file / propose_archive_document ops — every mutation is
-<a id="__codelineno-2-65" name="__codelineno-2-65" href="#__codelineno-2-65"></a>    staged, never applied directly
-<a id="__codelineno-2-66" name="__codelineno-2-66" href="#__codelineno-2-66"></a>15. On execute_plan call:
-<a id="__codelineno-2-67" name="__codelineno-2-67" href="#__codelineno-2-67"></a>    a. Host fetches plan details (get_plan) and writes the full ops list to
-<a id="__codelineno-2-68" name="__codelineno-2-68" href="#__codelineno-2-68"></a>       .organizer/plan_ops.json (path shown in the modal)
-<a id="__codelineno-2-69" name="__codelineno-2-69" href="#__codelineno-2-69"></a>    b. Host shows ApprovalModal to user
-<a id="__codelineno-2-70" name="__codelineno-2-70" href="#__codelineno-2-70"></a>    c. User approves (optionally deselecting ops), refines with free text, or rejects
-<a id="__codelineno-2-71" name="__codelineno-2-71" href="#__codelineno-2-71"></a>    d. On approve: host calls approve_plan → execute_plan; server applies ops,
-<a id="__codelineno-2-72" name="__codelineno-2-72" href="#__codelineno-2-72"></a>       journals each, reconciles registry
-<a id="__codelineno-2-73" name="__codelineno-2-73" href="#__codelineno-2-73"></a>    e. On refine: the plan is NOT executed — the free-text request is returned to the
-<a id="__codelineno-2-74" name="__codelineno-2-74" href="#__codelineno-2-74"></a>       agent as a tool result, which revises the plan (ops/rationale/folder notes) and
-<a id="__codelineno-2-75" name="__codelineno-2-75" href="#__codelineno-2-75"></a>       calls execute_plan again to re-present it (back to step 15)
-<a id="__codelineno-2-76" name="__codelineno-2-76" href="#__codelineno-2-76"></a>16. Agent calls build_graph → get_actors → list_events, then composes SUMMARY.md
-<a id="__codelineno-2-77" name="__codelineno-2-77" href="#__codelineno-2-77"></a>    from registry + events + graph + actors per the profile&#39;s [synthesis] template;
-<a id="__codelineno-2-78" name="__codelineno-2-78" href="#__codelineno-2-78"></a>    calls write_index + write_summary to persist INDEX.md, manifest.json, SUMMARY.md
-<a id="__codelineno-2-79" name="__codelineno-2-79" href="#__codelineno-2-79"></a>17. Agent calls write_folder_readme(path=&lt;folder&gt;, content=&lt;markdown&gt;) once per
-<a id="__codelineno-2-80" name="__codelineno-2-80" href="#__codelineno-2-80"></a>    meaningful folder of the organized tree; empty/trivial folders are skipped
-<a id="__codelineno-2-81" name="__codelineno-2-81" href="#__codelineno-2-81"></a>18. Agent sends final text (no tool calls) → normally the loop would end here, UNLESS a chat message is waiting in message_queue at this exact instant (P7): if so, the queued message(s) are appended as a user turn and the loop continues from step 8 instead of ending — letting a live chat message redirect an in-progress run. Otherwise, this is one of three ways the loop can reach a terminal state — the others being an unhandled exception (caught and returned as an error, O7) or the turn budget running out
-<a id="__codelineno-2-82" name="__codelineno-2-82" href="#__codelineno-2-82"></a>19. Desktop notification fires and the &quot;press g / keep chatting&quot; cue is shown — but only on this first terminal state (O7)
-<a id="__codelineno-2-83" name="__codelineno-2-83" href="#__codelineno-2-83"></a>20. The MCP session from step 1 stays open, and the #organize-input chat box (live since the start of the run, P7) stays enabled. The host&#39;s worker loop waits on `#organize-input` for any message that arrives strictly AFTER run_agent_loop has already returned (i.e. the agent is fully idle and no live call remains to drain the queue itself) — each such message resumes run_agent_loop on the SAME session with (history=&lt;returned from the previous call&gt;, message=&lt;your text&gt;, message_queue=&lt;the same queue&gt;) — back to step 8 directly (steps 2-7 do NOT repeat; no new pre-pass or analysis happens on a continuation), with the same ORGANIZE-only toolset, its own fresh turn budget, and the same live-chat draining (step 5b/12/18) as the initial run. An unhandled exception during any of these turns is caught rather than propagating: any tool call left without a matching result is answered with a synthesized {&quot;error&quot;: ...} entry, an &quot;error&quot; AgentEvent fires, and the conversation history stays valid for the next chat message
+<a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>   untrusted-content delimiter (M10) before being sent. Each batch&#39;s results
+<a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a>   are persisted via record_document_batch immediately, and a &quot;progress&quot;
+<a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>   AgentEvent fires right after (Q2) — one per successfully recorded batch,
+<a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a>   not just once at the end — so the bar advances incrementally through
+<a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a>   analysis instead of jumping at the end. On rejection, the new documents are
+<a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a>   neither fetched nor recorded this run
+<a id="__codelineno-2-21" name="__codelineno-2-21" href="#__codelineno-2-21"></a>5. Host builds a compact corpus digest (_build_digest, P6) from the combined
+<a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>   known + newly-analyzed documents — per-doc title/type/path (capped at 200
+<a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>   listed) plus totals and any error count — and seeds it into the first
+<a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a>   ORGANIZE-phase user message in place of blank &quot;please organize&quot; instructions;
+<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a>   the organize view&#39;s starter-pane steering-instructions input, if the user
+<a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a>   typed any, is appended to this same seed message
+<a id="__codelineno-2-27" name="__codelineno-2-27" href="#__codelineno-2-27"></a>5b. Host drains any chat message queued via message_queue since the run started
+<a id="__codelineno-2-28" name="__codelineno-2-28" href="#__codelineno-2-28"></a>    (P7) — catches anything typed during steps 2-4 above — and appends each as
+<a id="__codelineno-2-29" name="__codelineno-2-29" href="#__codelineno-2-29"></a>    a user turn before the first LLM call. The #organize-input chat box is
+<a id="__codelineno-2-30" name="__codelineno-2-30" href="#__codelineno-2-30"></a>    enabled from the very start of the run, not just after it stops
+<a id="__codelineno-2-31" name="__codelineno-2-31" href="#__codelineno-2-31"></a>6. Host calls session.list_tools(denied=ORGANIZE_DENIED_TOOLS) → discovers the
+<a id="__codelineno-2-32" name="__codelineno-2-32" href="#__codelineno-2-32"></a>   ORGANIZE-phase toolset, structurally excluding the content-fetching/recording
+<a id="__codelineno-2-33" name="__codelineno-2-33" href="#__codelineno-2-33"></a>   tools already used in steps 2-4 (P6); if the caller wired in an
+<a id="__codelineno-2-34" name="__codelineno-2-34" href="#__codelineno-2-34"></a>   on_ask_user_needed callback, the host also appends its own host-side ask_user
+<a id="__codelineno-2-35" name="__codelineno-2-35" href="#__codelineno-2-35"></a>   tool spec (P8; never forwarded to the server)
+<a id="__codelineno-2-36" name="__codelineno-2-36" href="#__codelineno-2-36"></a>7. Host sends the ORGANIZE-only system prompt (built from config + active
+<a id="__codelineno-2-37" name="__codelineno-2-37" href="#__codelineno-2-37"></a>   profile: document types, naming conventions, and synthesis template — no
+<a id="__codelineno-2-38" name="__codelineno-2-38" href="#__codelineno-2-38"></a>   ANALYZE section, since the corpus is already analyzed) + the digest-seeded
+<a id="__codelineno-2-39" name="__codelineno-2-39" href="#__codelineno-2-39"></a>   user message from step 5
+<a id="__codelineno-2-40" name="__codelineno-2-40" href="#__codelineno-2-40"></a>8. The model responds with tool calls
+<a id="__codelineno-2-41" name="__codelineno-2-41" href="#__codelineno-2-41"></a>9. Host dispatches to server via MCP — a hallucinated call to one of
+<a id="__codelineno-2-42" name="__codelineno-2-42" href="#__codelineno-2-42"></a>   ORGANIZE_DENIED_TOOLS is rejected with an explicit error instead of being
+<a id="__codelineno-2-43" name="__codelineno-2-43" href="#__codelineno-2-43"></a>   forwarded, even though none of them were advertised in step 6 (defense in
+<a id="__codelineno-2-44" name="__codelineno-2-44" href="#__codelineno-2-44"></a>   depth, P6)
+<a id="__codelineno-2-45" name="__codelineno-2-45" href="#__codelineno-2-45"></a>10. Server executes tool, returns result
+<a id="__codelineno-2-46" name="__codelineno-2-46" href="#__codelineno-2-46"></a>11. Host feeds result back to the model as a tool message — any document content a
+<a id="__codelineno-2-47" name="__codelineno-2-47" href="#__codelineno-2-47"></a>    tool result still carries (e.g. compare_documents&#39;s diff field, in query
+<a id="__codelineno-2-48" name="__codelineno-2-48" href="#__codelineno-2-48"></a>    mode only — ORGANIZE mode no longer exposes it) is wrapped in the
+<a id="__codelineno-2-49" name="__codelineno-2-49" href="#__codelineno-2-49"></a>    untrusted-content delimiter first (M10)
+<a id="__codelineno-2-50" name="__codelineno-2-50" href="#__codelineno-2-50"></a>12. Host drains message_queue again (P7) — catches anything typed during this
+<a id="__codelineno-2-51" name="__codelineno-2-51" href="#__codelineno-2-51"></a>    turn&#39;s tool calls (step 9-11) — appending each queued message as a user
+<a id="__codelineno-2-52" name="__codelineno-2-52" href="#__codelineno-2-52"></a>    turn; steps 8-11 then repeat (up to the adaptive turn budget — see above,
+<a id="__codelineno-2-53" name="__codelineno-2-53" href="#__codelineno-2-53"></a>    effectively static for a fresh run since the O5 progress tracker no longer
+<a id="__codelineno-2-54" name="__codelineno-2-54" href="#__codelineno-2-54"></a>    grows once the ORGANIZE loop starts)
+<a id="__codelineno-2-55" name="__codelineno-2-55" href="#__codelineno-2-55"></a>13. At any point before or while building the plan, the agent MAY call ask_user
+<a id="__codelineno-2-56" name="__codelineno-2-56" href="#__codelineno-2-56"></a>    (P8) with 1-5 items — plain questions, multiple-choice ones (2-5 options), or
+<a id="__codelineno-2-57" name="__codelineno-2-57" href="#__codelineno-2-57"></a>    a mix; the host emits an &quot;ask_user&quot; AgentEvent, renders the item(s) as a
+<a id="__codelineno-2-58" name="__codelineno-2-58" href="#__codelineno-2-58"></a>    transcript turn, and blocks on the live-chat message queue (P7) for the
+<a id="__codelineno-2-59" name="__codelineno-2-59" href="#__codelineno-2-59"></a>    user&#39;s next chat reply (or a &quot;proceed with best judgement&quot; note if the
+<a id="__codelineno-2-60" name="__codelineno-2-60" href="#__codelineno-2-60"></a>    callback is unavailable or nothing well-formed was asked) — unlimited per
+<a id="__codelineno-2-61" name="__codelineno-2-61" href="#__codelineno-2-61"></a>    run, no once-per-run guard
+<a id="__codelineno-2-62" name="__codelineno-2-62" href="#__codelineno-2-62"></a>14. Agent designs a target taxonomy from the types/themes already recorded in the
+<a id="__codelineno-2-63" name="__codelineno-2-63" href="#__codelineno-2-63"></a>    digest, opens a plan (create_plan), and stages propose_create_dir for each
+<a id="__codelineno-2-64" name="__codelineno-2-64" href="#__codelineno-2-64"></a>    folder (idempotent; no folder created for absent categories) alongside
+<a id="__codelineno-2-65" name="__codelineno-2-65" href="#__codelineno-2-65"></a>    propose_rename / propose_move / propose_quarantine / propose_create_file /
+<a id="__codelineno-2-66" name="__codelineno-2-66" href="#__codelineno-2-66"></a>    propose_update_file / propose_archive_document ops — every mutation is
+<a id="__codelineno-2-67" name="__codelineno-2-67" href="#__codelineno-2-67"></a>    staged, never applied directly
+<a id="__codelineno-2-68" name="__codelineno-2-68" href="#__codelineno-2-68"></a>15. On execute_plan call:
+<a id="__codelineno-2-69" name="__codelineno-2-69" href="#__codelineno-2-69"></a>    a. Host fetches plan details (get_plan) and writes the full ops list to
+<a id="__codelineno-2-70" name="__codelineno-2-70" href="#__codelineno-2-70"></a>       .organizer/plan_ops.json (path shown in the dialog)
+<a id="__codelineno-2-71" name="__codelineno-2-71" href="#__codelineno-2-71"></a>    b. Host shows the approval dialog to the user (`build_approval_dialog`,
+<a id="__codelineno-2-72" name="__codelineno-2-72" href="#__codelineno-2-72"></a>       `host/web/dialogs.py`)
+<a id="__codelineno-2-73" name="__codelineno-2-73" href="#__codelineno-2-73"></a>    c. User approves (optionally deselecting ops), refines with free text, or rejects
+<a id="__codelineno-2-74" name="__codelineno-2-74" href="#__codelineno-2-74"></a>    d. On approve: host calls approve_plan → execute_plan; server applies ops,
+<a id="__codelineno-2-75" name="__codelineno-2-75" href="#__codelineno-2-75"></a>       journals each, reconciles registry
+<a id="__codelineno-2-76" name="__codelineno-2-76" href="#__codelineno-2-76"></a>    e. On refine: the plan is NOT executed — the free-text request is returned to the
+<a id="__codelineno-2-77" name="__codelineno-2-77" href="#__codelineno-2-77"></a>       agent as a tool result, which revises the plan (ops/rationale/folder notes) and
+<a id="__codelineno-2-78" name="__codelineno-2-78" href="#__codelineno-2-78"></a>       calls execute_plan again to re-present it (back to step 15)
+<a id="__codelineno-2-79" name="__codelineno-2-79" href="#__codelineno-2-79"></a>16. Agent calls build_graph → get_actors → list_events, then composes SUMMARY.md
+<a id="__codelineno-2-80" name="__codelineno-2-80" href="#__codelineno-2-80"></a>    from registry + events + graph + actors per the profile&#39;s [synthesis] template;
+<a id="__codelineno-2-81" name="__codelineno-2-81" href="#__codelineno-2-81"></a>    calls write_index + write_summary to persist INDEX.md, manifest.json, SUMMARY.md
+<a id="__codelineno-2-82" name="__codelineno-2-82" href="#__codelineno-2-82"></a>17. Agent calls write_folder_readme(path=&lt;folder&gt;, content=&lt;markdown&gt;) once per
+<a id="__codelineno-2-83" name="__codelineno-2-83" href="#__codelineno-2-83"></a>    meaningful folder of the organized tree; empty/trivial folders are skipped
+<a id="__codelineno-2-84" name="__codelineno-2-84" href="#__codelineno-2-84"></a>18. Agent sends final text (no tool calls) → normally the loop would end here, UNLESS a chat message is waiting in message_queue at this exact instant (P7): if so, the queued message(s) are appended as a user turn and the loop continues from step 8 instead of ending — letting a live chat message redirect an in-progress run. Otherwise, the T1 plan-completion guard checks whether a plan it has seen (`last_plan_id`) is still genuinely `pending` (live-checked via `get_plan`) despite `execute_plan` never having been dispatched this call — this is the same check that can also fire right after step 14 if the model stops immediately after staging/reviewing a plan without ever reaching step 15; either way, it re-prompts the model once, and only ends the loop if that single re-prompt still doesn&#39;t produce an `execute_plan` call (in which case the final text names the unexecuted plan instead of losing it silently). Barring that, this is one of three ways the loop can reach a terminal state — the others being an unhandled exception (caught and returned as an error, O7) or the turn budget running out
+<a id="__codelineno-2-85" name="__codelineno-2-85" href="#__codelineno-2-85"></a>19. Desktop notification fires and the &quot;press g / keep chatting&quot; cue is shown — but only on this first terminal state (O7)
+<a id="__codelineno-2-86" name="__codelineno-2-86" href="#__codelineno-2-86"></a>20. The MCP session from step 1 stays open, and the #organize-input chat box (live since the start of the run, P7) stays enabled. The host&#39;s worker loop waits on `#organize-input` for any message that arrives strictly AFTER run_agent_loop has already returned (i.e. the agent is fully idle and no live call remains to drain the queue itself) — each such message resumes run_agent_loop on the SAME session with (history=&lt;returned from the previous call&gt;, message=&lt;your text&gt;, message_queue=&lt;the same queue&gt;) — back to step 8 directly (steps 2-7 do NOT repeat; no new pre-pass or analysis happens on a continuation), with the same ORGANIZE-only toolset, its own fresh turn budget, and the same live-chat draining (step 5b/12/18) as the initial run. An unhandled exception during any of these turns is caught rather than propagating: any tool call left without a matching result is answered with a synthesized {&quot;error&quot;: ...} entry, an &quot;error&quot; AgentEvent fires, and the conversation history stays valid for the next chat message
 </code></pre></div>
 <hr />
 <h2 id="data-flow-one-query-session">Data flow (one query session)<a class="headerlink" href="#data-flow-one-query-session" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>1. User opens QueryScreen (from StartupScreen &quot;Query&quot; button, or &quot;g&quot; in OrganizerScreen)
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>2. Host launches server subprocess (stdio) — same MCP server, same registry
-<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>3. Host calls session.list_tools() → filters to QUERY_ALLOWED_TOOLS (read-only subset)
-<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>4. Host sends query-mode system prompt (built from active profile) + user&#39;s first question
-<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>5. GPT-5 responds with tool calls against the read-only allowlist
-<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>6. Host dispatches to server via MCP (mutating tool names are blocked in the host even if
-<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>   the model hallucinates one — defense in depth)
-<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>7. Server executes tool, returns result
-<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>8. Host feeds result back to GPT-5 as tool message — same untrusted-content
-<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>   delimiter wrapping as organize mode applies here too (M10)
-<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>9. Steps 5-8 repeat until the model produces a final text answer
-<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>10. Answer is displayed in the RichLog; conversation history is threaded across questions
-<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>    within the same session (the MCP session stays open for the whole chat)
-<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>11. User types another question (goto step 4) or presses Esc to return to the previous screen
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>1. User opens the `/query/{run_id}` page — directly (landing page&#39;s &quot;Query&quot;
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>   button, resolved to the nearest `.organizer` ancestor via
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>   `host.paths.find_organizer_root`), from the &quot;Query this corpus&quot; button on a
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>   finished organize run, or (X11) from the persistent nav header&#39;s Query tab,
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>   enabled on any route once a target with an analyzed corpus is resolvable —
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>   which mounts `host/web/query_view.py`&#39;s `QueryBridge`, driving the same
+<a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>   `run_query_loop` below. As of X11, the &quot;Query this corpus&quot; button and the nav
+<a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>   header&#39;s Query tab both reuse an existing query-mode session for the target
+<a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>   (`web_session.find_by_target`) instead of minting a new one — and its own MCP
+<a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>   subprocess — per click; the landing page&#39;s own &quot;Query&quot; button still always
+<a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>   starts a fresh one
+<a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>2. Host launches server subprocess (stdio) — same MCP server, same registry
+<a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a>3. Host calls session.list_tools() → filters to QUERY_ALLOWED_TOOLS (read-only subset)
+<a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a>4. Host sends query-mode system prompt (built from active profile) + user&#39;s first question
+<a id="__codelineno-3-15" name="__codelineno-3-15" href="#__codelineno-3-15"></a>5. The model responds with tool calls against the read-only allowlist
+<a id="__codelineno-3-16" name="__codelineno-3-16" href="#__codelineno-3-16"></a>6. Host dispatches to server via MCP (mutating tool names are blocked in the host even if
+<a id="__codelineno-3-17" name="__codelineno-3-17" href="#__codelineno-3-17"></a>   the model hallucinates one — defense in depth)
+<a id="__codelineno-3-18" name="__codelineno-3-18" href="#__codelineno-3-18"></a>7. Server executes tool, returns result
+<a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a>8. Host feeds result back to the model as a tool message — same untrusted-content
+<a id="__codelineno-3-20" name="__codelineno-3-20" href="#__codelineno-3-20"></a>   delimiter wrapping as organize mode applies here too (M10)
+<a id="__codelineno-3-21" name="__codelineno-3-21" href="#__codelineno-3-21"></a>9. Steps 5-8 repeat until the model produces a final text answer
+<a id="__codelineno-3-22" name="__codelineno-3-22" href="#__codelineno-3-22"></a>10. Answer is appended to `session.transcript` and rendered as a `ui.chat_message`
+<a id="__codelineno-3-23" name="__codelineno-3-23" href="#__codelineno-3-23"></a>    in the query view&#39;s conversation column; conversation history is threaded
+<a id="__codelineno-3-24" name="__codelineno-3-24" href="#__codelineno-3-24"></a>    across questions within the same session (the MCP session stays open for
+<a id="__codelineno-3-25" name="__codelineno-3-25" href="#__codelineno-3-25"></a>    the whole chat)
+<a id="__codelineno-3-26" name="__codelineno-3-26" href="#__codelineno-3-26"></a>11. User types another question (goto step 4) or navigates away via the nav
+<a id="__codelineno-3-27" name="__codelineno-3-27" href="#__codelineno-3-27"></a>    header or sidebar
 </code></pre></div>
 <p>The query loop uses the fixed <code>_MAX_TURNS = 50</code> ceiling; the organize loop (<code>run_agent_loop</code>) instead scales its ceiling with corpus size via <code>_analysis_turn_budget</code> (see "Adaptive turn budget (O4)" above) — <code>_MAX_TURNS</code> remains its floor. <code>QUERY_ALLOWED_TOOLS</code> is a
 <code>frozenset</code> defined in <code>host/agent.py</code>; it covers inspection tools only — no plan, execution,
@@ -1999,9 +2263,11 @@ write, graph-build, event-creation, or archive tools are exposed to the model.</
 <hr />
 <h2 id="further-reading">Further reading<a class="headerlink" href="#further-reading" title="Permanent link">&para;</a></h2>
 <ul>
-<li><a href="../modules/">Module Reference</a> — per-file breakdown with key classes and functions</li>
-<li><a href="../internals/plan-lifecycle/">Plan Lifecycle</a> — detailed design doc for the plan/journal system</li>
-<li><a href="../../reference/mcp-tools/">MCP Tools Reference</a> — complete tool signatures and semantics</li>
+<li><a href="../../modules/core/">Module Reference — Core</a> — per-file breakdown of <code>config/</code>, <code>server/</code>, and <code>host/</code>'s core modules</li>
+<li><a href="../../modules/web-ui/">Module Reference — Web UI</a> — per-file breakdown of <code>host/web/</code></li>
+<li><a href="../web-ui/">Architecture — Web UI</a> — the NiceGUI web UI's own foundational design decisions</li>
+<li><a href="../../internals/plan-lifecycle/">Plan Lifecycle</a> — detailed design doc for the plan/journal system</li>
+<li><a href="../../../reference/mcp-tools/">MCP Tools Reference</a> — complete tool signatures and semantics</li>
 </ul>
 
 
@@ -2058,10 +2324,10 @@ write, graph-build, event-creation, or archive tools are exposed to the model.</
     
       
       
-      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "toc.integrate", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "toc.integrate", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
       
     
   </body>

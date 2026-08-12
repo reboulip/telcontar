@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, GPT-5 backed">
+        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, backend-agnostic">
       
       
       
@@ -305,8 +305,15 @@
   
     
     
+      
+  
+  
+  
+  
+    
+    
       <li class="md-tabs__item">
-        <a href="../../developer/architecture/" class="md-tabs__link">
+        <a href="../../developer/architecture/core/" class="md-tabs__link">
           
   
   
@@ -314,6 +321,9 @@
 
         </a>
       </li>
+    
+  
+
     
   
 
@@ -776,10 +786,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#the-approval-modal" class="md-nav__link">
+  <a href="#the-approval-dialog" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The approval modal
+        The approval dialog
       
     </span>
   </a>
@@ -1158,15 +1168,67 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../../developer/architecture/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_1" id="__nav_5_1_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
     
   
     Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/architecture/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
   
 
     
@@ -1187,8 +1249,60 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer/modules/" class="md-nav__link">
+      <a href="../../developer/architecture/web-ui/" class="md-nav__link">
         
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_2" id="__nav_5_2_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
@@ -1202,7 +1316,79 @@
   
   
 
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Module Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/modules/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/modules/web-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1378,19 +1564,18 @@
 </code></pre></div>
 <p>Start at <code>always</code>. Relax via config — no code changes required, no restart other than re-running the host.</p>
 <hr />
-<h2 id="the-approval-modal">The approval modal<a class="headerlink" href="#the-approval-modal" title="Permanent link">&para;</a></h2>
-<p>In <code>always</code> and <code>destructive_only</code> modes, when a plan is ready for execution the host presents an <strong>ApprovalModal</strong>:</p>
+<h2 id="the-approval-dialog">The approval dialog<a class="headerlink" href="#the-approval-dialog" title="Permanent link">&para;</a></h2>
+<p>In <code>always</code> and <code>destructive_only</code> modes, when a plan is ready for execution the web UI presents an <strong>approval dialog</strong> (<code>build_approval_dialog</code>, <code>host/web/dialogs.py</code>):</p>
 <ul>
-<li><strong>A plan rationale</strong>, if the agent attached one via <code>set_plan_rationale</code>, is shown as a short plain-language paragraph above the op checklist — explaining how the plan groups, renames, and quarantines documents and why. It is preceded by a subtle <code>[dim]</code>-styled disclaimer, "Model-generated rationale — not verified fact:", so you don't mistake the agent's prose for a verified account of what the plan does — the op checklist below it is the thing to actually check</li>
-<li><strong>A target-layout preview</strong>, when the plan has any move/quarantine destinations: a folder tree built from the plan's ops, with each folder's purpose note (set by the agent via <code>set_plan_folder_notes</code>) shown beside it — folders without a note appear as bare tree nodes. Rename-only plans show no tree. When any folder notes are present, a matching disclaimer ("Folder notes are model-generated — not verified fact.") appears above the tree — the tree structure itself is derived from the plan's own op destinations, but the prose notes beside each folder are the agent's commentary, not verified fact</li>
-<li><strong>Each proposed operation</strong> is listed as a checked checkbox — an <code>update_file</code> op that will replace an existing file (<code>overwrite=True</code>) is labelled with a subtle <code>(overwrite)</code> marker so you aren't blindsided by a collision-safe write turning into a replace, and an op whose source resolves outside the directory you're organizing is labelled with an equally subtle <code>(outside target)</code> marker — a best-effort visual cue, not the security boundary itself (that's the server's own path-confinement guard)</li>
-<li>You can <strong>uncheck</strong> individual ops to skip them (the rest still execute)</li>
-<li><strong>A full ops JSON path</strong> is shown below the checklist: every time a plan is presented, its complete op list (plan id, rationale, folder notes, and every op) is written to <code>.organizer/plan_ops.json</code> (latest plan wins), so you can open the file to inspect the full detail while the modal itself only shows the summary</li>
+<li><strong>A plan rationale</strong>, if the agent attached one via <code>set_plan_rationale</code>, is shown as a short plain-language paragraph above the op tree — explaining how the plan groups, renames, and quarantines documents and why. It is preceded by a disclaimer, "Model-generated rationale — not verified fact:", so you don't mistake the agent's prose for a verified account of what the plan does — the op tree below it is the thing to actually check</li>
+<li><strong>The target layout and op checklist are one and the same:</strong> an actual before/after file tree, a "Before" panel (current file locations, read-only) beside an "After" panel (destinations, folder notes shown beside folder lines — set by the agent via <code>set_plan_folder_notes</code>, folders without a note appear as bare tree nodes). When any folder notes are present, a matching disclaimer ("Folder notes are model-generated — not verified fact.") appears above the tree. A <code>rename</code>, <code>move</code>, a <code>quarantine</code> with a resolved destination, or a newly-created file gets its checkbox inline on its filename in the After tree — a <code>quarantine</code> node carries the agent's stated reason for it (e.g. "duplicate of report_v2.pdf") beside the filename, or "no reason given" if none was supplied, and any node whose source resolves outside the directory being organized carries a subtle <code>(outside target)</code> marker — a best-effort visual cue, not the security boundary itself (that's the server's own path-confinement guard). If the plan both renamed and moved (or renamed/moved and then quarantined) the same file, that whole sequence appears as one line with a single checkbox rather than one line per step, showing the file's true starting and ending state. Everything without a clean tree slot — <code>create_dir</code>, <code>compress_quarantine</code>, <code>update_file</code>, and a <code>quarantine</code>/<code>archive_document</code> with no destination — is listed below the tree under "Other operations", each with its own checkbox; an <code>update_file</code> op that will replace an existing file (<code>overwrite=True</code>) is labelled there with a subtle <code>(overwrite)</code> marker so you aren't blindsided by a collision-safe write turning into a replace. Every op gets exactly one checkbox, in the tree or in "Other operations" — a chained file's checkbox counts for every step in its sequence</li>
+<li>You can <strong>uncheck</strong> individual ops to skip them (the rest still execute). A caption above each checklist ("Unchecking a box excludes that change from execution.") and a tooltip on every checkbox spell this out; for a chained file, the tooltip reads "Uncheck to skip all of this file's chained changes" — unchecking it skips the whole sequence together, never just part of it, so the file is never left half-renamed or half-moved</li>
+<li><strong>A full ops JSON path</strong> is shown below the checklist: every time a plan is presented, its complete op list (plan id, rationale, folder notes, and every op) is written to <code>.organizer/plan_ops.json</code> (latest plan wins), so you can open the file to inspect the full detail while the dialog itself only shows the summary</li>
 <li><strong>A free-text refine field</strong>, for when the plan is close but not quite right — describe the change in plain language (e.g. "merge the drafts into one folder", "don't quarantine the specs")</li>
 <li><strong>Approve</strong> confirms the checked ops and triggers <code>execute_plan</code></li>
-<li><strong>Refine</strong> (or pressing Enter in the field) sends your typed text back to the agent instead of executing anything — the agent revises the plan (adjusting ops, rationale, and folder notes) and calls <code>execute_plan</code> again to re-present it for another round of review. Leaving the field blank and pressing Refine is a no-op — the modal stays open</li>
+<li><strong>Refine</strong> (or pressing Enter in the field) sends your typed text back to the agent instead of executing anything — the agent revises the plan (adjusting ops, rationale, and folder notes) and calls <code>execute_plan</code> again to re-present it for another round of review. Leaving the field blank and pressing Refine is a no-op — the dialog stays open</li>
 <li><strong>Reject</strong> sends a rejection back to the agent, which will revise the plan and try again</li>
-<li><strong>Escape</strong> is equivalent to Reject</li>
+<li>The dialog is deliberately non-dismissible by backdrop click or Escape — one of Approve, Refine, or Reject must be clicked explicitly</li>
 </ul>
 <hr />
 <h2 id="hard-stop">Hard stop<a class="headerlink" href="#hard-stop" title="Permanent link">&para;</a></h2>

@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, GPT-5 backed">
+        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, backend-agnostic">
       
       
       
@@ -305,8 +305,15 @@
   
     
     
+      
+  
+  
+  
+  
+    
+    
       <li class="md-tabs__item">
-        <a href="../../developer/architecture/" class="md-tabs__link">
+        <a href="../../developer/architecture/core/" class="md-tabs__link">
           
   
   
@@ -314,6 +321,9 @@
 
         </a>
       </li>
+    
+  
+
     
   
 
@@ -1158,15 +1168,67 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../../developer/architecture/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_1" id="__nav_5_1_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
     
   
     Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/architecture/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
   
 
     
@@ -1187,8 +1249,60 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer/modules/" class="md-nav__link">
+      <a href="../../developer/architecture/web-ui/" class="md-nav__link">
         
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_2" id="__nav_5_2_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
@@ -1202,7 +1316,79 @@
   
   
 
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Module Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/modules/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/modules/web-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1366,8 +1552,8 @@
 <td>Package and environment manager</td>
 </tr>
 <tr>
-<td>GPT-5 endpoint</td>
-<td>Azure OpenAI (prod) or Mammouth (dev) — any OpenAI-compatible API works</td>
+<td>OpenAI-compatible endpoint</td>
+<td>Azure OpenAI, Mammouth, or any other provider with an OpenAI-compatible chat-completions API</td>
 </tr>
 </tbody>
 </table>
@@ -1409,7 +1595,7 @@
 <p>The wizard asks for your AI service URL and API key, then saves them securely (OS credential store on Windows and macOS, or <code>~/.telcontar/config.env</code> as fallback). No manual editing of config files required.</p>
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
-<p>You can re-open the settings at any time from the main screen using the <strong>⚙ Settings</strong> button or pressing <code>s</code>.</p>
+<p>You can re-open the settings at any time from any page using the nav bar's <strong>Settings</strong> tab or the <strong>⚙ Settings</strong> entry in the sidebar.</p>
 </div>
 <hr />
 <h2 id="verify-the-install">Verify the install<a class="headerlink" href="#verify-the-install" title="Permanent link">&para;</a></h2>
@@ -1434,7 +1620,7 @@
 <tbody>
 <tr>
 <td><code>telcontar</code></td>
-<td>Launches the Textual TUI (the normal way to use telcontar)</td>
+<td>Launches the NiceGUI web UI, by default in its own native window (via <code>pywebview</code>, Windows only — falls back to a browser tab automatically if unavailable) — the normal way to use telcontar</td>
 </tr>
 <tr>
 <td><code>telcontar-server</code></td>
@@ -1442,7 +1628,8 @@
 </tr>
 </tbody>
 </table>
-<p>Both accept <code>--help</code> and <code>--version</code>, which print and exit immediately without launching the TUI or the server.</p>
+<p>Both accept <code>--help</code> and <code>--version</code>, which print and exit immediately without launching either UI or the server.</p>
+<p><code>telcontar</code> also accepts <code>--browser</code> (launches the web UI in the system browser instead of a native window) and <code>--target PATH</code> (skips the landing page's directory picker and jumps straight to a run for <code>PATH</code>).</p>
 <hr />
 <h2 id="advanced-developer-setup">Advanced: developer setup<a class="headerlink" href="#advanced-developer-setup" title="Permanent link">&para;</a></h2>
 <p>If you want to contribute or run the full test suite, clone and sync the dev dependencies instead:</p>
@@ -1450,7 +1637,8 @@
 <a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nb">cd</span><span class="w"> </span>telcontar
 <a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>uv<span class="w"> </span>sync<span class="w"> </span>--all-groups
 </code></pre></div>
-<p>For dev, point <code>LLM_BASE_URL</code>/<code>LLM_API_KEY</code> at Mammouth via a <code>.env</code> file in the project root.  See <a href="../configuration/">Configuration</a> for the full reference.</p>
+<p>For dev, point <code>LLM_BASE_URL</code>/<code>LLM_API_KEY</code> at your endpoint via a <code>.env</code> file in the project root.  See <a href="../configuration/">Configuration</a> for the full reference.</p>
+<p>For the full toolchain (ruff, mypy, ty, pre-commit hooks) and contribution workflow, see <a href="../../developer/contributing/">Contributing</a>.</p>
 
 
 

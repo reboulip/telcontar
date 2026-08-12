@@ -1,0 +1,2711 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, backend-agnostic">
+      
+      
+      
+      
+        <link rel="prev" href="../core/">
+      
+      
+        <link rel="next" href="../../adding-profiles/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Web UI - Telcontar</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#module-reference-web-ui" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="Telcontar" class="md-header__button md-logo" aria-label="Telcontar" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Telcontar
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Web UI
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/reboulip/telcontar" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    telcontar
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../getting-started/installation/" class="md-tabs__link">
+          
+  
+  
+  Getting Started
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../user-guide/how-it-works/" class="md-tabs__link">
+          
+  
+  
+  User Guide
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../../reference/mcp-tools/" class="md-tabs__link">
+          
+  
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../../architecture/core/" class="md-tabs__link">
+          
+  
+  
+  Developer Guide
+
+        </a>
+      </li>
+    
+  
+
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+  
+
+<nav class="md-nav md-nav--primary md-nav--lifted md-nav--integrated" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="Telcontar" class="md-nav__button md-logo" aria-label="Telcontar" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Telcontar
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/reboulip/telcontar" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    telcontar
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Getting Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../getting-started/quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quick Start
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/how-it-works/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How It Works
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Domain Profiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/approval-modes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Approval Modes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../user-guide/outputs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Outputs
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/mcp-tools/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MCP Tools
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/profile-schema/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Profile Schema
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_4_3" id="__nav_4_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_4_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/api/server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/api/host/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    host
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../reference/api/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_1" id="__nav_5_1_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/web-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_2" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_5_2" id="__nav_5_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_2_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_5_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Module Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#hostweb-phase-18-extended-by-phase-19-t2t3t5t6t7-phase-20-u1-u7u10-phase-21-v1v5v7v11v12v13av13cv15" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        host/web/ (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7, Phase 20 U1-U7/U10, Phase 21 V1/V5/V7/V11/V12/V13a/V13c/V15)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adding-profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding a Profile
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../security-model/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Security Model
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../internals/plan-lifecycle/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals — Plan Lifecycle
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="module-reference-web-ui">Module Reference — Web UI<a class="headerlink" href="#module-reference-web-ui" title="Permanent link">&para;</a></h1>
+<p>Per-file breakdown of <code>host/web/</code>, the NiceGUI-based web UI package. This page is the <code>host/web/</code>-specific continuation of the <a href="../core/">Module Reference</a>, which covers <code>config/</code>, <code>server/</code>, and <code>host/</code>'s other (non-web) modules. For auto-generated API docs, see the <a href="../../../reference/api/server/">API Reference</a>.</p>
+<hr />
+<h2 id="hostweb-phase-18-extended-by-phase-19-t2t3t5t6t7-phase-20-u1-u7u10-phase-21-v1v5v7v11v12v13av13cv15"><code>host/web/</code> (Phase 18, extended by Phase 19 T2/T3/T5/T6/T7, Phase 20 U1-U7/U10, Phase 21 V1/V5/V7/V11/V12/V13a/V13c/V15)<a class="headerlink" href="#hostweb-phase-18-extended-by-phase-19-t2t3t5t6t7-phase-20-u1-u7u10-phase-21-v1v5v7v11v12v13av13cv15" title="Permanent link">&para;</a></h2>
+<p><strong>Role:</strong> NiceGUI-based web UI package — originally the first piece of a planned
+Textual→NiceGUI migration. As of S6, <code>telcontar --web</code> (<code>host/main.py</code>, lazy import)
+launched it in place of the then-default Textual TUI; as of U10, that flag was
+gone and the default inverted — bare <code>telcontar</code> launched the web UI, with
+<code>--tui</code> as an escape hatch back to the Textual TUI. As of Phase 22 (W1), the
+Textual TUI and <code>--tui</code> were deleted outright — telcontar now always launches
+the web UI. As of V1, that launch opens in a native <code>pywebview</code> window by
+default rather than a browser tab (Windows only; falls back to the browser,
+with a stderr warning, if <code>pywebview</code> isn't installed or the platform isn't
+Windows) — <code>--browser</code> forces the browser tab. As
+of U2 it has its own first-run setup wizard, at parity with the TUI's; U3 a settings
+view reachable from every screen; U4 a TUI-faithful approval dialog plus a
+sidebar tree that refreshes itself after <code>execute_plan</code>; U5 a TUI-faithful cost
+estimate dialog; U6 a journal view + undo, with a visible toolbar affordance; and
+U7 a read-only query view (<code>/query/{run_id}</code>), reached via a "Query this corpus"
+button on the organize view once a run finishes. As of U1, the landing page itself
+also offers direct Organize/Query/Settings entry points at parity with the TUI's
+<code>StartupScreen</code> — Settings (U3's sidebar button) and the folder picker (Phase
+19's T3 sidebar tree) were already in place, so U1's remaining piece was a Query
+button beside Organize's, both now reporting real validation errors instead of
+silently no-op'ing — see <code>host/main.py</code>, <a href="../core/">core module reference</a>. As of V5, it also has a corpus
+browser at <code>/corpus/{run_id}</code> — a sortable, filterable table over the document
+registry with a per-document detail pane, reached via a "Browse corpus" button
+beside "Query this corpus" once a run finishes — merging what used to be the
+separate V4 document-preview idea into one screen, and reachable without any
+LLM call or agent turn at all (unlike query mode). No TUI equivalent exists;
+see <code>host/web/corpus.py</code>/<code>host/web/corpus_view.py</code> below.</p>
+<p><strong><code>host/web/session.py</code></strong> — framework-agnostic per-run state, no <code>nicegui</code> import.
+Key types: <code>RunSession</code> (<code>run_id</code>, <code>target</code>, <code>mode: Literal["organize", "query"] =
+"organize"</code> (U7), <code>transcript</code>, <code>steps</code>, <code>activity_log: list[ActivityEntry]</code>
+(V16), <code>activity</code>, <code>status</code>, <code>tokens</code>,
+<code>progress</code>, <code>pending: PendingRequest | None</code>, <code>messages: asyncio.Queue</code>,
+<code>history: list[dict] | None</code>, <code>narrator</code>, <code>task</code>, <code>fs_revision: int</code>),
+<code>TranscriptItem</code> (<code>seq</code>/<code>speaker</code>/<code>text</code>), <code>StepRecord</code>
+(<code>seq</code>/<code>tool</code>/<code>summary</code>/<code>args</code>/<code>detail</code>/<code>status: "running"|"ok"|"error"</code>),
+<code>ActivityEntry</code> (<code>seq</code>/<code>text</code>, V16),
+<code>PendingRequest</code> (<code>request_id</code>/<code>kind: "approval"|"cost"|"ask"</code> (<code>"ask"</code> added
+V12)/<code>payload</code>/<code>future: asyncio.Future</code>). <code>mode</code>
+(U7) is one <code>RunSession</code> type/registry serving both organize and query runs
+rather than a parallel <code>QuerySession</code> type — query mode needs the exact same
+<code>add_turn</code>/<code>open_step</code>/<code>close_step</code>/<code>status</code>/<code>tokens</code> primitives, and
+<code>pending</code>/<code>progress</code> simply stay unused for query sessions.</p>
+<p>As of T5/T6, <code>transcript: list[TranscriptItem]</code> is turns-only — genuine
+user↔telcontar exchanges (chat, ask_user, approval/cost outcomes, done/error) —
+and <code>TranscriptItem</code> no longer carries a <code>kind</code>/<code>lines</code> discriminator; tool
+activity lives instead in <code>steps: list[StepRecord]</code>, sharing the same <code>_seq</code>
+counter as <code>transcript</code> for a stable relative ordering. As of V16, a third such
+list, <code>activity_log: list[ActivityEntry]</code>, shares that same counter too: it
+persists one entry per macro-phase change, appended via <code>add_activity(text)</code>
+(called alongside the pre-existing <code>activity: str</code> scalar, which is unchanged
+and still what earlier tests assert against) — giving the web UI a reviewable
+history of phase changes instead of a single line that's overwritten and lost.
+Deliberately not folded into <code>transcript</code>: <code>activity_log</code>, like <code>steps</code>, is
+telcontar's own narration, not a genuine user↔telcontar exchange — this data-model
+separation is unchanged by X3's <code>thread()</code> below, which only merges the two into
+one chronologically-sorted <em>view</em> for rendering. <code>thread() -&gt; list[TranscriptItem
+| ActivityEntry]</code> (X3) returns <code>transcript</code> and <code>activity_log</code> merged and sorted
+by their shared <code>_seq</code> counter — a plain <code>sorted()</code>, no timestamps needed, since
+both lists already share that one counter — so the run page's conversation
+column can interleave turns and phase-change narration in the order they
+actually happened, instead of rendering them in two visually separate columns;
+<code>steps</code> is deliberately excluded, it stays in its own log-strip drawer (see
+<code>host/web/steplog.py</code> above and <code>run_page</code> below). <code>add_turn(speaker, text)</code>
+appends a turn. <code>open_step(tool, summary, args=None)</code> starts a step "running" and
+tracks it as the session's one currently-open step; <code>close_step(result, *, ok) -&gt;
+StepRecord | None</code> pairs it with its result as pretty-printed JSON
+(<code>{"args": step.args, "result": result}</code>, capped at <code>_MAX_STEP_DETAIL_CHARS =
+20_000</code> chars with a "(truncated)" suffix — a batch read/extract result can be
+megabytes of document text, and this is a display cap, distinct from the egress
+cap <code>MAX_SNIPPET_CHARS</code> already enforces upstream) and marks it <code>"ok"</code>/<code>"error"</code>,
+returning the closed <code>StepRecord</code> (<code>None</code> if none was open, U4 — was previously
+<code>None</code> unconditionally) so a caller like <code>AgentBridge</code> can inspect <code>.tool</code> to
+decide whether the call just mutated the tree.
+A step left "running" forever (the run errored out mid-call before its matching
+<code>tool_result</code> arrived) is the intentional, correct visual, not a bug — it shows
+exactly where things stopped. These replace the old <code>append_step</code>/<code>_steps_item</code>
+group-building logic that mirrored <code>OrganizerScreen</code>'s <code>_add_turn</code>/<code>_append_step</code>.
+<code>new_pending</code>/<code>resolve_pending</code> manage the one in-flight approval/cost/ask request
+per session; as of U4, <code>resolve_pending(result, *, request_id=None)</code> takes an optional
+<code>request_id</code> that, when given, must match the <em>current</em> <code>pending.request_id</code> or the
+call is silently ignored — stops a stale dialog (another browser tab, or one left
+over after a reload) from resolving a different, newer pending request than the one
+it was actually shown. <code>request_id</code> is optional so the app-shutdown hook (which has
+no dialog and just rejects whatever is pending) keeps working unchanged.</p>
+<p><code>bump_fs_revision()</code> (U4) increments <code>fs_revision</code>, a counter signalling "the
+target directory's contents changed on disk" — bumped by <code>AgentBridge</code> after a
+tree-mutating tool result (see below) and, as of U6, also called directly by
+the journal dialog's own undo-confirm handler (an undo changes what's on disk
+too) — consumed by <code>run_page</code>'s sidebar-tree refresh and journal-count refresh,
+so the poll loop can rebuild the tree/refresh the count only when something
+actually changed instead of on every tick. <code>has_open_step() -&gt; bool</code> (U6) reports
+whether <code>_open_step</code> is set — true while a tool call is still running — and
+gates <code>build_journal_dialog</code>'s Undo button: undo must be blocked in this state,
+since <code>server.journal.pop_last</code> rewrites the whole journal file while the MCP
+server subprocess may still be appending to it, and racing them can silently
+drop audit records.
+Module-level registry <code>create(target, *, mode="organize") -&gt; RunSession</code> /
+<code>get(run_id)</code> / <code>close(run_id)</code> / <code>all_sessions()</code>, keyed by a
+<code>secrets.token_urlsafe(16)</code> run id —
+deliberately unit-testable in plain pytest, since a page (<code>host/web/main.py</code>) only
+polls and mutates this data rather than deciding how it's drawn. <code>get_sidebar_width()
+-&gt; int</code> / <code>set_sidebar_width(width: int) -&gt; int</code> (T4) manage one in-memory
+sidebar-width preference (<code>SIDEBAR_WIDTH_DEFAULT</code>/<code>_MIN</code>/<code>_MAX</code> = 380/240/1000px —
+<code>_MAX</code> raised from 720 in V13b, since the step-detail section now shares this
+same drawer and its codemirror content wants more horizontal room) for
+the process's lifetime — a module-level global rather than a <code>RunSession</code> field,
+since it must also apply on the picker route where no <code>RunSession</code> exists yet, and
+telcontar is single-user so there's no other viewer's preference it could clobber.
+<code>set_sidebar_width</code> clamps to <code>[SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX]</code> and returns
+the clamped value actually stored.</p>
+<p><code>find_by_target(target, mode="query") -&gt; RunSession | None</code> (X11) linear-scans
+<code>_SESSIONS</code> for one whose <code>.mode</code> matches and whose <code>.target.resolve()</code> equals the
+(resolved) target — lets the nav shell's Query tab (<code>host/web/shell.py</code>, below) and
+the run page's "Query this corpus" button reuse one query session (and its MCP
+subprocess) per target instead of minting a new one on every click. A companion
+module-level "active run" tracker — <code>set_active(run_id)</code> / <code>get_active() -&gt;
+RunSession | None</code>, backed by a private <code>_active_run_id: str | None</code> — records
+which <em>organize</em>-mode session the persistent nav header's Conversation/Corpus tabs
+should point at: <code>create()</code> calls <code>set_active()</code> automatically whenever
+<code>mode="organize"</code>, and <code>app_shell()</code> also calls it whenever it's given an explicit
+<code>session=</code>. <code>get_active()</code> is what lets a route with no session of its own in
+scope (e.g. <code>/settings</code>) still resolve a working Conversation/Corpus target for
+the nav tabs, instead of just disabling them outright.</p>
+<p><strong><code>host/web/bridge.py</code></strong> — <code>AgentBridge(session)</code>, also <code>nicegui</code>-free. Implements
+the same callback contract the (now-deleted) Textual TUI's <code>OrganizerScreen</code> used:
+<code>on_event</code>/<code>on_approval_needed</code>/<code>on_cost_approval_needed</code>/<code>on_ask_user_needed</code>. As
+of V12, <code>on_ask_user_needed</code> creates an <code>"ask"</code>-kind <code>PendingRequest</code>
+(<code>session.new_pending("ask", {"questions": questions})</code>) and awaits its future —
+the same request-scoped pattern <code>on_approval_needed</code>/<code>on_cost_approval_needed</code>
+already use — resolved by the structured <code>build_ask_user_dialog</code>
+(<code>host/web/dialogs.py</code>, below), rather than the pre-V12 design of rendering the
+question into the transcript and reading the reply off <code>session.messages</code>, the
+same queue <code>_send()</code> (<code>host/web/main.py</code>) already posts a <code>"user"</code> transcript turn
+into; the old path posted the reply twice (once via the queue, once explicitly) —
+<code>on_ask_user_needed</code> no longer touches <code>session.messages</code> at all, fixing it.
+<code>start(instructions: str | None = None)</code> launches
+<code>run(instructions)</code> as a detached <code>asyncio.Task</code> owned by the <code>RunSession</code> (not by
+any one NiceGUI client); <code>run()</code> is a near-verbatim port of
+<code>OrganizerScreen._agent_worker</code> onto a plain <code>asyncio.Task</code> — loads settings, opens
+<code>mcp_session</code>, calls <code>run_agent_loop</code>, then loops on <code>session.messages.get()</code> for
+O7-style follow-up continuations, threading one <code>_TokenLedger</code> across all of them.
+<code>instructions</code> (S5) is the starter pane's optional steering text; it is passed
+only to the first <code>run_agent_loop</code> call, never to a continuation, matching
+<code>host/app.py</code>'s <code>_agent_worker(instructions=...)</code> contract.</p>
+<p>As of T5/T6, <code>on_event</code>'s <code>tool_call</code>/<code>tool_result</code> handling no longer appends a
+chat turn — that fixed the "telcontar talking to itself in bubbles" issue T5 was
+written to address. <code>tool_call</code> narrates via <code>session.narrator.narrate(tool)</code> into
+<code>session.activity</code> (the log zone's "current activity" line) — and, as of V16,
+also into <code>session.activity_log</code> via <code>session.add_activity(phrase)</code>, appended
+right alongside the <code>activity</code> assignment and only when the Narrator actually
+returns a new phrase (a repeated phrase collapses to nothing before either is
+touched) — and opens a step —
+<code>session.open_step(tool, event.text, args)</code> — reading <code>tool</code>/<code>args</code> off
+<code>event.data</code>; <code>tool_result</code> closes it — <code>session.close_step(result, ok=ok)</code> —
+inferring <code>ok</code> from whether <code>event.data</code>'s <code>"result"</code> value is a dict containing
+an <code>"error"</code> key. This relies on <code>host/agent.py</code>'s 5
+<code>AgentEvent("tool_call"/"tool_result", ...)</code> emission sites (the pre-pass
+analyzer's <code>_fetch_batch_content</code>, <code>_analyze_new_documents</code>'s
+<code>record_document_batch</code> call, and the ORGANIZE/QUERY dispatch loops in
+<code>run_agent_loop</code>/<code>run_query_loop</code>) now carrying structured <code>data</code>:
+<code>{"tool": name, "args": args}</code> for <code>tool_call</code> (previously just the tool name,
+no args) and <code>{"result": result}</code> for <code>tool_result</code> (previously no data at all).
+Purely additive — no <code>run_agent_loop</code>/<code>run_query_loop</code> signature change, since
+adding a kwarg there breaks explicit-signature <code>fake_run_agent</code> test doubles.</p>
+<p>As of U4, <code>on_event</code>'s <code>tool_result</code> case also calls <code>session.bump_fs_revision()</code>
+whenever <code>close_step</code> returns a closed step (see <code>session.py</code> above) whose <code>.tool</code>
+is in the module-level <code>_TREE_MUTATING_TOOLS = frozenset({"execute_plan",
+"write_index", "write_summary", "write_folder_readme"})</code> and the result was ok —
+these are the only tools that change what's on disk under the target directory.
+This is what drives <code>run_page</code>'s sidebar-tree refresh.</p>
+<p><strong><code>host/web/bridge.py</code> also exports <code>QueryBridge(session)</code></strong> (U7) — the same shape
+(<code>on_event</code>/<code>start</code>/<code>run</code>) as <code>AgentBridge</code>, but driving <code>host.agent.run_query_loop</code>
+instead of <code>run_agent_loop</code>. It has no <code>on_approval_needed</code>/<code>on_cost_approval_needed</code>/
+<code>on_ask_user_needed</code> methods at all — their absence is itself the safety property,
+since query mode is read-only by construction (<code>host.agent.QUERY_ALLOWED_TOOLS</code>).
+<code>on_event</code> handles <code>thinking</code>/<code>tool_call</code>/<code>tool_result</code>/<code>tokens</code>/<code>warning</code>/<code>error</code>
+the same way <code>AgentBridge</code> does (narration is skipped — <code>tool_call</code> just opens a
+step, no <code>Narrator</code> call), but deliberately has no <code>"done"</code> case: <code>run_query_loop</code>
+both emits a <code>"done"</code> event and returns the answer text, and the TUI's own
+<code>QueryScreen.on_event</code> renders only from the return value — <code>QueryBridge.run()</code>
+mirrors that, calling <code>session.add_turn</code> with the returned answer after each
+<code>run_query_loop</code> call rather than reacting to the event (handling both would
+render every answer twice). <code>start()</code> kicks the query worker off immediately (TUI
+parity: <code>QueryScreen</code> starts its worker in <code>on_mount</code>, no explicit "start"
+button). <code>run()</code> is a near-verbatim port of <code>QueryScreen._query_worker</code>: one MCP
+session and one <code>_TokenLedger</code> for the whole chat, threading <code>history</code> across
+questions for multi-turn context. <code>done</code>/<code>error</code> here are per-question, not
+per-session: <code>QueryBridge</code> never sets <code>session.done</code>.</p>
+<p><strong><code>host/web/dialogs.py</code></strong> (U4, extended by U5/U6/V12) — one builder per <code>PendingRequest</code> kind, replacing
+the dialog-building code that used to live inline in <code>run_page</code>'s
+<code>_show_pending_dialog</code> closure. <code>build_approval_dialog(session, pending) -&gt;
+ui.dialog</code> is a faithful port of the TUI's <code>ApprovalModal</code>: title (plan id +
+op count), the rationale (if any) with its "model-generated — not verified fact"
+disclaimer, then a folder-notes disclaimer when folder notes are present. As of
+V3, what follows is an actual before/after file tree instead of the old flat
+<code>render_target_layout</code> text block plus a separate flat checkbox list (<code>render_target_layout</code>
+itself was unchanged by V3 — the now-deleted Textual <code>ApprovalModal</code> used to call
+it directly for its own preview; only this dialog's use of it was replaced).
+<code>host.format.plan_tree_diff(ops, folder_notes, target) -&gt; (before_lines,
+after_lines, other_ops)</code> is a pure function (no filesystem I/O — the plan's ops
+ARE the diff) that derives the tree from each op's <code>dst</code> per its type
+(documented in the function's own docstring): <code>rename</code> -&gt; new filename in the
+same parent; <code>move</code> -&gt; basename under the destination directory;
+<code>quarantine</code>/<code>archive_document</code> with a computed destination -&gt; that
+destination; <code>create_file</code> -&gt; its own <code>src</code> (nothing to show as "before"). As
+of X4, it first calls the private <code>_chain_ops(ops, target) -&gt; (chains,
+other_ops)</code> helper, which walks the ops in plan order and chains a same-file
+rename/move/quarantine/archive_document sequence (e.g. a rename immediately
+followed by a move of the renamed file) into one <code>_FileChain</code> — resolving each
+op's <code>src</code> through the chain first (mirroring <code>execute_plan</code>'s own <code>moved</code>
+dict resolution, <code>server/tools.py</code>) before computing its destination — so the
+file appears once in the before/after tree with its true start/end state,
+instead of once per op with a wrong intermediate one. No op is ever dropped:
+every op_id ends up in exactly one chain's <code>op_ids</code> or in <code>other_ops</code>.
+Each side is a <code>list[PlanTreeLine]</code> (<code>depth</code>/<code>label</code>/<code>op_id: str | None</code>/
+<code>op_ids: tuple[str, ...]</code>, a frozen dataclass) built by the private
+<code>_render_file_tree</code> helper — files listed before subfolders at each level,
+<code>depth</code> driving visual indent, not ASCII connectors baked into the label text,
+since the dialog renders one label per line rather than raw preformatted text
+and <code>host/format.py</code> stays free of any connector-rendering state. As of X7,
+each row is <code>ui.row().classes("items-center gap-1 no-wrap tc-tree-row")</code>
+wrapping <code>depth</code> calls to the new module-level <code>_render_tree_guides(depth)</code>
+helper — <code>depth</code> bordered <code>.tc-tree-guide</code> spacer divs (<code>ui.element("div")</code>),
+one per level, styled by <code>theme.css()</code>'s matching rules (below) — followed by
+the (optional checkbox +) label, replacing the previous flat <code>margin-left:
+{depth * 16}px</code> indent with real CSS vertical guide lines, visually consistent
+with the sidebar tree's own now-enabled connectors (<code>host/web/shell.py</code>,
+below). <code>op_ids</code> (X4) carries every op_id chained onto that line's
+file — a single-element tuple for an unchained line; <code>op_id</code> stays <code>op_ids[0]</code>
+for backward compatibility with any reader that only cares about the primary
+id. Both are set on every leaf file line in both trees, but the dialog only
+ever builds checkboxes from the after-tree's copy — the before tree is a
+read-only reference. As of X4/X6, a chained after-tree line gets exactly ONE
+checkbox for its whole chain — <code>.mark()</code>ed under every id in <code>line.op_ids</code> and
+recorded in the dialog's <code>checkboxes</code> dict under each of those ids too — so
+unchecking it excludes the whole chain from execution together
+(<code>removed_op_ids</code>) instead of leaving the file in a half-applied state (e.g.
+renamed but not yet moved). As of X6, every checkbox also carries a
+<code>.tooltip(...)</code>: an unchained line gets "Uncheck to skip this change" (the
+same text the "Other operations" checkboxes below also carry, as of this same
+X6 change) while a chained
+line gets "Uncheck to skip all of this file's chained changes" instead — and
+both the after-tree column and the "Other operations" list each get their own
+visible caption above the checkboxes, <code>ui.label("Unchecking a box excludes
+that change from execution.").mark("after-checkbox-hint")</code> (two separate
+instances, one per section, sharing the same marker), since X4's chaining
+made a bare checkbox with no label text easy to miss the meaning of. <code>plan_tree_diff</code> also computes a per-op_id
+<code>suffixes</code> dict, applied to both tree sides, so a tree-rendered op keeps the
+same advisories a flat <code>fmt_op</code> row would have shown: the <code>(outside target)</code>
+marker (<code>is_op_out_of_scope</code>, S4/M4) for any op whose source resolves outside
+<code>target</code>, and — for <code>quarantine</code> specifically — its V10 stated reason
+(<code>quarantine_reason</code>), falling back to "no reason given" — for a chain, the
+<code>outside target</code> flag is OR'd across every chained op and the first
+<code>quarantine</code>/<code>archive_document</code> reason encountered wins. Ops with no clean
+tree slot (<code>create_dir</code>, <code>compress_quarantine</code>, <code>update_file</code>, and any
+<code>quarantine</code>/<code>archive_document</code> with no destination) come back as <code>other_ops</code>
+instead, rendered below the tree as an "Other operations" list using the same
+<code>fmt_op(op, session.target, markup=False)</code> label the whole checklist used
+pre-V3 — so the <code>(overwrite)</code> marker (<code>update_file</code>-only, and <code>update_file</code>
+always lands in <code>other_ops</code>) is the one marker still exclusive to that
+fallback bucket. Every op in the plan still ends up with exactly one checkbox,
+in the after-tree (shared across its whole chain, if any) or in "Other
+operations" — never both, never neither — preserving the <code>removed_op_ids</code>
+safety contract. The card is now sized via an
+inline style
+(<code>width: 90vw; max-width: 1400px</code>) rather than a Tailwind <code>max-w-3xl</code> class —
+Quasar's own dialog CSS outranks a same-specificity Tailwind swap. Approve
+resolves with <code>ApprovalResult(approved=True,
+removed_op_ids=[...])</code> for every unchecked op; Refine resolves with
+<code>ApprovalResult(approved=False, refinement=text)</code> only if the field is non-blank
+(otherwise a no-op, dialog stays open) — refinement therefore always takes
+priority over approval, since Refine and Approve can never both fire from the same
+click; Reject resolves with <code>ApprovalResult(approved=False)</code>. As of X5, the
+dialog's <code>ops_json_path</code> caption (the path <code>_handle_execute_plan</code>,
+<code>host/agent.py</code>, wrote via <code>_write_ops_json</code>) also gets a "Reveal in file
+explorer" button (<code>.mark("reveal-ops-json")</code>, only rendered when
+<code>ops_json_path</code> is non-empty) — resolves the path against <code>session.target</code>
+with the same <code>.resolve().relative_to(...)</code> confinement check
+<code>host/paths.py</code>'s <code>is_op_out_of_scope</code> uses elsewhere, and on success calls
+<code>host.paths.reveal_in_file_manager(Path(ops_json_path))</code>; imports the <code>paths</code>
+module itself (<code>from host import paths as host_paths</code>), not the function
+directly, so tests can monkeypatch it. <code>reveal_in_file_manager(path: Path) -&gt;
+bool</code> (X5, <code>host/paths.py</code>) is a fire-and-forget <code>subprocess.Popen</code> dispatch —
+Explorer's <code>/select,&lt;path&gt;</code> flag on Windows, <code>open -R &lt;path&gt;</code> on macOS, and (no
+portable "select a specific file" verb existing on Linux) <code>xdg-open
+&lt;path.parent&gt;</code> elsewhere — that never waits on or checks the child process's
+exit code (<code>explorer.exe</code> exits 1 even on success) and returns <code>False</code>, never
+raises, if <code>Popen</code> itself fails to spawn. <code>build_cost_dialog(session,
+pending) -&gt; ui.dialog</code> (U4 placeholder, made a faithful port of the TUI's
+<code>CostEstimateModal</code> in U5) shows the title "Analyze this corpus?", a summary
+line composed from the engine-side <code>pending.payload["data"]</code> dict
+(<code>new</code>/<code>already_analyzed</code>/<code>estimated_tokens</code>/<code>batch_size</code> — <code>data</code> is the
+source of truth, matching the approval dialog's <code>plan_data</code>-driven approach;
+<code>pending.payload["summary"]</code> is used only as a fallback when <code>data</code> is empty,
+a caller-convenience case exercised by one existing test), the same
+"rough estimate from file sizes" disclaimer as the TUI, and Proceed/Cancel
+buttons. <code>build_ask_user_dialog(session, pending) -&gt; ui.dialog</code> (V12) replaces the
+old design — the question rendered as a plain transcript turn, answered by typing
+a normal chat message — with a structured modal: one radio-button group per
+question from <code>pending.payload["questions"]</code> (only when the agent supplied
+<code>options</code>), plus one free-text "Additional comment" input, and Submit/"Skip — you
+decide" buttons. Submit composes the reply in code, never a second LLM
+round-trip — <code>"&lt;question text&gt; → &lt;selected option&gt;"</code> per answered question, plus
+an <code>"Additional comment: &lt;text&gt;"</code> line when non-blank — and resolves
+<code>AskUserResult(reply=reply, provided=bool(reply))</code>; Skip resolves
+<code>AskUserResult(reply="", provided=False)</code>, the same "proceed with your own best
+judgement" signal a degenerate/no-callback case already produced. All three
+dialogs are
+<code>.props("persistent")</code> (no backdrop-click or Esc dismissal) and resolve through a
+shared <code>_make_resolver(session, pending, dialog)</code> helper (V12) —
+<code>session.resolve_pending(result, request_id=pending.request_id)</code> then
+<code>dialog.close()</code> — factored out of <code>build_approval_dialog</code>/<code>build_cost_dialog</code>'s
+previously separately hand-rolled copies of the same shape (pure refactor, no
+behaviour change to either) and reused by <code>build_ask_user_dialog</code> too. This fixes a
+live bug where the previous plain <code>ui.dialog()</code> could be dismissed without
+resolving its future, permanently deadlocking the run with no visible symptom (the
+same failure class as the reload-orphaning issue ROADMAP.md's "Break 1" spike
+found, closed here for the dialog-dismissal path instead). V12 applies the same
+treatment to <code>ask_user</code>'s new dialog too.</p>
+<p><code>build_journal_dialog(session) -&gt; ui.dialog</code> (U6) is the toolbar-triggered
+journal viewer — the web UI's counterpart to the TUI's <code>JournalScreen</code>. Unlike
+the approval/cost/ask dialogs above, it isn't resolving a <code>PendingRequest</code> (nothing
+is waiting on a future), so it's a plain, dismissible <code>ui.dialog()</code> — Esc/
+backdrop-close just closes the viewer. Lists entries via
+<code>host.web.journal.load_entries</code> rendered through <code>host.format.fmt_journal_entry</code>
+inside a <code>@ui.refreshable body()</code>, with an "Undo last operation" button gated
+behind a separate sibling confirm dialog (built once up front, not nested
+inside <code>body</code>'s refreshable, so its buttons bind once rather than re-binding on
+every <code>body.refresh()</code>); confirming calls <code>host.web.journal.do_undo</code>, refreshes
+<code>body</code>, and — on success — calls <code>session.bump_fs_revision()</code> so the sidebar
+tree and the toolbar's own journal count pick up the change. While
+<code>session.has_open_step()</code> is true, the Undo button is replaced with an
+explanatory label — undo is blocked while a tree-mutating step is in flight,
+since <code>server.journal.pop_last</code> rewrites the whole journal file while the MCP
+server subprocess may be appending to it. <code>load_entries</code>/<code>do_undo</code> are called
+<strong>synchronously</strong>, not via <code>run.io_bound</code> — a deliberate deviation from every
+other blocking-I/O call site in <code>host/web/</code>; see <code>host/web/journal.py</code> below
+for why.</p>
+<p><strong><code>host/web/journal.py</code></strong> (U6) — journal load/undo logic, <code>nicegui</code>-free,
+mirroring how <code>host/web/tree.py</code> relates to <code>host/web/shell.py</code>: this module
+owns the filesystem/MCP-adjacent logic, <code>host/web/dialogs.py</code> owns the
+rendering. <code>load_entries(target) -&gt; list[dict]</code> wraps <code>server.journal.all_entries</code>
+via <code>host.paths.resolve_journal_path</code>, wrapped in a defensive <code>try</code>/<code>except</code>
+that returns <code>[]</code> on any error — mirrors the deleted <code>host.app.JournalScreen</code>'s
+defensive handling, so a broken <code>Settings()</code>/config never blanks the view.
+<code>do_undo(target) -&gt; dict</code> wraps <code>server.tools.undo_last</code> via
+<code>host.paths.resolve_journal_path</code>/<code>resolve_plans_dir</code>, returning its raw result
+dict verbatim. Both <code>server.journal</code>/<code>server.tools</code> imports are late (inside
+the functions), matching the same discipline the deleted Textual TUI used for
+these same imports — avoids dragging their heavier dependency chains in at
+module import time. Undo stays user-only and out of MCP by design: this module
+calls <code>server.tools.undo_last</code> directly (a local function call, same machine),
+the same way the deleted <code>host.app.JournalScreen</code> did; there is no
+agent-reachable path to it.</p>
+<p><strong><code>host/web/steplog.py</code></strong> (U4) — the internal-step log-strip rendering lifted out
+of <code>run_page</code>'s closure, originally intended so later screens (a journal view,
+a query view) could reuse the same "one compact line per step, toggle opens
+full detail in the shell's drawer" idiom instead of re-deriving it. In the
+event, U6's journal dialog (<code>host/web/dialogs.py</code>'s <code>build_journal_dialog</code>)
+didn't need it — journal entries render as plain formatted lines
+(<code>host.format.fmt_journal_entry</code>), not as steps — so this module's reuse case
+is still open, pending U7's query view. Still imports <code>nicegui</code> (renders
+<code>ui.row</code>/<code>ui.label</code>/<code>ui.button</code>), unlike <code>session.py</code>/<code>bridge.py</code>/<code>tree.py</code> —
+only <code>fmt_step_line(step) -&gt; str</code> (<code>f"{glyph} {step.summary}"</code>, <code>_STEP_GLYPHS</code> — ▶
+running / · ok / ✗ error) has no framework dependency. <code>StepLogState</code> is the
+per-client render cursor (<code>step_seq</code>, <code>step_rows: dict[int, tuple[ui.row,
+ui.label]]</code> keyed by step seq) — the same shape <code>_RenderState.step_rows</code> used to
+carry inline in <code>main.py</code>. <code>render_step_row(log_column, shell, step)</code> renders one
+row with its "code"-icon detail button (<code>shell.show_detail(...)</code>, <code>.mark(
+f"step-detail-{step.seq}")</code> as of V13b, for per-row testability); <code>prune_log(state)</code>
+caps the DOM at <code>_MAX_LOG_ROWS = 500</code>, deleting the oldest row first;
+<code>sync_steps(log_column, shell, state, steps)</code> renders any step newer than
+<code>state.step_seq</code> and refreshes the text of already-rendered rows whose
+status/summary changed (a "running" step is updated in place once it closes) —
+<code>run_page</code>'s <code>_refresh()</code> now just calls this once per tick.</p>
+<p><strong><code>host/web/shell.py</code></strong> (Phase 19 T2, extended by T3, T6, Phase 20 U3, Phase 21 V7/V13b,
+Phase 23 X11) —
+<code>app_shell(*, target: Path | None = None, on_select: Callable[[Path], None] | None
+= None, session: RunSession | None = None, active: str | None = None, nav: bool =
+True) -&gt; Iterator[Shell]</code>, a <code>@contextmanager</code> mounted by every <code>@ui.page</code> route in
+<code>host/web/main.py</code>, including the early-return branches (not-configured,
+run-not-found), so the sidebar is visible on every screen instead of being
+assembled per-page. As of U3, the drawer always renders an unconditional
+"Settings" button (<code>.mark("btn-sidebar-settings")</code>) right below the "telcontar"
+label, navigating to <code>/settings</code> — reachable from every route, mirroring the
+TUI's app-level <code>ctrl+s</code> <code>action_open_settings</code> binding (<code>host/app.py</code>). As of V7,
+that header row also carries a manual refresh icon button
+(<code>.mark("btn-tree-refresh")</code>, tooltip "Refresh file tree") beside the "telcontar"
+label, calling <code>shell.reload_tree()</code> on click. Builds a <code>ui.left_drawer</code> as a direct child of the page body —
+NiceGUI's <code>require_top_level_layout</code> raises <code>RuntimeError</code> if the drawer is nested
+inside another container — containing a <code>ui.tree</code> sourced from
+<code>host.web.tree.build_nodes</code> (<code>.props("dense selected-color=primary")</code>
+— the <code>selected-color</code> prop added X1, a pure Quasar prop with no new CSS, so a
+node highlighted via <code>shell.tree.select(...)</code> (<code>run_page</code>, below) stands out;
+as of X7, <code>no-connectors</code> was dropped from that same <code>.props(...)</code> string, so
+Quasar's own built-in QTree connector lines now render — <code>.classes("w-full
+tc-tree")</code> (was just <code>"w-full"</code>) is the hook <code>theme.css()</code>'s new <code>.tc-tree</code>
+rules (below) use to mute their color and tighten row density — and — as of
+V13b —
+<code>max-height: 45vh; overflow-y: auto</code>, so the tree scrolls internally instead of
+pushing what's stacked below it off-screen), plus the page's
+main content column. As of V13b, the internal-step detail zone (T6) is stacked
+directly below the tree inside this <em>same</em> left drawer — <code>ui.column().mark(
+"detail-section")</code>, hidden by default (<code>.visible = False</code>) — rather than the
+separate <code>ui.right_drawer</code> T6 originally created; it holds a title label
+(<code>.mark("detail-title")</code>), a close button (<code>.mark("btn-detail-close")</code>, calls
+<code>shell.hide_detail()</code>), and the detail body itself: <code>ui.codemirror("",
+language="JSON", theme=theme.CODEMIRROR_THEME).disable().mark("detail-content")</code>.
+<code>theme.CODEMIRROR_THEME</code> (V13b, <code>host/web/theme.py</code>, <code>= "basicDark"</code>) is passed
+explicitly because <code>ui.codemirror</code> otherwise defaults to a light theme
+regardless of the app's own dark palette, rendering as a jarring white panel on
+the dark shell. <code>app_shell</code> yields a
+<code>Shell</code> dataclass (<code>drawer</code>, <code>tree</code>, <code>content</code>, <code>detail_section</code>, <code>detail_title</code>,
+<code>detail_content</code>, <code>target</code>,
+<code>selected</code>, and — V7 — a private <code>_reloading: bool</code> re-entrancy flag) — there is
+no longer a standalone <code>detail_drawer</code> field.
+<code>Shell.show_detail(title: str, detail: str)</code> (T6, rewritten V13b) now populates
+the existing widgets in place — <code>detail_title.set_text(title)</code>,
+<code>detail_content.set_value(detail)</code> — and reveals the section
+(<code>detail_section.visible = True</code>), instead of clearing and rebuilding a separate
+drawer on every call; the codemirror instance itself is created once, at
+<code>app_shell</code> build time, so only its title/value change per <code>show_detail</code> call.
+The new <code>Shell.hide_detail()</code> (V13b) sets <code>detail_section.visible = False</code> back,
+wired to the close button above. Never
+<code>ui.code</code>/<code>ui.markdown</code>, since both render through a markdown fenced-code path and
+step detail can carry untrusted document content that must never be interpreted
+as markup; <code>ui.codemirror</code> takes the content as a plain value/prop instead, with
+<code>.disable()</code> making it read-only display, not an editor. <code>host/web/main.py</code>'s
+<code>run_page</code> is the only caller, reached via a per-step "code" icon button in the
+log zone. The tree's <code>on_select</code> handler ignores placeholder-node clicks and
+otherwise sets
+<code>shell.selected</code> and calls the optional <code>on_select</code> callback; its <code>on_expand</code>
+handler is async — the first time a real directory node is expanded it calls
+<code>host.web.tree.load_children</code> via <code>run.io_bound</code>, splices the result into
+<code>tree.props["nodes"]</code> in place (found via <code>host.web.tree.find_node</code>), and calls
+<code>tree.update()</code>. As of V7, it re-locates the node a second time — in whatever
+<code>tree.props["nodes"]</code> actually is <em>after</em> the await — before splicing children
+into it, rather than mutating the pre-await reference directly: a concurrent
+<code>reload_tree()</code> poll can replace the whole node list while <code>load_children</code> is
+still running, detaching the earlier reference from what's actually live and
+silently dropping the expand. This was a latent bug in the pre-V7 code (there
+was only ever one writer of <code>nodes</code> before, so it never manifested) fixed as
+part of introducing the second writer. <code>Shell.refresh_tree(root)</code> (T3) re-roots the tree at <code>root</code> and
+updates <code>Shell.target</code> to match — used by the picker's "go up one level" button and
+a Windows-only drive-root <code>ui.select</code> dropdown, both rendered only when <code>on_select</code>
+is passed in (the picker route, <code>/</code>; hidden on <code>/run/{run_id}</code>, where the tree is
+for verification only).</p>
+<p><strong><code>Shell.reload_tree()</code></strong> (V7) is now the one writer for <code>tree.props["nodes"]</code>:
+rebuilds the tree from disk via <code>host.web.tree.rebuild_nodes</code> (off the event loop,
+<code>run.io_bound</code>), preserving whatever the user had expanded (the same <code>expanded</code>
+Quasar-prop read the old inline U4 refresh logic used), and only actually
+replaces the prop — and calls <code>tree.update()</code> — when the rebuilt node list
+differs from what's already there: a QTree <code>nodes</code> replacement re-renders the
+whole subtree and can reset scroll/selection, so a genuine no-op poll must not
+touch the prop at all, not just be fast about it. Guarded by <code>self._reloading</code>:
+the page's own <code>REFRESH_INTERVAL</code> render-poll timer (<code>host/web/main.py</code>) and this
+method's new periodic poll (below) are two <em>different</em> <code>ui.timer</code>s, so nothing
+else stops them from calling in concurrently. A no-op when <code>self.target is None</code>
+(the picker/setup/settings routes have no target directory to rebuild from).
+Three call sites: the new manual refresh button above; a new periodic
+<code>ui.timer(web_session.TREE_POLL_INTERVAL, shell.reload_tree)</code>, created only when
+<code>app_shell()</code> is given a real <code>target</code> (never on the picker/setup/settings
+routes); and <code>host/web/main.py</code>'s existing post-<code>execute_plan</code> <code>fs_revision</code>
+refresh (U4, below), which now just awaits this method instead of inlining the
+rebuild itself — <code>main.py</code> no longer imports <code>host.web.tree</code> directly as a
+result. <code>web_session.TREE_POLL_INTERVAL</code> (V7, default <code>5.0</code>s) is a module-level
+test-seam constant in <code>host/web/session.py</code>, the same pattern <code>REFRESH_INTERVAL</code>
+already established — deliberately coarser than <code>REFRESH_INTERVAL</code>'s 0.5s, since
+<code>rebuild_nodes</code> recurses over every expanded directory and a live tree poll is a
+nice-to-have, not something needing sub-second latency.</p>
+<p><code>app_shell</code>'s signature stayed frozen through Phase 20/21 (U1-U7, V7 all mounted
+through it unchanged) until Phase 23's X11 extended it with <code>session</code>/<code>active</code>/
+<code>nav</code> for the persistent nav header below. <code>_apply_theme()</code> is a deliberately empty
+hook for T7/T8's future <code>host/web/theme.py</code>. <code>host/web/shell.py</code> now shares
+nicegui-importing duties with <code>host/web/main.py</code>.</p>
+<p><strong>Persistent nav header (X11, logo added X13):</strong> when <code>nav=True</code> (the default), <code>app_shell</code> opens
+with a <code>ui.header()</code> — as of X13, <code>theme.LOGO_SVG</code> rendered via
+<code>ui.html(...).classes("tc-logo")</code> beside the "telcontar" label (both inside a
+<code>ui.row()</code>, so the mark stays vertically centered against the wordmark) — plus
+a <code>ui.tabs(value=active)</code>
+(<code>.props("dense")</code>) holding one <code>ui.tab</code> per entry in the module-level
+<code>_NAV_TABS = ("conversation", "corpus", "query", "settings")</code>, each <code>.mark()</code>ed
+<code>nav-conversation</code>/<code>nav-corpus</code>/<code>nav-query</code>/<code>nav-settings</code> — mounted before the
+left-drawer sidebar, so every route gets the same top-level tab strip. <code>/setup</code>
+is the one route that passes <code>nav=False</code>, hiding the header entirely, since the
+first-run wizard has nowhere valid to navigate to yet. <code>session</code> is the
+<em>organize</em>-mode <code>RunSession</code> driving the current route — <code>/run/{run_id}</code> and
+<code>/corpus/{run_id}</code> pass their own; a query-mode session is deliberately never
+passed here, since a query session must never become the nav shell's "active"
+pointer (reserved for organize-mode runs). Passing <code>session</code> both updates the
+module-level active-run pointer (<code>web_session.set_active(session.run_id)</code>, see
+<code>session.py</code> above) and is used, alongside <code>effective_session = session or
+web_session.get_active()</code>, to decide what the Conversation/Corpus tabs navigate
+to — <code>effective_session</code> is what lets a route with no session of its own in scope
+(<code>/settings</code>) still resolve a working target for those tabs instead of just
+disabling them. The Conversation/Corpus tabs are <code>.disable()</code>d when
+<code>effective_session is None</code>; the Query tab is disabled when there's no
+<code>effective_target</code> (<code>target</code> or <code>effective_session.target</code>) or
+<code>host.paths.find_organizer_root(effective_target)</code> finds no analyzed corpus above
+it. <code>active</code> names which tab (if any) matches the current route, seeding
+<code>ui.tabs(value=active)</code>'s initial selection. <code>tabs.on_value_change(_on_nav_change)</code>
+no-ops when the new value already equals <code>active</code> (guards against the initial
+<code>ui.tabs(value=active)</code> construction itself firing a spurious navigation) and
+otherwise calls <code>ui.navigate.to(...)</code>: Conversation/Corpus go to
+<code>/run/{effective_session.run_id}</code> / <code>/corpus/{effective_session.run_id}</code>; Query
+reuses <code>web_session.find_by_target(effective_target, mode="query")</code> if one
+already exists for that target, else creates one, before navigating to
+<code>/query/{run_id}</code>; Settings always navigates to <code>/settings</code>. This is additive to
+the left-drawer's own unconditional Settings button, above — both now route to
+<code>/settings</code>, and neither replaced the other.</p>
+<p>The drawer's width (T4) comes from <code>web_session.get_sidebar_width()</code> and is applied
+via the Quasar <code>width</code> prop (<code>drawer.props(f"width={width}")</code>), never raw CSS,
+because Quasar also offsets <code>.q-page-container</code> from that same prop — a CSS-only
+width would leave the page content overlapped. A 6px <code>div.tc-sidebar-resize</code> handle
+on the drawer's right edge is wired, once per page build (guarded by a
+<code>window.__tcSidebarResizeWired</code> flag so re-running the snippet is a no-op), by a
+small injected JS snippet (<code>_RESIZE_JS</code>, run via <code>ui.run_javascript</code>) that tracks
+pointerdown/pointermove/pointerup on <code>document</code> rather than just the handle (so the
+pointer can leave the 6px strip mid-drag) and live-resizes the drawer's CSS width
+for visual feedback, clamped during the drag itself between <code>SIDEBAR_WIDTH_MIN</code>/
+<code>_MAX</code> (<code>Math.max(__MIN__, Math.min(__MAX__, ...))</code> in the JS). As of V13b, those
+two bounds are interpolated into <code>_RESIZE_JS</code> once, at module-import time, via
+<code>.replace("__MIN__", str(web_session.SIDEBAR_WIDTH_MIN)).replace("__MAX__",
+str(web_session.SIDEBAR_WIDTH_MAX))</code> — previously hardcoded JS literals (<code>240</code>/
+<code>720</code>) that had already silently drifted out of sync the moment <code>SIDEBAR_WIDTH_MAX</code>
+was raised to <code>1000</code> in this same change; interpolating instead of duplicating
+means the two can't drift apart again. Only on pointerup does it emit a custom <code>tc_sidebar_resized</code>
+event (via NiceGUI's <code>emitEvent</code>/<code>ui.on</code> bus) carrying the final pixel width; the
+Python-side <code>_handle_resize</code> (registered with <code>ui.on("tc_sidebar_resized", ...,
+throttle=0.05)</code>) is the only point that actually persists the preference, via
+<code>web_session.set_sidebar_width()</code>, and re-applies the real Quasar <code>width</code> prop. The
+drag itself is DOM-only and writes nothing to <code>session.py</code> until pointerup. As of
+V15, <code>_RESIZE_JS</code> must be a self-invoking IIFE, not a bare arrow-function
+expression: <code>run_javascript</code> evaluates the string via <code>eval</code>, which constructs but
+never calls a bare function literal, so the handle's listeners were never actually
+bound in any browser (not an Edge-specific regression, as first suspected) until
+this fix. As of X2, the pointerdown handler also calls
+<code>e.target.setPointerCapture(e.pointerId)</code>, so the drag keeps targeting the handle
+element even once the cursor leaves the browser window, and the pointerup
+handler's cleanup logic (clearing <code>cursor</code>/<code>userSelect</code>, emitting
+<code>tc_sidebar_resized</code>) is factored into a shared <code>endDrag()</code> closure now bound to
+FOUR events instead of just <code>pointerup</code>: <code>pointerup</code>, <code>pointercancel</code>,
+<code>lostpointercapture</code>, and <code>window</code>'s <code>blur</code> (covers alt-tabbing away mid-drag).
+This fixes a real bug — a drag released outside the window previously never
+delivered <code>pointerup</code> to <code>document</code>, leaving <code>document.body.style.userSelect</code>
+stuck at <code>'none'</code> (all text on the page unselectable) until the page reloaded.
+It was the originally-suspected cause of the ROADMAP's "chat text not
+selectable" report, but turned out to be secondary — see <code>run_web()</code>'s
+<code>_native_window_args</code> below for the actual primary cause.</p>
+<p><strong><code>host/web/tree.py</code></strong> (Phase 19 T2, fleshed out by T3) — NiceGUI-free, mirroring
+<code>session.py</code>/<code>bridge.py</code>'s invariant so it stays testable in plain pytest.
+<code>build_nodes(root: Path) -&gt; list[dict]</code> builds the top-level node list <code>ui.tree</code>
+expects (<code>{"id": &lt;absolute path str&gt;, "label": &lt;basename&gt;, "children": [...]}</code>, id
+always an absolute path string so it's a stable key across a page reload); the
+root's own immediate children are loaded eagerly (one directory listing) so the
+sidebar shows useful content on first render, while deeper levels stay lazy behind
+a placeholder-child scheme — a not-yet-expanded directory gets one placeholder
+child whose id ends in <code>PLACEHOLDER_SUFFIX</code> (a null byte + ellipsis, never a real
+path), so <code>ui.tree</code> shows an expand arrow without this module walking into it.
+<code>load_children(path) -&gt; list[dict]</code> lists one directory's immediate entries —
+files and folders both shown, since the sidebar's job includes letting the user
+verify files actually moved/renamed, not just picking folders — sorted folders
+before files, then alphabetically. It hides dotfiles (<code>.organizer</code>, <code>.git</code>, ...)
+but deliberately <em>not</em> <code>_quarantine</code> (the only removal path — the user must be
+able to see what landed there), never follows symlinks/junctions (Windows profile
+directories like "Application Data" can loop back on themselves), and never
+raises: a permission-denied or vanished directory yields an empty list rather than
+blanking the whole tree. <code>find_node(nodes, id)</code> depth-first searches the nested
+node list for a placeholder's real parent; <code>needs_loading(node)</code> reports whether a
+node still carries the placeholder rather than real children — both support
+<code>shell.py</code>'s expand handler. <code>rebuild_nodes(root, expanded_ids: set[str]) -&gt;
+list[dict]</code> (U4) is a non-destructive alternative to <code>build_nodes</code>: it rebuilds
+the whole node list the same way, but for every directory id in <code>expanded_ids</code> it
+eagerly loads real children — recursively, via the private <code>_rebuild_children</code>
+helper — instead of leaving the lazy-load placeholder, so refreshing the sidebar
+after a tree-mutating tool call doesn't collapse whatever the user had expanded. A
+directory that no longer exists (renamed/moved away by the very op that triggered
+the refresh) is silently dropped, the same tolerance <code>load_children</code> already has.
+<code>list_drive_roots() -&gt; list[Path]</code> wraps
+<code>os.listdrives()</code> (Python 3.12+, Windows-only) so the picker can reach outside the
+home directory, returning an empty list (never raising) on any other platform,
+Python version, or enumeration error.</p>
+<p><strong><code>host/web/theme.py</code></strong> (T7, extended by T8/V13c, favicon/logo redesign X13) — product-identity helpers,
+<code>nicegui</code>-free like <code>session.py</code>/<code>bridge.py</code>/<code>tree.py</code>. <code>window_title(target: Path
+| None = None) -&gt; str</code> returns <code>"telcontar"</code> with no target, or <code>f"telcontar —
+{target.name}"</code> once one is selected, falling back to the full path string when
+<code>.name</code> is empty (a Windows drive root, e.g. <code>Path("C:\\")</code>, so the title never
+ends in a dangling "— "). T8 adds telcontar's visual identity — a
+Númenórean/human-king (Aragorn's Quenya name) motif, gold and silver on a dark
+base:</p>
+<ul>
+<li><code>PALETTE: dict[str, str]</code> — exactly the 9 keyword names <code>nicegui.app.colors()</code>
+  accepts (<code>primary</code>/<code>secondary</code>/<code>accent</code>/<code>dark</code>/<code>dark_page</code>/<code>positive</code>/
+  <code>negative</code>/<code>info</code>/<code>warning</code>). Gold <code>primary</code> (<code>#C8A951</code>), mithril-silver
+  <code>secondary</code> (<code>#AEB6C4</code>), <code>dark_page</code>/<code>dark</code> as the page background and
+  elevated-surface dark tones. <code>positive</code>/<code>negative</code> stay in their own
+  desaturated green/red hue families, deliberately never re-hued gold/silver —
+  the approval dialog's Approve/Reject buttons are the highest-trust screen in
+  the product and must stay unmistakable.</li>
+<li><code>FAVICON_SVG</code> — an inline SVG string passed straight to <code>ui.run(favicon=...)</code>,
+  which NiceGUI inlines as a data URL — no file, no network request. As of X13,
+  a White Tree of Gondor mark (branching silver <code>#AEB6C4</code> trunk/roots, a small
+  3-star gold <code>#C8A951</code> arc, on the same dark rounded-rect background) —
+  replacing T8's original Elendil's-seven-pointed-star design.</li>
+<li><code>LOGO_SVG</code> (X13) — the same White Tree motif at a larger <code>viewBox</code>, with more
+  branch/root detail and the full 7-star gold arc, and no background <code>&lt;rect&gt;</code>
+  (transparent, since it sits directly on the nav header's own dark surface
+  rather than standing alone like the favicon). Rendered via <code>ui.html(...)</code> in
+  <code>host/web/shell.py</code>'s header, next to the "telcontar" wordmark — legal there
+  only because this is an in-repo constant, never registry/document content;
+  see that module below.</li>
+<li><code>font_face_css(font_dir: Path | None = None) -&gt; str</code> — emits an <code>@font-face</code>
+  rule for the vendored Cinzel woff2 (<code>host/web/assets/fonts/</code>) only if the file
+  actually exists on disk; returns <code>""</code> otherwise, so a missing font is silently
+  a plainer heading, never a 404.</li>
+<li><code>css(font_dir: Path | None = None) -&gt; str</code> — the one small CSS layer: binds the
+  display typeface (Cinzel, falling back to "Trajan Pro" / "Palatino Linotype" /
+  "Book Antiqua" / Georgia / serif — always present regardless of whether the
+  font file exists) directly onto Quasar's own <code>.text-h1</code>...<code>.text-h6</code> heading
+  classes, so every existing heading picks it up with no per-component class
+  sprinkling, plus — as of V13c — a new <code>.tc-display</code> utility class (applied
+  explicitly via <code>.classes(...)</code> at two call sites, the sidebar's brand label
+  and the approval dialog's title) and Quasar's own <code>.q-message-name</code> (chat
+  sender-name) slot, which picks up the face the same no-code-changes way the
+  heading classes do, plus a mandatory contrast fix (<code>.q-btn.bg-primary { color:
+  #0E1116 !important; }</code> — Quasar renders a filled <code>color="primary"</code> button with
+  white label text by default, and white-on-gold is ~2.2:1 contrast, unreadable),
+  plus — as of X13 — a <code>.tc-logo</code> rule (<code>display: inline-flex; align-items:
+  center</code>) that vertically centers <code>LOGO_SVG</code> against the wordmark label beside
+  it in the nav header, plus — as of X2 — a
+  <code>.q-message-text, .q-message-text-content { user-select: text; -webkit-user-select: text; }</code>
+  rule: defense in
+  depth (layer 3, alongside the native-window <code>text_select=True</code> fix in
+  <code>host/web/main.py</code>'s <code>run_web</code> and the <code>_RESIZE_JS</code> drag-cleanup fix in
+  <code>host/web/shell.py</code>, both above) so chat message content stays selectable
+  even if either of those regresses — a rule on the descendant beats an
+  inherited <code>user-select: none</code> with no <code>!important</code> needed, plus — as of X7 —
+  four tree-connector/density rules shared by both tree views in the product:
+  <code>.tc-tree .q-tree__node:after, .tc-tree .q-tree__node-header:before {
+  border-color: rgba(174, 182, 196, 0.35); }</code> mutes Quasar's default mid-grey
+  QTree connector lines (rendered again now that <code>host/web/shell.py</code>'s sidebar
+  tree dropped <code>no-connectors</code>, above) to a muted silver matching
+  <code>PALETTE["secondary"]</code>; <code>.tc-tree .q-tree__node { padding-bottom: 0; }</code> and
+  <code>.tc-tree .q-tree__node-header { min-height: 0; padding: 2px 4px; }</code> tighten
+  that same tree's row density; <code>.tc-tree-guide { width: 16px; flex-shrink: 0;
+  align-self: stretch; border-left: 1px solid rgba(174, 182, 196, 0.35); }</code>
+  and <code>.tc-tree-row { padding: 1px 0; }</code> are the plan-approval dialog's
+  before/after tree's CSS-only guide lines — that tree is hand-rolled indented
+  rows, not a real <code>ui.tree</code>, so it has no built-in QTree connectors to
+  re-enable; see <code>host/web/dialogs.py</code>'s <code>_render_tree_guides</code>, above.</li>
+<li><code>FONT_DIR</code>, <code>FONT_URL_PATH</code> (<code>/tc-fonts</code>) — the static-assets directory and its
+  <code>app.add_static_files</code> mount point, both consumed by <code>run_web()</code>.</li>
+<li><code>CODEMIRROR_THEME: Final = "basicDark"</code> (V13b) — <code>ui.codemirror</code> defaults to a
+  light theme regardless of <code>PALETTE</code>/<code>dark=True</code>; every read-only <code>ui.codemirror</code>
+  in the app (<code>Shell.show_detail</code>'s step-detail body, and <code>host/web/settings.py</code>'s
+  three prompt-inspection panels) now passes this explicitly instead of falling
+  back to the mismatched light default.</li>
+</ul>
+<p><strong><code>host/web/forms.py</code></strong> (U2, extended by U3) — shared NiceGUI form fragments for
+the setup wizard and the settings view; unlike <code>session.py</code>/<code>bridge.py</code>/<code>tree.py</code>/
+<code>theme.py</code> it does import <code>nicegui</code>, since it renders actual UI elements.
+<code>credential_inputs(...) -&gt; CredentialInputs</code> renders the URL / API-key / model
+input triple, with optional per-service hint text above the URL and model fields
+(empty hint text renders as nothing rather than an empty caption), each element
+<code>.mark()</code>ed (<code>input-url</code>/<code>input-key</code>/<code>input-model</code>) for NiceGUI's headless <code>user</code>
+test fixture. As of U3, it also takes a <code>key_placeholder</code> parameter (default
+<code>"Paste your key here"</code>, the wizard's copy) so <code>host/web/settings.py</code> can pass
+<code>"Paste a new key, or leave empty to keep the current one"</code> instead — the
+blank-key-preserves-existing rule spelled out inline in the field itself.
+<code>save_with_plaintext_guard(build_updates, *, plaintext_confirmed,
+button_label, recovery_action="go back") -&gt; tuple[bool, str]</code> calls
+<code>config.settings.save_user_config</code> via <code>run.io_bound</code> (so the file write + OS
+keyring round-trip never blocks the event loop) using a <em>fresh</em> dict from
+<code>build_updates()</code> on every call — never a cached one, since <code>save_user_config</code> pops
+the API key out of its argument dict before raising <code>PlaintextKeyFallbackNeeded</code>,
+so a caller reusing the same dict object across a retry would silently save without
+the key. Returns <code>(success, warning_text)</code> — <code>""</code> on success, or
+<code>host.configflow.plaintext_warning(...)</code>'s text on the fallback path; the caller
+owns re-rendering and tracking <code>plaintext_confirmed</code> for the next call.</p>
+<p><strong><code>host/web/wizard.py</code></strong> (U2) — the setup wizard itself: <code>build_setup_wizard(*,
+on_finish)</code>, a 1:1 port of <code>host/app.py</code>'s <code>SetupScreen</code> — same 5 steps (welcome,
+service choice, API details, document profile, done), same validation
+order/strings (via <code>host/configflow.py</code>), same plaintext-keyring
+warn-then-confirm flow (via <code>forms.save_with_plaintext_guard</code>). State is a
+page-closure <code>_WizardState</code> dataclass, never <code>app.storage</code> or a URL param — the
+API key must never touch either. A <code>@ui.refreshable</code> <code>steps()</code> function keyed on
+<code>state.step</code> renders only the active step and rebuilds on transition — real
+per-step routing, NiceGUI's natural equivalent of the TUI's
+mount-all-five-and-toggle-<code>.display</code> approach (<code>_show_step</code> in <code>host/app.py</code>).
+Deliberately lives outside <code>host/web/main.py</code> — <code>main.py</code>'s <code>@ui.page</code> decorators
+stay thin shells; the view-building logic lives in per-screen modules like this
+one. <code>host/web/main.py</code> mounts it at <code>@ui.page("/setup")</code>, calling
+<code>build_setup_wizard(on_finish=lambda: ui.navigate.to("/"))</code>, through
+<code>app_shell(nav=False)</code> (X11: the wizard has nowhere valid to navigate yet, so the
+persistent nav header is hidden here — see <code>host/web/shell.py</code> above).</p>
+<p><strong><code>host/web/settings.py</code></strong> (U3) — the settings view, a NiceGUI port of
+<code>host/app.py</code>'s <code>ConfigScreen</code>: <code>build_settings_view(*, on_done)</code> fetches
+<code>configflow.profile_options()</code> and <code>config.settings.read_user_config()</code> via
+<code>run.io_bound</code> (off the event loop, same S5 discipline as the wizard), then
+renders URL / API-key / model (<code>forms.credential_inputs</code>, with the
+key-preserves-existing placeholder above) plus document-profile and
+approval-mode <code>ui.select</code>s (<code>.mark("select-profile")</code>/<code>.mark("select-approval")</code>)
+through a single <code>@ui.refreshable</code> form — one page, Save/Cancel, unlike the
+wizard's multi-step routing, since there's no first-run narrative to walk
+through. <code>_save()</code> validates via <code>configflow.validate_credentials(...,
+key_required=False)</code>, builds the update dict via
+<code>configflow.build_settings_updates(url, key, model, profile, approval_mode)</code> —
+which omits <code>llm_api_key</code> entirely when <code>key</code> is blank, the same
+blank-key-preserves-existing rule as <code>host/app.py</code>'s <code>ConfigScreen</code> — and saves
+through the shared <code>forms.save_with_plaintext_guard(..., button_label="Save",
+recovery_action="cancel")</code>. <code>host/web/main.py</code> mounts it at <code>@ui.page("/settings")</code>,
+calling <code>build_settings_view(on_done=lambda: ui.navigate.back())</code> inside
+<code>app_shell(active="settings")</code>; both the sidebar's Settings button and (X11) the
+nav header's Settings tab (<code>host/web/shell.py</code>) route here from any screen.</p>
+<p>As of V11, <code>build_settings_view</code> also awaits <code>_build_prompt_inspection()</code> after
+rendering the form — a collapsed "What telcontar tells the model" <code>ui.expansion</code>
+(<code>.mark("expansion-prompts")</code>) deliberately built OUTSIDE the <code>@ui.refreshable
+form()</code> region, since a <code>refresh()</code> triggered by save-validation must never
+recompose it. <code>_load_prompt_inspection_data()</code> (dispatched via <code>run.io_bound</code>,
+bundling the TOML profile load and <code>NAMING.md</code> read into one blocking round trip)
+builds a plain <code>config.settings.Settings()</code> — not <code>config.settings.load()</code>, which
+raises without credentials — so the panel renders even before the setup wizard
+has run, and calls <code>host.agent.composed_system_prompts(settings)</code> for the three
+read-only ORGANIZE/QUERY/ANALYZE prompts and <code>host.agent._resolved_profile_name(settings)</code>
+for the profile-load status shown above them (a load failure is surfaced
+explicitly — <code>_try_load_profile</code> swallows the same failure and silently falls
+back to a generic "default" profile name for the prompts themselves, which a
+transparency view must not hide). Each prompt renders via disabled
+<code>ui.codemirror(..., theme=theme.CODEMIRROR_THEME)</code> — the explicit <code>theme=</code> a V13b
+addition, since <code>ui.codemirror</code> otherwise defaults to a light theme regardless of
+the app's own dark palette — never <code>ui.markdown</code>/<code>ui.html</code>, matching <code>Shell.show_detail</code>'s
+precedent (T6): a composed prompt can embed profile free-text and <code>NAMING.md</code>
+content that must never be interpreted as markup. Editing is deliberately out of
+scope — an editable prompt sits next to M10's injection-resistance guardrails and
+needs its own security pass first — and the panel explicitly notes the two things
+it can't show: the corpus digest and the user's pre-analysis steering
+instructions, both composed at run time from a live target/registry this
+target-free view never has.</p>
+<p><strong><code>host/web/query_view.py</code></strong> (U7, extended by V13a) — the query page's UI, <code>nicegui</code>-importing (like
+<code>dialogs.py</code>/<code>steplog.py</code>/<code>shell.py</code>). <code>build_query_view(shell, session)</code> renders a
+conversation column (<code>ui.chat_message</code>, reusing the same idiom <code>run_page</code> already
+uses for organize turns, including <code>run_page</code>'s V13a bubble alignment/colour fix
+— duplicated here rather than shared, per this pair's existing precedent) plus a question input/Ask button
+(<code>.mark("query-input")</code>/<code>.mark("btn-query-ask")</code>) that echoes the question as a
+<code>user</code>-speaker turn (<code>session.add_turn</code>) and pushes it onto <code>session.messages</code> —
+and, below a separator, a step-log strip
+(<code>host.web.steplog.sync_steps</code>/<code>StepLogState</code>, the same T5/T6 idiom <code>run_page</code>
+established) instead of the TUI <code>QueryScreen</code>'s side-by-side dual-<code>RichLog</code> split.
+Phase 20 is parity with a cleaner surface, not a redesign, and the log strip
+already <em>is</em> the web UI's "tool timeline". No approval/cost/ask dialog wiring at
+all — query mode is read-only by construction (<code>QUERY_ALLOWED_TOOLS</code>), so there is
+nothing to gate. A <code>ui.timer</code> (same <code>web_session.REFRESH_INTERVAL</code> cadence as
+<code>run_page</code>) drives <code>_refresh()</code>, which renders new transcript turns, syncs the
+step log, and updates the status/token line.</p>
+<p><strong><code>host/web/corpus.py</code></strong> (V5) — registry load logic, <code>nicegui</code>-free, mirroring
+<code>host/web/journal.py</code>'s contract exactly: this module owns the
+filesystem-adjacent logic, <code>host/web/corpus_view.py</code> owns the rendering.
+<code>list_documents(target: Path) -&gt; list[dict]</code> loads the registry via
+<code>server.registry.load(host.paths.resolve_registry_path(target))</code> and returns
+<code>[rec.to_dict() for rec in registry.records()]</code>, or <code>[]</code> on any error (missing
+file, corrupt JSON) — never raises, the same defensive contract as
+<code>journal.load_entries</code>, so a missing/corrupt <code>registry.json</code> never blanks the
+whole page, just shows the empty state. <code>get_document(target: Path, checksum:
+str) -&gt; dict | None</code> returns one record by checksum, or <code>None</code> if
+missing/unreadable. <code>server.registry</code> is called directly, never through MCP —
+there is no agent-reachable reason for a read-only <em>browse</em> to exist — and its
+import is late (inside the functions), matching <code>journal.py</code>'s discipline of
+not dragging in its dependency chain at module import time.
+<code>registry_mtime(target: Path) -&gt; tuple[float, int] | None</code> (X10) returns
+<code>(mtime, size)</code> of <code>target</code>'s <code>registry.json</code> via a plain <code>.stat()</code> call — <code>None</code>
+on any <code>OSError</code> (missing/unreadable), the same defensive contract as
+<code>list_documents</code>/<code>get_document</code>. A cheap pre-check for <code>corpus_view.py</code>'s poll:
+comparing this tuple against the last-seen one lets a tick skip re-parsing and
+re-flattening the whole registry when nothing has actually changed, rather
+than paying that cost every <code>CORPUS_POLL_INTERVAL</code>.
+<code>find_by_path(target: Path, path: Path) -&gt; dict | None</code> (X9) matches a record by
+its recorded path — exact <code>os.path.normcase(os.path.normpath(...))</code> comparison
+against each record's <code>path</code>, the same idiom <code>server/registry.py</code>'s
+<code>_same_path</code> uses — no basename fallback, deliberately, since a fallback could
+surface the wrong document's summary. Built on <code>list_documents</code>, so it inherits
+its never-raises contract; used by <code>host/web/main.py</code>'s doc-preview pane below.</p>
+<p><strong><code>host/web/corpus_view.py</code></strong> (V5, row-click selection X12, live polling X10) —
+the corpus-browser page's UI, <code>nicegui</code>-importing.
+<code>_CorpusViewState</code> now holds all of the view's reloadable state, not just the
+selection: <code>selected_checksum</code>/<code>current_filter</code> (X10) let a reload restore what
+the user was looking at instead of resetting it; <code>records</code>/<code>records_by_checksum</code>/
+<code>all_rows</code> (X10) are the reloadable data itself, lifted out of local variables so
+<code>_reload</code> can replace them in place; <code>reloading</code>/<code>last_mtime</code> (X10) back the same
+re-entrancy-guard and skip-unchanged disciplines <code>Shell.reload_tree</code>
+(<code>host/web/shell.py</code>, above) already established for the sidebar tree poll.
+<code>build_corpus_view(session) -&gt; None</code> loads records via <code>await
+run.io_bound(corpus.list_documents, session.target) or []</code> — the <code>or []</code> (X10)
+guards against <code>run.io_bound</code>'s own documented contract of returning <code>None</code>
+(not the callback's result) on cancellation/app-shutdown, the same pattern
+already used elsewhere in <code>host/web/main.py</code> (<code>directory_overview</code>);
+<code>corpus.list_documents</code> itself already never raises and never returns anything
+but a list. As of X10, the page no longer early-returns when the registry has
+no records at all: the search input, table, and detail pane are all built
+unconditionally, and only an empty-state label's (<code>.mark("corpus-empty")</code>)
+<code>.visible</code> toggles on whether <code>records</code> is empty — so a page opened moments into
+a fresh Organize run, before any document has been recorded yet, still has a
+live table that fills itself in once the poll below picks up the first batch,
+instead of being stuck on the empty state until a manual reload. A new refresh
+icon button (<code>.mark("btn-corpus-refresh")</code>, tooltip "Refresh corpus") sits
+beside the "Corpus browser" heading, and a <code>ui.timer(
+web_session.CORPUS_POLL_INTERVAL, _reload)</code> (X10, <code>host/web/session.py</code>'s
+<code>CORPUS_POLL_INTERVAL = 5.0</code>s test-seam constant, above) polls automatically —
+both call the same <code>_reload()</code>, below. Otherwise: a search <code>ui.input</code>
+(<code>.mark("corpus-search")</code>), wired via <code>on_value_change</code>, filters rows Python-side
+against each record's full, untruncated title/type/summary text — not the
+truncated preview the table shows — beside a <code>ui.table</code> (<code>.mark("corpus-table")</code>,
+<code>row_key="checksum"</code>, <code>pagination=10</code>, <code>.classes("cursor-pointer")</code> as of X12)
+with title/type/date/status/summary/entities columns, all <code>sortable: True</code> for
+native client-side Quasar sorting (no Python sort logic needed). Row values are
+pre-flattened to plain strings by <code>_to_row</code>: <code>ui.table</code> crashes the browser on
+list-valued cells, so <code>_entities_preview</code> turns the registry's <code>entities</code> list
+into a short joined-names string (up to 3 names, <code>"+N"</code> for the rest) for the
+table row, while the full list stays in the record dict for the detail pane.
+The table carries no <code>selection=</code> prop and no checkbox column at
+all — clicking anywhere on a row (<code>table.on("rowClick", _on_row_click)</code>) opens
+its detail pane instead. <code>_on_row_click(e: GenericEventArguments)</code> defensively
+unpacks Quasar's <code>[evt, row, index]</code> <code>rowClick</code> payload — bails out unless
+<code>e.args</code> is a list of at least 2 items and <code>e.args[1]</code> is a dict with a truthy
+<code>"checksum"</code> — rather than NiceGUI's typed <code>TableSelectionEventArguments</code> (the
+prior V5 design, which needed <code>selection="single"</code> and its own checkbox
+column); it sets <code>state.selected_checksum</code> and calls <code>_show_detail(checksum)</code>.</p>
+<p><code>_show_detail(checksum)</code> looks the record up in <code>state.records_by_checksum</code> —
+the live, reload-replaceable dict, not a closed-over snapshot. As of X10, a
+checksum no longer found there (the document was quarantined/archived since
+the last reload) clears <code>state.selected_checksum</code> and collapses the pane back
+to its placeholder rather than continuing to show stale content, instead of
+just returning as before. On a found record it reveals the detail pane
+(<code>.mark("corpus-detail")</code>) beside the table: title, a type/date/status meta
+line, a new <strong>Location</strong> line (X10, <code>.mark("corpus-detail-location")</code>)
+showing the record's <code>path</code> relativized to <code>session.target</code>
+(<code>Path(path_str).relative_to(session.target)</code>, falling back to the raw path
+on <code>ValueError</code>/<code>OSError</code> — a cross-drive or otherwise non-relative path),
+full summary, full provenance, and every entity as its own <code>ui.label</code> line
+(<code>f"{name} — {role} ({kind})"</code>, defensively <code>.get()</code>-read since older records
+may carry incomplete entity dicts). Merges the former V4 (document preview)
+concept into this one screen — previously only reachable by asking the agent.</p>
+<p><code>_apply_filter(value)</code> (X10: now reads/writes <code>state.current_filter</code> and reads
+<code>state.all_rows</code>/<code>state.records</code> instead of closed-over locals) also gained a
+skip-if-unchanged guard — <code>table.rows</code> is only reassigned when the computed row
+list actually differs from what's already there, the same "a <code>ui.table</code> prop
+replacement re-renders and can reset pagination/sort" discipline
+<code>Shell.reload_tree</code> uses for the sidebar tree's <code>nodes</code> prop.</p>
+<p><strong><code>_reload()</code></strong> (X10, <code>async</code>, wired to both the manual refresh button and the
+<code>ui.timer</code> poll above) mirrors <code>Shell.reload_tree</code>'s two disciplines: a
+<code>state.reloading</code> re-entrancy guard (so an overlapping manual click and poll
+tick can't race), and a cheap <code>corpus.registry_mtime(session.target)</code> pre-check
+— when it comes back non-<code>None</code> and unchanged from <code>state.last_mtime</code>, the
+reload returns immediately without touching <code>corpus.list_documents</code> at all. On
+an actual change, it re-fetches via <code>run.io_bound(corpus.list_documents,
+session.target)</code> (returning early, without updating <code>state</code>, if that call
+itself comes back <code>None</code> — the same <code>run.io_bound</code> cancellation contract
+<code>build_corpus_view</code>'s initial fetch guards with <code>or []</code>), rebuilds
+<code>records</code>/<code>records_by_checksum</code>/<code>all_rows</code>, toggles <code>empty_label.visible</code>,
+re-applies the live search filter (<code>_apply_filter(state.current_filter)</code>) so
+the table reflects both the new data and whatever the user was already
+filtering by, and — if a document is currently selected — calls
+<code>_show_detail(state.selected_checksum)</code> again so the detail pane's
+Location/other fields pick up any rename/move the reload just surfaced (or
+collapses to the placeholder via the missing-checksum path above, if that
+document was quarantined/archived in the meantime).</p>
+<p>Every registry value rendered here is LLM-derived output
+from attacker-controllable documents: <code>ui.label</code>/<code>ui.table</code> row values only,
+never <code>ui.markdown</code>/<code>ui.html</code>/<code>ui.code</code>, which would interpret it as markup
+instead of displaying it as text — the same rule V13b's step-detail view and
+V11's prompt inspection already follow for untrusted content; see
+<code>docs/developer/security-model.md</code>.</p>
+<p><strong><code>host/web/docpane.py</code></strong> (X9, new file) — the run screen's document-preview
+pane, mirroring <code>corpus_view.py</code>'s detail pane field-for-field but
+deliberately duplicated rather than refactored to share code with it this
+sprint. <code>DocPane</code> (dataclass) holds the widget handles: <code>placeholder</code>,
+<code>content</code>, <code>title</code>, <code>meta</code>, <code>summary</code>, <code>provenance</code>, <code>entities</code>.
+<code>build_doc_pane(*, marker_prefix: str = "doc") -&gt; DocPane</code> builds them, marked
+<code>{prefix}-detail-placeholder</code>/<code>-content</code>/<code>-title</code>/<code>-meta</code>/<code>-summary</code>/
+<code>-provenance</code>/<code>-entities</code> — the parameterized prefix (default <code>"doc"</code>) keeps
+this non-breaking should a later sprint share it with <code>corpus_view.py</code>'s
+<code>corpus-detail-*</code> markers instead. <code>DocPane.show(record: dict)</code> populates
+title/meta (<code>type · date · status</code>)/summary/provenance/entities from a
+registry record dict and reveals <code>content</code>, hiding <code>placeholder</code>.
+<code>DocPane.show_unanalyzed(path: Path, meta_line: str)</code> is for a file with no
+registry record yet — the filename as title, <code>meta_line</code> as meta, "Not
+analyzed yet." as summary, no provenance/entities section, since there's
+nothing to show and no extraction happens on this path. <code>DocPane.clear()</code>
+hides <code>content</code> and restores <code>placeholder</code>. Same untrusted-content rule as
+<code>corpus_view.py</code> above: every registry value renders via <code>ui.label</code> only,
+never <code>ui.markdown</code>/<code>ui.html</code>/<code>ui.code</code>. Consumed by <code>host/web/main.py</code>'s
+<code>run_page</code>, below.</p>
+<p><strong><code>host/web/main.py</code></strong> (extended by T5/T6/T7/T8, U1/U2/U3/U4/U6/U7, V1/V5/V12/V13a) — now shares nicegui-importing duties
+with <code>host/web/shell.py</code> (T2). Pages are registered at import time (<code>@ui.page("/")</code>,
+<code>@ui.page("/run/{run_id}")</code>, <code>@ui.page("/query/{run_id}")</code> (U7), <code>@ui.page("/corpus/{run_id}")</code>
+(V5)) but nothing binds a port until <code>run_web(target: Path |
+None = None, *, native: bool = True)</code> (V1 added <code>native</code>) is called, so importing the module is side-effect-free. Each
+connected browser tab or native-window client polls <code>RunSession</code>/<code>TranscriptItem</code>/<code>StepRecord</code> state with
+its own <code>ui.timer</code>, rather than the bridge touching NiceGUI elements directly —
+this is what lets a page reload re-attach to an in-flight approval/cost/ask dialog
+(via <code>session.pending</code>) instead of orphaning it. The browser tab/native window title (T7) comes from
+<code>host.web.theme.window_title</code>: <code>run_web</code>'s <code>ui.run(...)</code> call passes it (with no
+target) as the global default title, and <code>run_page</code> calls
+<code>ui.page_title(theme.window_title(session.target))</code> from inside the page body —
+not via <code>@ui.page(title=...)</code>, which is bound at decoration/import time and can't
+see the per-request session's target — so the run's target directory lands in the
+title of the very first HTML response. <code>index_page</code> (the picker route) never calls
+<code>ui.page_title()</code>, since no directory is "selected" until a run exists.</p>
+<p>Both page bodies now open with <code>with app_shell(...) as shell:</code> (T2), mounting the
+persistent sidebar before any page-specific content. As of X11, every route also
+passes its own <code>active=</code> tab name to <code>app_shell</code> (<code>/run/{run_id}</code>/<code>/corpus/{run_id}</code>
+additionally pass <code>session=session</code>) so the nav header (<code>host/web/shell.py</code>, above)
+highlights the current route and can navigate back to the run in progress; <code>/setup</code>
+alone passes <code>nav=False</code>, since the first-run wizard has nowhere valid to navigate
+to yet. The landing page (<code>/</code>, S5)
+checks <code>config.settings.is_configured()</code> first: if unconfigured, it navigates to
+<code>/setup</code> (<code>host/web/wizard.py</code>'s <code>build_setup_wizard</code>, U2) instead of any picker,
+rather than the pre-U2 plain message pointing the user at the Textual TUI.
+<code>/settings</code> (<code>host/web/settings.py</code>'s <code>build_settings_view</code>, U3) is registered
+the same thin-shell way, reachable from the sidebar on every route. As of U7,
+<code>/query/{run_id}</code> is registered the same thin-shell way too: it looks up the
+query-mode <code>RunSession</code>, calls <code>QueryBridge(session).start()</code> on first mount if
+not already started (TUI parity: <code>QueryScreen.on_mount</code> auto-starts its worker
+too, no explicit "start" button), and delegates rendering to
+<code>host.web.query_view.build_query_view</code>. As of V5, <code>/corpus/{run_id}</code> is
+registered the same thin-shell way too: it looks up the <code>RunSession</code> (same
+not-found handling as the other two run-scoped routes) and delegates to
+<code>host.web.corpus_view.build_corpus_view(session)</code> — no bridge, no MCP session,
+no agent turn, since it reads the registry directly (<code>host/web/corpus.py</code>)
+rather than through the model. It reuses the <em>same</em> session/run_id the
+organize run already created rather than minting a new one, since the corpus
+page only ever reads <code>session.target</code>. Once configured, folder selection is the
+sidebar tree, which now doubles as the directory picker (T3, superseding the
+browse-view half of Phase 20's U1): clicking a node sets <code>shell.selected</code>
+(which may now be a file, since the tree shows files too), and a "Use selected
+directory" button starts the run only if <code>shell.selected.is_dir()</code>. As of U1, a
+second "Query" button sits next to it: it applies the same <code>is_dir()</code> check,
+then resolves the selection to the nearest <code>.organizer</code> ancestor via
+<code>host.paths.find_organizer_root</code> (TUI parity with <code>StartupScreen._query</code> — a
+picked folder may be a subfolder of what was actually organized, so the query
+session is rooted at the found ancestor, not the raw selection) and creates a
+query-mode session there; if no ancestor has a <code>.organizer</code>, it reports "No
+analyzed corpus found ... Run Organize first." instead of starting one. Both
+buttons now show a real message in a shared error label
+(<code>.mark("startup-error")</code>) instead of silently no-op'ing when nothing valid is
+selected. As of X1, <code>run_page</code> calls <code>shell.tree.select(str(session.target))</code>
+right after <code>app_shell</code> mounts, highlighting the run's root in the sidebar
+tree from first load — the periodic tree poll only ever replaces the <code>nodes</code>
+prop, never <code>selected</code>, so the highlight survives every poll tick — and
+renders a plain <code>ui.label(str(session.target)).mark("run-target-path")</code>
+(with a tooltip for a long path) above the starter/main columns, so the
+target directory stays visible in the main content area for the whole run,
+not just on the pre-start starter pane. The organizer view (<code>/run/{run_id}</code>) now opens on a
+<strong>starter pane</strong> shown before the run begins: a directory overview (reusing
+<code>host.paths.directory_overview</code>, also offloaded via <code>run.io_bound</code>) plus an
+optional free-text steering-instructions input (mirrors the Textual TUI's
+pre-analysis steering box) and a "Start organizing" button. Only clicking that
+button constructs the <code>AgentBridge</code> and calls <code>start(instructions=...)</code> — S4's
+version started the run immediately on directory selection. Once started
+(<code>session.started</code>), the starter pane hides and the main view (status/progress
+bar/chat input/approval-cost-ask dialogs, now via <code>host/web/dialogs.py</code>,
+U4/V12) takes
+over. As of V14, the progress bar is a <code>ui.row()</code> (<code>.mark("progress-row")</code>)
+pairing the <code>ui.linear_progress</code> with a sibling <code>ui.label()</code>
+(<code>.mark("progress-percent")</code>) showing a rounded integer percent instead of
+NiceGUI's raw 0–1 float — the row's own <code>.visible</code> is what's toggled on
+<code>session.progress["total"]</code>, kept generic so a later current-document label
+(V8b) can join as a third sibling. As of V8b, that third sibling exists:
+<code>ui.label().mark("progress-current")</code> shows the in-flight document name(s)
+from the O5/V8a <code>session.progress["current"]</code> list — the first filename plus
+a <code>" +N"</code> suffix when more than one file is in flight, or <code>""</code> when the list
+is empty (between batches, or on the pre-pass snapshot event, which omits
+the key entirely). As of U7, the main view also shows a "Query this corpus" button, hidden
+until <code>session.done</code> — mirroring the TUI's <code>OrganizerScreen</code>'s <code>g</code> keybinding,
+gated the same way — that, as of X11, first reuses an existing query session
+for the target via <code>web_session.find_by_target(session.target, mode="query")</code>
+and only falls back to <code>web_session.create(...)</code> if none exists yet, before
+navigating to
+<code>/query/{run_id}</code>. As of V5, a "Browse corpus" button
+(<code>.mark("btn-browse-corpus")</code>) sits beside it, gated the same <code>session.done</code>
+way — set both at build time and again on every <code>_refresh()</code> tick, the same
+two-places-set pattern the query button already needed — navigating to
+<code>/corpus/{session.run_id}</code>: the same session, not a new one. As of X9, the
+main view's conversation area sits in a <code>ui.row()</code> at 2/3 width beside a new
+1/3-width document-preview pane (<code>.mark("doc-preview")</code>, built via
+<code>host/web/docpane.py</code>'s <code>build_doc_pane()</code>, above) — polling <code>shell.selected</code>
+(the same attribute the sidebar tree click handler, X11, already populates)
+rather than being wired through the tree directly: <code>_refresh()</code> reacts only
+when the selection actually changes since the last tick, offloading the
+stat/registry lookup (<code>_load_preview</code>, new module-level helper) via
+<code>run.io_bound</code> and showing either the matching registry record
+(<code>host/web/corpus.py</code>'s <code>find_by_path</code>), a "not analyzed yet" placeholder
+with filesystem metadata, or clearing the pane, depending on what's found.
+As of T5/T6, that main view splits telcontar's own tool activity out of one
+interleaved stream: a
+<code>conversation_column</code> (turns only, <code>ui.chat_message</code>, rendering <code>session.transcript</code>)
+sits above a separator and a scrolling
+<code>log_column</code> (~25vh) rendering
+<code>session.steps</code> as one compact line each — a status glyph (▶ running / · ok /
+✗ error) plus the step's summary — with a small "code" icon button per row that
+calls <code>shell.show_detail(step.summary, step.detail)</code> to open the full payload in
+the step-detail section (T6, stacked in the left sidebar below the tree as of
+V13b — no longer a right-side drawer). V16 added a third history,
+<code>session.activity_log</code>, originally rendered (<code>.mark("activity-column")</code>) into
+its own <code>activity_column</code> between the two, replacing the old single-line
+<code>activity_label</code>. As of X3, that separate column is gone: <code>session.thread()</code>
+(<code>session.py</code>, above) merges <code>transcript</code> and <code>activity_log</code> chronologically,
+and <code>run_page</code> renders each item — via <code>_render_turn</code>/<code>_render_activity</code> — into
+<code>conversation_column</code> itself, so a phase-change note (still <code>.mark(
+"activity-entry")</code>, now a small centered caption rather than its own row)
+appears inline right after whichever turn it chronologically followed, instead
+of in a visually separate column; <code>_RenderState</code>'s former
+<code>turn_seq</code>/<code>activity_seq</code> pair collapsed into one <code>thread_seq</code> walking
+<code>session.thread()</code> once per tick. <code>session.activity</code> (the scalar) and the
+underlying <code>transcript</code>/<code>activity_log</code> lists are unchanged by this — only the
+rendering merged. <code>log_column</code>'s own step rendering is untouched: tool-call
+activity still never renders as a chat bubble or inline caption.
+As of V13a, each rendered bubble also carries
+<code>.classes("w-full")</code>: NiceGUI's <code>.nicegui-column</code> CSS (<code>align-items: flex-start</code>)
+otherwise shrink-wraps every <code>ui.chat_message</code> to its content width regardless of
+<code>sent=</code>, hiding the left/right alignment <code>sent=</code> was already choosing correctly —
+plus explicit <code>bg-color</code>/<code>text-color</code> Quasar props resolved against
+<code>theme.PALETTE</code> (<code>secondary</code>/<code>dark</code> for the user, <code>primary</code>/<code>dark</code> for
+telcontar), fixing low-contrast white-on-gold bubble text. As of U4 this rendering is
+<code>host/web/steplog.py</code>'s <code>sync_steps</code>/<code>StepLogState</code> (above), not inline: <code>run_page</code>
+owns one <code>steplog.StepLogState()</code> and calls <code>steplog.sync_steps(log_column, shell,
+step_log_state, session.steps)</code> once per tick, which caps the DOM at
+<code>_MAX_LOG_ROWS = 500</code> (oldest row deleted first) and lets an already-rendered
+"running" step's line update in place once it closes — unlike <code>TranscriptItem</code>s,
+<code>StepRecord</code>s mutate after creation.
+<code>run_page</code>'s <code>with app_shell(...) as shell:</code> captures the <code>Shell</code> handle so
+<code>steplog.render_step_row</code> can reach <code>shell.show_detail()</code>.</p>
+<p><strong>Sidebar tree refresh (U4, extended by V7):</strong> <code>_refresh()</code> is now <code>async</code>. On each tick, if
+<code>session.fs_revision</code> has changed since the render cursor last saw it, <code>run_page</code>
+now (V7) just awaits <code>shell.reload_tree()</code> — the expansion-preserving
+rebuild-from-disk logic that used to live inline here (<code>host/web/shell.py</code>, above)
+moved onto <code>Shell</code> itself, since it's now also reachable from a manual refresh
+button and <code>app_shell</code>'s own periodic poll timer, neither of which has this
+render loop's <code>fs_revision</code>/<code>RenderState</code> bookkeeping to key off. This
+<code>fs_revision</code>-gated path only fires when a tree-mutating tool actually closed
+since the last tick (see <code>bridge.py</code>'s
+<code>_TREE_MUTATING_TOOLS</code> above), never on every 0.5s poll of this timer specifically
+— but as of V7 the tree also refreshes on its own independent
+<code>TREE_POLL_INTERVAL</code> timer and via the manual button, regardless of whether a
+run is active at all, with <code>reload_tree()</code>'s own skip-if-unchanged check
+preventing any of these from colliding or resetting scroll/selection needlessly.
+It never collapses whatever the user had expanded — closing the gap where the sidebar tree
+(Phase 19 T3) never updated as the agent moved/renamed/quarantined files.</p>
+<p><code>run_web(target: Path | None = None, *, native: bool = True)</code> (V1 added the
+keyword-only <code>native</code> parameter) still binds an ephemeral local port and calls
+<code>ui.run(host="127.0.0.1", ..., show=False if effective_native else True,
+reload=False, title=..., dark=True, favicon=..., native=effective_native,
+window_size=(1280, 860) if effective_native else None)</code> — never <code>0.0.0.0</code>, to
+avoid exposing the approval gate on the LAN. <code>native</code> (default <code>True</code> — "one
+command, one window") requests a native <code>pywebview</code> window instead of the
+system browser; <code>host/main.py</code>'s <code>--browser</code> flag is the escape hatch that
+passes <code>False</code>. Rather than trust the argument blindly, <code>run_web</code> re-checks
+actual availability itself: <code>effective_native = native and sys.platform ==
+"win32" and importlib.util.find_spec("webview") is not None</code> — <code>pywebview</code> is a
+Windows-only dependency (gated <code>; sys_platform == 'win32'</code> in
+<code>pyproject.toml</code>) and may still be missing even on Windows. If native was
+requested but isn't usable, <code>run_web</code> prints a warning to stderr and falls back
+to the browser instead of hard-exiting — NiceGUI's own native-mode path calls
+<code>sys.exit(1)</code> on a missing <code>webview</code>, unacceptable now that this is the default
+entry point (U10). <code>favicon=</code> is <code>str(_ICON_PATH)</code> (the vendored
+<code>host/web/assets/telcontar.ico</code>) when <code>effective_native</code> and that file exists,
+else <code>theme.FAVICON_SVG</code> unchanged — NiceGUI's <code>favicon=</code> kwarg is dual-purpose:
+in native mode, a local file path is also applied as the native window/taskbar
+icon (there is no separate "icon" kwarg), while the browser-mode favicon is
+untouched. <code>reload=False</code> is load-bearing, not a style choice: with <code>reload=True</code>,
+uvicorn forces a <code>SelectorEventLoop</code> on Windows, where
+<code>asyncio.create_subprocess_exec</code> (used to launch the MCP server subprocess) raises
+<code>NotImplementedError</code>. <code>dark=True</code> is load-bearing too (T8): Quasar only honours
+the <code>dark</code>/<code>dark_page</code> <code>PALETTE</code> tokens in dark mode. Before <code>ui.run()</code>, <code>run_web</code>
+applies telcontar's visual identity globally and exactly once — <code>app.colors(
+**theme.PALETTE)</code> (never a per-page <code>ui.colors()</code>, which would silently override
+this and fragment the identity across routes), <code>app.add_static_files(
+theme.FONT_URL_PATH, theme.FONT_DIR)</code> to serve the vendored Cinzel woff2 when the
+fonts directory exists, and <code>ui.add_css(theme.css(), shared=True)</code>. As of U7,
+<code>run_web</code>'s <code>@app.on_shutdown</code> hook also cancels every session's driving task
+(<code>session.task.cancel()</code>), alongside its existing pending-future rejection — an
+organize or query session's MCP server subprocess previously had no lifecycle at
+all past shutdown; a full lifecycle/reaper (nothing ever calls
+<code>web_session.close()</code> today) is still future work, this is minimal hardening
+only. In native mode, <code>run_web</code> points the window at the running server via
+<code>app.native.window_args.update(_native_window_args(url))</code> — as of X2, no
+longer a direct dict-key assignment. <code>_native_window_args(url: str) -&gt; dict</code>
+is a pure helper (<code>{"url": url, "text_select": True}</code>) split out so its
+content stays unit-testable on Linux CI, where native mode never actually
+activates. <code>text_select=True</code> is the <strong>primary fix</strong> for a "chat text not
+selectable/copyable" bug report: pywebview's own default is
+<code>text_select=False</code> for the whole native window, independent of any in-page
+CSS — the <code>_RESIZE_JS</code> drag bug (above) was the originally-suspected cause
+but turned out to be secondary. No automated coverage exercises the real
+native window end to end (CI has no <code>webview</code>, and the headless test harness
+never executes JavaScript); manual verification in a real native window is a
+known, documented gap. The browser tab/native window
+title (T7) comes from <code>host.web.theme.window_title</code>: <code>ui.run(...)</code>'s <code>title=</code>
+supplies the global default (no target yet), and <code>run_page</code> separately calls
+<code>ui.page_title(theme.window_title(session.target))</code> from inside the page body —
+<code>@ui.page(title=...)</code> is bound at decoration/import time and can't see the
+per-request session's target, so the call is made live instead, landing the
+target's name in the very first HTML response. <code>index_page</code> (the picker) never
+calls <code>ui.page_title()</code>, since no directory is "selected" until a run exists.</p>
+<p><strong>Reload-safe design:</strong> a page reload creates a new NiceGUI client, but <code>RunSession</code>
+(looked up by run_id from the URL) persists independently of any one client, and a
+pending approval/cost/ask request is an <code>asyncio.Future</code> parked on the session rather
+than an awaited NiceGUI dialog — so a reload re-attaches to an in-flight approval
+instead of orphaning it. This was validated in a pre-implementation spike (see
+ROADMAP.md's "Break 1" note ahead of Phase 18), which found that a bare reload does
+<strong>not</strong> kill the background run — it silently orphans it, and any UI element the
+run's task then tries to touch afterward targets a dead client, which can
+permanently deadlock an approval gate with no visible symptom. As of U4 — and,
+for <code>ask_user</code>'s dialog, V12 — the approval/cost/ask dialogs themselves
+(<code>host/web/dialogs.py</code>) close the same failure class's other door: they're
+<code>.props("persistent")</code> (no backdrop-click or Esc
+dismissal) and resolve through <code>session.resolve_pending(result,
+request_id=pending.request_id)</code>, so a dismissed-without-resolving dialog can no
+longer deadlock a run, and a stale dialog from another tab or a pre-reload client
+can't resolve a pending request it was never actually shown.</p>
+<p><strong>Journal toolbar affordance (U6):</strong> <code>run_page</code> renders a "Journal (N)" button
+(<code>.mark("btn-open-journal")</code>) above <code>starter_column</code>, so it's usable before a
+run even starts — TUI parity with the <code>j</code> keybinding, which works from the
+moment <code>OrganizerScreen</code> mounts. Clicking it opens <code>host.web.dialogs.build_journal_dialog(session)</code>.
+Its label's count is read via <code>host.web.journal.load_entries</code> — synchronously,
+not via <code>run.io_bound</code> (see <code>host/web/dialogs.py</code> above) — both on initial
+render and again inside <code>_refresh()</code>'s <code>fs_revision</code>-changed branch, alongside
+the existing sidebar-tree rebuild, so the count refreshes whenever the target
+directory's contents change (including from an undo, which also bumps
+<code>fs_revision</code>).</p>
+<p><strong>Query button (U7, session reuse X11):</strong> the run page's main view also renders a
+"Query this corpus" button (<code>.mark("btn-query-corpus")</code>), hidden until
+<code>session.done</code> — mirroring the TUI's <code>OrganizerScreen</code>'s <code>g</code> keybinding, which is
+gated the same way. As of X11, clicking it first calls
+<code>web_session.find_by_target(session.target, mode="query")</code> and only falls back to
+<code>web_session.create(session.target, mode="query")</code> when no query session for that
+target exists yet — the same reuse the nav header's own Query tab uses (see
+<code>host/web/shell.py</code>/<code>host/web/session.py</code> above) — before navigating to
+<code>/query/{run_id}</code>.</p>
+<p><strong>Browse corpus button (V5):</strong> beside it, a "Browse corpus" button
+(<code>.mark("btn-browse-corpus")</code>), hidden until <code>session.done</code> the same way —
+<code>.visible</code> is set both at build time and again on every <code>_refresh()</code> tick, the
+same two-places-set pattern the query button already needed (a test caught the
+second site being missed during development). Clicking it navigates to
+<code>/corpus/{session.run_id}</code> — the <em>same</em> session/run_id, not a new one, since
+<code>corpus_page</code> only ever reads <code>session.target</code>.</p>
+<p><strong>Dialogs (U4, extended by V12):</strong> <code>_show_pending_dialog</code>'s inline checkbox/button-building code is
+gone too — it now just tracks which <code>pending.request_id</code> has already been shown
+(<code>_RenderState.shown_request_id</code>) and, on a new one, calls
+<code>host.web.dialogs.build_approval_dialog</code>/<code>build_cost_dialog</code>/<code>build_ask_user_dialog</code>
+(V12) and <code>.open()</code>s the result; the dialog's own buttons (Approve/Refine/Reject,
+Proceed/Cancel, or — V12 — Submit/Skip) resolve <code>session.pending</code> directly (see
+<code>dialogs.py</code> above).</p>
+<p><code>_pick_port()</code> binds an ephemeral <code>127.0.0.1</code> port.</p>
+<p>Note: the ROADMAP text for S5 also names <code>_load_profile_options</code> (now
+<code>host.configflow.profile_options</code>), journal reads, and <code>server.tools.undo_last</code> as
+blocking calls to move off the event loop. As of U2, <code>profile_options()</code>'s one call
+site — <code>host/web/wizard.py</code>'s <code>build_setup_wizard</code> — goes through
+<code>await run.io_bound(configflow.profile_options)</code>, closing that gap. As of U6,
+journal reads (<code>host.web.journal.load_entries</code>) and <code>undo_last</code>
+(<code>host.web.journal.do_undo</code>) get their first real call sites — the Journal
+toolbar button and its dialog above — but deliberately <strong>do not</strong> go through
+<code>run.io_bound</code>/<code>asyncio.to_thread</code>: under NiceGUI's headless test harness, an
+executor-callback continuation invoked from inside a click handler on a dialog
+opened from <em>another</em> dialog's own click handler never resumes (confirmed by
+direct experiment; documented as gotcha #6 in <code>tests/test_web_ui.py</code>'s module
+docstring). Both operations are fast (a single small JSONL file) and rare (an
+explicit, deliberate user click, never the poll timer), so a brief synchronous
+stall is imperceptible — unlike this section's original motivating cases (a
+full directory walk, a Windows keyring round-trip that can take seconds). See
+<code>build_journal_dialog</code>'s docstring in <code>host/web/dialogs.py</code> for the same
+rationale in place.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.tabs", "navigation.sections", "navigation.top", "toc.integrate", "search.highlight", "content.code.copy", "content.code.annotate"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

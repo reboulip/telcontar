@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, GPT-5 backed">
+        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, backend-agnostic">
       
       
       
@@ -305,8 +305,15 @@
   
     
     
+      
+  
+  
+  
+  
+    
+    
       <li class="md-tabs__item">
-        <a href="../../developer/architecture/" class="md-tabs__link">
+        <a href="../../developer/architecture/core/" class="md-tabs__link">
           
   
   
@@ -314,6 +321,9 @@
 
         </a>
       </li>
+    
+  
+
     
   
 
@@ -1709,15 +1719,67 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../../developer/architecture/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_1" id="__nav_5_1_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
     
   
     Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/architecture/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
   
 
     
@@ -1738,8 +1800,60 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer/modules/" class="md-nav__link">
+      <a href="../../developer/architecture/web-ui/" class="md-nav__link">
         
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_2" id="__nav_5_2_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
@@ -1753,7 +1867,79 @@
   
   
 
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Module Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/modules/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/modules/web-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1911,7 +2097,7 @@
 </div>
 <div class="admonition note">
 <p class="admonition-title">Pre-analysis cost-approval gate (O8/P6, host-side)</p>
-<p>Gated entirely by the <strong>host</strong>, not the server. As of P6, a fresh organize run first runs a deterministic pre-pass (<code>run_prepass</code>) that walks the whole corpus and checksums every file via <code>compute_checksum_batch</code> — this call is unconditional and never gated, since it's needed just to tell already-known documents from new ones. If that partition finds any new documents, <code>host/agent.py</code> computes a token estimate scoped to ONLY those new documents' sizes and — unless <code>APPROVAL_MODE=never</code> — awaits a one-time user approval (<code>CostEstimateModal</code>) before running the stateless analyzer, which is what actually calls <code>extract_text_batch</code>/<code>read_file_batch</code> (to fetch content) and <code>record_document_batch</code> (to persist results) for the new documents. A rejection skips the analyzer for this run — the new documents are neither fetched nor recorded. The gate fires at most once per run and is skipped entirely (no event, no callback) when there are no new documents. The MCP server itself has no awareness of this gate — see <a href="../../developer/architecture/#pre-analysis-cost-approval-gate-o8p6">Architecture § Pre-analysis cost-approval gate (O8/P6)</a>.</p>
+<p>Gated entirely by the <strong>host</strong>, not the server. As of P6, a fresh organize run first runs a deterministic pre-pass (<code>run_prepass</code>) that walks the whole corpus and checksums every file via <code>compute_checksum_batch</code> — this call is unconditional and never gated, since it's needed just to tell already-known documents from new ones. If that partition finds any new documents, <code>host/agent.py</code> computes a token estimate scoped to ONLY those new documents' sizes and — unless <code>APPROVAL_MODE=never</code> — awaits a one-time user approval (<code>CostEstimateModal</code>) before running the stateless analyzer, which is what actually calls <code>extract_text_batch</code>/<code>read_file_batch</code> (to fetch content) and <code>record_document_batch</code> (to persist results) for the new documents. A rejection skips the analyzer for this run — the new documents are neither fetched nor recorded. The gate fires at most once per run and is skipped entirely (no event, no callback) when there are no new documents. The MCP server itself has no awareness of this gate — see <a href="../../developer/architecture/core/#pre-analysis-cost-approval-gate-o8p6">Architecture § Pre-analysis cost-approval gate (O8/P6)</a>.</p>
 </div>
 <div class="admonition note">
 <p class="admonition-title">ORGANIZE-mode tool denylist (P6)</p>
@@ -2168,7 +2354,7 @@
 <tr>
 <td><code>missing_sources</code></td>
 <td>list</td>
-<td>Missing file entries <code>{op_id, op_type, src}</code></td>
+<td>Missing file entries <code>{op_id, op_type, src}</code> — <code>create_dir</code> ops are exempt, since their <code>src</code> is the not-yet-created destination directory rather than a path expected to already exist</td>
 </tr>
 <tr>
 <td><code>is_valid</code></td>
@@ -2205,18 +2391,18 @@
 <h3 id="propose_rename"><code>propose_rename</code><a class="headerlink" href="#propose_rename" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="n">propose_rename</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">new_name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
-<p>Stage a rename of <code>path</code> to <code>new_name</code> (basename only, not a full path). Raises <code>FileExistsError</code> if <code>{parent}/{new_name}</code> already exists.</p>
+<p>Stage a rename of <code>path</code> to <code>new_name</code> (basename only, not a full path). Raises <code>FileExistsError</code> if <code>{parent}/{new_name}</code> already exists. Also raises <code>ValueError</code> (X8) if the resulting name collides with the configured quarantine folder — its own name or a known quarantine/discard-word alias, case/locale-insensitive — so a taxonomy rename can never shadow the server-managed quarantine folder.</p>
 <p><strong>Returns:</strong> <code>{plan_id, op_id, op_type, src, dst, status, ops_count}</code></p>
 <hr />
 <h3 id="propose_move"><code>propose_move</code><a class="headerlink" href="#propose_move" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="n">propose_move</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">dest_dir</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
-<p>Stage moving <code>path</code> into <code>dest_dir</code>. Raises <code>FileExistsError</code> if <code>dest_dir/filename</code> already exists. Raises <code>ValueError</code> if <code>dest_dir</code> is not an existing directory <strong>and</strong> no <code>propose_create_dir</code> op for that exact path is already queued earlier in the same pending plan — this lets the agent propose "create a folder, then move a file into it" within a single plan, regardless of the two ops' relative order: <code>execute_plan</code> runs every <code>create_dir</code> op before any other op type, so the dependent <code>move</code> always finds its destination already created (and self-heals via its own <code>mkdir</code> even if it doesn't).</p>
+<p>Stage moving <code>path</code> into <code>dest_dir</code>. Raises <code>FileExistsError</code> if <code>dest_dir/filename</code> already exists. Raises <code>ValueError</code> if <code>dest_dir</code> is not an existing directory <strong>and</strong> no <code>propose_create_dir</code> op for that exact path is already queued earlier in the same pending plan — this lets the agent propose "create a folder, then move a file into it" within a single plan, regardless of the two ops' relative order: <code>execute_plan</code> runs every <code>create_dir</code> op before any other op type, so the dependent <code>move</code> always finds its destination already created (and self-heals via its own <code>mkdir</code> even if it doesn't). Also raises <code>ValueError</code> (X8) if <code>dest_dir</code>'s basename collides with the quarantine folder (same alias/case-fold check as <code>propose_rename</code>) or <code>dest_dir</code> resolves inside the quarantine directory itself — checked on the destination only, never the source, so moving a file <em>out of</em> quarantine stays legal.</p>
 <hr />
 <h3 id="propose_quarantine"><code>propose_quarantine</code><a class="headerlink" href="#propose_quarantine" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="n">propose_quarantine</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="n">propose_quarantine</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">reason</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
-<p>Stage moving <code>path</code> to <code>QUARANTINE_DIR</code>. Unlike <code>propose_rename</code> and <code>propose_move</code>, collision is handled by <strong>suffixing</strong> the destination name (e.g. <code>report_1.pdf</code>, <code>report_2.pdf</code>) rather than raising — quarantine should never block.</p>
+<p>Stage moving <code>path</code> to <code>QUARANTINE_DIR</code>. Unlike <code>propose_rename</code> and <code>propose_move</code>, collision is handled by <strong>suffixing</strong> the destination name (e.g. <code>report_1.pdf</code>, <code>report_2.pdf</code>) rather than raising — quarantine should never block. <code>reason</code> (V10) is a short, concrete justification — duplicate of X, superseded by Y, unreadable <em>and</em> superfluous, etc.; the system prompt no longer accepts "unreadable" alone as sufficient. It is stored on the op and shown beside the file at approval time (a blank reason renders as "no reason given" rather than looking indistinguishable from a justified one); the server itself does not validate or require it.</p>
 <hr />
 <h3 id="propose_create_file"><code>propose_create_file</code><a class="headerlink" href="#propose_create_file" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="n">propose_create_file</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">content</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
@@ -2233,7 +2419,7 @@
 <h3 id="propose_create_dir"><code>propose_create_dir</code><a class="headerlink" href="#propose_create_dir" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="n">propose_create_dir</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">dict</span>
 </code></pre></div>
-<p>Stage creating a directory (and any missing parents) at <code>path</code>. Idempotent and collision-safe at execution time — creating a directory that already exists is a no-op, not an error. Raises <code>ValueError</code> at proposal time if <code>path</code> already exists as a file.</p>
+<p>Stage creating a directory (and any missing parents) at <code>path</code>. Idempotent and collision-safe at execution time — creating a directory that already exists is a no-op, not an error. Raises <code>ValueError</code> at proposal time if <code>path</code> already exists as a file. Also raises <code>ValueError</code> (X8) if <code>path</code>'s basename collides with the configured quarantine folder or resolves inside it — an agent-proposed taxonomy folder can never collide with the server-managed quarantine folder; use <code>propose_quarantine</code> to set a document aside instead.</p>
 <p><strong>Returns:</strong> same shape as <code>propose_create_file</code>.</p>
 <hr />
 <h3 id="propose_archive_document"><code>propose_archive_document</code><a class="headerlink" href="#propose_archive_document" title="Permanent link">&para;</a></h3>
@@ -2371,7 +2557,7 @@
 <p><strong>Safety category:</strong> Writes to disk and/or external destinations. Not gated by <code>APPROVAL_MODE</code> — runs immediately in every mode.</p>
 <hr />
 <h2 id="recovery">Recovery<a class="headerlink" href="#recovery" title="Permanent link">&para;</a></h2>
-<p><code>undo_last</code> is <strong>not</strong> an MCP tool — it is not registered with the server, so the agent has no way to call it. As of the plan-flow security hardening (M1), undo is a direct, user-triggered action in the TUI only: the operations-journal viewer (<code>JournalScreen</code>, opened with the <strong>j</strong> key in the Organizer screen) has a <strong>u</strong> ("Undo last") keybinding that calls <code>server.tools.undo_last</code> directly, bypassing the MCP layer entirely.</p>
+<p><code>undo_last</code> is <strong>not</strong> an MCP tool — it is not registered with the server, so the agent has no way to call it. As of the plan-flow security hardening (M1), undo is a direct, user-triggered action in the web UI only: the journal dialog (<code>host/web/journal.py</code>, opened via the run page's "Journal" toolbar button) has an "Undo last operation" button that calls <code>server.tools.undo_last</code> directly, bypassing the MCP layer entirely.</p>
 <p><code>undo_last(journal_path, plans_dir) -&gt; dict</code> reverts the most recent journaled operation by inverting it and removing the journal entry:</p>
 <table>
 <thead>
@@ -2865,7 +3051,7 @@
 </table>
 <div class="admonition note">
 <p class="admonition-title">Since removed / restructured (M1 security hardening)</p>
-<p>This table predates the plan-flow gating change and does not carry phase columns for it. <code>move_file</code>, <code>rename_file</code>, <code>create_file</code>, <code>update_file</code>, <code>create_dir</code>, <code>archive_document</code>, <code>compress_quarantine</code>, and <code>undo_last</code> were removed from the agent-callable surface entirely. Their functionality now goes through <code>propose_create_file</code>, <code>propose_update_file</code>, <code>propose_create_dir</code>, and <code>propose_archive_document</code>/<code>propose_compress_quarantine</code> (staged like every other op, applied only via <code>execute_plan</code>); <code>undo_last</code> is now a TUI-only user action (see <a href="#recovery">Recovery</a> above).</p>
+<p>This table predates the plan-flow gating change and does not carry phase columns for it. <code>move_file</code>, <code>rename_file</code>, <code>create_file</code>, <code>update_file</code>, <code>create_dir</code>, <code>archive_document</code>, <code>compress_quarantine</code>, and <code>undo_last</code> were removed from the agent-callable surface entirely. Their functionality now goes through <code>propose_create_file</code>, <code>propose_update_file</code>, <code>propose_create_dir</code>, and <code>propose_archive_document</code>/<code>propose_compress_quarantine</code> (staged like every other op, applied only via <code>execute_plan</code>); <code>undo_last</code> is now a web-UI-only user action (see <a href="#recovery">Recovery</a> above).</p>
 </div>
 
 

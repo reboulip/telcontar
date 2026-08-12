@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, GPT-5 backed">
+        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, backend-agnostic">
       
       
       
@@ -305,8 +305,15 @@
   
     
     
+      
+  
+  
+  
+  
+    
+    
       <li class="md-tabs__item">
-        <a href="../../developer/architecture/" class="md-tabs__link">
+        <a href="../../developer/architecture/core/" class="md-tabs__link">
           
   
   
@@ -314,6 +321,9 @@
 
         </a>
       </li>
+    
+  
+
     
   
 
@@ -610,8 +620,30 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#token-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Token usage
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#backend-compatibility" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Backend compatibility
+      
+    </span>
+  </a>
   
 </li>
       
@@ -1169,15 +1201,67 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../../developer/architecture/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_1" id="__nav_5_1_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
     
   
     Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/architecture/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
   
 
     
@@ -1198,8 +1282,60 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer/modules/" class="md-nav__link">
+      <a href="../../developer/architecture/web-ui/" class="md-nav__link">
         
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_2" id="__nav_5_2_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
@@ -1213,7 +1349,79 @@
   
   
 
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Module Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/modules/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/modules/web-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1396,7 +1604,7 @@
 <td><code>LLM_API_VERSION</code></td>
 <td>no</td>
 <td><code>""</code></td>
-<td>Azure only — <code>api-version</code> query parameter (e.g. <code>2025-01-01-preview</code>). Leave blank for Mammouth.</td>
+<td>Azure only — <code>api-version</code> query parameter (e.g. <code>2025-01-01-preview</code>). Leave blank for every other provider.</td>
 </tr>
 </tbody>
 </table>
@@ -1548,10 +1756,59 @@
 </tr>
 </tbody>
 </table>
+<h3 id="token-usage">Token usage<a class="headerlink" href="#token-usage" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Required</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>TOKEN_LOG_PATH</code></td>
+<td>no</td>
+<td><code>.organizer/tokens.jsonl</code></td>
+<td>Append-only profiling log: one entry per LLM call (analyze/organize/query/estimate phases) recording input/output/cached token counts and running totals, for optimization analysis (R2). Always on — no flag to disable it. Not exposed as an MCP tool — open the file directly. Relative to the target directory being organized (same rebasing as <code>JOURNAL_PATH</code>).</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="backend-compatibility">Backend compatibility<a class="headerlink" href="#backend-compatibility" title="Permanent link">&para;</a></h2>
+<p>Telcontar works with <strong>any OpenAI-compatible chat-completions endpoint that
+supports tool calling</strong> — the code path never branches on which provider
+you point it at; swapping <code>LLM_BASE_URL</code>/<code>LLM_API_KEY</code> (and, for Azure only,
+<code>LLM_API_VERSION</code>) is the only thing that changes. Concretely, the endpoint
+must support:</p>
+<ul>
+<li><code>POST /chat/completions</code> with <code>model</code>, <code>messages</code>, <code>tools</code>, and
+  <code>tool_choice</code>.</li>
+<li><strong>Forced tool choice</strong> (<code>tool_choice={"type": "function", "function":
+  {"name": ...}}</code>), used by the document analyzer to guarantee a structured
+  response for every batch.</li>
+<li>Multiple <code>tool_calls</code> per assistant message.</li>
+<li><em>(optional)</em> <code>usage.prompt_tokens</code> / <code>usage.completion_tokens</code> (and,
+  ideally, <code>usage.prompt_tokens_details.cached_tokens</code>) — telcontar's token
+  counters and profiling log (see <a href="#token-usage">Token usage</a> above) degrade
+  to a silent no-op when a response omits <code>usage</code>.</li>
+<li><em>(optional)</em> an <code>api-version</code> query parameter — Azure OpenAI only; every
+  other provider ignores it (leave <code>LLM_API_VERSION</code> blank).</li>
+</ul>
+<div class="admonition warning">
+<p class="admonition-title">Warning</p>
+<p>An endpoint that silently ignores forced <code>tool_choice</code> will degrade
+document analysis rather than error loudly — if analysis results look
+wrong on an unfamiliar endpoint, verify it actually honors forced tool
+choice before assuming a telcontar bug.</p>
+</div>
+<p>Verified against Azure OpenAI and Mammouth. Any other endpoint meeting the
+contract above should work.</p>
 <hr />
 <h2 id="switching-environments">Switching environments<a class="headerlink" href="#switching-environments" title="Permanent link">&para;</a></h2>
-<p>Telcontar uses the same code path for Azure and Mammouth — only the <code>base_url</code> and <code>api_key</code> differ:</p>
-<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Mammouth (dev)</label><label for="__tabbed_1_2">Azure OpenAI (prod)</label></div>
+<p>Telcontar uses the same code path for every OpenAI-compatible endpoint — only the <code>base_url</code> and <code>api_key</code> (and, for Azure, <code>api_version</code>) differ:</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Generic OpenAI-compatible endpoint</label><label for="__tabbed_1_2">Azure OpenAI (needs api-version)</label></div>
 <div class="tabbed-content">
 <div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="na">LLM_BASE_URL</span><span class="o">=</span><span class="s">https://api.mammouth.ai/v1</span>
@@ -1571,7 +1828,7 @@
 </div>
 <div class="admonition tip">
 <p class="admonition-title">Tip</p>
-<p>Keep two <code>.env</code> files (<code>.env.dev</code>, <code>.env.prod</code>) and symlink or copy the active one to <code>.env</code>. No code changes are ever needed to switch.</p>
+<p>Keep two <code>.env</code> files (e.g. <code>.env.dev</code>, <code>.env.prod</code>) and symlink or copy the active one to <code>.env</code>. No code changes are ever needed to switch.</p>
 </div>
 <hr />
 <h2 id="persistent-state-locations">Persistent state locations<a class="headerlink" href="#persistent-state-locations" title="Permanent link">&para;</a></h2>
@@ -1583,9 +1840,10 @@
 <a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>│   ├── events.jsonl    # Append-only project event journal (narrative log)
 <a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>│   ├── archive.jsonl   # Append-only archive log (why a document left active memory)
 <a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>│   ├── egress.jsonl    # Append-only audit log of content sent to the LLM endpoint
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>│   ├── registry.json   # Document memory (sha256 → metadata)
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>│   └── graph.json      # Knowledge graph (derived from registry + events; rebuilt on demand)
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>└── _quarantine/         # Quarantined files (QUARANTINE_DIR)
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>│   ├── tokens.jsonl    # Append-only per-LLM-call token-usage profiling log
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>│   ├── registry.json   # Document memory (sha256 → metadata)
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>│   └── graph.json      # Knowledge graph (derived from registry + events; rebuilt on demand)
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>└── _quarantine/         # Quarantined files (QUARANTINE_DIR)
 </code></pre></div>
 <p>Both <code>.organizer/</code> and the quarantine folder are hidden from the agent's own directory discovery (<code>walk_tree</code>) so it never proposes moving or quarantining its own memory — the quarantine folder is deliberately still shown in the written <code>INDEX.md</code>, since a human reviewing results should be able to see it.</p>
 <p><code>PROFILES_DIR</code> and <code>.organizer/NAMING.md</code> are the exception: they are cross-corpus, project-level conventions rather than per-run memory, and are deliberately <strong>not</strong> rebased — they always resolve relative to telcontar's own project root regardless of which directory you're organizing.</p>

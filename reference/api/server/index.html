@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, GPT-5 backed">
+        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, backend-agnostic">
       
       
       
@@ -305,8 +305,15 @@
   
     
     
+      
+  
+  
+  
+  
+    
+    
       <li class="md-tabs__item">
-        <a href="../../../developer/architecture/" class="md-tabs__link">
+        <a href="../../../developer/architecture/core/" class="md-tabs__link">
           
   
   
@@ -314,6 +321,9 @@
 
         </a>
       </li>
+    
+  
+
     
   
 
@@ -1838,6 +1848,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#server.guards.check_not_quarantine_collision" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        check_not_quarantine_collision
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#server.guards.check_within_root" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1853,6 +1874,28 @@
     <span class="md-ellipsis">
       
         format_io_error
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server.guards.is_quarantine_like_name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        is_quarantine_like_name
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server.guards.normalize_dir_name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        normalize_dir_name
       
     </span>
   </a>
@@ -2124,15 +2167,67 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../../../developer/architecture/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_1" id="__nav_5_1_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
     
   
     Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer/architecture/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
   
 
     
@@ -2153,8 +2248,60 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer/modules/" class="md-nav__link">
+      <a href="../../../developer/architecture/web-ui/" class="md-nav__link">
         
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_2" id="__nav_5_2_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
@@ -2168,7 +2315,79 @@
   
   
 
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Module Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer/modules/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer/modules/web-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -2934,7 +3153,7 @@ single call instead of one <code>get_document</code> round trip per checksum.</p
 
 
 <h3 id="server.tools.propose_quarantine" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">propose_quarantine</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">,</span> <span class="n">plans_dir</span><span class="p">,</span> <span class="n">quarantine_dir</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">propose_quarantine</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">,</span> <span class="n">plans_dir</span><span class="p">,</span> <span class="n">quarantine_dir</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span></code>
 
 <a href="#server.tools.propose_quarantine" class="headerlink" title="Permanent link">&para;</a></h3>
 
@@ -3989,6 +4208,31 @@ if the TOML is malformed or fails schema validation.</p>
 <div class="doc doc-object doc-function">
 
 
+<h3 id="server.guards.check_not_quarantine_collision" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">check_not_quarantine_collision</span><span class="p">(</span><span class="n">dest</span><span class="p">,</span> <span class="n">quarantine_dir</span><span class="p">)</span></code>
+
+<a href="#server.guards.check_not_quarantine_collision" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Raise <code>ValueError</code> if <code>dest</code> collides with the server-managed
+quarantine folder (X8) — either its basename reads as quarantine-like,
+or <code>dest</code> resolves inside <code>quarantine_dir</code> itself (catches a nested
+taxonomy folder proposed <em>under</em> quarantine, e.g. <code>_quarantine/drafts</code>).</p>
+<p>Proposal-time only (never from <code>_apply_op</code>), and never wraps
+<code>propose_quarantine</code>/<code>propose_archive_document</code>/
+<code>propose_compress_quarantine</code> — those legitimately target the
+quarantine dir, and guarding them would break quarantine outright.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h3 id="server.guards.check_within_root" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">check_within_root</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">roots</span><span class="p">)</span></code>
 
@@ -4027,6 +4271,49 @@ path it targeted, and surfaces the two operator-actionable cases in plain
 language: a Windows "file is in use" lock (WinError 32) and a plain
 permission denial. Callers re-raise with this message while preserving the
 original exception <em>type</em> (so retry classification is unaffected).</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="server.guards.is_quarantine_like_name" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">is_quarantine_like_name</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">quarantine_dir_name</span><span class="p">)</span></code>
+
+<a href="#server.guards.is_quarantine_like_name" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>True when <code>name</code> normalizes to the configured quarantine folder's
+name, or to a known quarantine/discard alias (X8) — a whole-basename
+match only, never substring containment.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="server.guards.normalize_dir_name" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">normalize_dir_name</span><span class="p">(</span><span class="n">name</span><span class="p">)</span></code>
+
+<a href="#server.guards.normalize_dir_name" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Fold a directory name to a locale/case-insensitive comparison key.</p>
+<p>NFKD-decomposes and drops combining marks (so accented variants fold
+together, e.g. "Quarantäine" ~ "quarantaine"), casefolds (locale-
+insensitive, unlike <code>.lower()</code>), strips a leading ordering prefix
+("01_", "2. ", ...), trims leading/trailing separators, and collapses
+inner separator runs to a single underscore.</p>
 
 
     </div>

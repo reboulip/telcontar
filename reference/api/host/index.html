@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, GPT-5 backed">
+        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, backend-agnostic">
       
       
       
@@ -305,8 +305,15 @@
   
     
     
+      
+  
+  
+  
+  
+    
+    
       <li class="md-tabs__item">
-        <a href="../../../developer/architecture/" class="md-tabs__link">
+        <a href="../../../developer/architecture/core/" class="md-tabs__link">
           
   
   
@@ -314,6 +321,9 @@
 
         </a>
       </li>
+    
+  
+
     
   
 
@@ -1016,6 +1026,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#host.agent.composed_system_prompts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        composed_system_prompts
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#host.agent.mcp_session" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1075,189 +1096,6 @@
     <span class="md-ellipsis">
       
         run_query_loop
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#hostapp" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        host.app
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#host.app" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        app
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="app">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#host.app--screens" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Screens
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#host.app--modals" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Modals
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#host.app.ApprovalModal" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        ApprovalModal
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#host.app.ConfigScreen" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        ConfigScreen
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#host.app.CostEstimateModal" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        CostEstimateModal
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#host.app.JournalScreen" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        JournalScreen
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#host.app.OrganizerApp" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        OrganizerApp
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="OrganizerApp">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#host.app.OrganizerApp.action_open_settings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        action_open_settings
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#host.app.OrganizerScreen" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        OrganizerScreen
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="OrganizerScreen">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#host.app.OrganizerScreen.action_query_corpus" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        action_query_corpus
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#host.app.QueryScreen" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        QueryScreen
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#host.app.SetupScreen" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        SetupScreen
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#host.app.StartupScreen" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        StartupScreen
       
     </span>
   </a>
@@ -1401,15 +1239,67 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../../../developer/architecture/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_1" id="__nav_5_1_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
     
   
     Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer/architecture/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
   
 
     
@@ -1430,8 +1320,60 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../developer/modules/" class="md-nav__link">
+      <a href="../../../developer/architecture/web-ui/" class="md-nav__link">
         
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_2" id="__nav_5_2_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
@@ -1445,7 +1387,79 @@
   
   
 
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Module Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer/modules/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../developer/modules/web-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1591,11 +1605,11 @@
 
 
 <h1 id="host-api-reference">host — API Reference<a class="headerlink" href="#host-api-reference" title="Permanent link">&para;</a></h1>
-<p>Python API for the MCP host package. The host orchestrates the GPT-5 agent loop and presents the Textual TUI.</p>
+<p>Python API for the MCP host package. The host orchestrates the agent loop and presents the web UI.</p>
 <hr />
 <h2 id="hostagent">host.agent<a class="headerlink" href="#hostagent" title="Permanent link">&para;</a></h2>
-<p>Async agent loop — MCP client, GPT-5 tool-calling loop, and approval callback protocol.</p>
-<p>The module is fully decoupled from Textual so it can be tested with plain <code>pytest-asyncio</code> tests. Callers supply async callbacks for events and approval.</p>
+<p>Async agent loop — MCP client, LLM tool-calling loop, and approval callback protocol.</p>
+<p>The module is fully decoupled from any UI framework so it can be tested with plain <code>pytest-asyncio</code> tests. Callers supply async callbacks for events and approval.</p>
 
 
 <div class="doc doc-object doc-module">
@@ -1610,9 +1624,9 @@
 
     <div class="doc doc-contents first">
 
-        <p>Async agent loop: MCP client + GPT-5 tool-calling loop.</p>
-<p>Fully decoupled from Textual — callers pass async callbacks for events and
-approval so this module can be exercised in plain pytest tests.</p>
+        <p>Async agent loop: MCP client + LLM tool-calling loop.</p>
+<p>Fully decoupled from any particular UI — callers pass async callbacks for
+events and approval so this module can be exercised in plain pytest tests.</p>
 
 
 
@@ -1742,6 +1756,40 @@ stateless analyzer to process only the latter.</p>
 <div class="doc doc-object doc-function">
 
 
+<h3 id="host.agent.composed_system_prompts" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">composed_system_prompts</span><span class="p">(</span><span class="n">settings</span><span class="p">,</span> <span class="n">project_root</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+<a href="#host.agent.composed_system_prompts" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Render telcontar's three composed system prompts for read-only
+inspection: <code>{"organize": ..., "query": ..., "analyze": ...}</code>.</p>
+<p><code>project_root</code> defaults to the exact same expression <code>run_agent_loop</code>
+uses to resolve its own project root when the caller doesn't pass one —
+this is load-bearing, not cosmetic: <code>_load_naming_conventions</code> reads
+<code>.organizer/NAMING.md</code> relative to the REPO root, not any run's target
+directory, so re-deriving this differently here would display a prompt
+telcontar does not actually send. The domain profile is loaded ONCE and
+reused across all three builders below, rather than three separate
+loads/parses.</p>
+<p>The ANALYZE prompt is rendered for a full batch of <code>_ANALYZER_BATCH_SIZE</code>
+documents — illustrative, since an actual run's batches (especially the
+last one) are often smaller.</p>
+<p>Two things composed at runtime from a live run are deliberately NOT
+reflected here: the corpus digest (built from an actual target's analyzed
+registry) and the user's own pre-analysis steering instructions — both
+require a live target/registry this target-free view does not have.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h3 id="host.agent.mcp_session" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">mcp_session</span><span class="p">(</span><span class="n">project_root</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
@@ -1803,7 +1851,7 @@ server subprocess for the whole conversation).</p>
 
 
 <h3 id="host.agent.run_agent_loop" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">run_agent_loop</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="n">settings</span><span class="p">,</span> <span class="n">llm</span><span class="p">,</span> <span class="n">session</span><span class="p">,</span> <span class="n">on_event</span><span class="p">,</span> <span class="n">on_approval_needed</span><span class="p">,</span> <span class="n">on_ask_user_needed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">on_cost_approval_needed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">project_root</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">instructions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">history</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">message</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">message_queue</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">run_agent_loop</span><span class="p">(</span><span class="n">target</span><span class="p">,</span> <span class="n">settings</span><span class="p">,</span> <span class="n">llm</span><span class="p">,</span> <span class="n">session</span><span class="p">,</span> <span class="n">on_event</span><span class="p">,</span> <span class="n">on_approval_needed</span><span class="p">,</span> <span class="n">on_ask_user_needed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">on_cost_approval_needed</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">project_root</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">instructions</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">history</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">message</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">message_queue</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">ledger</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -1814,7 +1862,7 @@ server subprocess for the whole conversation).</p>
 
     <div class="doc doc-contents ">
 
-        <p>Run the GPT-5 tool-calling loop against an already-connected MCP session.</p>
+        <p>Run the LLM tool-calling loop against an already-connected MCP session.</p>
 <p>Separated from run_agent so tests can inject a mock session directly.
 <code>instructions</code> is the user's optional pre-analysis steering text (L3),
 appended to the seed user message when present. <code>on_ask_user_needed</code> wires
@@ -1861,6 +1909,13 @@ so a live chat message can redirect an in-progress run instead of only
 being picked up after it stops. This is independent of <code>history</code>/
 <code>message</code> (O7's separate-invocation resume path for a run that already
 ended, where no live queue exists) — both can be used together or alone.</p>
+<p><code>ledger</code> (R1, GH #27): pass the same <code>_TokenLedger</code> across a run and its
+follow-up continuations (O7) so the running token totals persist across
+turns instead of silently resetting to zero on every call — the caller
+(e.g. <code>OrganizerScreen</code>) constructs one <code>_TokenLedger.new(settings)</code> per
+screen and threads it through every <code>run_agent_loop</code> call for that
+screen's lifetime. When None (the default — tests, one-shot callers), a
+fresh ledger is constructed for this call only.</p>
 
 
     </div>
@@ -1926,7 +1981,7 @@ read-only tools' path arguments (M2).</p>
 
 
 <h3 id="host.agent.run_query_loop" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">run_query_loop</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">question</span><span class="p">,</span> <span class="n">settings</span><span class="p">,</span> <span class="n">llm</span><span class="p">,</span> <span class="n">session</span><span class="p">,</span> <span class="n">on_event</span><span class="p">,</span> <span class="n">history</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">project_root</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">run_query_loop</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">question</span><span class="p">,</span> <span class="n">settings</span><span class="p">,</span> <span class="n">llm</span><span class="p">,</span> <span class="n">session</span><span class="p">,</span> <span class="n">on_event</span><span class="p">,</span> <span class="n">history</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">project_root</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">ledger</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
   <span class="doc doc-labels">
       <small class="doc doc-label doc-label-async"><code>async</code></small>
@@ -1942,551 +1997,15 @@ read-only tools' path arguments (M2).</p>
 a previous call back in to preserve multi-turn context. When None, a fresh
 history seeded with the query-mode system prompt is created. Returns the
 answer text and the updated history.</p>
+<p><code>ledger</code> (R1, GH #27): pass the same <code>_TokenLedger</code> across a chat's
+questions so running token totals persist for the whole <code>QueryScreen</code>
+session instead of resetting on every question. When None (the
+default), a fresh ledger is constructed for this call only.</p>
 
 
     </div>
 
 </div>
-
-
-
-  </div>
-
-    </div>
-
-</div><hr />
-<h2 id="hostapp">host.app<a class="headerlink" href="#hostapp" title="Permanent link">&para;</a></h2>
-<p>Textual TUI screens and widgets.</p>
-
-
-<div class="doc doc-object doc-module">
-
-
-
-<h2 id="host.app" class="doc doc-heading">
-            <code>host.app</code>
-
-
-<a href="#host.app" class="headerlink" title="Permanent link">&para;</a></h2>
-
-    <div class="doc doc-contents first">
-
-        <p>Textual TUI for the directory organizer host.</p>
-<h4 id="host.app--screens">Screens<a class="headerlink" href="#host.app--screens" title="Permanent link">&para;</a></h4>
-<p>SetupScreen     — first-run configuration wizard (API key, profile)
-StartupScreen   — target directory input + entry to ConfigScreen
-ConfigScreen    — edit settings at any time
-OrganizerScreen — file tree + chat-transcript conversation pane + status
-QueryScreen     — interactive NL Q&amp;A over an analyzed corpus</p>
-<h4 id="host.app--modals">Modals<a class="headerlink" href="#host.app--modals" title="Permanent link">&para;</a></h4>
-<p>ApprovalModal     — plan review with per-op checkboxes (inline removal)
-CostEstimateModal — one-time pre-analysis cost-approval gate</p>
-<p>ask_user's clarifying-question/multiple-option checkpoint (P8) has no modal of
-its own — it renders as a normal chat turn and awaits the next chat message,
-same as any other live chat exchange.</p>
-
-
-
-
-
-
-
-
-
-
-<div class="doc doc-children">
-
-
-
-
-
-
-
-
-
-<div class="doc doc-object doc-class">
-
-
-
-<h3 id="host.app.ApprovalModal" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">ApprovalModal</span><span class="p">(</span><span class="n">plan_id</span><span class="p">,</span> <span class="n">plan_data</span><span class="p">,</span> <span class="n">target</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
-
-<a href="#host.app.ApprovalModal" class="headerlink" title="Permanent link">&para;</a></h3>
-
-
-    <div class="doc doc-contents ">
-            <p class="doc doc-class-bases">
-              Bases: <code><span title="textual.screen.ModalScreen">ModalScreen</span>[<span title="host.agent.ApprovalResult">ApprovalResult</span>]</code></p>
-
-
-
-        <p>Present plan ops to the user as a checklist; return an ApprovalResult.</p>
-
-
-
-
-
-
-
-
-
-
-
-<div class="doc doc-children">
-
-
-
-
-
-
-
-
-
-
-
-
-  </div>
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-class">
-
-
-
-<h3 id="host.app.ConfigScreen" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">ConfigScreen</span><span class="p">()</span></code>
-
-<a href="#host.app.ConfigScreen" class="headerlink" title="Permanent link">&para;</a></h3>
-
-
-    <div class="doc doc-contents ">
-            <p class="doc doc-class-bases">
-              Bases: <code><span title="textual.screen.Screen">Screen</span></code></p>
-
-
-
-        <p>Edit telcontar settings at any time after the initial setup.</p>
-
-
-
-
-
-
-
-
-
-
-
-<div class="doc doc-children">
-
-
-
-
-
-
-
-
-
-
-
-
-  </div>
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-class">
-
-
-
-<h3 id="host.app.CostEstimateModal" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">CostEstimateModal</span><span class="p">(</span><span class="n">new_documents</span><span class="p">,</span> <span class="n">already_analyzed</span><span class="p">,</span> <span class="n">estimated_tokens</span><span class="p">,</span> <span class="n">batch_size</span><span class="o">=</span><span class="mi">10</span><span class="p">)</span></code>
-
-<a href="#host.app.CostEstimateModal" class="headerlink" title="Permanent link">&para;</a></h3>
-
-
-    <div class="doc doc-contents ">
-            <p class="doc doc-class-bases">
-              Bases: <code><span title="textual.screen.ModalScreen">ModalScreen</span>[<span title="host.agent.CostApprovalResult">CostApprovalResult</span>]</code></p>
-
-
-
-        <p>One-time pre-analysis approval: show the estimated cost, let the user
-proceed or cancel (O8/P6/P8).</p>
-<p>Shown at most once per run, before the P5 analyzer processes any newly-
-discovered documents — scoped to NEW documents only, since already-known
-ones are never re-analyzed. Unlike ApprovalModal there is no op list or
-refinement — just a rough estimate and a yes/no.</p>
-
-
-
-
-
-
-
-
-
-
-
-<div class="doc doc-children">
-
-
-
-
-
-
-
-
-
-
-
-
-  </div>
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-class">
-
-
-
-<h3 id="host.app.JournalScreen" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">JournalScreen</span><span class="p">(</span><span class="n">target</span><span class="p">)</span></code>
-
-<a href="#host.app.JournalScreen" class="headerlink" title="Permanent link">&para;</a></h3>
-
-
-    <div class="doc doc-contents ">
-            <p class="doc doc-class-bases">
-              Bases: <code><span title="textual.screen.ModalScreen">ModalScreen</span>[None]</code></p>
-
-
-
-        <p>Read-only view of the full undo journal, newest entries last — and the
-one place <code>undo_last</code> can be triggered from (S1).</p>
-<p>Reads <code>.organizer/journal.jsonl</code> directly from disk and calls
-<code>server.tools.undo_last</code> directly (local file/function, same machine)
-rather than through an MCP tool — undo is deliberately an explicit user
-action here, never something the agent can call itself.</p>
-
-
-
-
-
-
-
-
-
-
-
-<div class="doc doc-children">
-
-
-
-
-
-
-
-
-
-
-
-
-  </div>
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-class">
-
-
-
-<h3 id="host.app.OrganizerApp" class="doc doc-heading">
-            <code>OrganizerApp</code>
-
-
-<a href="#host.app.OrganizerApp" class="headerlink" title="Permanent link">&para;</a></h3>
-
-
-    <div class="doc doc-contents ">
-            <p class="doc doc-class-bases">
-              Bases: <code><span title="textual.app.App">App</span></code></p>
-
-
-
-        <p>Root Textual application.</p>
-
-
-
-
-
-
-
-
-
-
-
-<div class="doc doc-children">
-
-
-
-
-
-
-
-
-
-
-<div class="doc doc-object doc-function">
-
-
-<h4 id="host.app.OrganizerApp.action_open_settings" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">action_open_settings</span><span class="p">()</span></code>
-
-<a href="#host.app.OrganizerApp.action_open_settings" class="headerlink" title="Permanent link">&para;</a></h4>
-
-
-    <div class="doc doc-contents ">
-
-        <p>Open settings from any screen (P9), guarded against double-push and
-against bypassing the first-run wizard. Allowed while a modal
-(ApprovalModal/CostEstimateModal) is on top — it stacks and pops back
-cleanly; settings changed mid-run don't affect the already-running
-agent loop, since settings are captured once at worker start.</p>
-
-
-    </div>
-
-</div>
-
-
-
-  </div>
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-class">
-
-
-
-<h3 id="host.app.OrganizerScreen" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">OrganizerScreen</span><span class="p">(</span><span class="n">target</span><span class="p">)</span></code>
-
-<a href="#host.app.OrganizerScreen" class="headerlink" title="Permanent link">&para;</a></h3>
-
-
-    <div class="doc doc-contents ">
-            <p class="doc doc-class-bases">
-              Bases: <code><span title="textual.screen.Screen">Screen</span></code></p>
-
-
-
-        <p>Main screen: file-tree sidebar + a single chat-transcript conversation pane.</p>
-<p>The transcript reads as a conversation: speaker-differentiated turns
-(<code>telcontar</code> / <code>you</code>) carry the plain-language narrative, while the
-machinery (raw tool calls + results) is grouped into click-to-expand
-<code>internal steps</code> Collapsibles interleaved at the point they happened.</p>
-
-
-
-
-
-
-
-
-
-
-
-<div class="doc doc-children">
-
-
-
-
-
-
-
-
-
-
-<div class="doc doc-object doc-function">
-
-
-<h4 id="host.app.OrganizerScreen.action_query_corpus" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">action_query_corpus</span><span class="p">()</span></code>
-
-<a href="#host.app.OrganizerScreen.action_query_corpus" class="headerlink" title="Permanent link">&para;</a></h4>
-
-
-    <div class="doc doc-contents ">
-
-        <p>Switch into interactive query mode over the just-organized corpus.</p>
-
-
-    </div>
-
-</div>
-
-
-
-  </div>
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-class">
-
-
-
-<h3 id="host.app.QueryScreen" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">QueryScreen</span><span class="p">(</span><span class="n">target</span><span class="p">)</span></code>
-
-<a href="#host.app.QueryScreen" class="headerlink" title="Permanent link">&para;</a></h3>
-
-
-    <div class="doc doc-contents ">
-            <p class="doc doc-class-bases">
-              Bases: <code><span title="textual.screen.Screen">Screen</span></code></p>
-
-
-
-        <p>Interactive read-only Q&amp;A over an already-analyzed corpus.</p>
-<p>Keeps a single MCP session open for the whole chat and threads the
-conversation history across questions for multi-turn context.</p>
-
-
-
-
-
-
-
-
-
-
-
-<div class="doc doc-children">
-
-
-
-
-
-
-
-
-
-
-
-
-  </div>
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-class">
-
-
-
-<h3 id="host.app.SetupScreen" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">SetupScreen</span><span class="p">()</span></code>
-
-<a href="#host.app.SetupScreen" class="headerlink" title="Permanent link">&para;</a></h3>
-
-
-    <div class="doc doc-contents ">
-            <p class="doc doc-class-bases">
-              Bases: <code><span title="textual.screen.Screen">Screen</span></code></p>
-
-
-
-        <p>First-run configuration wizard.</p>
-<p>Guides non-technical users through API endpoint + key selection and
-document-profile choice.  Saves to ~/.telcontar/config.env and the OS
-credential store, then transitions to StartupScreen.</p>
-
-
-
-
-
-
-
-
-
-
-
-<div class="doc doc-children">
-
-
-
-
-
-
-
-
-
-
-
-
-  </div>
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-class">
-
-
-
-<h3 id="host.app.StartupScreen" class="doc doc-heading">
-              <code class="highlight language-python"><span class="n">StartupScreen</span><span class="p">()</span></code>
-
-<a href="#host.app.StartupScreen" class="headerlink" title="Permanent link">&para;</a></h3>
-
-
-    <div class="doc doc-contents ">
-            <p class="doc doc-class-bases">
-              Bases: <code><span title="textual.screen.Screen">Screen</span></code></p>
-
-
-
-        <p>Collect the target directory from the user before launching the agent.</p>
-
-
-
-
-
-
-
-
-
-
-
-<div class="doc doc-children">
-
-
-
-
-
-
-
-
-
-
-
-
-  </div>
-
-    </div>
-
-</div>
-
 
 
 
@@ -2496,7 +2015,7 @@ credential store, then transitions to StartupScreen.</p>
 
 </div><hr />
 <h2 id="hostllm">host.llm<a class="headerlink" href="#hostllm" title="Permanent link">&para;</a></h2>
-<p>OpenAI-compatible client factory supporting Azure and Mammouth via <code>base_url</code> override.</p>
+<p>OpenAI-compatible client factory supporting any endpoint via <code>base_url</code> override.</p>
 
 
 <div class="doc doc-object doc-module">
@@ -2511,7 +2030,7 @@ credential store, then transitions to StartupScreen.</p>
 
     <div class="doc doc-contents first">
 
-        <p>OpenAI-compatible client factory (Azure / Mammouth via base_url override).</p>
+        <p>OpenAI-compatible client factory for any endpoint via base_url override.</p>
 
 
 

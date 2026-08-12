@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, GPT-5 backed">
+        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, backend-agnostic">
       
       
       
@@ -305,8 +305,15 @@
   
     
     
+      
+  
+  
+  
+  
+    
+    
       <li class="md-tabs__item">
-        <a href="../../developer/architecture/" class="md-tabs__link">
+        <a href="../../developer/architecture/core/" class="md-tabs__link">
           
   
   
@@ -314,6 +321,9 @@
 
         </a>
       </li>
+    
+  
+
     
   
 
@@ -1197,15 +1207,67 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../../developer/architecture/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_1" id="__nav_5_1_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
     
   
     Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/architecture/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
   
 
     
@@ -1226,8 +1288,60 @@
   
   
     <li class="md-nav__item">
-      <a href="../../developer/modules/" class="md-nav__link">
+      <a href="../../developer/architecture/web-ui/" class="md-nav__link">
         
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_2" id="__nav_5_2_label" tabindex="0">
+            
   
   
   <span class="md-ellipsis">
@@ -1241,7 +1355,79 @@
   
   
 
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Module Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/modules/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../developer/modules/web-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1431,7 +1617,7 @@
 </ul>
 <p>Use <code>manifest.json</code> to pipe telcontar's output into other tools (search indexes, dashboards, compliance reports).</p>
 <h3 id="summarymd"><code>SUMMARY.md</code><a class="headerlink" href="#summarymd" title="Permanent link">&para;</a></h3>
-<p>A <strong>GPT-5–authored narrative</strong> structured according to the active profile's <code>[synthesis]</code> table. For the bundled <code>is_it_project</code> profile the output is a French-language project synthesis titled "Synthèse du projet" with six <code>##</code> sections:</p>
+<p>An <strong>LLM-authored narrative</strong> structured according to the active profile's <code>[synthesis]</code> table. For the bundled <code>is_it_project</code> profile the output is a French-language project synthesis titled "Synthèse du projet" with six <code>##</code> sections:</p>
 <ul>
 <li><strong>Vue d'ensemble</strong> — what the corpus covers and its overall status</li>
 <li><strong>Acteurs principaux</strong> — who appears and in what capacity (from ranked actors)</li>
@@ -1451,7 +1637,7 @@
 <p>The <strong>document memory</strong> — a content-addressed store of every document the agent has ever analysed, keyed by sha256 checksum. Because identity is the checksum (not the path), a record survives renames and moves. On subsequent runs, telcontar can detect that a file was already analysed even if it was renamed.</p>
 <p>Each record contains: <code>checksum</code>, <code>path</code>, <code>title</code>, <code>type</code>, <code>summary</code>, <code>provenance</code>, <code>date</code>, <code>entities</code>, <code>attributes</code>, <code>status</code> (<code>active</code> | <code>archived</code> | <code>quarantined</code>), <code>first_seen</code>, <code>last_analyzed</code>.</p>
 <h3 id="organizerjournaljsonl"><code>.organizer/journal.jsonl</code><a class="headerlink" href="#organizerjournaljsonl" title="Permanent link">&para;</a></h3>
-<p>An <strong>append-only undo log</strong>. Every operation executed by <code>execute_plan</code> is written here as a JSONL entry with <code>op_type</code>, <code>src</code>, <code>dst</code>, and <code>timestamp</code>. <code>undo_last</code> (a TUI-only action, not an MCP tool — see <a href="#undo">Undo</a> below) reads the last entry and inverts it.</p>
+<p>An <strong>append-only undo log</strong>. Every operation executed by <code>execute_plan</code> is written here as a JSONL entry with <code>op_type</code>, <code>src</code>, <code>dst</code>, and <code>timestamp</code>. <code>undo_last</code> (a web-UI-only action, not an MCP tool — see <a href="#undo">Undo</a> below) reads the last entry and inverts it.</p>
 <p>Hard-stop events are also recorded here (with <code>op_type: "hard_stop"</code>) so that <code>undo_last</code> can safely skip them.</p>
 <h3 id="organizerplansuuidjson"><code>.organizer/plans/&lt;uuid&gt;.json</code><a class="headerlink" href="#organizerplansuuidjson" title="Permanent link">&para;</a></h3>
 <p>One JSON file per plan. Plans progress through a state machine:</p>
@@ -1462,7 +1648,7 @@
 <p>Completed plans are kept on disk for audit purposes but are not cleaned up automatically.</p>
 <hr />
 <h2 id="undo">Undo<a class="headerlink" href="#undo" title="Permanent link">&para;</a></h2>
-<p><code>undo_last</code> is <strong>not</strong> an MCP tool — the agent cannot call it. To revert the most recent operation, press <strong>j</strong> in the Organizer screen to open the operations-journal viewer, then <strong>u</strong> ("Undo last"). This calls <code>server.tools.undo_last</code> directly from the TUI, bypassing the agent entirely — undo is a deliberate, user-only action.</p>
+<p><code>undo_last</code> is <strong>not</strong> an MCP tool — the agent cannot call it. To revert the most recent operation, open the journal dialog from the "Journal" button on the organize view and click "Undo last operation". This calls <code>server.tools.undo_last</code> directly from the web UI, bypassing the agent entirely — undo is a deliberate, user-only action.</p>
 <p><code>undo_last</code> reads the last journal entry, inverts the operation (rename → rename back, move → move back, quarantine → move back to original path, create_file/update_file → delete the written file, create_dir → left in place as a no-op), removes the entry, and returns the reverted op. It does not touch the registry — path reconciliation only runs forward during <code>execute_plan</code>.</p>
 
 

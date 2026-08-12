@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, GPT-5 backed">
+        <meta name="description" content="Local AI document organizer — profile-driven, MCP-powered, backend-agnostic">
       
       
       
@@ -305,8 +305,17 @@
   
     
     
+      
+  
+  
+  
+    
+  
+  
+    
+    
       <li class="md-tabs__item md-tabs__item--active">
-        <a href="../architecture/" class="md-tabs__link">
+        <a href="../architecture/core/" class="md-tabs__link">
           
   
   
@@ -314,6 +323,9 @@
 
         </a>
       </li>
+    
+  
+
     
   
 
@@ -1028,15 +1040,70 @@
   
   
   
-    <li class="md-nav__item">
-      <a href="../architecture/" class="md-nav__link">
+    
+    
+    
+    
+      
+      
         
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_1" id="__nav_5_1_label" tabindex="">
+            
   
   
   <span class="md-ellipsis">
     
   
     Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
   
 
     
@@ -1057,8 +1124,63 @@
   
   
     <li class="md-nav__item">
-      <a href="../modules/" class="md-nav__link">
+      <a href="../architecture/web-ui/" class="md-nav__link">
         
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_2" id="__nav_5_2_label" tabindex="">
+            
   
   
   <span class="md-ellipsis">
@@ -1072,7 +1194,79 @@
   
   
 
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Module Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
       </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/web-ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Web UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
     </li>
   
 
@@ -1191,6 +1385,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Toolchain">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#pre-commit-hooks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pre-commit hooks
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1385,11 +1596,13 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/reboulip/telcontar.git
 <a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">cd</span><span class="w"> </span>telcontar
 <a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Install runtime + dev dependencies</span>
-<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>uv<span class="w"> </span>sync<span class="w"> </span>--group<span class="w"> </span>dev
-<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
-<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1"># Install test dependencies separately</span>
-<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>uv<span class="w"> </span>sync<span class="w"> </span>--group<span class="w"> </span><span class="nb">test</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="c1"># Install runtime + dev + test dependencies in one call — separate `uv sync`</span>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># calls each resync to exactly the groups named on that call, so running</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="c1"># `--group dev` then `--group test` separately uninstalls the dev-only tools.</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>uv<span class="w"> </span>sync<span class="w"> </span>--group<span class="w"> </span>dev<span class="w"> </span>--group<span class="w"> </span><span class="nb">test</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="c1"># Activate the pre-commit hook (one-time per clone)</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>uv<span class="w"> </span>run<span class="w"> </span>pre-commit<span class="w"> </span>install
 </code></pre></div>
 <p>For dev, configure your LLM endpoint either by running <code>telcontar</code> once (setup wizard) or by placing a project-local <code>.env</code> file with <code>LLM_BASE_URL</code> and <code>LLM_API_KEY</code>. See <a href="../../getting-started/configuration/">Configuration</a> for the full reference.</p>
 <hr />
@@ -1410,13 +1623,23 @@
 </tr>
 <tr>
 <td><strong>mypy</strong></td>
-<td>Type checking</td>
+<td>Type checking (CI gate)</td>
 <td><code>uv run mypy host server config</code></td>
+</tr>
+<tr>
+<td><strong>ty</strong></td>
+<td>Type checking (fast local check)</td>
+<td><code>uv run ty check host server config</code></td>
 </tr>
 <tr>
 <td><strong>pytest</strong></td>
 <td>Tests</td>
 <td><code>uv run --group test pytest</code></td>
+</tr>
+<tr>
+<td><strong>pre-commit</strong></td>
+<td>Runs the above on <code>git commit</code></td>
+<td><code>uv run pre-commit run --all-files</code></td>
 </tr>
 <tr>
 <td><strong>mkdocs</strong></td>
@@ -1426,8 +1649,25 @@
 </tbody>
 </table>
 <p>Run all checks before opening a PR:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>uv<span class="w"> </span>run<span class="w"> </span>ruff<span class="w"> </span>check<span class="w"> </span>.<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>uv<span class="w"> </span>run<span class="w"> </span>ruff<span class="w"> </span>format<span class="w"> </span>--check<span class="w"> </span>.<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>uv<span class="w"> </span>run<span class="w"> </span>mypy<span class="w"> </span>host<span class="w"> </span>server<span class="w"> </span>config<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>uv<span class="w"> </span>run<span class="w"> </span>--group<span class="w"> </span><span class="nb">test</span><span class="w"> </span>pytest<span class="w"> </span>-q
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>uv<span class="w"> </span>run<span class="w"> </span>ruff<span class="w"> </span>check<span class="w"> </span>.<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>uv<span class="w"> </span>run<span class="w"> </span>ruff<span class="w"> </span>format<span class="w"> </span>--check<span class="w"> </span>.<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>uv<span class="w"> </span>run<span class="w"> </span>mypy<span class="w"> </span>host<span class="w"> </span>server<span class="w"> </span>config<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>uv<span class="w"> </span>run<span class="w"> </span>ty<span class="w"> </span>check<span class="w"> </span>host<span class="w"> </span>server<span class="w"> </span>config<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>uv<span class="w"> </span>run<span class="w"> </span>--group<span class="w"> </span><span class="nb">test</span><span class="w"> </span>pytest<span class="w"> </span>-q
 </code></pre></div>
+<h3 id="pre-commit-hooks">Pre-commit hooks<a class="headerlink" href="#pre-commit-hooks" title="Permanent link">&para;</a></h3>
+<p><code>.pre-commit-config.yaml</code> wires the table above (minus pytest — the full
+suite is too slow for a per-commit hook) into <code>git commit</code>, plus routine
+hygiene checks (trailing whitespace, end-of-file newline, merge-conflict
+markers, large files, TOML/YAML syntax). <code>ruff format</code> and <code>ruff check --fix</code>
+auto-fix in place; a hook that modifies files reports as failed on that run
+so you can review the diff, re-stage, and commit again. mypy and ty run
+project-wide (<code>pass_filenames: false</code>) rather than per-changed-file, since
+type checking needs whole-project context. All local (Python) hooks run
+through <code>uv run</code>, so they always use the exact tool versions pinned in
+<code>uv.lock</code> — never a separately-managed version. Vendored assets
+(<code>host/web/assets/</code>) are excluded from the hygiene hooks so they stay
+byte-identical to upstream.</p>
+<p>The full test suite is too slow for a per-commit hook, so it isn't wired
+into pre-commit at all. It still gates every commit through the <code>/test-select</code>
+workflow step (see Workflow automation below) and every PR through the CI
+gate.</p>
 <hr />
 <h2 id="branch-model">Branch model<a class="headerlink" href="#branch-model" title="Permanent link">&para;</a></h2>
 <table>
@@ -1498,10 +1738,6 @@
 <td>Runs minimal pytest scope for the current branch's changes — call before every commit</td>
 </tr>
 <tr>
-<td><code>repo-manager</code> agent</td>
-<td>Handles all git operations — delegate commits and branch ops here</td>
-</tr>
-<tr>
 <td><code>doc-keeper</code> agent</td>
 <td>Updates docs at the end of each feature step — runs before the commit</td>
 </tr>
@@ -1523,8 +1759,9 @@
 <li>Host/agent tests (<code>test_host.py</code>) mock the MCP <code>ClientSession</code> and <code>AsyncOpenAI</code> client</li>
 <li>Registry/journal tests exercise the in-memory classes and file persistence directly</li>
 <li><code>test_e2e_toolchain.py</code> is a cross-module end-to-end integration suite: no LLM, it drives the real server tool implementations against a seeded fixture directory through the full lifecycle (<code>list_dir</code> → <code>read_file</code>/<code>extract_text</code> → <code>compute_checksum</code> → <code>record_document</code> → <code>propose_*</code> → <code>review_plan</code> → <code>approve_plan</code> → <code>execute_plan</code> with registry reconcile → <code>undo_last</code> → <code>write_index</code>/<code>write_summary</code>), asserting real file-I/O effects. This is an intentional exception to the one-module-per-test convention below.</li>
+<li><code>test_web_ui.py</code> drives the NiceGUI web UI through a real headless page render, using NiceGUI's <code>user</code> test fixture (<code>nicegui.testing.user_plugin</code>, enabled via <code>addopts</code> in <code>pyproject.toml</code>'s <code>[tool.pytest.ini_options]</code>, plus <code>main_file = "host/web/main.py"</code> marking that module as NiceGUI's testing entry point). This is a narrower, non-Selenium fixture — no extra dependency, since <code>nicegui.testing</code> ships inside <code>nicegui</code>, already a runtime dependency. Everything the web UI's underlying logic needs to prove (approval/cost future resolution, ledger threading, step open/close, etc.) stays covered NiceGUI-free elsewhere (<code>test_web_session.py</code>, <code>test_host_format.py</code>, <code>test_host_paths.py</code>); this file only asserts that a page renders what the session data says and that a click/interaction wires through to the right session call. The module docstring documents five hard-won gotchas (runpy double-module patching — test seams must live in <code>host/web/session.py</code>, never <code>host/web/main.py</code>, since the <code>user</code> fixture runpy-executes the latter as a second module object; <code>sys.modules['__main__']</code> eviction between tests; dialog visibility-after-close; the render-poll-interval-vs-assertion-retry-budget race, addressed by <code>host.web.session.REFRESH_INTERVAL</code>; and a <code>.mark("...")</code> naming convention) — read it before adding more tests here.</li>
 </ul>
-<p><strong>Convention:</strong> Each test module maps to one source module. When adding a new module, add <code>tests/test_&lt;module&gt;.py</code> and update the <code>test-select</code> scope table in <code>pyproject.toml</code>.</p>
+<p><strong>Convention:</strong> Each test module maps to one source module. When adding a new module, add <code>tests/test_&lt;module&gt;.py</code> — <code>/test-select</code> picks it up automatically (full-suite-by-default below ~120s, falling back to same-named-file matching above that; no hand-maintained table to update).</p>
 <hr />
 <h2 id="roadmap-conventions">ROADMAP conventions<a class="headerlink" href="#roadmap-conventions" title="Permanent link">&para;</a></h2>
 <p>Items in <code>ROADMAP.md</code> must use the checkbox + label format so <code>/dev-pipeline</code> detects them:</p>
