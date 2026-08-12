@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import zipfile
 from pathlib import Path
+from typing import TypedDict
 
 from server import archive as _archive
 from server import events as _events
@@ -25,7 +27,7 @@ def list_dir(path: str) -> dict:
     p = Path(path)
     if not p.is_dir():
         raise ValueError(f"Not a directory: {path}")
-    entries = []
+    entries: list[dict] = []
     for entry in sorted(p.iterdir(), key=lambda e: (e.is_file(), e.name)):
         try:
             st = entry.stat()
@@ -82,7 +84,11 @@ def walk_tree(path: str, max_depth: int = 3, hidden_names: frozenset[str] | None
             return []
         entries: list[dict] = []
         for entry in children:
-            if entry.name in hidden:
+            # X8: `hidden` is pre-normcased by the server/main.py wrapper —
+            # normcase entry.name the same way so a differently-cased
+            # on-disk folder (e.g. Windows: `_Quarantine` on disk vs. a
+            # configured `_quarantine`) is still hidden from discovery.
+            if os.path.normcase(entry.name) in hidden:
                 continue
             try:
                 st = entry.stat()
@@ -95,7 +101,7 @@ def walk_tree(path: str, max_depth: int = 3, hidden_names: frozenset[str] | None
                         "mtime": st.st_mtime,
                     }
                     if depth < max_depth:
-                        node["children"] = _walk(entry, depth + 1)
+                        node["children"] = _walk(entry, depth + 1)  # type: ignore[assignment]
                         node["truncated"] = False
                     else:
                         node["children"] = None
@@ -288,7 +294,7 @@ def review_plan(plan_id: str, plans_dir: Path) -> dict:
     for op in p.ops:
         key = (op.src, op.op_type)
         seen.setdefault(key, []).append(op.op_id)
-        if not Path(op.src).exists():
+        if op.op_type != "create_dir" and not Path(op.src).exists():
             missing.append({"op_id": op.op_id, "op_type": op.op_type, "src": op.src})
 
     duplicates = [
@@ -405,7 +411,9 @@ def propose_move(path: str, dest_dir: str, plan_id: str, plans_dir: Path) -> dic
     }
 
 
-def propose_quarantine(path: str, plan_id: str, plans_dir: Path, quarantine_dir: Path) -> dict:
+def propose_quarantine(
+    path: str, plan_id: str, plans_dir: Path, quarantine_dir: Path, reason: str = ""
+) -> dict:
     """Append a quarantine op to an existing pending plan; picks collision-safe dest."""
     src = Path(path)
     if not src.is_file():
@@ -415,7 +423,7 @@ def propose_quarantine(path: str, plan_id: str, plans_dir: Path, quarantine_dir:
     p = _plan.load(plan_id, plans_dir)
     if p.state != "pending":
         raise ValueError(f"Plan must be in 'pending' state to add ops; current state: {p.state!r}")
-    op = _plan.PlanOp.new("quarantine", str(src), str(safe_dest))
+    op = _plan.PlanOp.new("quarantine", str(src), str(safe_dest), params={"reason": reason.strip()})
     p.add_op(op)
     _plan.save(p, plans_dir)
     return {
@@ -676,7 +684,7 @@ def execute_plan(
         if success:
             op.status = "completed"
             completed_count += 1
-            moved[op.src] = new_location  # type: ignore[assignment]
+            moved[op.src] = new_location  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
             if op.op_type not in _SELF_JOURNALING_OP_TYPES:
                 _journal.append(
                     journal_path,
@@ -1019,6 +1027,13 @@ def undo_last(journal_path: Path, plans_dir: Path) -> dict:
 _MANIFEST_NAME = "_telcontar_manifest.json"
 
 
+class _QuarantineFileMeta(TypedDict):
+    name: str
+    src: str
+    sha256: str
+    size: int
+
+
 def _sha256_file(path: Path) -> str:
     """Stream a file through sha256, returning its hex digest."""
     h = hashlib.sha256()
@@ -1042,7 +1057,7 @@ def _safe_archive_path(directory: Path, name: str) -> Path:
         counter += 1
 
 
-def _verify_archive(archive: Path, files_meta: list[dict]) -> None:
+def _verify_archive(archive: Path, files_meta: list[_QuarantineFileMeta]) -> None:
     """Raise OSError unless every file in the archive matches its recorded checksum."""
     with zipfile.ZipFile(archive, "r") as zf:
         bad = zf.testzip()
@@ -1089,11 +1104,13 @@ def compress_quarantine(
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     archive = _safe_archive_path(qdir, f"quarantine_{stamp}.zip")
 
-    files_meta = [
+    files_meta: list[_QuarantineFileMeta] = [
         {"name": src.name, "src": str(src), "sha256": _sha256_file(src), "size": src.stat().st_size}
         for src in sources
     ]
-    manifest = {f["name"]: {"src": f["src"], "sha256": f["sha256"]} for f in files_meta}
+    manifest: dict[str, dict[str, str]] = {
+        f["name"]: {"src": f["src"], "sha256": f["sha256"]} for f in files_meta
+    }
 
     with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for f in files_meta:

@@ -6,7 +6,7 @@ import asyncio
 import json
 from pathlib import Path
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 
 from host.agent import (
@@ -19,6 +19,8 @@ from host.agent import (
     _collect_truncated_dirs,
     _extract_content,
     _new_docs_cost_estimate,
+    _ProgressTracker,
+    _TokenLedger,
     run_agent_loop,
     run_prepass,
     run_query_loop,
@@ -730,6 +732,38 @@ def test_system_prompt_includes_synthesis_template() -> None:
 
     # the profile's synthesis template is injected
     assert "Project synthesis" in prompt
+
+
+def test_system_prompt_mandates_a_concrete_quarantine_reason() -> None:
+    """V10: a bare "unreadable" must not be enough to justify a quarantine —
+    the model must say what actually makes the file disposable."""
+    from config.settings import load
+
+    from host.agent import _build_system_prompt
+
+    prompt = _build_system_prompt(_PROJECT_ROOT, load())
+
+    assert "propose_quarantine" in prompt
+    assert "concrete reason" in prompt.lower()
+    assert '"unreadable" alone is never a sufficient reason' in prompt
+
+
+def test_system_prompt_requires_ask_user_before_quarantining_unreadable_files() -> None:
+    """V17: an unreadable file must not be quarantined unilaterally — the
+    model must ask_user first and only quarantine on confirmation. Scoped to
+    the unreadable case only; duplicates/superseded files stay a direct,
+    no-ask quarantine (deterministic, not a judgement call)."""
+    from config.settings import load
+
+    from host.agent import _build_system_prompt
+
+    prompt = _build_system_prompt(_PROJECT_ROOT, load())
+
+    assert "do NOT stage" in prompt
+    assert "propose_quarantine for these unilaterally" in prompt
+    assert "Call ask_user first" in prompt
+    assert "user confirmed disposable" in prompt
+    assert "duplicates and superseded documents are a" in prompt.lower()
     assert "Synthèse du projet" in prompt
     # synthesis tools are referenced in the workflow
     assert "build_graph" in prompt
@@ -737,6 +771,32 @@ def test_system_prompt_includes_synthesis_template() -> None:
     assert "create_event" in prompt
     # synthesis comes after the organize step
     assert prompt.index("create_plan") < prompt.index("Project synthesis")
+
+
+def test_system_prompt_warns_against_quarantine_flavored_taxonomy_names() -> None:
+    """X8: the model must not design a taxonomy folder that collides with
+    the server-managed quarantine dir (case/locale-insensitive guard)."""
+    from config.settings import load
+
+    from host.agent import _build_system_prompt
+
+    prompt = _build_system_prompt(_PROJECT_ROOT, load())
+
+    assert "server rejects these as collisions" in prompt
+    assert "quarantaine" in prompt.lower()
+
+
+def test_system_prompt_reflects_configured_quarantine_dir_name() -> None:
+    """X8: the prompt's guardrail text names the ACTUAL configured
+    quarantine folder, not a hardcoded default."""
+    from config.settings import load
+
+    from host.agent import _build_system_prompt
+
+    settings = load().model_copy(update={"quarantine_dir": Path("_disposed")})
+    prompt = _build_system_prompt(_PROJECT_ROOT, settings)
+
+    assert "_disposed" in prompt
 
 
 def test_system_prompt_falls_back_without_profile() -> None:
@@ -883,6 +943,90 @@ def test_query_system_prompt_is_readonly() -> None:
     assert "releve_de_decision" in prompt
 
 
+# ── V11: prompt inspection (composed_system_prompts) ───────────────────────────
+
+
+def test_composed_system_prompts_returns_all_three() -> None:
+    from config.settings import load
+
+    from host.agent import composed_system_prompts
+
+    prompts = composed_system_prompts(load(), _PROJECT_ROOT)
+
+    assert set(prompts) == {"organize", "query", "analyze"}
+    # organize: same profile-driven content _build_system_prompt produces
+    assert "already" in prompts["organize"].lower()
+    assert "analyzed" in prompts["organize"].lower()
+    assert "releve_de_decision" in prompts["organize"]
+    # query: read-only, no mutating tools
+    assert "list_documents" in prompts["query"]
+    assert "execute_plan" not in prompts["query"]
+    # analyze: the injection-resistance delimiter explanation (S2/M10)
+    assert "UNTRUSTED DOCUMENT CONTENT" in prompts["analyze"]
+    assert "releve_de_decision" in prompts["analyze"]
+
+
+def test_composed_system_prompts_loads_profile_once_for_all_three_builders() -> None:
+    """Load the domain profile ONCE and pass it to all three builders — not
+    three separate loads/parses (V11's explicit requirement)."""
+    import host.agent as agent_module
+    from config.settings import load
+
+    with patch.object(
+        agent_module, "_try_load_profile", wraps=agent_module._try_load_profile
+    ) as mock_load:
+        agent_module.composed_system_prompts(load(), _PROJECT_ROOT)
+
+    assert mock_load.call_count == 1
+
+
+def test_composed_system_prompts_project_root_defaults_like_run_agent_loop() -> None:
+    """No explicit project_root -> must resolve exactly like run_agent_loop's
+    own default (`Path(__file__).resolve().parent.parent`) — NAMING.md is read
+    relative to the repo root, not any run's target, so a different default
+    would silently display a prompt telcontar does not actually send."""
+    import host.agent as agent_module
+    from config.settings import load
+
+    settings = load()
+    expected_root = Path(agent_module.__file__).resolve().parent.parent
+
+    assert agent_module.composed_system_prompts(settings) == agent_module.composed_system_prompts(
+        settings, expected_root
+    )
+
+
+def test_composed_system_prompts_falls_back_without_profile() -> None:
+    from host.agent import composed_system_prompts
+
+    # A MagicMock has no real profile/profiles_dir -> profile load fails -> fallback
+    prompts = composed_system_prompts(MagicMock(), _PROJECT_ROOT)
+
+    assert '"default" domain profile' in prompts["organize"]
+    assert '"default" domain profile' in prompts["query"]
+    # the analyzer template wraps "domain"/"profile" onto separate lines
+    assert '"default" domain' in prompts["analyze"]
+    assert "profile" in prompts["analyze"]
+
+
+def test_resolved_profile_name_returns_loaded_profile_name() -> None:
+    from config.settings import load
+
+    from host.agent import _resolved_profile_name
+
+    assert _resolved_profile_name(load(), _PROJECT_ROOT) == "is_it_project"
+
+
+def test_resolved_profile_name_returns_none_on_load_failure() -> None:
+    """`_try_load_profile` swallows a load failure and prompt-building falls
+    back to "default" silently — `_resolved_profile_name` must surface that
+    same failure instead of hiding it, for the Settings prompt-inspection
+    view's transparency requirement."""
+    from host.agent import _resolved_profile_name
+
+    assert _resolved_profile_name(MagicMock(), _PROJECT_ROOT) is None
+
+
 # ── M10: injection-resistance delimiter around document content (S2) ─────────
 
 
@@ -1010,7 +1154,13 @@ def test_fmt_tokens_readable() -> None:
     assert _fmt_tokens(3_500_000) == "3.5M"
 
 
-async def test_tokens_events_accumulate_across_turns(tmp_path: Path) -> None:
+async def test_tokens_events_replace_in_sum_out_within_conversation(tmp_path: Path) -> None:
+    """R1, GH #27: within one growing ORGANIZE conversation, each call's
+    ``usage.prompt_tokens`` already reflects the whole resent history so
+    far (confirmed against a real API journal), so the running "in" total
+    replaces rather than sums turn over turn — unlike "out"
+    (completion_tokens), which is a fresh per-call value and keeps summing.
+    """
     from types import SimpleNamespace
 
     r1 = _tool_response("list_dir", {"path": "."})
@@ -1030,8 +1180,10 @@ async def test_tokens_events_accumulate_across_turns(tmp_path: Path) -> None:
 
     token_events = [e for e in events if e.kind == "tokens"]
     assert len(token_events) == 2
-    assert token_events[-1].data == {"in": 1500, "out": 300}  # cumulative
-    assert "1.5K in" in token_events[-1].text
+    assert token_events[0].data["in"] == 1000
+    assert token_events[-1].data["in"] == 500  # replaced, not summed, with r2's value
+    assert token_events[-1].data["out"] == 300  # summed: 200 + 100
+    assert "500 in" in token_events[-1].text
     assert "300 out" in token_events[-1].text
 
 
@@ -1151,12 +1303,15 @@ async def test_progress_event_reflects_known_and_newly_analyzed_docs(tmp_path: P
     )
 
     # run_prepass emits the pre-analysis snapshot (1 known / 2 total), then
-    # run_agent_loop emits a second one once analysis brings the new doc in —
-    # a genuine change, not a duplicate.
+    # _analyze_new_documents emits a batch-start event (V8a) carrying the
+    # in-flight filename under "current" before its LLM call, followed by the
+    # completion event once analysis brings the new doc in — a genuine change,
+    # not a duplicate — with "current" cleared back to [] now that it's done.
     progress = [e for e in events if e.kind == "progress"]
     assert [p.data for p in progress] == [
         {"analyzed": 1, "total": 2},
-        {"analyzed": 2, "total": 2},
+        {"analyzed": 1, "total": 2, "current": ["new.txt"]},
+        {"analyzed": 2, "total": 2, "current": []},
     ]
 
 
@@ -1463,7 +1618,7 @@ async def test_cost_gate_fires_once_before_analysis_for_new_docs_only(tmp_path: 
     summary, data = on_cost_approval.await_args.args
     # Only the 1 NEW document counts — the known one is excluded from the
     # estimate, but its count is still surfaced (P8: "N new, M already analyzed").
-    assert data == {"new": 1, "already_analyzed": 1, "estimated_tokens": 1000}
+    assert data == {"new": 1, "already_analyzed": 1, "estimated_tokens": 1000, "batch_size": 10}
     assert "1 new document" in summary
     assert "1 already analyzed" in summary
     assert any(e.kind == "cost_estimate" for e in events)
@@ -2308,8 +2463,9 @@ async def test_analyze_batch_dispatches_by_extension(tmp_path: Path) -> None:
         settings=_settings(tmp_path),
         profile=None,
         new_docs=[{"path": pdf, "checksum": "c1"}, {"path": txt, "checksum": "c2"}],
-        token_totals={"in": 0, "out": 0},
+        ledger=_TokenLedger(),
         on_event=lambda _: None,
+        tracker=_ProgressTracker(),
     )
 
     called_tools = {c.args[0] for c in session.call_tool.await_args_list}
@@ -2343,8 +2499,9 @@ async def test_analyze_batch_wraps_document_content_in_delimiter(tmp_path: Path)
         settings=_settings(tmp_path),
         profile=None,
         new_docs=[{"path": a, "checksum": "c1"}],
-        token_totals={"in": 0, "out": 0},
+        ledger=_TokenLedger(),
         on_event=lambda _: None,
+        tracker=_ProgressTracker(),
     )
 
     user_msg = captured_msgs[0][1]["content"]
@@ -2370,8 +2527,9 @@ async def test_analyze_new_documents_rejoins_by_index_not_by_model_value(tmp_pat
         settings=_settings(tmp_path),
         profile=None,
         new_docs=[{"path": a, "checksum": "c-a"}, {"path": b, "checksum": "c-b"}],
-        token_totals={"in": 0, "out": 0},
+        ledger=_TokenLedger(),
         on_event=lambda _: None,
+        tracker=_ProgressTracker(),
     )
 
     recorded_call = next(
@@ -2404,13 +2562,86 @@ async def test_analyze_new_documents_batches_at_ten(tmp_path: Path) -> None:
         settings=_settings(tmp_path),
         profile=None,
         new_docs=docs,
-        token_totals={"in": 0, "out": 0},
+        ledger=_TokenLedger(),
         on_event=lambda _: None,
+        tracker=_ProgressTracker(),
     )
 
     llm_calls = llm.chat.completions.create.call_args_list
     assert len(llm_calls) == 2
     assert len(result["recorded"]) == 15
+
+
+async def test_analyze_new_documents_emits_progress_per_batch(tmp_path: Path) -> None:
+    """Q2: the progress bar should advance after each batch, not jump at the end."""
+    docs = [{"path": str(tmp_path / f"{i}.txt"), "checksum": f"c{i}"} for i in range(15)]
+    session = _analyzer_session(
+        read_result={d["path"]: "content" for d in docs},
+    )
+    records_batch = [
+        {"title": f"T{i}", "type": "notes", "summary": "s", "provenance": "p"} for i in range(10)
+    ]
+    llm = _llm(
+        _submit_records_response(records_batch, call_id="tc1"),
+        _submit_records_response(records_batch[:5], call_id="tc2"),
+    )
+    events: list[AgentEvent] = []
+
+    await _analyze_new_documents(
+        session=session,
+        llm=llm,
+        settings=_settings(tmp_path),
+        profile=None,
+        new_docs=docs,
+        ledger=_TokenLedger(),
+        on_event=events.append,
+        tracker=_ProgressTracker(),
+    )
+
+    # Each batch now emits two progress events (V8a): one at batch-start
+    # carrying the in-flight filenames under "current", one at completion
+    # with "current" cleared back to [].
+    progress = [e for e in events if e.kind == "progress"]
+    assert [p.data for p in progress] == [
+        {"analyzed": 0, "total": 0, "current": [f"{i}.txt" for i in range(10)]},
+        {"analyzed": 10, "total": 10, "current": []},
+        {"analyzed": 10, "total": 10, "current": [f"{i}.txt" for i in range(10, 15)]},
+        {"analyzed": 15, "total": 15, "current": []},
+    ]
+
+
+async def test_analyze_new_documents_batch_start_current_uses_basenames_only(
+    tmp_path: Path,
+) -> None:
+    """V8a: "current" must carry basenames only — never full paths, which
+    would leak directory layout to any UI rendering progress events."""
+    nested = tmp_path / "deeply" / "nested" / "dir"
+    doc_path = str(nested / "secret_plan.txt")
+    docs = [{"path": doc_path, "checksum": "c0"}]
+    session = _analyzer_session(read_result={doc_path: "content"})
+    llm = _llm(
+        _submit_records_response(
+            [{"title": "T", "type": "notes", "summary": "s", "provenance": "p"}]
+        )
+    )
+    events: list[AgentEvent] = []
+
+    await _analyze_new_documents(
+        session=session,
+        llm=llm,
+        settings=_settings(tmp_path),
+        profile=None,
+        new_docs=docs,
+        ledger=_TokenLedger(),
+        on_event=events.append,
+        tracker=_ProgressTracker(),
+    )
+
+    progress = [e for e in events if e.kind == "progress"]
+    batch_start_current = progress[0].data["current"]
+    assert batch_start_current == ["secret_plan.txt"]
+    assert "deeply" not in batch_start_current[0]
+    assert str(nested) not in batch_start_current[0]
 
 
 async def test_analyze_batch_reports_error_for_unmatched_tail(tmp_path: Path) -> None:
@@ -2429,8 +2660,9 @@ async def test_analyze_batch_reports_error_for_unmatched_tail(tmp_path: Path) ->
         settings=_settings(tmp_path),
         profile=None,
         new_docs=[{"path": a, "checksum": "c-a"}, {"path": b, "checksum": "c-b"}],
-        token_totals={"in": 0, "out": 0},
+        ledger=_TokenLedger(),
         on_event=lambda _: None,
+        tracker=_ProgressTracker(),
     )
 
     assert len(result["recorded"]) == 1
@@ -2456,14 +2688,15 @@ async def test_analyze_batch_retries_once_then_skips_on_failure(tmp_path: Path) 
         settings=_settings(tmp_path),
         profile=None,
         new_docs=[{"path": a, "checksum": "c-a"}],
-        token_totals={"in": 0, "out": 0},
+        ledger=_TokenLedger(),
         on_event=events.append,
+        tracker=_ProgressTracker(),
     )
 
     assert llm.chat.completions.create.await_count == 2
     assert result["recorded"] == []
     assert result["errors"] == [{"path": a, "checksum": "c-a", "error": "boom again"}]
-    assert any(e.kind == "error" for e in events)
+    assert any(e.kind == "warning" for e in events)
     # A failed batch is skipped, never retried a second time (record_document_batch
     # is never reached).
     called_tools = {c.args[0] for c in session.call_tool.await_args_list}
@@ -2480,7 +2713,7 @@ async def test_analyze_new_documents_accumulates_tokens(tmp_path: Path) -> None:
     )
     response.usage = SimpleNamespace(prompt_tokens=100, completion_tokens=20)
     llm = _llm(response)
-    totals = {"in": 0, "out": 0}
+    ledger = _TokenLedger()
 
     await _analyze_new_documents(
         session=session,
@@ -2488,11 +2721,49 @@ async def test_analyze_new_documents_accumulates_tokens(tmp_path: Path) -> None:
         settings=_settings(tmp_path),
         profile=None,
         new_docs=[{"path": a, "checksum": "c-a"}],
-        token_totals=totals,
+        ledger=ledger,
         on_event=lambda _: None,
+        tracker=_ProgressTracker(),
     )
 
-    assert totals == {"in": 100, "out": 20}
+    assert ledger.totals == {"in": 100, "out": 20, "cached_in": 0}
+
+
+async def test_analyze_new_documents_writes_one_log_line_per_batch(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+
+    from host.tokenlog import all_entries
+
+    docs = [{"path": str(tmp_path / f"{i}.txt"), "checksum": f"c{i}"} for i in range(15)]
+    session = _analyzer_session(read_result={d["path"]: "content" for d in docs})
+    records_batch = [
+        {"title": f"T{i}", "type": "notes", "summary": "s", "provenance": "p"} for i in range(10)
+    ]
+    r1 = _submit_records_response(records_batch, call_id="tc1")
+    r1.usage = SimpleNamespace(prompt_tokens=100, completion_tokens=20)
+    r2 = _submit_records_response(records_batch[:5], call_id="tc2")
+    r2.usage = SimpleNamespace(prompt_tokens=60, completion_tokens=10)
+    llm = _llm(r1, r2)
+    log_path = tmp_path / ".organizer" / "tokens.jsonl"
+    ledger = _TokenLedger(log_path=log_path, model="gpt-5")
+
+    await _analyze_new_documents(
+        session=session,
+        llm=llm,
+        settings=_settings(tmp_path),
+        profile=None,
+        new_docs=docs,
+        ledger=ledger,
+        on_event=lambda _: None,
+        tracker=_ProgressTracker(),
+    )
+
+    entries = all_entries(log_path)
+    assert [e["phase"] for e in entries] == ["analyze", "analyze"]
+    assert [e["step"] for e in entries] == [0, 1]
+    assert [e["docs"] for e in entries] == [10, 5]
+    assert [e["in"] for e in entries] == [100, 60]
+    assert entries[-1]["total_in"] == 160
 
 
 async def test_analyze_new_documents_skips_llm_call_when_no_new_docs(tmp_path: Path) -> None:
@@ -2505,8 +2776,9 @@ async def test_analyze_new_documents_skips_llm_call_when_no_new_docs(tmp_path: P
         settings=_settings(tmp_path),
         profile=None,
         new_docs=[],
-        token_totals={"in": 0, "out": 0},
+        ledger=_TokenLedger(),
         on_event=lambda _: None,
+        tracker=_ProgressTracker(),
     )
 
     assert result == {"recorded": [], "errors": []}
@@ -2527,3 +2799,330 @@ def test_new_docs_cost_estimate_counts_only_new_docs() -> None:
 
 def test_new_docs_cost_estimate_empty_new_docs_is_zero() -> None:
     assert _new_docs_cost_estimate([], {}, max_snippet_chars=4000) == (0, 0)
+
+
+# ── T1: plan-completion guard ───────────────────────────────────────────────
+
+
+def test_system_prompt_frames_execute_plan_as_presentation() -> None:
+    from config.settings import load
+
+    from host.agent import _build_system_prompt
+
+    prompt = _build_system_prompt(_PROJECT_ROOT, load())
+
+    # execute_plan is described as the presentation act itself, not something
+    # that happens after approval (Break 2: the model waited for an approval
+    # it thought came first).
+    assert "is how the plan is presented" in prompt or "IS how the plan" in prompt
+    assert "never end your turn with a plan" in prompt.lower()
+    assert "never use ask_user to ask whether to proceed" in prompt.lower()
+
+
+def test_seed_last_plan_id_scans_tool_call_args() -> None:
+    from host.agent import _seed_last_plan_id
+
+    messages = [
+        {"role": "system", "content": "..."},
+        {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "tc1",
+                    "function": {
+                        "name": "propose_rename",
+                        "arguments": json.dumps({"path": "a", "new_name": "b", "plan_id": "abc"}),
+                    },
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": "tc1", "content": json.dumps({"op_id": "1"})},
+    ]
+
+    assert _seed_last_plan_id(messages) == "abc"
+
+
+def test_seed_last_plan_id_scans_tool_result_content() -> None:
+    from host.agent import _seed_last_plan_id
+
+    messages = [
+        {
+            "role": "assistant",
+            "tool_calls": [{"id": "tc1", "function": {"name": "create_plan", "arguments": "{}"}}],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "tc1",
+            "content": json.dumps({"plan_id": "p9", "ops": [], "state": "pending"}),
+        },
+    ]
+
+    assert _seed_last_plan_id(messages) == "p9"
+
+
+def test_seed_last_plan_id_returns_none_when_no_plan_seen() -> None:
+    from host.agent import _seed_last_plan_id
+
+    assert _seed_last_plan_id([{"role": "user", "content": "hi"}]) is None
+    assert _seed_last_plan_id([]) is None
+
+
+async def test_peek_pending_plan_returns_none_on_transport_error() -> None:
+    from host.agent import _peek_pending_plan
+
+    s = AsyncMock()
+    s.call_tool.side_effect = RuntimeError("boom")
+
+    assert await _peek_pending_plan(s, "p1") is None
+
+
+async def test_peek_pending_plan_returns_none_when_ops_empty(tmp_path: Path) -> None:
+    from host.agent import _peek_pending_plan
+
+    s = _session(["get_plan"], {"get_plan": {"plan_id": "p1", "ops": [], "state": "pending"}})
+
+    assert await _peek_pending_plan(s, "p1") is None
+
+
+async def test_peek_pending_plan_returns_plan_when_pending_with_ops() -> None:
+    from host.agent import _peek_pending_plan
+
+    plan_data = {"plan_id": "p1", "ops": [{"op_id": "1"}], "state": "pending"}
+    s = _session(["get_plan"], {"get_plan": plan_data})
+
+    result = await _peek_pending_plan(s, "p1")
+
+    assert result is not None
+    assert result["plan_id"] == "p1"
+
+
+async def test_dispatch_adds_next_step_hint_to_review_plan_result(tmp_path: Path) -> None:
+    from host.agent import _dispatch
+
+    s = _session(["review_plan"], {"review_plan": {"plan_id": "p1", "is_valid": True}})
+
+    result = await _dispatch(
+        name="review_plan",
+        args={"plan_id": "p1"},
+        session=s,
+        settings=_settings(tmp_path),
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(),
+    )
+
+    assert "execute_plan" in result["next_step"]
+
+
+async def test_dispatch_adds_next_step_hint_to_set_plan_folder_notes_result(
+    tmp_path: Path,
+) -> None:
+    from host.agent import _dispatch
+
+    s = _session(
+        ["set_plan_folder_notes"], {"set_plan_folder_notes": {"plan_id": "p1", "notes": {}}}
+    )
+
+    result = await _dispatch(
+        name="set_plan_folder_notes",
+        args={"plan_id": "p1", "notes": {}},
+        session=s,
+        settings=_settings(tmp_path),
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(),
+    )
+
+    assert "execute_plan" in result["next_step"]
+
+
+async def test_plan_completion_guard_reprompts_once_before_execute_plan(
+    tmp_path: Path,
+) -> None:
+    """T1 / Break 2: a plan built but never submitted must not end the run
+    silently — the loop re-prompts once, and the model calling execute_plan
+    afterward proves the nudge reached it."""
+    plan_data = {"plan_id": "p1", "ops": [{"op_id": "1"}], "state": "pending"}
+    s = _session(
+        ["create_plan", "get_plan", "execute_plan"],
+        {"create_plan": {"plan_id": "p1", "ops": [], "state": "pending"}, "get_plan": plan_data},
+    )
+
+    captured_messages: list[list[dict]] = []
+    responses = [
+        _tool_response("create_plan", {}),
+        _text_response("All set."),
+        _tool_response("execute_plan", {"plan_id": "p1"}),
+        _text_response("Done for real."),
+    ]
+
+    async def _create(**kwargs: Any) -> Any:
+        captured_messages.append(list(kwargs.get("messages", [])))
+        return responses.pop(0)
+
+    llm = AsyncMock()
+    llm.chat.completions.create.side_effect = _create
+
+    text, _ = await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=llm,
+        session=s,
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+    )
+
+    assert text == "Done for real."
+    assert len(captured_messages) == 4
+    nudge_call_messages = captured_messages[2]
+    assert any(
+        m.get("role") == "user" and "execute_plan" in m.get("content", "")
+        for m in nudge_call_messages
+    )
+
+
+async def test_plan_completion_guard_surfaces_unexecuted_plan_after_one_reprompt(
+    tmp_path: Path,
+) -> None:
+    """If the one re-prompt doesn't get the model to call execute_plan, the
+    run still ends — but the final text names the stuck plan instead of
+    losing it silently (resolved sprint question)."""
+    plan_data = {"plan_id": "p1", "ops": [{"op_id": "1"}], "state": "pending"}
+
+    text = await _run(
+        tmp_path,
+        tool_names=["create_plan", "get_plan"],
+        call_results={
+            "create_plan": {"plan_id": "p1", "ops": [], "state": "pending"},
+            "get_plan": plan_data,
+        },
+        llm_responses=[
+            _tool_response("create_plan", {}),
+            _text_response("All set."),
+            _text_response("Still not calling it."),
+        ],
+    )
+
+    assert "p1" in text
+    assert "never presented" in text
+
+
+async def test_plan_completion_guard_inert_after_execute_plan_dispatched(
+    tmp_path: Path,
+) -> None:
+    """Once execute_plan has been dispatched this call — approved, rejected,
+    or refined — the guard must never fire again, even though a rejection
+    leaves the plan 'pending' server-side."""
+    plan_data = {"plan_id": "p1", "ops": [{"op_id": "1"}], "state": "pending"}
+
+    text = await _run(
+        tmp_path,
+        tool_names=["execute_plan", "get_plan"],
+        call_results={"get_plan": plan_data},
+        llm_responses=[
+            _tool_response("execute_plan", {"plan_id": "p1"}),
+            _text_response("Understood, revising later."),
+        ],
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(approved=False)),
+    )
+
+    assert text == "Understood, revising later."
+
+
+async def test_plan_completion_guard_skips_plan_with_no_ops(tmp_path: Path) -> None:
+    text = await _run(
+        tmp_path,
+        tool_names=["create_plan", "get_plan"],
+        call_results={
+            "create_plan": {"plan_id": "p1", "ops": [], "state": "pending"},
+            "get_plan": {"plan_id": "p1", "ops": [], "state": "pending"},
+        },
+        llm_responses=[
+            _tool_response("create_plan", {}),
+            _text_response("Nothing to do yet."),
+        ],
+    )
+
+    assert text == "Nothing to do yet."
+
+
+async def test_message_queue_wins_over_plan_completion_guard(tmp_path: Path) -> None:
+    """A live chat message arriving right as the run would end takes priority
+    over the T1 re-prompt guard — P7's drain check runs first (Rules: never
+    starve a live user message behind a host-generated nudge)."""
+    plan_data = {"plan_id": "p1", "ops": [{"op_id": "1"}], "state": "pending"}
+    queue: asyncio.Queue[str] = asyncio.Queue()
+
+    s = _session(
+        ["create_plan", "get_plan", "execute_plan"],
+        {"create_plan": {"plan_id": "p1", "ops": [], "state": "pending"}, "get_plan": plan_data},
+    )
+
+    responses = [
+        _tool_response("create_plan", {}),
+        _text_response("All set."),
+        _tool_response("execute_plan", {"plan_id": "p1"}),
+        _text_response("Done."),
+    ]
+    call_count = 0
+    captured_messages: list[list[dict]] = []
+
+    async def _create(**kwargs: Any) -> Any:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 2:
+            await queue.put("actually, wait")
+        captured_messages.append(list(kwargs.get("messages", [])))
+        return responses.pop(0)
+
+    llm = AsyncMock()
+    llm.chat.completions.create.side_effect = _create
+
+    await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=llm,
+        session=s,
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+        message_queue=queue,
+    )
+
+    # The 3rd call (right after the queued message was drained) must carry
+    # the queued text as the latest turn, not a guard nudge.
+    assert captured_messages[2][-1] == {"role": "user", "content": "actually, wait"}
+
+
+async def test_plan_completion_guard_seeds_from_resumed_history(tmp_path: Path) -> None:
+    """O7 resumed conversation: a plan built in an earlier call must still be
+    seen by the guard even though this call's own tool traffic never touches
+    it — seeded from history's tool-result content."""
+    plan_data = {"plan_id": "p9", "ops": [{"op_id": "1"}], "state": "pending"}
+    s = _session(["get_plan"], {"get_plan": plan_data})
+
+    history: list[dict[str, Any]] = [
+        {"role": "system", "content": "..."},
+        {"role": "user", "content": "organize it"},
+        {
+            "role": "assistant",
+            "tool_calls": [{"id": "tc1", "function": {"name": "create_plan", "arguments": "{}"}}],
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "tc1",
+            "content": json.dumps({"plan_id": "p9", "ops": [], "state": "pending"}),
+        },
+        {"role": "assistant", "content": "I've built the plan."},
+    ]
+
+    text, _ = await run_agent_loop(
+        target=tmp_path,
+        settings=_settings(tmp_path),
+        llm=_llm(_text_response("Anything else?"), _text_response("Still nothing.")),
+        session=s,
+        on_event=lambda _: None,
+        on_approval_needed=AsyncMock(return_value=ApprovalResult(True)),
+        history=history,
+        message="any updates?",
+    )
+
+    assert "p9" in text
+    assert "never presented" in text

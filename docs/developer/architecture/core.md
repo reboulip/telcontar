@@ -1,6 +1,8 @@
 # Architecture
 
-Telcontar is a locally-run AI directory organizer built on the **Model Context Protocol (MCP)**. Two Python processes communicate over stdio: a **host** that runs the GPT-5 agent loop and a **server** that owns all file operations.
+Telcontar is a locally-run AI directory organizer built on the **Model Context Protocol (MCP)**. Two Python processes communicate over stdio: a **host** that runs the agent loop and a **server** that owns all file operations.
+
+This page covers the MCP host/server components, the core design decisions (plan state machine, registry, security guards, agent loop, journals), and data flow. For the NiceGUI web UI's own foundational design (routing/session model, dialogs, sidebar tree, theming, reload-safety), see [Architecture — Web UI](web-ui.md).
 
 ---
 
@@ -13,14 +15,14 @@ User
 ┌─────────────────────────────────────────────────────┐
 │  MCP Host  (host/)                                  │
 │  ┌──────────────┐   ┌────────────────────────────┐  │
-│  │ Textual TUI  │   │  Agent loop (host/agent.py)│  │
-│  │ host/app.py  │←→│  - builds system prompt     │  │
-│  │              │   │  - tool-calling loop        │  │
-│  │ Startup/     │   │  - approval gate            │  │
-│  │ Organizer/   │   │  - query loop (read-only)  │  │
+│  │ Web UI       │   │  Agent loop (host/agent.py)│  │
+│  │ host/web/    │←→│  - builds system prompt     │  │
+│  │ (NiceGUI)    │   │  - tool-calling loop        │  │
+│  │ Landing/     │   │  - approval gate            │  │
+│  │ Organize/    │   │  - query loop (read-only)  │  │
 │  │ Query/       │   │  - MCP client (stdio)       │  │
-│  │ Approval     │   └────────────┬───────────────┘  │
-│  │ screens      │                │ stdio transport   │
+│  │ Settings     │   └────────────┬───────────────┘  │
+│  │ views        │                │ stdio transport   │
 │  └──────────────┘                ▼                   │
 └──────────────────────────────────┼──────────────────┘
                                    │ stdio transport
@@ -51,8 +53,8 @@ User
                           ▲
                           │ API calls
 ┌─────────────────────────┴───────────────────────────┐
-│  OpenAI-compatible endpoint (Azure / Mammouth)      │
-│  GPT-5 — chat completions with tool use             │
+│  OpenAI-compatible endpoint                         │
+│  chat completions with tool use                     │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -87,11 +89,13 @@ pending → approved → executing → done
                    → stopped
 ```
 
-The host can only call `execute_plan` on a plan in `approved` state. The `approved` transition requires an explicit `approve_plan` call, which the host gates on user approval in the TUI.
+The host can only call `execute_plan` on a plan in `approved` state. The `approved` transition requires an explicit `approve_plan` call, which the host gates on user approval in the web UI.
 
 ### No delete, ever
 
 The MCP server has no delete tool. The `propose_quarantine` / `quarantine` path is the only way to remove files from the working tree. Quarantined files are moved to `QUARANTINE_DIR` and journaled — they can be recovered manually or via `undo_last` (see below).
+
+As of V10, every `propose_quarantine` call also carries a `reason` — a short, concrete justification (duplicate of X, superseded by Y, unreadable *and* superfluous, etc.) stored on the op (`PlanOp.params["reason"]`) and shown beside the file in the approval view (`host.format.quarantine_reason`/`fmt_op`, capped at 120 chars for display — the full text is always in `plan_ops.json`). The server itself does not enforce this: an empty string is accepted like any other. The requirement lives entirely in the ORGANIZE system prompt (`host/agent.py`), which now mandates a concrete reason on every quarantine and explicitly rejects "unreadable" alone as sufficient, since the reason is what the user actually judges at approval time. As of V17, one case is escalated further: an unreadable file (present on disk, missing from the registry, corroborated by the corpus digest's error count) may not be quarantined unilaterally at all — the agent must call `ask_user` first and may only stage the op on explicit confirmation, with reason `"unreadable — user confirmed disposable"`; declining or skipping leaves the file untouched. Duplicates/superseded documents are unaffected — those stay a deterministic judgement, quarantined directly, no ask needed.
 
 `compress_quarantine` is the only other operation that removes bytes from disk (the original loose files in `QUARANTINE_DIR`, after a verified archive is produced) — staged via `propose_compress_quarantine` and applied only through `execute_plan`, like every other mutation. It is still fully reversible: `undo_last` restores each original from the archive and deletes the zip. No bytes leave the machine — compression only reclaims space within the local quarantine folder.
 
@@ -99,7 +103,7 @@ The MCP server has no delete tool. The `propose_quarantine` / `quarantine` path 
 
 As of the security-hardening pass that closed finding S1, there is no MCP tool that touches the filesystem directly. `move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`, `archive_document`, and `compress_quarantine` were removed as standalone tools; their functionality is reachable only by staging a `propose_create_file` / `propose_update_file` / `propose_create_dir` / `propose_archive_document` / `propose_compress_quarantine` op onto a plan and applying it via `execute_plan` — exactly the same path `propose_rename` / `propose_move` / `propose_quarantine` already used. `execute_plan`'s internal `_apply_op` dispatcher now handles all these op types directly, except `archive_document` and `compress_quarantine`, which are delegated to the pre-existing standalone functions of the same name (avoiding duplicated logic) and self-journal under their own `op_type` rather than the generic per-op entry.
 
-`undo_last` was removed from the MCP tool surface entirely — it is no longer callable by the agent under any circumstance. It survives only as a plain function in `server/tools.py`, invoked directly (bypassing MCP) by the TUI's `JournalScreen` when the user presses **u** — undo is now a deliberate, user-only action, never something the agent itself can trigger.
+`undo_last` was removed from the MCP tool surface entirely — it is no longer callable by the agent under any circumstance. It survives only as a plain function in `server/tools.py`, invoked directly (bypassing MCP) by the web UI's journal dialog (opened via the "Journal" toolbar button) when the user clicks "Undo last operation" — undo is now a deliberate, user-only action, never something the agent itself can trigger.
 
 ### Path confinement on every path-taking tool (M2)
 
@@ -188,7 +192,7 @@ Each run's memory — the undo journal, event journal, plans, document registry,
 - **Discovery hiding:** because `.organizer`/quarantine now live physically inside the organized tree, they must be hidden from the agent so it doesn't propose moving or quarantining its own memory — see `walk_tree`'s `hidden_names` above. `write_index`'s output-file skip set (`_SKIP` in `server/tools.py`) also now excludes `.organizer`, so it never appears in the written `INDEX.md`; the quarantine folder deliberately stays *visible* there, since a human reviewing results should be able to see it — only agent-facing discovery hides it. `host/app.py`'s starter-pane `_directory_overview` applies the same two-name hide to its own local `os.walk`.
 - **No migration:** there is no migration path for a pre-existing project-root `.organizer` folder from before this change — a fresh run against a new target simply starts that target's memory from scratch.
 
-This does not change the security model — `target_dir` was already the confinement boundary enforced by `check_within_root` (M2); this only changes where `.organizer`/quarantine physically resolve to *within* that already-covered boundary. See [Security Model](security-model.md) for the confinement mechanism itself.
+This does not change the security model — `target_dir` was already the confinement boundary enforced by `check_within_root` (M2); this only changes where `.organizer`/quarantine physically resolve to *within* that already-covered boundary. See [Security Model](../security-model.md) for the confinement mechanism itself.
 
 ### Batch document-content tools (O1)
 
@@ -202,13 +206,15 @@ These tools exist to cut MCP round trips: fetching N files one at a time costs N
 
 Because it mutates the registry, it is *not* added to `QUERY_ALLOWED_TOOLS` (query mode stays strictly read-only). Its path-confinement behaviour also diverges from the O1 read-only batch tools: the `server/main.py` wrapper runs `_check_within_root` on every document's `path` before delegating to `server.tools`, and — unlike `read_file_batch`/`extract_text_batch`/`compute_checksum_batch`, which turn a disallowed path into that entry's `{"error": ...}` — a `PermissionError` here propagates and aborts the whole call, since registry validation errors and confinement errors are handled at different layers (`server.tools` vs. the `server.main` wrapper).
 
-### Document-analysis progress tracking (O5, updated by P6)
+### Document-analysis progress tracking (O5, updated by P6, Q2, V8a)
 
-`host/agent.py`'s `run_agent_loop` tracks how many documents have been discovered versus analyzed over a run and emits a `"progress"` `AgentEvent` (text `"Analyzed {analyzed} / {total} documents"`, `data={"analyzed": int, "total": int}`) whenever those counts change. A `_ProgressTracker` dataclass accumulates two path sets, `discovered` and `analyzed` (`total` is their union, so a document recorded without ever surfacing via `walk_tree` still counts, and the total only grows monotonically).
+`host/agent.py` tracks how many documents have been discovered versus analyzed over a run and emits a `"progress"` `AgentEvent` (text `"Analyzed {analyzed} / {total} documents"`, `data={"analyzed": int, "total": int}`, plus `"current": list[str]` on the analyzer's batch events as of V8a — see below) whenever those counts change. A `_ProgressTracker` dataclass accumulates two path sets, `discovered` and `analyzed` (`total` is their union, so a document recorded without ever surfacing via `walk_tree` still counts, and the total only grows monotonically).
 
-As of P6, both sets are populated **before the ORGANIZE turn loop starts**, from the pre-pass + analyzer results, rather than incrementally from live tool calls during the loop: `discovered` from every file `run_prepass` found (skipping telcontar's own output artifacts, dotfiles, OS junk, `.organizer`, and the configured quarantine directory — mirroring the `_SKIP` precedent in `server/tools.py`'s `write_index`), `analyzed` from `PrepassResult.known` plus whichever new documents the analyzer successfully recorded. Progress therefore fires **at most twice per fresh run**, never more: once from `run_prepass` itself (a pre-analysis snapshot of `known`/`total-so-far`), and once more from `run_agent_loop` only if the analyzer's results actually moved the counts (never an identical duplicate event). Since the ORGANIZE-phase model's toolset structurally excludes `record_document`/`record_document_batch` (`ORGANIZE_DENIED_TOOLS`, see "ORGANIZE-only agent loop + corpus digest (P6)" below), the ORGANIZE turn loop itself no longer drives progress incrementally the way it used to.
+As of P6, both sets are populated **before the ORGANIZE turn loop starts**, from the pre-pass + analyzer results, rather than incrementally from live tool calls during the loop: `discovered` from every file `run_prepass` found (skipping telcontar's own output artifacts, dotfiles, OS junk, `.organizer`, and the configured quarantine directory — mirroring the `_SKIP` precedent in `server/tools.py`'s `write_index`), `analyzed` from `PrepassResult.known` plus whichever new documents the analyzer successfully recorded. As of Q2, `_analyze_new_documents` takes the `_ProgressTracker` directly via a required keyword-only `tracker` parameter and updates `analyzed` — emitting a fresh `"progress"` event right there — **once per analysis batch**, immediately after that batch's `record_document_batch` call returns, rather than accumulating silently across the whole analyzer loop and computing/emitting one snapshot at the end (the old post-loop tracking/emission block in `run_agent_loop`, and the `progress_after_prepass` snapshot variable it compared against, are both gone). So progress now fires once from `run_prepass` (the pre-analysis snapshot of `known`/`total-so-far`), plus once per `_ANALYZER_BATCH_SIZE`-sized batch of newly-recorded documents — giving the progress bar incremental movement through analysis instead of jumping straight from the pre-pass snapshot to ~100% at the end. Since the ORGANIZE-phase model's toolset structurally excludes `record_document`/`record_document_batch` (`ORGANIZE_DENIED_TOOLS`, see "ORGANIZE-only agent loop + corpus digest (P6)" below), the ORGANIZE turn loop itself still never drives progress incrementally on its own.
 
-This is purely additive to the event stream — no MCP tool signature or tool list changed. As of O6, `host/app.py`'s `OrganizerScreen` consumes the `"progress"` event: a `#progress-row` (a numeric `#progress-label` plus a Textual `ProgressBar`) sits between `#ops-journal` and the status bar, hidden until the first progress event carrying a known `total > 0` arrives (an unknown/`None` total is never shown, since that would trigger Textual's indeterminate spinning-bar mode), and hidden again — without snapping to 100% first — once the run reaches `"done"` or `"error"`.
+As of V8a, `data` also carries `"current": list[str]` — the basename(s) (never full paths, which would leak directory layout) of whichever document(s) the in-flight analyzer batch is currently processing. `_analyze_new_documents` now emits a `"progress"` event at the *start* of each batch, before its LLM call, with `current` populated from that batch's filenames, in addition to the existing post-batch event (Q2), whose `current` is always `[]` so a just-finished batch doesn't leave a stale filename on screen. The pre-pass's own one-shot snapshot event does not carry `current` at all — there is no "current" file during a deterministic walk, and `data.get("current")` throughout consumers is expected to handle its absence. `host/format.py`'s new `fmt_progress(progress: dict) -> str` renders any of these shapes defensively into a short status string (e.g. `"3/47 — report.pdf +2"`), though it remains unused by the web UI, which formats `current` itself inline rather than calling it. As of V8b, the web UI surfaces `current` to the user: `host/web/main.py`'s `_refresh()` reads `session.progress["current"]` directly and renders it in a dedicated `progress-current` label (first filename plus a `" +N"` suffix).
+
+This is purely additive to the event stream — no MCP tool signature or tool list changed. As of O6, the (now-deleted) Textual TUI's `OrganizerScreen` was the first consumer of the `"progress"` event; the web UI gained its own progress row later (V14, see below).
 
 ### Adaptive turn budget (O4)
 
@@ -222,9 +228,9 @@ This is the **primary** cost control for an organize run — the adaptive turn b
 
 The estimate is scoped to **new documents only**: `_new_docs_cost_estimate(new_docs, sizes, max_snippet_chars) -> (doc_count, estimated_tokens)` (P5) mirrors `_ProgressTracker.cost_estimate`'s chars-per-token heuristic (`sum(min(size, max_snippet_chars) // 4 for size in sizes.values())`, 4 chars/token) but sums only over `PrepassResult.new`'s sizes — a re-run where most of the corpus is already known no longer estimates cost for the whole tree the way the pre-P6 gate did. `_handle_cost_approval` emits a `"cost_estimate"` `AgentEvent` with this estimate, then — unless `settings.approval_mode == "never"` or no `on_cost_approval_needed` callback is wired — awaits the host's `CostApprovalCallback` (`Callable[[str, dict], Awaitable[CostApprovalResult]]`). Rejection skips `_analyze_new_documents` entirely for this run — the new documents are neither fetched nor recorded, and surface in the corpus digest's error/unanalyzed count rather than as recorded documents; approval runs the analyzer normally. The gate fires **at most once per run**, and is skipped entirely — no event, no callback — when `run_prepass` finds no new documents at all.
 
-As of P8, the `"cost_estimate"` event's `data` dict is `{"new": doc_count, "already_analyzed": already_analyzed_count, "estimated_tokens": estimated_tokens}` — `already_analyzed` (the `PrepassResult.known` count) sits alongside the new-doc estimate so the approval summary text reads "N new document(s) (M already analyzed, skipped), ~T input tokens estimated…" instead of leaving the skipped majority of a re-run corpus unmentioned. This completes the data-shape migration P6 deferred (the dict originally carried `{"documents": N, "estimated_tokens": T}`).
+As of P8, the `"cost_estimate"` event's `data` dict is `{"new": doc_count, "already_analyzed": already_analyzed_count, "estimated_tokens": estimated_tokens}` — `already_analyzed` (the `PrepassResult.known` count) sits alongside the new-doc estimate so the approval summary text reads "N new document(s) (M already analyzed, skipped), ~T input tokens estimated…" instead of leaving the skipped majority of a re-run corpus unmentioned. This completes the data-shape migration P6 deferred (the dict originally carried `{"documents": N, "estimated_tokens": T}`). As of U5, `data` also carries `"batch_size": _ANALYZER_BATCH_SIZE` — previously the real batch size never reached `data` at all (nor did the `summary` string, which interpolated a hardcoded literal `10`), so both UIs' cost dialogs always displayed a hardcoded default regardless of the actually-configured batch size.
 
-`host/app.py` wires the callback to `CostEstimateModal`, whose constructor is `(new_documents, already_analyzed, estimated_tokens, batch_size=10)` — matching the P8 data shape above — and narrates the estimate and the user's choice into the transcript. The status bar shows "Awaiting cost approval…" while the modal is open.
+`host/app.py` wires the callback to `CostEstimateModal`, whose constructor is `(new_documents, already_analyzed, estimated_tokens, batch_size=10)`, passing `data.get("batch_size", 10)` for the fourth argument — as of U5, this now actually forwards the real value from `data` instead of silently relying on the constructor's own `=10` default regardless of the true configured batch size (the "always claims groups of 10" bug) — and narrates the estimate and the user's choice into the transcript. The status bar shows "Awaiting cost approval…" while the modal is open. The web UI's `build_cost_dialog` (`host/web/dialogs.py`) reached the same faithful-content and `batch_size`-aware state in the same U5 change — see [Module Reference — Web UI](../modules/web-ui.md).
 
 ### Resumable chat after a stop (O7)
 
@@ -282,12 +288,6 @@ At any point before or while building the plan, the agent may check in with the 
 
 The system prompt's two former paragraphs ("Optional clarification checkpoint" / "Optional multiple-option checkpoint") are now one "Optional chat checkpoint" paragraph referencing `ask_user`, and the `"question"`/`"options"` `EventKind`s are merged into one `"ask_user"` kind.
 
-### Settings from anywhere (P9)
-
-`OrganizerApp` (the root Textual `App`) carries an app-level `ctrl+s` binding, `action_open_settings`, that pushes `ConfigScreen` from *any* screen — not just via `StartupScreen`'s pre-existing local `s` binding/button. It is a no-op if `ConfigScreen` is already the current screen (no double-push), and a no-op if `SetupScreen` is current, since `ConfigScreen` could persist a half-configured state that bypasses `SetupScreen`'s guided keyring/plaintext-fallback flow.
-
-The binding must be declared as `Binding("ctrl+s", "open_settings", "Settings", priority=True)` (from `textual.binding`), not a plain tuple: Textual's non-priority key-binding resolution chain deliberately stops at the first `ModalScreen` it encounters, so that a modal fully captures input and a background shortcut (e.g. `q`/quit) can't fire accidentally while a confirmation dialog is open. Without `priority=True`, `ctrl+s` would silently not fire while `ApprovalModal` or `CostEstimateModal` is on screen. With it, the binding reaches `action_open_settings` regardless of what modal is stacked on top, and `ConfigScreen` stacks over it and pops back cleanly. Any future app-level binding meant to work while a modal is open needs the same `priority=True`.
-
 ### Output-sink abstraction
 
 `server/sinks.py` defines a `Sink` protocol (`name`, `external`, `write_summary`, `write_folder_readme`) and a `resolve_sinks(names, allow_external)` factory. The MCP handlers for `write_summary` and `write_folder_readme` call `resolve_sinks` at request time, passing the profile's `[sinks] default` list and the `egress_allow_external_sinks` setting, then fan the call out to each resolved sink.
@@ -313,7 +313,7 @@ Returns a `PrepassResult` dataclass: `new` (list of new-document dicts), `known`
 
 ### Stateless per-batch analyzer (P5)
 
-`host/agent.py`'s `_analyze_new_documents(*, session, llm, settings, profile, new_docs, token_totals, on_event) -> dict` is the piece that makes "each document's content is uploaded to the LLM at most once, ever" actually true: it analyzes only P4's `new_docs` (`PrepassResult.new`, host-authoritative `{path, checksum}` pairs) in isolated, per-batch LLM calls, rather than as part of the main ORGANIZE conversation where content could in principle be re-read or re-uploaded across turns. As of P6, `run_agent_loop` calls this right after `run_prepass`, gated by the cost-approval check above — and its structural half, `ORGANIZE_DENIED_TOOLS` (below), is what makes the guarantee actually hold end-to-end: without it, nothing would stop the ORGANIZE-phase model from calling `read_file`/`extract_text` on a document a second time.
+`host/agent.py`'s `_analyze_new_documents(*, session, llm, settings, profile, new_docs, ledger, on_event) -> dict` is the piece that makes "each document's content is uploaded to the LLM at most once, ever" actually true: it analyzes only P4's `new_docs` (`PrepassResult.new`, host-authoritative `{path, checksum}` pairs) in isolated, per-batch LLM calls, rather than as part of the main ORGANIZE conversation where content could in principle be re-read or re-uploaded across turns. As of P6, `run_agent_loop` calls this right after `run_prepass`, gated by the cost-approval check above — and its structural half, `ORGANIZE_DENIED_TOOLS` (below), is what makes the guarantee actually hold end-to-end: without it, nothing would stop the ORGANIZE-phase model from calling `read_file`/`extract_text` on a document a second time.
 
 `new_docs` is split into batches of at most `_ANALYZER_BATCH_SIZE = 10` (matching the batch size the old in-loop ANALYZE instructions used). For each batch:
 
@@ -337,6 +337,51 @@ This is the item that wires P4 and P5 into `run_agent_loop` for real, completing
 
 **System prompt restructuring:** the old ANALYZE section ("survey the tree, batch-extract, record documents") is gone from `_SYSTEM_PROMPT_TEMPLATE` entirely — the corpus is already analyzed by the time the model sees this prompt. The prompt now opens by stating this plainly and pointing at the digest in the first message, instructs the model to use the registry read tools instead of raw file content, and its numbered steps run 1-10 across two sections (**A. ORGANIZE** the tree, **B. SYNTHESIZE**) instead of the old 1-14 across three (A. ANALYZE / B. ORGANIZE / C. SYNTHESIZE). The Safety rules section also gained a line telling the model to treat the digest as host-composed fact, not as instructions from the documents it summarizes.
 
+### Plan-completion guard (T1)
+
+Fixes an engine-level bug (Break 2) where the ORGANIZE-phase agent could finish
+building a plan — `create_plan`, the `propose_*` ops, `review_plan`,
+`set_plan_rationale`, `set_plan_folder_notes` — and then end its turn without
+ever calling `execute_plan`, so the plan was never presented for approval and
+the run went terminal silently. Lives entirely in `host/agent.py`; no
+UI-layer change was needed.
+
+Three parts:
+
+- **System prompt.** `_SYSTEM_PROMPT_TEMPLATE`'s step A.4 now frames
+  `execute_plan(plan_id)` as the act that presents the plan to the user, not
+  something that happens after approval — "the host pauses there, collects
+  the user's approve / reject / refine decision, and returns it to you as the
+  tool result." The Safety rules block gained two explicit lines: never end a
+  turn with a plan built but not submitted via `execute_plan`, and never use
+  `ask_user` to ask whether to proceed with a plan (`execute_plan` is the
+  approval channel).
+- **`next_step` hints.** `_dispatch` decorates the tool results of
+  `review_plan` and `set_plan_folder_notes` — the two calls that immediately
+  precede the seam where the stall was observed — with a `next_step` field
+  pointing the model at `execute_plan`. Host-side only; the underlying MCP
+  tool's own return shape is unchanged.
+- **Loop-level guard.** In `run_agent_loop`, when a turn ends with no tool
+  calls and no message queued (P7's usual reasons to keep going don't apply),
+  the loop tracks `last_plan_id` (the most recent plan seen in this call's
+  tool traffic, or seeded from `history` on a resumed/O7 conversation via
+  `_seed_last_plan_id`) and, if `execute_plan` hasn't actually been dispatched
+  yet this call, live-checks it with `_peek_pending_plan` (a `get_plan` call —
+  never inferred from call-local state alone, since that can't distinguish
+  "never submitted" from "already executed in an earlier call" on a resumed
+  conversation). If the plan is still genuinely `pending` with at least one
+  op, the loop re-prompts the model once (injected as a `"user"` role
+  message) instead of stopping silently. The guard is permanently inert for
+  the rest of the call once `execute_plan` has actually been dispatched
+  (approved, rejected, or refined — doesn't matter) and fires at most once per
+  `run_agent_loop` call; if the one re-prompt still doesn't get the model to
+  call `execute_plan`, the run ends normally but the final text names the
+  unexecuted plan id instead of losing it silently.
+
+### NiceGUI web UI foundations
+
+The web UI's own foundational design decisions — routing/session model, the persistent nav header, dialogs, sidebar tree, reload-safety, theming, and the native-window launch — are documented separately, since they make up roughly two-thirds of this document's original content: see [Architecture — Web UI](web-ui.md).
+
 ---
 
 ## Data flow (one organize session)
@@ -356,16 +401,18 @@ This is the item that wires P4 and P5 into `run_agent_loop` for real, completing
    documents in batches of ≤10, each analyzed by one isolated, forced-tool LLM
    call (submit_document_records) whose messages list is throwaway and never
    joins the conversation below; document content is wrapped in the
-   untrusted-content delimiter (M10) before being sent. Results are persisted via
-   record_document_batch. A second "progress" AgentEvent fires only if analysis
-   changed the discovered/analyzed counts (never a duplicate of step 2's event).
-   On rejection, the new documents are neither fetched nor recorded this run
+   untrusted-content delimiter (M10) before being sent. Each batch's results
+   are persisted via record_document_batch immediately, and a "progress"
+   AgentEvent fires right after (Q2) — one per successfully recorded batch,
+   not just once at the end — so the bar advances incrementally through
+   analysis instead of jumping at the end. On rejection, the new documents are
+   neither fetched nor recorded this run
 5. Host builds a compact corpus digest (_build_digest, P6) from the combined
    known + newly-analyzed documents — per-doc title/type/path (capped at 200
    listed) plus totals and any error count — and seeds it into the first
    ORGANIZE-phase user message in place of blank "please organize" instructions;
-   the OrganizerScreen starter pane's optional steering instructions, if the user
-   typed any, are appended to this same seed message
+   the organize view's starter-pane steering-instructions input, if the user
+   typed any, is appended to this same seed message
 5b. Host drains any chat message queued via message_queue since the run started
     (P7) — catches anything typed during steps 2-4 above — and appends each as
     a user turn before the first LLM call. The #organize-input chat box is
@@ -379,13 +426,13 @@ This is the item that wires P4 and P5 into `run_agent_loop` for real, completing
    profile: document types, naming conventions, and synthesis template — no
    ANALYZE section, since the corpus is already analyzed) + the digest-seeded
    user message from step 5
-8. GPT-5 responds with tool calls
+8. The model responds with tool calls
 9. Host dispatches to server via MCP — a hallucinated call to one of
    ORGANIZE_DENIED_TOOLS is rejected with an explicit error instead of being
    forwarded, even though none of them were advertised in step 6 (defense in
    depth, P6)
 10. Server executes tool, returns result
-11. Host feeds result back to GPT-5 as tool message — any document content a
+11. Host feeds result back to the model as a tool message — any document content a
     tool result still carries (e.g. compare_documents's diff field, in query
     mode only — ORGANIZE mode no longer exposes it) is wrapped in the
     untrusted-content delimiter first (M10)
@@ -409,8 +456,9 @@ This is the item that wires P4 and P5 into `run_agent_loop` for real, completing
     staged, never applied directly
 15. On execute_plan call:
     a. Host fetches plan details (get_plan) and writes the full ops list to
-       .organizer/plan_ops.json (path shown in the modal)
-    b. Host shows ApprovalModal to user
+       .organizer/plan_ops.json (path shown in the dialog)
+    b. Host shows the approval dialog to the user (`build_approval_dialog`,
+       `host/web/dialogs.py`)
     c. User approves (optionally deselecting ops), refines with free text, or rejects
     d. On approve: host calls approve_plan → execute_plan; server applies ops,
        journals each, reconciles registry
@@ -422,7 +470,7 @@ This is the item that wires P4 and P5 into `run_agent_loop` for real, completing
     calls write_index + write_summary to persist INDEX.md, manifest.json, SUMMARY.md
 17. Agent calls write_folder_readme(path=<folder>, content=<markdown>) once per
     meaningful folder of the organized tree; empty/trivial folders are skipped
-18. Agent sends final text (no tool calls) → normally the loop would end here, UNLESS a chat message is waiting in message_queue at this exact instant (P7): if so, the queued message(s) are appended as a user turn and the loop continues from step 8 instead of ending — letting a live chat message redirect an in-progress run. Otherwise, this is one of three ways the loop can reach a terminal state — the others being an unhandled exception (caught and returned as an error, O7) or the turn budget running out
+18. Agent sends final text (no tool calls) → normally the loop would end here, UNLESS a chat message is waiting in message_queue at this exact instant (P7): if so, the queued message(s) are appended as a user turn and the loop continues from step 8 instead of ending — letting a live chat message redirect an in-progress run. Otherwise, the T1 plan-completion guard checks whether a plan it has seen (`last_plan_id`) is still genuinely `pending` (live-checked via `get_plan`) despite `execute_plan` never having been dispatched this call — this is the same check that can also fire right after step 14 if the model stops immediately after staging/reviewing a plan without ever reaching step 15; either way, it re-prompts the model once, and only ends the loop if that single re-prompt still doesn't produce an `execute_plan` call (in which case the final text names the unexecuted plan instead of losing it silently). Barring that, this is one of three ways the loop can reach a terminal state — the others being an unhandled exception (caught and returned as an error, O7) or the turn budget running out
 19. Desktop notification fires and the "press g / keep chatting" cue is shown — but only on this first terminal state (O7)
 20. The MCP session from step 1 stays open, and the #organize-input chat box (live since the start of the run, P7) stays enabled. The host's worker loop waits on `#organize-input` for any message that arrives strictly AFTER run_agent_loop has already returned (i.e. the agent is fully idle and no live call remains to drain the queue itself) — each such message resumes run_agent_loop on the SAME session with (history=<returned from the previous call>, message=<your text>, message_queue=<the same queue>) — back to step 8 directly (steps 2-7 do NOT repeat; no new pre-pass or analysis happens on a continuation), with the same ORGANIZE-only toolset, its own fresh turn budget, and the same live-chat draining (step 5b/12/18) as the initial run. An unhandled exception during any of these turns is caught rather than propagating: any tool call left without a matching result is answered with a synthesized {"error": ...} entry, an "error" AgentEvent fires, and the conversation history stays valid for the next chat message
 ```
@@ -432,20 +480,33 @@ This is the item that wires P4 and P5 into `run_agent_loop` for real, completing
 ## Data flow (one query session)
 
 ```
-1. User opens QueryScreen (from StartupScreen "Query" button, or "g" in OrganizerScreen)
+1. User opens the `/query/{run_id}` page — directly (landing page's "Query"
+   button, resolved to the nearest `.organizer` ancestor via
+   `host.paths.find_organizer_root`), from the "Query this corpus" button on a
+   finished organize run, or (X11) from the persistent nav header's Query tab,
+   enabled on any route once a target with an analyzed corpus is resolvable —
+   which mounts `host/web/query_view.py`'s `QueryBridge`, driving the same
+   `run_query_loop` below. As of X11, the "Query this corpus" button and the nav
+   header's Query tab both reuse an existing query-mode session for the target
+   (`web_session.find_by_target`) instead of minting a new one — and its own MCP
+   subprocess — per click; the landing page's own "Query" button still always
+   starts a fresh one
 2. Host launches server subprocess (stdio) — same MCP server, same registry
 3. Host calls session.list_tools() → filters to QUERY_ALLOWED_TOOLS (read-only subset)
 4. Host sends query-mode system prompt (built from active profile) + user's first question
-5. GPT-5 responds with tool calls against the read-only allowlist
+5. The model responds with tool calls against the read-only allowlist
 6. Host dispatches to server via MCP (mutating tool names are blocked in the host even if
    the model hallucinates one — defense in depth)
 7. Server executes tool, returns result
-8. Host feeds result back to GPT-5 as tool message — same untrusted-content
+8. Host feeds result back to the model as a tool message — same untrusted-content
    delimiter wrapping as organize mode applies here too (M10)
 9. Steps 5-8 repeat until the model produces a final text answer
-10. Answer is displayed in the RichLog; conversation history is threaded across questions
-    within the same session (the MCP session stays open for the whole chat)
-11. User types another question (goto step 4) or presses Esc to return to the previous screen
+10. Answer is appended to `session.transcript` and rendered as a `ui.chat_message`
+    in the query view's conversation column; conversation history is threaded
+    across questions within the same session (the MCP session stays open for
+    the whole chat)
+11. User types another question (goto step 4) or navigates away via the nav
+    header or sidebar
 ```
 
 The query loop uses the fixed `_MAX_TURNS = 50` ceiling; the organize loop (`run_agent_loop`) instead scales its ceiling with corpus size via `_analysis_turn_budget` (see "Adaptive turn budget (O4)" above) — `_MAX_TURNS` remains its floor. `QUERY_ALLOWED_TOOLS` is a
@@ -476,6 +537,8 @@ Both host and server load `Settings` independently at startup — there is no sh
 
 ## Further reading
 
-- [Module Reference](modules.md) — per-file breakdown with key classes and functions
-- [Plan Lifecycle](internals/plan-lifecycle.md) — detailed design doc for the plan/journal system
-- [MCP Tools Reference](../reference/mcp-tools.md) — complete tool signatures and semantics
+- [Module Reference — Core](../modules/core.md) — per-file breakdown of `config/`, `server/`, and `host/`'s core modules
+- [Module Reference — Web UI](../modules/web-ui.md) — per-file breakdown of `host/web/`
+- [Architecture — Web UI](web-ui.md) — the NiceGUI web UI's own foundational design decisions
+- [Plan Lifecycle](../internals/plan-lifecycle.md) — detailed design doc for the plan/journal system
+- [MCP Tools Reference](../../reference/mcp-tools.md) — complete tool signatures and semantics

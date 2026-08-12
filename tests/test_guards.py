@@ -8,7 +8,10 @@ from pathlib import Path
 from server.guards import (
     check_allowlist,
     check_no_overwrite,
+    check_not_quarantine_collision,
     check_within_root,
+    is_quarantine_like_name,
+    normalize_dir_name,
     safe_quarantine_path,
 )
 
@@ -126,3 +129,70 @@ class TestCheckWithinRoot:
         # No roots configured means nothing is in scope — fail closed, not open.
         with pytest.raises(PermissionError):
             check_within_root(tmp_path / "file.txt", [])
+
+
+class TestNormalizeDirName:
+    def test_casefolds(self) -> None:
+        assert normalize_dir_name("Quarantine") == normalize_dir_name("quarantine")
+
+    def test_strips_accents(self) -> None:
+        assert normalize_dir_name("Quarantäine") == normalize_dir_name("Quarantaine")
+
+    def test_strips_ordering_prefix(self) -> None:
+        assert normalize_dir_name("01_decisions") == normalize_dir_name("decisions")
+        assert normalize_dir_name("2. decisions") == normalize_dir_name("decisions")
+
+    def test_collapses_separator_runs(self) -> None:
+        assert normalize_dir_name("a  -_.b") == "a_b"
+
+    def test_strips_leading_trailing_separators(self) -> None:
+        assert normalize_dir_name("_quarantine_") == "quarantine"
+
+
+class TestIsQuarantineLikeName:
+    def test_matches_configured_name_case_insensitively(self) -> None:
+        assert is_quarantine_like_name("_Quarantine", "_quarantine")
+
+    def test_matches_known_alias(self) -> None:
+        assert is_quarantine_like_name("Quarantaine", "_quarantine")
+        assert is_quarantine_like_name("Corbeille", "_quarantine")
+
+    def test_does_not_match_unrelated_name(self) -> None:
+        assert not is_quarantine_like_name("01_decisions", "_quarantine")
+
+    def test_does_not_match_on_substring_containment(self) -> None:
+        # "quarantaine_sanitaire" is a legitimate taxonomy folder in a real
+        # corpus (public health documents) — must not be rejected just
+        # because it contains the word.
+        assert not is_quarantine_like_name("quarantaine_sanitaire", "_quarantine")
+
+    def test_does_not_match_broader_taxonomy_words(self) -> None:
+        # "archive"/"obsolete" are real taxonomy categories, deliberately
+        # excluded from the alias list.
+        assert not is_quarantine_like_name("archives", "_quarantine")
+        assert not is_quarantine_like_name("obsolete", "_quarantine")
+
+
+class TestCheckNotQuarantineCollision:
+    def test_passes_for_unrelated_name(self, tmp_path: Path) -> None:
+        qdir = tmp_path / "_quarantine"
+        check_not_quarantine_collision(tmp_path / "01_decisions", qdir)  # no exception
+
+    def test_raises_for_configured_name_case_insensitive(self, tmp_path: Path) -> None:
+        qdir = tmp_path / "_quarantine"
+        with pytest.raises(ValueError, match="server-managed quarantine"):
+            check_not_quarantine_collision(tmp_path / "_Quarantine", qdir)
+
+    def test_raises_for_known_alias(self, tmp_path: Path) -> None:
+        qdir = tmp_path / "_quarantine"
+        with pytest.raises(ValueError, match="server-managed quarantine"):
+            check_not_quarantine_collision(tmp_path / "quarantaine", qdir)
+
+    def test_raises_for_path_nested_inside_quarantine(self, tmp_path: Path) -> None:
+        qdir = tmp_path / "_quarantine"
+        with pytest.raises(ValueError, match="quarantine folder"):
+            check_not_quarantine_collision(qdir / "drafts", qdir)
+
+    def test_passes_for_legitimate_similar_name(self, tmp_path: Path) -> None:
+        qdir = tmp_path / "_quarantine"
+        check_not_quarantine_collision(tmp_path / "quarantaine_sanitaire", qdir)  # no exception

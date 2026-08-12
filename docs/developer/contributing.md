@@ -6,11 +6,13 @@
 git clone https://github.com/reboulip/telcontar.git
 cd telcontar
 
-# Install runtime + dev dependencies
-uv sync --group dev
+# Install runtime + dev + test dependencies in one call — separate `uv sync`
+# calls each resync to exactly the groups named on that call, so running
+# `--group dev` then `--group test` separately uninstalls the dev-only tools.
+uv sync --group dev --group test
 
-# Install test dependencies separately
-uv sync --group test
+# Activate the pre-commit hook (one-time per clone)
+uv run pre-commit install
 ```
 
 For dev, configure your LLM endpoint either by running `telcontar` once (setup wizard) or by placing a project-local `.env` file with `LLM_BASE_URL` and `LLM_API_KEY`. See [Configuration](../getting-started/configuration.md) for the full reference.
@@ -22,15 +24,37 @@ For dev, configure your LLM endpoint either by running `telcontar` once (setup w
 | Tool | Purpose | Command |
 |---|---|---|
 | **ruff** | Lint + format | `uv run ruff check .` / `uv run ruff format .` |
-| **mypy** | Type checking | `uv run mypy host server config` |
+| **mypy** | Type checking (CI gate) | `uv run mypy host server config` |
+| **ty** | Type checking (fast local check) | `uv run ty check host server config` |
 | **pytest** | Tests | `uv run --group test pytest` |
+| **pre-commit** | Runs the above on `git commit` | `uv run pre-commit run --all-files` |
 | **mkdocs** | Docs (local preview) | `uv run --group docs mkdocs serve` |
 
 Run all checks before opening a PR:
 
 ```bash
-uv run ruff check . && uv run ruff format --check . && uv run mypy host server config && uv run --group test pytest -q
+uv run ruff check . && uv run ruff format --check . && uv run mypy host server config && uv run ty check host server config && uv run --group test pytest -q
 ```
+
+### Pre-commit hooks
+
+`.pre-commit-config.yaml` wires the table above (minus pytest — the full
+suite is too slow for a per-commit hook) into `git commit`, plus routine
+hygiene checks (trailing whitespace, end-of-file newline, merge-conflict
+markers, large files, TOML/YAML syntax). `ruff format` and `ruff check --fix`
+auto-fix in place; a hook that modifies files reports as failed on that run
+so you can review the diff, re-stage, and commit again. mypy and ty run
+project-wide (`pass_filenames: false`) rather than per-changed-file, since
+type checking needs whole-project context. All local (Python) hooks run
+through `uv run`, so they always use the exact tool versions pinned in
+`uv.lock` — never a separately-managed version. Vendored assets
+(`host/web/assets/`) are excluded from the hygiene hooks so they stay
+byte-identical to upstream.
+
+The full test suite is too slow for a per-commit hook, so it isn't wired
+into pre-commit at all. It still gates every commit through the `/test-select`
+workflow step (see Workflow automation below) and every PR through the CI
+gate.
 
 ---
 
@@ -71,7 +95,6 @@ The project ships several Claude Code skills and agents for development workflow
 |---|---|
 | `/dev-pipeline` | Full sprint orchestrator — reads ROADMAP.md, implements items on `feat/` branches |
 | `/test-select` | Runs minimal pytest scope for the current branch's changes — call before every commit |
-| `repo-manager` agent | Handles all git operations — delegate commits and branch ops here |
 | `doc-keeper` agent | Updates docs at the end of each feature step — runs before the commit |
 | `feature-forecast` agent | Background prefetch — pre-reads codebase for the next ROADMAP item |
 
@@ -92,8 +115,9 @@ uv run --group test pytest tests/test_plan.py  # single module
 - Host/agent tests (`test_host.py`) mock the MCP `ClientSession` and `AsyncOpenAI` client
 - Registry/journal tests exercise the in-memory classes and file persistence directly
 - `test_e2e_toolchain.py` is a cross-module end-to-end integration suite: no LLM, it drives the real server tool implementations against a seeded fixture directory through the full lifecycle (`list_dir` → `read_file`/`extract_text` → `compute_checksum` → `record_document` → `propose_*` → `review_plan` → `approve_plan` → `execute_plan` with registry reconcile → `undo_last` → `write_index`/`write_summary`), asserting real file-I/O effects. This is an intentional exception to the one-module-per-test convention below.
+- `test_web_ui.py` drives the NiceGUI web UI through a real headless page render, using NiceGUI's `user` test fixture (`nicegui.testing.user_plugin`, enabled via `addopts` in `pyproject.toml`'s `[tool.pytest.ini_options]`, plus `main_file = "host/web/main.py"` marking that module as NiceGUI's testing entry point). This is a narrower, non-Selenium fixture — no extra dependency, since `nicegui.testing` ships inside `nicegui`, already a runtime dependency. Everything the web UI's underlying logic needs to prove (approval/cost future resolution, ledger threading, step open/close, etc.) stays covered NiceGUI-free elsewhere (`test_web_session.py`, `test_host_format.py`, `test_host_paths.py`); this file only asserts that a page renders what the session data says and that a click/interaction wires through to the right session call. The module docstring documents five hard-won gotchas (runpy double-module patching — test seams must live in `host/web/session.py`, never `host/web/main.py`, since the `user` fixture runpy-executes the latter as a second module object; `sys.modules['__main__']` eviction between tests; dialog visibility-after-close; the render-poll-interval-vs-assertion-retry-budget race, addressed by `host.web.session.REFRESH_INTERVAL`; and a `.mark("...")` naming convention) — read it before adding more tests here.
 
-**Convention:** Each test module maps to one source module. When adding a new module, add `tests/test_<module>.py` and update the `test-select` scope table in `pyproject.toml`.
+**Convention:** Each test module maps to one source module. When adding a new module, add `tests/test_<module>.py` — `/test-select` picks it up automatically (full-suite-by-default below ~120s, falling back to same-named-file matching above that; no hand-maintained table to update).
 
 ---
 

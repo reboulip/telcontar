@@ -11,7 +11,7 @@ The server registers tools via FastMCP (`server/main.py`); the implementations l
     Every tool that takes a `path` (or `path_a`/`path_b`/`dest_dir`) argument is checked with `check_within_root` before it runs, and raises `PermissionError` if the resolved path falls outside both the run's `TARGET_DIR` and the server's own working directory. This applies whether the escape attempt is an absolute path or a `..` traversal. As of per-directory memory (P2), `.organizer/` and the quarantine dir themselves live *inside* `TARGET_DIR` for every real run, so that boundary is also where the run's own memory resides. For `read_file` / `extract_text` / `compare_documents` and their batch forms `read_file_batch` / `extract_text_batch`, `ALLOWLIST_DIRS` is also checked first via `Settings.effective_allowlist_dirs()` — an explicit, non-empty `ALLOWLIST_DIRS` is used as-is; otherwise it defaults to `[TARGET_DIR]` rather than no restriction — and `check_within_root` then applies as the always-on floor underneath it. In the batch forms, both checks run per path *before* that file is read/extracted, so one disallowed path in a batch surfaces as `{"error": ...}` for that entry rather than raising and failing the whole call. See [Security Model](../developer/security-model.md).
 
 !!! note "Pre-analysis cost-approval gate (O8/P6, host-side)"
-    Gated entirely by the **host**, not the server. As of P6, a fresh organize run first runs a deterministic pre-pass (`run_prepass`) that walks the whole corpus and checksums every file via `compute_checksum_batch` — this call is unconditional and never gated, since it's needed just to tell already-known documents from new ones. If that partition finds any new documents, `host/agent.py` computes a token estimate scoped to ONLY those new documents' sizes and — unless `APPROVAL_MODE=never` — awaits a one-time user approval (`CostEstimateModal`) before running the stateless analyzer, which is what actually calls `extract_text_batch`/`read_file_batch` (to fetch content) and `record_document_batch` (to persist results) for the new documents. A rejection skips the analyzer for this run — the new documents are neither fetched nor recorded. The gate fires at most once per run and is skipped entirely (no event, no callback) when there are no new documents. The MCP server itself has no awareness of this gate — see [Architecture § Pre-analysis cost-approval gate (O8/P6)](../developer/architecture.md#pre-analysis-cost-approval-gate-o8p6).
+    Gated entirely by the **host**, not the server. As of P6, a fresh organize run first runs a deterministic pre-pass (`run_prepass`) that walks the whole corpus and checksums every file via `compute_checksum_batch` — this call is unconditional and never gated, since it's needed just to tell already-known documents from new ones. If that partition finds any new documents, `host/agent.py` computes a token estimate scoped to ONLY those new documents' sizes and — unless `APPROVAL_MODE=never` — awaits a one-time user approval (`CostEstimateModal`) before running the stateless analyzer, which is what actually calls `extract_text_batch`/`read_file_batch` (to fetch content) and `record_document_batch` (to persist results) for the new documents. A rejection skips the analyzer for this run — the new documents are neither fetched nor recorded. The gate fires at most once per run and is skipped entirely (no event, no callback) when there are no new documents. The MCP server itself has no awareness of this gate — see [Architecture § Pre-analysis cost-approval gate (O8/P6)](../developer/architecture/core.md#pre-analysis-cost-approval-gate-o8p6).
 
 !!! note "ORGANIZE-mode tool denylist (P6)"
     The corpus is fully analyzed by the pre-pass + analyzer described above BEFORE the ORGANIZE turn loop starts, so the ORGANIZE-phase model's own toolset structurally excludes `read_file`, `extract_text`, `read_file_batch`, `extract_text_batch`, `compute_checksum`, `compute_checksum_batch`, `record_document`, `record_document_batch`, `compare_documents`, `lookup_documents`, and `rehome_documents` (`ORGANIZE_DENIED_TOOLS` in `host/agent.py`) — content-fetching/recording tools it has no legitimate reason to call again. This is a denylist, not just a prompt instruction: none of these tools are advertised to the model in ORGANIZE mode, and a hallucinated call to one of them is rejected with an explicit error regardless. Query mode is unaffected by this denylist — `read_file`, `extract_text`, `compare_documents`, `compute_checksum`, and their batch forms remain available there via `QUERY_ALLOWED_TOOLS`.
@@ -247,7 +247,7 @@ Read-only pre-flight check. Detects:
 | `plan_id` | str | UUID of the plan |
 | `total_ops` | int | Total ops in the plan |
 | `duplicates` | list | Duplicate op groups `{src, op_type, op_ids}` |
-| `missing_sources` | list | Missing file entries `{op_id, op_type, src}` |
+| `missing_sources` | list | Missing file entries `{op_id, op_type, src}` — `create_dir` ops are exempt, since their `src` is the not-yet-created destination directory rather than a path expected to already exist |
 | `is_valid` | bool | True when no duplicates and no missing sources |
 
 Does not modify the plan.
@@ -306,7 +306,7 @@ Append proposed file operations to an existing `pending` plan. Each call perform
 propose_rename(path: str, new_name: str, plan_id: str) -> dict
 ```
 
-Stage a rename of `path` to `new_name` (basename only, not a full path). Raises `FileExistsError` if `{parent}/{new_name}` already exists.
+Stage a rename of `path` to `new_name` (basename only, not a full path). Raises `FileExistsError` if `{parent}/{new_name}` already exists. Also raises `ValueError` (X8) if the resulting name collides with the configured quarantine folder — its own name or a known quarantine/discard-word alias, case/locale-insensitive — so a taxonomy rename can never shadow the server-managed quarantine folder.
 
 **Returns:** `{plan_id, op_id, op_type, src, dst, status, ops_count}`
 
@@ -318,17 +318,17 @@ Stage a rename of `path` to `new_name` (basename only, not a full path). Raises 
 propose_move(path: str, dest_dir: str, plan_id: str) -> dict
 ```
 
-Stage moving `path` into `dest_dir`. Raises `FileExistsError` if `dest_dir/filename` already exists. Raises `ValueError` if `dest_dir` is not an existing directory **and** no `propose_create_dir` op for that exact path is already queued earlier in the same pending plan — this lets the agent propose "create a folder, then move a file into it" within a single plan, regardless of the two ops' relative order: `execute_plan` runs every `create_dir` op before any other op type, so the dependent `move` always finds its destination already created (and self-heals via its own `mkdir` even if it doesn't).
+Stage moving `path` into `dest_dir`. Raises `FileExistsError` if `dest_dir/filename` already exists. Raises `ValueError` if `dest_dir` is not an existing directory **and** no `propose_create_dir` op for that exact path is already queued earlier in the same pending plan — this lets the agent propose "create a folder, then move a file into it" within a single plan, regardless of the two ops' relative order: `execute_plan` runs every `create_dir` op before any other op type, so the dependent `move` always finds its destination already created (and self-heals via its own `mkdir` even if it doesn't). Also raises `ValueError` (X8) if `dest_dir`'s basename collides with the quarantine folder (same alias/case-fold check as `propose_rename`) or `dest_dir` resolves inside the quarantine directory itself — checked on the destination only, never the source, so moving a file *out of* quarantine stays legal.
 
 ---
 
 ### `propose_quarantine`
 
 ```python
-propose_quarantine(path: str, plan_id: str) -> dict
+propose_quarantine(path: str, plan_id: str, reason: str = "") -> dict
 ```
 
-Stage moving `path` to `QUARANTINE_DIR`. Unlike `propose_rename` and `propose_move`, collision is handled by **suffixing** the destination name (e.g. `report_1.pdf`, `report_2.pdf`) rather than raising — quarantine should never block.
+Stage moving `path` to `QUARANTINE_DIR`. Unlike `propose_rename` and `propose_move`, collision is handled by **suffixing** the destination name (e.g. `report_1.pdf`, `report_2.pdf`) rather than raising — quarantine should never block. `reason` (V10) is a short, concrete justification — duplicate of X, superseded by Y, unreadable *and* superfluous, etc.; the system prompt no longer accepts "unreadable" alone as sufficient. It is stored on the op and shown beside the file at approval time (a blank reason renders as "no reason given" rather than looking indistinguishable from a justified one); the server itself does not validate or require it.
 
 ---
 
@@ -362,7 +362,7 @@ Stage writing `content` to `path`, whether or not it already exists. Refuses to 
 propose_create_dir(path: str, plan_id: str) -> dict
 ```
 
-Stage creating a directory (and any missing parents) at `path`. Idempotent and collision-safe at execution time — creating a directory that already exists is a no-op, not an error. Raises `ValueError` at proposal time if `path` already exists as a file.
+Stage creating a directory (and any missing parents) at `path`. Idempotent and collision-safe at execution time — creating a directory that already exists is a no-op, not an error. Raises `ValueError` at proposal time if `path` already exists as a file. Also raises `ValueError` (X8) if `path`'s basename collides with the configured quarantine folder or resolves inside it — an agent-proposed taxonomy folder can never collide with the server-managed quarantine folder; use `propose_quarantine` to set a document aside instead.
 
 **Returns:** same shape as `propose_create_file`.
 
@@ -499,7 +499,7 @@ The built-in `local_markdown` sink writes to `README.md` inside the folder at `p
 
 ## Recovery
 
-`undo_last` is **not** an MCP tool — it is not registered with the server, so the agent has no way to call it. As of the plan-flow security hardening (M1), undo is a direct, user-triggered action in the TUI only: the operations-journal viewer (`JournalScreen`, opened with the **j** key in the Organizer screen) has a **u** ("Undo last") keybinding that calls `server.tools.undo_last` directly, bypassing the MCP layer entirely.
+`undo_last` is **not** an MCP tool — it is not registered with the server, so the agent has no way to call it. As of the plan-flow security hardening (M1), undo is a direct, user-triggered action in the web UI only: the journal dialog (`host/web/journal.py`, opened via the run page's "Journal" toolbar button) has an "Undo last operation" button that calls `server.tools.undo_last` directly, bypassing the MCP layer entirely.
 
 `undo_last(journal_path, plans_dir) -> dict` reverts the most recent journaled operation by inverting it and removing the journal entry:
 
@@ -806,4 +806,4 @@ The list is capped at `salient_cap` from the active profile (`[entities]` sectio
 | `list_archived` | — | — | — | — | — | ✓ | ✓ | ✓ |
 
 !!! note "Since removed / restructured (M1 security hardening)"
-    This table predates the plan-flow gating change and does not carry phase columns for it. `move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`, `archive_document`, `compress_quarantine`, and `undo_last` were removed from the agent-callable surface entirely. Their functionality now goes through `propose_create_file`, `propose_update_file`, `propose_create_dir`, and `propose_archive_document`/`propose_compress_quarantine` (staged like every other op, applied only via `execute_plan`); `undo_last` is now a TUI-only user action (see [Recovery](#recovery) above).
+    This table predates the plan-flow gating change and does not carry phase columns for it. `move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`, `archive_document`, `compress_quarantine`, and `undo_last` were removed from the agent-callable surface entirely. Their functionality now goes through `propose_create_file`, `propose_update_file`, `propose_create_dir`, and `propose_archive_document`/`propose_compress_quarantine` (staged like every other op, applied only via `execute_plan`); `undo_last` is now a web-UI-only user action (see [Recovery](#recovery) above).

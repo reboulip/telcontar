@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
@@ -14,7 +16,7 @@ _settings = None
 _profile = None
 
 
-def _get_settings():
+def _get_settings() -> Any:
     global _settings
     if _settings is None:
         from config.settings import load
@@ -23,7 +25,7 @@ def _get_settings():
     return _settings
 
 
-def _get_profile():
+def _get_profile() -> Any:
     global _profile
     if _profile is None:
         from server.profile import load_profile
@@ -33,7 +35,7 @@ def _get_profile():
     return _profile
 
 
-def _confinement_roots(cfg) -> list[Path]:
+def _confinement_roots(cfg: Any) -> list[Path]:
     """Roots every path-taking tool is confined to (M2/S3): the run's target
     directory (if the host set one via TARGET_DIR) plus the server's own working
     directory, where `.organizer` and the quarantine dir live by default."""
@@ -44,13 +46,19 @@ def _confinement_roots(cfg) -> list[Path]:
     return roots
 
 
-def _check_within_root(path: str, cfg) -> None:
+def _check_within_root(path: str, cfg: Any) -> None:
     from server.guards import check_within_root
 
     check_within_root(Path(path), _confinement_roots(cfg))
 
 
-def _log_egress(path: str, content: str, tool: str, cfg) -> None:
+def _check_not_quarantine(path: str, cfg: Any) -> None:
+    from server.guards import check_not_quarantine_collision
+
+    check_not_quarantine_collision(Path(path), cfg.quarantine_dir)
+
+
+def _log_egress(path: str, content: str, tool: str, cfg: Any) -> None:
     """Record a file whose content was sent to the LLM endpoint (S8/M12).
 
     ``content`` is what the tool actually returned (post-truncation), so the
@@ -63,7 +71,7 @@ def _log_egress(path: str, content: str, tool: str, cfg) -> None:
     _egress.append(cfg.egress_path, _egress.EgressEntry.new(path, size, tool))
 
 
-def _log_egress_from_disk(path: str, tool: str, cfg) -> None:
+def _log_egress_from_disk(path: str, tool: str, cfg: Any) -> None:
     """Like ``_log_egress``, but sizes from the file itself rather than a
     returned string — used where a tool doesn't expose each input's individual
     contribution to its output (e.g. ``compare_documents``' combined diff).
@@ -99,7 +107,11 @@ def walk_tree(path: str, max_depth: int = 3) -> dict:
     again on that subpath to go deeper)."""
     cfg = _get_settings()
     _check_within_root(path, cfg)
-    hidden = frozenset({".organizer", cfg.quarantine_dir.name})
+    # normcase (not the fuzzy guards.normalize_dir_name) — this is an exact
+    # name hide, not the quarantine-alias fuzzy match; a differently-cased
+    # on-disk folder (Windows: `_Quarantine` vs. a configured `_quarantine`)
+    # must still be hidden from discovery.
+    hidden = frozenset({os.path.normcase(".organizer"), os.path.normcase(cfg.quarantine_dir.name)})
     return tools.walk_tree(path, max_depth, hidden_names=hidden)
 
 
@@ -309,6 +321,7 @@ def propose_rename(path: str, new_name: str, plan_id: str) -> dict:
     """Stage a rename operation in the named plan."""
     cfg = _get_settings()
     _check_within_root(path, cfg)
+    _check_not_quarantine(str(Path(path).parent / new_name), cfg)
     return tools.propose_rename(path, new_name, plan_id, cfg.plans_dir)
 
 
@@ -318,15 +331,21 @@ def propose_move(path: str, dest_dir: str, plan_id: str) -> dict:
     cfg = _get_settings()
     _check_within_root(path, cfg)
     _check_within_root(dest_dir, cfg)
+    # Guard the destination only — never the source, or moving a file back
+    # out of quarantine (a legal, common operation) would be blocked too.
+    _check_not_quarantine(dest_dir, cfg)
     return tools.propose_move(path, dest_dir, plan_id, cfg.plans_dir)
 
 
 @mcp.tool()
-def propose_quarantine(path: str, plan_id: str) -> dict:
-    """Stage a quarantine operation in the named plan."""
+def propose_quarantine(path: str, plan_id: str, reason: str = "") -> dict:
+    """Stage a quarantine operation in the named plan. ``reason`` is a short,
+    concrete justification shown to the user at approval time — duplicate of X,
+    superseded by Y, unreadable and superfluous, etc. "unreadable" alone is not
+    a sufficient reason on its own; say what actually makes the file disposable."""
     cfg = _get_settings()
     _check_within_root(path, cfg)
-    return tools.propose_quarantine(path, plan_id, cfg.plans_dir, cfg.quarantine_dir)
+    return tools.propose_quarantine(path, plan_id, cfg.plans_dir, cfg.quarantine_dir, reason)
 
 
 @mcp.tool()
@@ -352,6 +371,7 @@ def propose_create_dir(path: str, plan_id: str) -> dict:
     """Stage creating a directory (and parents) in the named plan; idempotent."""
     cfg = _get_settings()
     _check_within_root(path, cfg)
+    _check_not_quarantine(path, cfg)
     return tools.propose_create_dir(path, plan_id, cfg.plans_dir)
 
 

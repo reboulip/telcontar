@@ -6,7 +6,7 @@
 |---|---|
 | Python 3.12+ | Tested on 3.12 and 3.13 |
 | [uv](https://docs.astral.sh/uv/) | Package and environment manager |
-| GPT-5 endpoint | Azure OpenAI (prod) or Mammouth (dev) — any OpenAI-compatible API works |
+| OpenAI-compatible endpoint | Azure OpenAI, Mammouth, or any other provider with an OpenAI-compatible chat-completions API |
 
 ### Install uv
 
@@ -51,7 +51,7 @@ telcontar
 The wizard asks for your AI service URL and API key, then saves them securely (OS credential store on Windows and macOS, or `~/.telcontar/config.env` as fallback). No manual editing of config files required.
 
 !!! tip
-    You can re-open the settings at any time from the main screen using the **⚙ Settings** button or pressing `s`.
+    You can re-open the settings at any time from any page using the nav bar's **Settings** tab or the **⚙ Settings** entry in the sidebar.
 
 ---
 
@@ -74,10 +74,12 @@ uv run --group test pytest -q
 
 | Command | What it does |
 |---|---|
-| `telcontar` | Launches the Textual TUI (the normal way to use telcontar) |
+| `telcontar` | Launches the NiceGUI web UI, by default in its own native window (via `pywebview`, Windows only — falls back to a browser tab automatically if unavailable) — the normal way to use telcontar |
 | `telcontar-server` | Starts the MCP server over stdio (usually invoked automatically by the host) |
 
-Both accept `--help` and `--version`, which print and exit immediately without launching the TUI or the server.
+Both accept `--help` and `--version`, which print and exit immediately without launching either UI or the server.
+
+`telcontar` also accepts `--browser` (launches the web UI in the system browser instead of a native window) and `--target PATH` (skips the landing page's directory picker and jumps straight to a run for `PATH`).
 
 ---
 
@@ -91,4 +93,6 @@ cd telcontar
 uv sync --all-groups
 ```
 
-For dev, point `LLM_BASE_URL`/`LLM_API_KEY` at Mammouth via a `.env` file in the project root.  See [Configuration](configuration.md) for the full reference.
+For dev, point `LLM_BASE_URL`/`LLM_API_KEY` at your endpoint via a `.env` file in the project root.  See [Configuration](configuration.md) for the full reference.
+
+For the full toolchain (ruff, mypy, ty, pre-commit hooks) and contribution workflow, see [Contributing](../developer/contributing.md).

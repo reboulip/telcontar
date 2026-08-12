@@ -42,8 +42,9 @@ class PlanOp:
     error: str | None = None
     retries: int = 0
     # Op-specific data that doesn't fit src/dst (e.g. {"content": ...} for
-    # create_file/update_file, {"checksum": ..., "reason": ...} for
-    # archive_document, {"delete_originals": ...} for compress_quarantine).
+    # create_file/update_file, {"reason": ...} for quarantine (V10),
+    # {"checksum": ..., "reason": ...} for archive_document,
+    # {"delete_originals": ...} for compress_quarantine).
     params: dict[str, Any] | None = None
 
     @classmethod

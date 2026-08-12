@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     llm_base_url: str = ""
     llm_api_key: str = ""
     llm_model: str = "gpt-5"
-    llm_api_version: str = ""  # Azure only; leave empty for Mammouth
+    llm_api_version: str = ""  # Azure only; leave empty for every other provider
 
     # Safety
     approval_mode: Literal["always", "destructive_only", "never"] = "always"
@@ -58,6 +58,8 @@ class Settings(BaseSettings):
     archive_path: Path = Path(".organizer/archive.jsonl")
     # S8: audit trail of document content sent to the LLM endpoint
     egress_path: Path = Path(".organizer/egress.jsonl")
+    # R2: per-step token-usage profiling log (input/output tokens per LLM call)
+    token_log_path: Path = Path(".organizer/tokens.jsonl")
 
     # Egress / extraction
     max_snippet_chars: int = 4000
@@ -110,6 +112,7 @@ class Settings(BaseSettings):
                 "graph_path": _rebase(self.graph_path),
                 "archive_path": _rebase(self.archive_path),
                 "egress_path": _rebase(self.egress_path),
+                "token_log_path": _rebase(self.token_log_path),
             }
         )
 
@@ -176,6 +179,13 @@ def save_user_config(updates: dict[str, str], allow_plaintext_fallback: bool = F
     """
     _USER_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Defense in depth: never mutate the caller's dict. A caller that reused
+    # the same dict object across a PlaintextKeyFallbackNeeded retry would
+    # otherwise find llm_api_key already popped on the second call — and
+    # since that's silent (no KeyError, .pop has a default), the retry would
+    # save without the API key. Every caller in this codebase already builds
+    # a fresh dict per attempt, but this makes the function safe regardless.
+    updates = dict(updates)
     api_key = updates.pop("llm_api_key", None)
 
     if api_key is not None:
@@ -228,7 +238,7 @@ def _read_config_file() -> dict[str, str]:
 def _keyring_get() -> str:
     """Return the API key from the OS credential store, or '' on any failure."""
     try:
-        import keyring  # type: ignore[import-untyped]
+        import keyring
 
         return keyring.get_password("telcontar", "llm_api_key") or ""
     except Exception:
@@ -238,7 +248,7 @@ def _keyring_get() -> str:
 def _keyring_set(api_key: str) -> bool:
     """Store api_key in the OS credential store. Returns True on success."""
     try:
-        import keyring  # type: ignore[import-untyped]
+        import keyring
 
         keyring.set_password("telcontar", "llm_api_key", api_key)
         return True

@@ -1,8 +1,16 @@
 site_name: Telcontar
-site_description: Local AI document organizer — profile-driven, MCP-powered, GPT-5 backed
+site_description: Local AI document organizer — profile-driven, MCP-powered, backend-agnostic
 repo_url: https://github.com/reboulip/telcontar
 repo_name: telcontar
 docs_dir: docs
+
+# ROADMAP-ARCHIVE.md lives under docs/ so a single copy can be linked from
+# both ROADMAP.md and here, but it's an internal planning record, not user
+# documentation — exclude it so it's never built/indexed into the published
+# site (mkdocs builds every .md under docs_dir by default, nav: alone does
+# not stop that).
+exclude_docs: |
+  ROADMAP-ARCHIVE.md
 
 theme:
   name: material
@@ -74,8 +82,12 @@ nav:
       - host: reference/api/host.md
       - config: reference/api/config.md
   - Developer Guide:
-    - Architecture: developer/architecture.md
-    - Module Reference: developer/modules.md
+    - Architecture:
+      - Core: developer/architecture/core.md
+      - Web UI: developer/architecture/web-ui.md
+    - Module Reference:
+      - Core: developer/modules/core.md
+      - Web UI: developer/modules/web-ui.md
     - Adding a Profile: developer/adding-profiles.md
     - Contributing: developer/contributing.md
     - Security Model: developer/security-model.md

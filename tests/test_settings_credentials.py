@@ -74,3 +74,28 @@ class TestSaveUserConfigKeyringUnavailable:
 
         content = _isolated_user_config.read_text(encoding="utf-8")
         assert "PROFILE=personal_files" in content
+
+    def test_same_dict_reused_on_retry_still_saves_the_key(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _isolated_user_config: Path
+    ) -> None:
+        """Regression (Phase 20 U2): save_user_config used to pop llm_api_key
+        out of its argument dict before raising PlaintextKeyFallbackNeeded. A
+        caller that reused the same dict object on retry (rather than
+        rebuilding it) would silently save without the key on the second
+        call — since Wave 1's setup wizard rebuilds its dict fresh per
+        attempt via a builder callable, this couldn't happen there, but the
+        function itself must be safe regardless of caller discipline.
+        """
+        monkeypatch.setattr(settings_module, "_keyring_set", lambda key: False)
+        updates = {"llm_base_url": "https://example.com", "llm_api_key": "sk-secret"}
+
+        with pytest.raises(PlaintextKeyFallbackNeeded):
+            save_user_config(updates)
+
+        # The caller's dict must be untouched by the failed attempt.
+        assert updates == {"llm_base_url": "https://example.com", "llm_api_key": "sk-secret"}
+
+        save_user_config(updates, allow_plaintext_fallback=True)
+
+        content = _isolated_user_config.read_text(encoding="utf-8")
+        assert "LLM_API_KEY=sk-secret" in content

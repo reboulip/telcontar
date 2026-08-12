@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import re
+import unicodedata
 from pathlib import Path
 
 
@@ -62,6 +65,87 @@ def check_within_root(path: Path, roots: list[Path]) -> None:
     raise PermissionError(
         f"{path} is outside the confined directories. Allowed: {[str(r) for r in roots]}"
     )
+
+
+# X8: names an agent-proposed taxonomy folder must not collide with — the
+# configured quarantine dir itself (handled separately, via normalize_dir_name
+# below) plus a tight set of known discard/quarantine words across the
+# languages a real corpus is likely to use. Whole-normalized-basename match
+# only (never substring), so a legitimate folder like "quarantaine_sanitaire"
+# or "archives" stays usable — broader words like "archive"/"obsolete" are
+# deliberately excluded, they're real taxonomy categories in many corpora.
+_QUARANTINE_ALIASES = frozenset(
+    {
+        "quarantine",
+        "quarantaine",
+        "quarantena",
+        "cuarentena",
+        "trash",
+        "corbeille",
+        "poubelle",
+        "a_supprimer",
+        "to_delete",
+        "a_jeter",
+        "junk",
+    }
+)
+
+_ORDERING_PREFIX_RE = re.compile(r"^\d+[\s._-]*")
+_SEPARATOR_RUN_RE = re.compile(r"[\s._-]+")
+
+
+def normalize_dir_name(name: str) -> str:
+    """Fold a directory name to a locale/case-insensitive comparison key.
+
+    NFKD-decomposes and drops combining marks (so accented variants fold
+    together, e.g. "Quarantäine" ~ "quarantaine"), casefolds (locale-
+    insensitive, unlike ``.lower()``), strips a leading ordering prefix
+    ("01_", "2. ", ...), trims leading/trailing separators, and collapses
+    inner separator runs to a single underscore.
+    """
+    decomposed = unicodedata.normalize("NFKD", name)
+    without_marks = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    folded = without_marks.casefold()
+    without_prefix = _ORDERING_PREFIX_RE.sub("", folded)
+    trimmed = without_prefix.strip("_-. ")
+    return _SEPARATOR_RUN_RE.sub("_", trimmed)
+
+
+def is_quarantine_like_name(name: str, quarantine_dir_name: str) -> bool:
+    """True when ``name`` normalizes to the configured quarantine folder's
+    name, or to a known quarantine/discard alias (X8) — a whole-basename
+    match only, never substring containment."""
+    normalized = normalize_dir_name(name)
+    return (
+        normalized == normalize_dir_name(quarantine_dir_name) or normalized in _QUARANTINE_ALIASES
+    )
+
+
+def check_not_quarantine_collision(dest: Path, quarantine_dir: Path) -> None:
+    """Raise ``ValueError`` if ``dest`` collides with the server-managed
+    quarantine folder (X8) — either its basename reads as quarantine-like,
+    or ``dest`` resolves inside ``quarantine_dir`` itself (catches a nested
+    taxonomy folder proposed *under* quarantine, e.g. ``_quarantine/drafts``).
+
+    Proposal-time only (never from ``_apply_op``), and never wraps
+    ``propose_quarantine``/``propose_archive_document``/
+    ``propose_compress_quarantine`` — those legitimately target the
+    quarantine dir, and guarding them would break quarantine outright.
+    """
+    if is_quarantine_like_name(dest.name, quarantine_dir.name):
+        raise ValueError(
+            f"{dest} collides with the server-managed quarantine folder "
+            f"({quarantine_dir.name}). Use propose_quarantine(path, reason) to set a "
+            "document aside; choose a different taxonomy folder name."
+        )
+    dest_norm = os.path.normcase(os.path.normpath(str(dest)))
+    quarantine_norm = os.path.normcase(os.path.normpath(str(quarantine_dir)))
+    if dest_norm == quarantine_norm or dest_norm.startswith(quarantine_norm + os.sep):
+        raise ValueError(
+            f"{dest} is inside the server-managed quarantine folder ({quarantine_dir}). "
+            "Use propose_quarantine(path, reason) to set a document aside; choose a "
+            "different taxonomy folder name."
+        )
 
 
 def format_io_error(action: str, path: Path | str, exc: OSError) -> str:

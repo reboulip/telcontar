@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "telcontar"
-version = "0.1.0b5"
-description = "MCP-based local directory organizer driven by GPT-5"
+version = "1.0.0"
+description = "MCP-based local directory organizer, backend-agnostic (any OpenAI-compatible LLM)"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
@@ -18,10 +18,11 @@ dependencies = [
     "pydantic>=2.13",        # config + data validation
     "pydantic-settings>=2.14",  # Pydantic Settings integration
     "rich>=15.0",            # pretty CLI output / plan diffs
-    "textual>=0.80",         # full TUI framework (host app)
     "plyer>=2.1",            # cross-platform desktop notifications
     "keyring>=24.0",         # OS credential store for the API key
     "extract-msg>=0.55.0",
+    "nicegui>=3.15.0",
+    "pywebview>=5.4 ; sys_platform == 'win32'",
 ]
 
 [project.scripts]
@@ -33,7 +34,8 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.15",
     "mypy>=2.1",
-    "textual-dev>=1.8.0",
+    "ty>=0.0.70",
+    "pre-commit>=4.0",
 ]
 test = [
     "pytest>=8.0",
@@ -57,8 +59,13 @@ target-version = "py312"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+addopts = "-p nicegui.testing.user_plugin"
+main_file = "host/web/main.py"
 
 [tool.mypy]
 python_version = "3.12"
 warn_unused_ignores = true
 disallow_untyped_defs = true
+
+[tool.ty.environment]
+python-version = "3.12"

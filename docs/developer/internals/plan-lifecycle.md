@@ -23,6 +23,8 @@ executing → stopped (if >3 ops fail in a single run)
 **pending**
 Initial state after propose_* calls. The plan contains a list of proposed operations but has not been approved by the user. Multiple proposals may accumulate in a single pending plan via repeated propose_* calls with the same plan_id.
 
+A pending plan only ever reaches the user when the agent calls execute_plan — that call is what triggers the host's approval UI, not something that happens after approval. If the agent's turn ends with a plan still pending and execute_plan was never called this run (the T1 bug: the plan was fully staged/reviewed but the turn ended anyway), the host's agent loop (`host/agent.py::run_agent_loop`) detects this by live-checking the plan's state and re-prompts the agent once to call execute_plan, rather than leaving the plan invisible to the user. This is a host-side reliability guard, not a plan-engine state transition — the plan itself stays in pending exactly as before.
+
 **approved**
 User has reviewed the plan and explicitly approved it. Only plans in approved state may be executed. Approval is recorded but not persisted in this design—the host manages it in memory.
 
@@ -93,7 +95,7 @@ Fields:
   - src: Absolute path to the source file or directory.
   - new_name (rename only): New name for the file (not a path).
   - dest_dir (move only): Absolute path to the destination directory.
-  - params: Op-specific data that doesn't fit src/dst — e.g. `{"content": ...}` for create_file/update_file, `{"content": ..., "overwrite": ...}` for update_file, `{"checksum": ..., "reason": ...}` for archive_document, `{"delete_originals": ...}` for compress_quarantine. `null` for op types that carry no extra data (rename, move, quarantine, create_dir).
+  - params: Op-specific data that doesn't fit src/dst — e.g. `{"content": ...}` for create_file/update_file, `{"content": ..., "overwrite": ...}` for update_file, `{"reason": ...}` for quarantine (V10 — a user-facing justification such as "duplicate of X"; empty string if the agent supplied none), `{"checksum": ..., "reason": ...}` for archive_document, `{"delete_originals": ...}` for compress_quarantine. `null` for op types that carry no extra data (rename, move, create_dir).
   - proposed_at: ISO 8601 timestamp when the operation was proposed.
   - status: Current status of the operation within the plan. May be pending, completed, or failed.
 
@@ -183,17 +185,18 @@ Propose moving a file to a different directory.
 3. Append the operation to the plan.
 4. Write the plan file.
 
-### propose_quarantine(path: str) -> dict
+### propose_quarantine(path: str, reason: str = "") -> dict
 
 Propose moving a file to the quarantine directory.
 
 **Inputs:**
 - path: Absolute path to the file.
+- reason (V10): Short, concrete justification for quarantining the file — duplicate of X, superseded by Y, unreadable *and* superfluous, etc. Not validated or required by the server (an empty string is accepted), but the host's ORGANIZE system prompt instructs the agent to always supply one and no longer accepts "unreadable" alone as sufficient; a blank reason displays to the user as "no reason given" at approval time.
 
 **Processing:**
 1. Validate that path is a file.
 2. Generate a safe destination path in QUARANTINE_DIR using safe_quarantine_path (handles collisions by suffixing).
-3. Append the operation to the plan.
+3. Append the operation to the plan, storing `reason` (stripped of surrounding whitespace) in `params.reason`.
 4. Write the plan file.
 
 ### propose_create_file(path, content, plan_id) -> dict / propose_update_file(path, content, plan_id, overwrite=False) -> dict / propose_create_dir(path, plan_id) -> dict / propose_archive_document(checksum, plan_id, reason="") -> dict / propose_compress_quarantine(plan_id, delete_originals=True) -> dict
@@ -209,7 +212,7 @@ Scan a plan for issues without modifying it.
 **Processing:**
 1. Load the plan file for plan_id.
 2. Scan all operations for duplicate (src, op_type) pairs. Flag these as conflicts.
-3. Validate that all source files still exist.
+3. Validate that all source files still exist, except for `create_dir` ops — their `src` holds the not-yet-created destination directory, not an existing path, so they are skipped by this check.
 4. Return a report.
 
 ## Executing a Plan
@@ -242,7 +245,7 @@ Ops are staged against the file's original path (`src` at propose time). Within 
 
 Revert the most recent journaled operation.
 
-**Not an MCP tool.** As of the M1 security-hardening pass, `undo_last` is no longer registered with the server, so the agent has no way to call it. It exists purely as a plain function in `server/tools.py`, invoked directly (bypassing MCP) from the TUI's `JournalScreen` — press **j** in the Organizer screen to open it, then **u** to trigger undo. This makes undo a deliberate, user-only action.
+**Not an MCP tool.** As of the M1 security-hardening pass, `undo_last` is no longer registered with the server, so the agent has no way to call it. It exists purely as a plain function in `server/tools.py`, invoked directly (bypassing MCP) from the NiceGUI web UI's journal dialog (`host/web/journal.py`'s `do_undo`, opened via the run page's "Journal" toolbar button, U6) — the "Undo last operation" button, gated on `RunSession.has_open_step()` and disabled while a tool call is in flight, since `pop_last` (below) rewrites the whole journal file while the MCP server subprocess may still be appending to it. This makes undo a deliberate, user-only action. Prior to Phase 22 (W1), the Textual TUI's `JournalScreen` offered the same action; that UI is now deleted.
 
 **Processing:**
 1. Load the journal.
