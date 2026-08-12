@@ -29,7 +29,7 @@ import secrets
 import socket
 import sys
 from collections.abc import MutableMapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -78,6 +78,11 @@ class _RenderState:
     shown_request_id: str | None = None
     fs_revision: int = 0
     last_preview_path: Path | None = None
+    # #43: rendered activity-entry labels, in thread order — used to flip a
+    # phase from ⏳ (ongoing) to ✔️ (done) the moment a NEWER phase starts
+    # (or the run finishes), since activity entries render once via the
+    # thread_seq cursor and are never re-rendered.
+    activity_labels: list[ui.label] = field(default_factory=list)
 
 
 def _start_run(target: Path) -> web_session.RunSession:
@@ -267,12 +272,22 @@ async def run_page(run_id: str) -> None:
                 with ui.column().classes("w-1/3").mark("doc-preview"):
                     doc_pane = build_doc_pane()
             status_label = ui.label()
-            # V14: a row, not a bare bar, so the integer-percent label sits
-            # beside it — and so V8b's current-document label has a slot to
-            # join as a third sibling without another restructure.
+            # V14/#40: a row, not a bare bar. The integer-percent label lives
+            # ON the bar itself (absolute-center inside q-linear-progress),
+            # replacing Quasar's default raw-float value label — show_value=False
+            # is what kills the "0.16949…" that NiceGUI otherwise binds inside
+            # the bar, and our own label is the human-readable "17%". The bar's
+            # height comes from `size` (default 20px with the built-in label);
+            # with show_value=False the default size collapses to 4px, so a
+            # non-default size keeps the on-bar label legible.
             with ui.row().classes("w-full items-center gap-2").mark("progress-row") as progress_row:
-                progress_percent_label = ui.label().mark("progress-percent")
-                progress_bar = ui.linear_progress(value=0.0).classes("flex-grow")
+                progress_bar = ui.linear_progress(value=0.0, show_value=False, size="16px").classes(
+                    "flex-grow"
+                )
+                with progress_bar:
+                    progress_percent_label = (
+                        ui.label().classes("absolute-center text-white").mark("progress-percent")
+                    )
                 progress_current_label = ui.label().classes("text-caption").mark("progress-current")
             progress_row.visible = False
             with ui.row().classes("w-full items-center"):
@@ -357,11 +372,33 @@ async def run_page(run_id: str) -> None:
                     bubble_props
                 )
 
+        def _flip_activity_done() -> None:
+            # Rewrite the newest rendered activity label from ⏳ to ✔️. Called
+            # when a NEWER phase begins (so the just-previous one is no longer
+            # ongoing) and when the run finishes (so the final phase reads as
+            # done, not stuck spinning).
+            if render_state.activity_labels:
+                newest = render_state.activity_labels[-1]
+                if newest.text.startswith("⏳"):
+                    newest.set_text("✔️" + newest.text[1:])
+
         def _render_activity(entry: web_session.ActivityEntry) -> None:
+            # #43: a phase renders ⏳ while it is the newest activity entry
+            # (nothing has superseded it yet) and flips to ✔️ the moment a
+            # newer phase starts or the run finishes — _flip_activity_done
+            # rewrites already-rendered labels. Left-aligned (telcontar's own
+            # side of the thread), small and grey so it reads as status, not a
+            # chat turn. A "done" run renders every phase ✔️ from the start
+            # (a page reload mid-run correctly shows only the final phase ⏳).
             with conversation_column:
-                ui.label(entry.text).classes("text-xs text-grey-6 self-center").mark(
-                    "activity-entry"
+                label = (
+                    ui.label(f"{'⏳' if not session.done else '✔️'} {entry.text}")
+                    .classes("text-xs text-grey-6")
+                    .mark("activity-entry")
                 )
+            if render_state.activity_labels:
+                _flip_activity_done()
+            render_state.activity_labels.append(label)
 
         def _render_thread_item(
             item: web_session.TranscriptItem | web_session.ActivityEntry,
@@ -393,6 +430,12 @@ async def run_page(run_id: str) -> None:
                 if item.seq > render_state.thread_seq:
                     _render_thread_item(item)
                     render_state.thread_seq = item.seq
+
+            # #43: the final phase must read as done once the run finishes.
+            # The "done"/"error" turn is already in the thread; flip the
+            # newest activity label (still ⏳ from when it was live) to ✔️.
+            if session.done and render_state.activity_labels:
+                _flip_activity_done()
 
             steplog.sync_steps(log_column, shell, step_log_state, session.steps)
 

@@ -124,7 +124,15 @@ def reveal_in_file_manager(path: Path) -> bool:
     """
     try:
         if sys.platform == "win32":
-            subprocess.Popen(["explorer", f"/select,{path}"])
+            # NB: EXPLORER's /SELECT switch needs the path quoted separately from
+            # the switch prefix. `Popen(["explorer", "/select,C:\my path\f"])`
+            # produces `explorer "/select,C:\my path\f"` — the quotes wrap
+            # the whole argv entry, and Explorer fails to parse it, falling
+            # back to the default location (usually Documents). Passing a
+            # string command line avoids re-quoting: the caller quotes only
+            # the path portion, yielding the correct form
+            # `explorer /select,"C:\my path\f"`.
+            subprocess.Popen(f'explorer /select,"{path}"')
         elif sys.platform == "darwin":
             subprocess.Popen(["open", "-R", str(path)])
         else:

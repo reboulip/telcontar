@@ -87,6 +87,19 @@ from host.web.session import RunSession
 # to every way a drag can end: a normal release (pointerup), the browser
 # revoking capture on its own (pointercancel/lostpointercapture), and the
 # whole window losing focus mid-drag, e.g. alt-tab (blur).
+# #34: the width-bearing element is `aside.q-drawer`, NOT the element that
+# carries our `.tc-sidebar` class. Quasar renders the drawer as
+# `div.q-drawer-container > aside.q-drawer > div.q-drawer__content`, and the
+# component's own class (`.nicegui-drawer.tc-sidebar`) plus the slot content
+# (the resize handle) both land on the INNER `div.q-drawer__content`, which
+# Quasar also classes `fit` — and `.fit { width:100% !important }`. Querying
+# `document.querySelector('.tc-sidebar')` therefore returns that inner div,
+# whose inline `style.width` is defeated by the `!important`, so the drag
+# changed nothing and the drawer was never resizable (this was the
+# remaining #34 bug after V15's IIFE fix). The `aside.q-drawer`'s own width
+# is a plain inline style (set from the Quasar `width` prop), so writing
+# `style.width` there works. `closest('aside.q-drawer')` from the handle
+# finds it regardless of how many drawers/nested containers exist.
 _RESIZE_JS = """
 (() => {
   if (window.__tcSidebarResizeWired) return;
@@ -106,7 +119,7 @@ _RESIZE_JS = """
   };
   document.addEventListener('pointerdown', (e) => {
     if (!e.target.closest('.tc-sidebar-resize')) return;
-    drawer = document.querySelector('.tc-sidebar');
+    drawer = e.target.closest('aside.q-drawer');
     if (!drawer) return;
     dragging = true;
     startX = e.clientX;

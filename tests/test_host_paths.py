@@ -177,7 +177,7 @@ def test_reveal_in_file_manager_uses_explorer_select_on_windows(
     target = tmp_path / "plan_ops.json"
     assert reveal_in_file_manager(target) is True
 
-    assert calls == [["explorer", f"/select,{target}"]]
+    assert calls == [f'explorer /select,"{target}"']
 
 
 def test_reveal_in_file_manager_uses_open_dash_r_on_macos(
@@ -209,7 +209,7 @@ def test_reveal_in_file_manager_opens_parent_folder_on_linux(
 def test_reveal_in_file_manager_never_raises_on_spawn_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def _boom(args: list[str]) -> None:
+    def _boom(args: str) -> None:
         raise OSError("no such program")
 
     monkeypatch.setattr(host_paths.sys, "platform", "win32")
@@ -225,7 +225,7 @@ def test_reveal_in_file_manager_never_waits_on_the_child_process(
     inspect a return code, just fire-and-forget."""
 
     class _FakePopen:
-        def __init__(self, args: list[str]) -> None:
+        def __init__(self, args: str) -> None:
             self.args = args
 
         def wait(self) -> int:

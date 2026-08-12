@@ -1563,6 +1563,22 @@ def test_sidebar_resize_js_captures_the_pointer_and_covers_every_drag_end() -> N
     assert "'blur'" in code or '"blur"' in code
 
 
+def test_sidebar_resize_targets_the_q_drawer_aside_not_the_fit_content_div() -> None:
+    """#34: the width-bearing element is `aside.q-drawer`. Quasar renders the
+    drawer as `div.q-drawer-container > aside.q-drawer > div.q-drawer__content`
+    and puts our `.tc-sidebar` class plus the slot content on the INNER
+    content div, which it also classes `fit` — and `.fit` is
+    `width:100% !important`, so writing `style.width` on that element is a
+    silent no-op (this was the remaining #34 bug after V15's IIFE fix). The
+    JS must grab the `aside` (whose width is a plain inline style) from the
+    handle, not `document.querySelector('.tc-sidebar')`.
+    Behaviorally unverifiable in the headless harness (no JS executes), so
+    this stays a string-shape assertion like the other _RESIZE_JS checks."""
+    code = web_shell._RESIZE_JS
+    assert "closest('aside.q-drawer')" in code
+    assert "querySelector('.tc-sidebar')" not in code
+
+
 async def test_progress_row_hidden_when_no_batch_is_running(user: User, tmp_path: Path) -> None:
     session = web_session.create(tmp_path)
     session.started = True
@@ -1572,9 +1588,11 @@ async def test_progress_row_hidden_when_no_batch_is_running(user: User, tmp_path
 
 
 async def test_progress_bar_shows_rounded_integer_percent(user: User, tmp_path: Path) -> None:
-    """V14: `ui.linear_progress` shows its raw float value ("0.75") by
+    """V14/#40: `ui.linear_progress` shows its raw float value ("0.75") by
     default — the row must show a formatted, rounded integer percent instead
-    ("75%"), not the float."""
+    ("75%"), not the float, and the percent must sit ON the bar itself
+    (absolute-center inside q-linear-progress), not in a separate label
+    beside it."""
     session = web_session.create(tmp_path)
     session.started = True
     session.progress = {"analyzed": 3, "total": 4}
@@ -1586,6 +1604,10 @@ async def test_progress_bar_shows_rounded_integer_percent(user: User, tmp_path: 
     [percent_label] = user.find(marker="progress-percent").elements
     assert percent_label.text == "75%"
     assert "0.75" not in percent_label.text
+    # #40: the label lives inside the bar element (the bar's default slot),
+    # not as a sibling beside it — the raw-float default label is gone.
+    [bar] = user.find(kind=ui.linear_progress).elements
+    assert percent_label.parent_slot.parent is bar
 
 
 async def test_progress_current_document_label_shows_in_flight_filename(
@@ -1697,11 +1719,52 @@ async def test_activity_entries_interleave_chronologically_with_conversation_tur
     # .elements has no defined order (gotcha #7 above) — sort by NiceGUI's
     # own element id, assigned in creation order, to recover it.
     entries = sorted(user.find(marker="activity-entry").elements, key=lambda e: e.id)
+    # #43: only the NEWEST phase carries ⏳; every earlier one already flipped
+    # to ✔️ when the next phase began.
     assert [e.text for e in entries] == [
-        "Scanning the directory…",
-        "Reading documents…",
-        "Planning changes…",
+        "✔️ Scanning the directory…",
+        "✔️ Reading documents…",
+        "⏳ Planning changes…",
     ]
     # Chronological interleave: user turn, two activity entries, telcontar
     # turn, one more activity entry — ids are assigned in creation order.
     assert user_bubble.id < entries[0].id < entries[1].id < telcontar_bubble.id < entries[2].id
+
+
+async def test_activity_entries_flip_to_done_when_the_run_finishes(
+    user: User, tmp_path: Path
+) -> None:
+    """#43: when the run finishes, the final (still-⏳) phase flips to ✔️ so
+    no phase is left looking in-flight after "Done"."""
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.add_activity("Reading documents…")
+    session.add_activity("Planning changes…")
+    session.done = True
+    session.add_turn("telcontar", "✓ Done\nAll files organized.")
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see("✓ Done")
+
+    entries = sorted(user.find(marker="activity-entry").elements, key=lambda e: e.id)
+    assert [e.text for e in entries] == [
+        "✔️ Reading documents…",
+        "✔️ Planning changes…",
+    ]
+
+
+async def test_activity_entry_from_a_done_run_renders_done_from_the_start(
+    user: User, tmp_path: Path
+) -> None:
+    """#43: reopening a completed run (session.done already True at page
+    build) must not show the last phase spinning — every phase reads ✔️."""
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.add_activity("Planning changes…")
+    session.done = True
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see("Planning changes…")
+
+    [entry] = user.find(marker="activity-entry").elements
+    assert entry.text == "✔️ Planning changes…"
