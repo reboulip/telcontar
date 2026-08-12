@@ -3063,7 +3063,7 @@ wheels = [
 
 [[package]]
 name = "telcontar"
-version = "0.1.0b5"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "extract-msg" },
