@@ -9,6 +9,15 @@ description = "MCP-based local directory organizer, backend-agnostic (any OpenAI
 readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Utilities",
+]
 
 dependencies = [
     "mcp>=1.28,<2",          # MCP Python SDK; cap at v2 stable boundary
@@ -24,6 +33,11 @@ dependencies = [
     "nicegui>=3.15.0",
     "pywebview>=5.4 ; sys_platform == 'win32'",
 ]
+
+[project.urls]
+Homepage = "https://github.com/reboulip/telcontar"
+Repository = "https://github.com/reboulip/telcontar"
+Issues = "https://github.com/reboulip/telcontar/issues"
 
 [project.scripts]
 telcontar        = "host.main:main"

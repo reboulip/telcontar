@@ -13,7 +13,7 @@ Local AI assistant that organizes a directory tree: renames files to readable na
 ## Setup
 
 ```bash
-uv tool install git+https://github.com/reboulip/telcontar.git
+uv tool install telcontar
 ```
 
 Then launch `telcontar` once. On first run the **setup wizard** appears automatically — it collects your AI service URL and API key, stores the key in the OS credential store (Windows Credential Manager / macOS Keychain), and saves non-sensitive settings to `~/.telcontar/config.env`. No manual editing of config files required.
