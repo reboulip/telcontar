@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # just the `.organizer` working dir.
     target_dir: Path | None = None
     quarantine_dir: Path = Path("_quarantine")
+    # Y6: how execute_plan disposes of folders its own moves left empty —
+    # "quarantine" (default, falls back to an in-place "_empty_" rename on
+    # any error), "rename" (always in-place), or "off" (no sweep).
+    empty_folder_policy: Literal["quarantine", "rename", "off"] = "quarantine"
     journal_path: Path = Path(".organizer/journal.jsonl")
     events_path: Path = Path(".organizer/events.jsonl")
     plans_dir: Path = Path(".organizer/plans")

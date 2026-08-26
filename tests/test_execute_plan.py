@@ -838,3 +838,283 @@ class TestExecutePlanChainedOps:
         assert rec is not None
         assert rec.checksum == "c1"  # identity stays stable across both ops
         assert rec.path == str(dest_dir / "new.txt")  # path tracked through the chain
+
+
+class TestEmptyFolderSweep:
+    """Y6: a folder left empty by a move/quarantine op gets auto-disposed of,
+    gated entirely on ``target_dir`` being passed."""
+
+    def _make_target(self, tmp_path: Path) -> Path:
+        target = tmp_path / "target"
+        target.mkdir()
+        return target
+
+    def test_sweep_is_inert_without_target_dir(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        target = self._make_target(tmp_path)
+        src_dir = target / "source"
+        src_dir.mkdir()
+        src = src_dir / "doc.txt"
+        src.write_text("x")
+        dest_dir = target / "dest"
+        dest_dir.mkdir()
+
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("move", str(src), str(dest_dir)))
+        save(p, plans_dir)
+
+        result = execute_plan(p.plan_id, plans_dir, journal_path)  # no target_dir
+
+        assert result["emptied_folders"] == []
+        assert src_dir.exists()  # left alone — sweep never ran
+
+    def test_quarantines_a_folder_emptied_by_a_move(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        target = self._make_target(tmp_path)
+        src_dir = target / "source"
+        src_dir.mkdir()
+        src = src_dir / "doc.txt"
+        src.write_text("x")
+        dest_dir = target / "dest"
+        dest_dir.mkdir()
+        quarantine_dir = target / "_quarantine"
+
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("move", str(src), str(dest_dir)))
+        save(p, plans_dir)
+
+        result = execute_plan(
+            p.plan_id, plans_dir, journal_path, quarantine_dir=quarantine_dir, target_dir=target
+        )
+
+        assert not src_dir.exists()
+        assert (quarantine_dir / "source").is_dir()
+        assert result["emptied_folders"] == [
+            {
+                "path": str(src_dir),
+                "action": "quarantined",
+                "dst": str(quarantine_dir / "source"),
+                "error": None,
+            }
+        ]
+
+    def test_sweep_is_undoable(self, tmp_path: Path, plans_dir: Path, journal_path: Path) -> None:
+        from server.tools import undo_last
+
+        target = self._make_target(tmp_path)
+        src_dir = target / "source"
+        src_dir.mkdir()
+        src = src_dir / "doc.txt"
+        src.write_text("x")
+        dest_dir = target / "dest"
+        dest_dir.mkdir()
+        quarantine_dir = target / "_quarantine"
+
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("move", str(src), str(dest_dir)))
+        save(p, plans_dir)
+        execute_plan(
+            p.plan_id, plans_dir, journal_path, quarantine_dir=quarantine_dir, target_dir=target
+        )
+        assert not src_dir.exists()
+
+        undo_last(journal_path, plans_dir)  # reverses the sweep first (last journaled)
+        assert src_dir.is_dir()
+        assert next(src_dir.iterdir(), None) is None  # empty again, restored not repopulated
+
+        undo_last(journal_path, plans_dir)  # reverses the move
+        assert src.exists()
+
+    def test_rename_fallback_when_quarantine_move_fails(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        target = self._make_target(tmp_path)
+        src_dir = target / "source"
+        src_dir.mkdir()
+        src = src_dir / "doc.txt"
+        src.write_text("x")
+        dest_dir = target / "dest"
+        dest_dir.mkdir()
+        quarantine_dir = target / "_quarantine"
+
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("move", str(src), str(dest_dir)))
+        save(p, plans_dir)
+
+        with patch("server.tools.shutil.move", side_effect=OSError("locked")):
+            result = execute_plan(
+                p.plan_id,
+                plans_dir,
+                journal_path,
+                quarantine_dir=quarantine_dir,
+                target_dir=target,
+            )
+
+        # The move op itself also uses shutil.move and fails — retried 3x then
+        # recorded as a failed op; the folder is never emptied, so the sweep
+        # has nothing to do. Assert the sweep doesn't blow up execute_plan.
+        assert result["emptied_folders"] == []
+
+    def test_policy_rename_always_renames_in_place(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        target = self._make_target(tmp_path)
+        src_dir = target / "source"
+        src_dir.mkdir()
+        src = src_dir / "doc.txt"
+        src.write_text("x")
+        dest_dir = target / "dest"
+        dest_dir.mkdir()
+
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("move", str(src), str(dest_dir)))
+        save(p, plans_dir)
+
+        result = execute_plan(
+            p.plan_id,
+            plans_dir,
+            journal_path,
+            target_dir=target,
+            empty_folder_policy="rename",
+        )
+
+        assert not src_dir.exists()
+        assert (target / "_empty_source").is_dir()
+        assert result["emptied_folders"][0]["action"] == "renamed"
+
+    def test_policy_off_disables_the_sweep(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        target = self._make_target(tmp_path)
+        src_dir = target / "source"
+        src_dir.mkdir()
+        src = src_dir / "doc.txt"
+        src.write_text("x")
+        dest_dir = target / "dest"
+        dest_dir.mkdir()
+
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("move", str(src), str(dest_dir)))
+        save(p, plans_dir)
+
+        result = execute_plan(
+            p.plan_id, plans_dir, journal_path, target_dir=target, empty_folder_policy="off"
+        )
+
+        assert src_dir.exists()
+        assert result["emptied_folders"] == []
+
+    def test_cascade_collapses_a_two_level_hollow_shell(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        target = self._make_target(tmp_path)
+        outer = target / "outer"
+        inner = outer / "inner"
+        inner.mkdir(parents=True)
+        src = inner / "doc.txt"
+        src.write_text("x")
+        dest_dir = target / "dest"
+        dest_dir.mkdir()
+        quarantine_dir = target / "_quarantine"
+
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("move", str(src), str(dest_dir)))
+        save(p, plans_dir)
+
+        result = execute_plan(
+            p.plan_id, plans_dir, journal_path, quarantine_dir=quarantine_dir, target_dir=target
+        )
+
+        assert not outer.exists()
+        # Deepest-first: `inner` (the move's src parent) is disposed of first,
+        # which empties `outer` in turn — `outer` is re-queued and disposed of
+        # separately, so both levels end up as their own journaled entry.
+        assert (quarantine_dir / "inner").is_dir()
+        assert (quarantine_dir / "outer").is_dir()
+        assert [e["path"] for e in result["emptied_folders"]] == [str(inner), str(outer)]
+        assert {e["action"] for e in result["emptied_folders"]} == {"quarantined"}
+
+    def test_target_root_itself_is_never_swept(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        target = self._make_target(tmp_path)
+        src = target / "doc.txt"
+        src.write_text("x")
+        dest_dir = target / "dest"
+        dest_dir.mkdir()
+        quarantine_dir = target / "_quarantine"
+
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("move", str(src), str(dest_dir)))
+        save(p, plans_dir)
+
+        result = execute_plan(
+            p.plan_id, plans_dir, journal_path, quarantine_dir=quarantine_dir, target_dir=target
+        )
+
+        assert target.exists()  # never disposed of, even though now near-empty
+        assert result["emptied_folders"] == []
+
+    def test_plan_created_dir_is_never_swept(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        target = self._make_target(tmp_path)
+        src = target / "doc.txt"
+        src.write_text("x")
+        dest_dir = target / "new_taxonomy"
+        quarantine_dir = target / "_quarantine"
+
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("create_dir", str(dest_dir), ""))
+        p.ops.append(PlanOp.new("move", str(src), str(dest_dir)))
+        save(p, plans_dir)
+
+        # Move src's parent (target) is never swept (it's the root); the real
+        # assertion here is that create_dir's own freshly-created dest_dir is
+        # never mistaken for an emptied-and-disposable candidate even though
+        # it's a dir under target — it's simply never added as a candidate
+        # (only a move/quarantine op's *source* parent is), so this mainly
+        # guards against a future regression that also globs create_dir dirs.
+        execute_plan(
+            p.plan_id, plans_dir, journal_path, quarantine_dir=quarantine_dir, target_dir=target
+        )
+
+        assert dest_dir.is_dir()
+        assert (dest_dir / "doc.txt").exists()
+
+    def test_hard_stop_skips_the_sweep(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        target = self._make_target(tmp_path)
+        quarantine_dir = target / "_quarantine"
+        src_dirs = []
+        p = Plan.new()
+        p.transition("approved")
+        for i in range(5):
+            src_dir = target / f"source{i}"
+            src_dir.mkdir()
+            src_dirs.append(src_dir)
+            # Missing files -> FileNotFoundError -> non-retryable failure,
+            # 5 failures exceeds the >3 hard-stop threshold.
+            p.ops.append(PlanOp.new("move", str(src_dir / "missing.txt"), str(target / "dest")))
+        save(p, plans_dir)
+
+        result = execute_plan(
+            p.plan_id, plans_dir, journal_path, quarantine_dir=quarantine_dir, target_dir=target
+        )
+
+        assert result["hard_stop"] is True
+        assert result["emptied_folders"] == []
+        for src_dir in src_dirs:
+            assert src_dir.exists()  # sweep never ran

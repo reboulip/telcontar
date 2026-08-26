@@ -410,6 +410,8 @@ def execute_plan(plan_id: str) -> dict:
         cfg.registry_path,
         cfg.quarantine_dir,
         cfg.archive_path,
+        cfg.target_dir,
+        cfg.empty_folder_policy,
     )
 
 

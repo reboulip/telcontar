@@ -148,6 +148,93 @@ def check_not_quarantine_collision(dest: Path, quarantine_dir: Path) -> None:
         )
 
 
+def normkey(path: Path) -> str:
+    """Case/separator-normalized comparison key for a resolved path — used to
+    compare paths for equality/membership across platforms (Windows path
+    comparisons are case-insensitive)."""
+    return os.path.normcase(os.path.normpath(str(path.resolve())))
+
+
+def is_dir_empty(path: Path) -> bool:
+    """True if ``path`` is a directory with zero entries. False (never
+    raises) if ``path`` doesn't exist, isn't a directory, or can't be listed."""
+    try:
+        return next(path.iterdir(), None) is None
+    except OSError:
+        return False
+
+
+def safe_quarantine_dir_path(src: Path, quarantine_dir: Path) -> Path:
+    """Like ``safe_quarantine_path`` but for directories: suffixes the WHOLE
+    basename on collision (``2024.backup`` -> ``2024.backup_1``) instead of
+    splitting a stem/suffix, which would mangle a dotted directory name."""
+    dest = quarantine_dir / src.name
+    if not dest.exists():
+        return dest
+    counter = 1
+    while True:
+        candidate = quarantine_dir / f"{src.name}_{counter}"
+        if not candidate.exists():
+            return candidate
+        counter += 1
+
+
+def empty_marker_path(folder: Path, prefix: str = "_empty_") -> Path:
+    """Collision-safe in-place rename target for a folder emptied by
+    ``execute_plan`` moves (Y6) that can't be quarantined."""
+    dest = folder.parent / f"{prefix}{folder.name}"
+    if not dest.exists():
+        return dest
+    counter = 1
+    while True:
+        candidate = folder.parent / f"{prefix}{folder.name}_{counter}"
+        if not candidate.exists():
+            return candidate
+        counter += 1
+
+
+def is_sweep_protected(
+    path: Path,
+    *,
+    target_root: Path,
+    quarantine_dir: Path,
+    organizer_dir: Path,
+    plan_created_dirs: set[str],
+) -> bool:
+    """True if ``path`` must never be auto-disposed of by the empty-folder
+    sweep (Y6): the target root itself, anything outside it, the quarantine
+    dir (or an ancestor/descendant of it), the ``.organizer`` working dir
+    (likewise), and any directory this same plan run created via a
+    ``create_dir`` op (``plan_created_dirs``, pre-normalized via ``normkey``)."""
+    resolved = path.resolve()
+    key = normkey(path)
+
+    target_resolved = target_root.resolve()
+    if key == normkey(target_root):
+        return True
+    try:
+        resolved.relative_to(target_resolved)
+    except ValueError:
+        return True  # outside the target root entirely
+
+    for protected_dir in (quarantine_dir, organizer_dir):
+        protected_resolved = protected_dir.resolve()
+        if key == normkey(protected_dir):
+            return True
+        try:
+            protected_resolved.relative_to(resolved)
+            return True  # `path` is an ancestor of this protected dir
+        except ValueError:
+            pass
+        try:
+            resolved.relative_to(protected_resolved)
+            return True  # `path` is inside this protected dir
+        except ValueError:
+            pass
+
+    return key in plan_created_dirs
+
+
 def format_io_error(action: str, path: Path | str, exc: OSError) -> str:
     """Return a clear, consistent message for a failed filesystem operation.
 

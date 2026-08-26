@@ -16,7 +16,16 @@ from server import graph as _graph
 from server import plan as _plan
 from server import registry as _registry
 from server.extract import extract as _extract
-from server.guards import check_no_overwrite, format_io_error, safe_quarantine_path
+from server.guards import (
+    check_no_overwrite,
+    empty_marker_path,
+    format_io_error,
+    is_dir_empty,
+    is_sweep_protected,
+    normkey,
+    safe_quarantine_dir_path,
+    safe_quarantine_path,
+)
 from server.profile import Profile as _Profile
 
 _CHECKSUM_CHUNK = 65536
@@ -586,6 +595,8 @@ def execute_plan(
     registry_path: Path | None = None,
     quarantine_dir: Path | None = None,
     archive_path: Path | None = None,
+    target_dir: Path | None = None,
+    empty_folder_policy: str = "quarantine",
 ) -> dict:
     """Apply approved ops with per-op retry; hard-stop if >3 fail in one run.
 
@@ -598,6 +609,15 @@ def execute_plan(
     ``archive_document``/``compress_quarantine`` functions, which self-journal with
     the same ``op_type`` strings ``undo_last`` already understands ("quarantine" /
     "compress"), so this loop skips its generic journal append for them.
+
+    Y6: when ``target_dir`` is given (and only then — every existing caller that
+    omits it keeps the old, sweep-free behaviour), any directory left empty by a
+    completed ``move``/``quarantine``/``archive_document`` op is disposed of per
+    ``empty_folder_policy`` ("quarantine" [default], "rename", or "off") after all
+    ops run, skipped entirely on a hard stop. This is a fully journaled, automatic
+    consequence of already-approved moves — not a new op needing its own approval
+    — reusing the existing "quarantine"/"rename" journal op types so ``undo_last``
+    needs no new code path.
     """
     from datetime import datetime, timezone
     from server import journal as _journal
@@ -620,6 +640,11 @@ def execute_plan(
     # Tracks each file's current on-disk path as ops relocate it within this run,
     # keyed by the op's original src, so chained ops (rename then move) resolve (F7).
     moved: dict[str, str] = {}
+    # Y6: parent dirs a completed move/quarantine/archive_document op may have
+    # emptied, and dirs this same plan run created (create_dir) — both feed the
+    # sweep below. Only populated when target_dir is set (see docstring).
+    emptied_candidates: set[str] = set()
+    plan_created_dirs: set[str] = set()
 
     # Run all create_dir ops before any other op (each group keeping its relative
     # order), so a deselected/failed create_dir can't cascade into a hard stop for
@@ -685,6 +710,14 @@ def execute_plan(
             op.status = "completed"
             completed_count += 1
             moved[op.src] = new_location  # type: ignore[assignment]  # ty: ignore[invalid-assignment]
+            if target_dir is not None:
+                if op.op_type == "create_dir":
+                    plan_created_dirs.add(normkey(Path(new_location)))  # type: ignore[arg-type]
+                elif (
+                    op.op_type in ("move", "quarantine", "archive_document")
+                    and new_location != src_path
+                ):
+                    emptied_candidates.add(str(Path(src_path).parent))
             if op.op_type not in _SELF_JOURNALING_OP_TYPES:
                 _journal.append(
                     journal_path,
@@ -727,7 +760,20 @@ def execute_plan(
                 "ops_completed": completed_count,
                 "ops_failed": len(failed_ops),
                 "hard_stop": True,
+                "emptied_folders": [],
             }
+
+    emptied_folders: list[dict] = []
+    if target_dir is not None and emptied_candidates:
+        emptied_folders = _sweep_emptied_dirs(
+            emptied_candidates,
+            target_dir=target_dir,
+            quarantine_dir=quarantine_dir or (target_dir / "_quarantine"),
+            empty_folder_policy=empty_folder_policy,
+            plan_created_dirs=plan_created_dirs,
+            journal_path=journal_path,
+            plan_id=plan_id,
+        )
 
     p.transition("failed" if failed_ops else "done")
     _plan.save(p, plans_dir)
@@ -736,7 +782,101 @@ def execute_plan(
         "ops_completed": completed_count,
         "ops_failed": len(failed_ops),
         "hard_stop": False,
+        "emptied_folders": emptied_folders,
     }
+
+
+def _sweep_emptied_dirs(
+    candidates: set[str],
+    *,
+    target_dir: Path,
+    quarantine_dir: Path,
+    empty_folder_policy: str,
+    plan_created_dirs: set[str],
+    journal_path: Path,
+    plan_id: str,
+) -> list[dict]:
+    """Y6: dispose of any candidate directory left empty by this run's moves,
+    deepest-first, cascading to a disposed folder's parent so a multi-level
+    hollow shell collapses fully. Never raises, never touches plan state —
+    a failure is recorded as a "skipped" result, not surfaced as an op failure."""
+    from datetime import datetime, timezone
+    from server import journal as _journal
+
+    if empty_folder_policy == "off":
+        return []
+
+    organizer_dir = target_dir / ".organizer"
+    results: list[dict] = []
+    queue = sorted(candidates, key=lambda p: len(Path(p).parts), reverse=True)
+    seen: set[str] = set()
+
+    while queue:
+        raw = queue.pop(0)
+        folder = Path(raw)
+        key = normkey(folder)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        try:
+            if not folder.is_dir():
+                continue
+            if is_sweep_protected(
+                folder,
+                target_root=target_dir,
+                quarantine_dir=quarantine_dir,
+                organizer_dir=organizer_dir,
+                plan_created_dirs=plan_created_dirs,
+            ):
+                continue
+            if not is_dir_empty(folder):
+                continue
+
+            action: str
+            dst: Path
+
+            if empty_folder_policy == "rename":
+                dst = empty_marker_path(folder)
+                folder.rename(dst)
+                action = "renamed"
+            else:  # "quarantine" (default) — falls back to the in-place rename
+                try:
+                    q_dest = safe_quarantine_dir_path(folder, quarantine_dir)
+                    q_dest.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(folder), str(q_dest))
+                    dst = q_dest
+                    action = "quarantined"
+                except OSError:
+                    dst = empty_marker_path(folder)
+                    folder.rename(dst)
+                    action = "renamed"
+
+            entry: dict = {
+                "op_type": "quarantine" if action == "quarantined" else "rename",
+                "plan_id": plan_id,
+                "op_id": "",
+                "src": str(folder),
+                # rename's dst is a BARE NAME (undo_last reconstructs
+                # Path(src).parent / dst); quarantine's dst is the full path.
+                "dst": str(dst) if action == "quarantined" else dst.name,
+                "target_kind": "dir",
+                "reason": "emptied_by_plan",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            _journal.append(journal_path, entry)
+            results.append({"path": str(folder), "action": action, "dst": str(dst), "error": None})
+
+            parent_key = normkey(folder.parent)
+            if parent_key not in seen:
+                queue.append(str(folder.parent))
+                queue.sort(key=lambda p: len(Path(p).parts), reverse=True)
+        except OSError as exc:
+            results.append(
+                {"path": str(folder), "action": "skipped", "dst": None, "error": str(exc)}
+            )
+
+    return results
 
 
 _NON_RETRYABLE_ERRORS = (ValueError, FileNotFoundError, FileExistsError)
