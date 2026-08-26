@@ -115,6 +115,13 @@ class RunSession:
         self._seq += 1
         return self._seq
 
+    def seed_seq(self, value: int) -> None:
+        """Set the turn-sequence counter's starting point (Y2) — used when
+        restoring a session from a persisted snapshot, so newly appended
+        turns continue numbering after what was already there instead of
+        colliding with it."""
+        self._seq = value
+
     def add_turn(self, speaker: str, text: str) -> None:
         """Append a speaker-tagged turn — a genuine user<->telcontar exchange,
         never telcontar's own tool activity (that's `open_step`/`close_step`
@@ -227,6 +234,16 @@ def create(target: Path, *, mode: Literal["organize", "query"] = "organize") -> 
 
 def get(run_id: str) -> RunSession | None:
     return _SESSIONS.get(run_id)
+
+
+def register(session: RunSession) -> None:
+    """Insert an already-constructed RunSession into the live registry, as
+    ``create()`` does for a fresh one — used by the resume flow (Y2), which
+    restores a RunSession from a persisted snapshot and needs to preserve
+    the persisted run_id rather than mint a fresh one via create()."""
+    _SESSIONS[session.run_id] = session
+    if session.mode == "organize":
+        set_active(session.run_id)
 
 
 def close(run_id: str) -> None:

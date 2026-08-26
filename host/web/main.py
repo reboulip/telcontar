@@ -41,6 +41,7 @@ from host.agent import ApprovalResult, AskUserResult, CostApprovalResult
 from host.paths import directory_overview, find_organizer_root
 from host.web import chat, corpus, journal
 from host.web import security
+from host.web import sessions as web_sessions_store
 from host.web import session as web_session
 from host.web import steplog
 from host.web import theme
@@ -54,6 +55,7 @@ from host.web.dialogs import (
 )
 from host.web.graph_view import build_graph_view
 from host.web.query_view import build_query_view
+from host.web.sessions_view import build_session_detail_view, build_sessions_view
 from host.web.settings import build_settings_view
 from host.web.shell import app_shell
 from host.web.wizard import build_setup_wizard
@@ -194,6 +196,20 @@ async def setup_page() -> None:
 async def settings_page() -> None:
     with app_shell(active="settings"):
         await build_settings_view(on_done=lambda: ui.navigate.back())
+
+
+@ui.page("/sessions")
+async def sessions_page() -> None:
+    with app_shell(active="sessions"):
+        ui.page_title("telcontar — Sessions")
+        await build_sessions_view()
+
+
+@ui.page("/sessions/{run_id}")
+async def session_detail_page(run_id: str) -> None:
+    with app_shell(active="sessions"):
+        ui.page_title("telcontar — Sessions")
+        await build_session_detail_view(run_id)
 
 
 @ui.page("/run/{run_id}")
@@ -720,6 +736,10 @@ def run_web(target: Path | None = None, *, native: bool = True) -> None:
                     case "ask":
                         result = AskUserResult(reply="", provided=False)
                 session.resolve_pending(result)
+            # Y2: final checkpoint before the driving task is cancelled below
+            # — a graceful quit shouldn't lose the last <10s of activity a
+            # throttled mid-run checkpoint hasn't flushed yet.
+            web_sessions_store.snapshot(session)
             # U7: every organize/query session leaves its MCP server
             # subprocess running for the process's lifetime (nothing ever
             # calls web_session.close() today) — a real lifecycle is future

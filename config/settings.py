@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     # (no message content, no credentials) — always on, to aid corporate/Azure
     # troubleshooting without a reproduce-with-a-flag round trip.
     llm_debug_log_path: Path = Path(".organizer/llm-debug.jsonl")
+    # Y2: per-session transcript + LLM-history snapshots, so a session
+    # survives a process restart. Lives inside .organizer/ (the existing
+    # allowlist/egress boundary) since a snapshot carries corpus-derived
+    # text; the home-directory sessions index (metadata only) is separate —
+    # see config.settings.user_sessions_index_path().
+    sessions_dir: Path = Path(".organizer/sessions")
 
     # Egress / extraction
     max_snippet_chars: int = 4000
@@ -122,11 +128,22 @@ class Settings(BaseSettings):
                 "egress_path": _rebase(self.egress_path),
                 "token_log_path": _rebase(self.token_log_path),
                 "llm_debug_log_path": _rebase(self.llm_debug_log_path),
+                "sessions_dir": _rebase(self.sessions_dir),
             }
         )
 
 
 # ── Public helpers ─────────────────────────────────────────────────────────────
+
+
+def user_sessions_index_path() -> Path:
+    """Path to the home-directory session index (Y2) — metadata only
+    (run_id/target/mode/timestamps/status), never corpus-derived text (that
+    lives per-target under Settings.sessions_dir instead). Derived at call
+    time from the module global rather than a frozen constant, so tests
+    patching `_USER_CONFIG_DIR` (see tests/test_settings.py's isolation
+    fixture) redirect this too."""
+    return _USER_CONFIG_DIR / "sessions.json"
 
 
 def load() -> Settings:
