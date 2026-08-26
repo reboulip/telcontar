@@ -39,8 +39,9 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from host.agent import ApprovalResult, AskUserResult, CostApprovalResult
 from host.paths import directory_overview, find_organizer_root
-from host.web import corpus, journal
+from host.web import chat, corpus, journal
 from host.web import security
+from host.web import sessions as web_sessions_store
 from host.web import session as web_session
 from host.web import steplog
 from host.web import theme
@@ -52,8 +53,9 @@ from host.web.dialogs import (
     build_cost_dialog,
     build_journal_dialog,
 )
-from host.web.docpane import build_doc_pane
+from host.web.graph_view import build_graph_view
 from host.web.query_view import build_query_view
+from host.web.sessions_view import build_session_detail_view, build_sessions_view
 from host.web.settings import build_settings_view
 from host.web.shell import app_shell
 from host.web.wizard import build_setup_wizard
@@ -128,7 +130,19 @@ def _load_preview(target: Path, path: Path) -> tuple[bool, dict | None, str]:
 async def index_page() -> None:
     from config.settings import is_configured
 
-    with app_shell() as shell:
+    # Y3: app_shell's on_select is wired to the tree at mount time (below,
+    # before the ui.label it needs to clear even exists), so the callback
+    # goes through this mutable cell instead of a direct closure over
+    # `error_label` — the cell is filled in once the label is actually
+    # created, further down in this same function.
+    error_label_cell: dict[str, ui.label] = {}
+
+    def _on_select(_path: Path) -> None:
+        label = error_label_cell.get("el")
+        if label is not None:
+            label.set_text("")
+
+    with app_shell(on_select=_on_select) as shell:
         if not is_configured():
             ui.navigate.to("/setup")
             return
@@ -142,6 +156,7 @@ async def index_page() -> None:
         ui.label("telcontar").classes("text-h5")
         ui.label("Pick a directory in the sidebar, then organize or query it:")
         error_label = ui.label().classes("text-negative").mark("startup-error")
+        error_label_cell["el"] = error_label
 
         def _organize() -> None:
             if shell.selected is None or not shell.selected.is_dir():
@@ -181,6 +196,20 @@ async def setup_page() -> None:
 async def settings_page() -> None:
     with app_shell(active="settings"):
         await build_settings_view(on_done=lambda: ui.navigate.back())
+
+
+@ui.page("/sessions")
+async def sessions_page() -> None:
+    with app_shell(active="sessions"):
+        ui.page_title("telcontar — Sessions")
+        await build_sessions_view()
+
+
+@ui.page("/sessions/{run_id}")
+async def session_detail_page(run_id: str) -> None:
+    with app_shell(active="sessions"):
+        ui.page_title("telcontar — Sessions")
+        await build_session_detail_view(run_id)
 
 
 @ui.page("/run/{run_id}")
@@ -261,16 +290,14 @@ async def run_page(run_id: str) -> None:
             overview_label.set_text(await run.io_bound(directory_overview, session.target) or "")
 
         with main_column:
-            # X9: document preview pane, reusing the corpus browser's (V5)
-            # detail-pane approach — triggered by polling shell.selected in
-            # _refresh() below, never by wiring through app_shell()/the
-            # sidebar tree directly (keeps this out of host/web/shell.py,
-            # which already has heavy contention this sprint).
-            with ui.row().classes("w-full no-wrap items-start gap-4"):
-                with ui.column().classes("w-2/3"):
-                    conversation_column = ui.column().classes("w-full")
-                with ui.column().classes("w-1/3").mark("doc-preview"):
-                    doc_pane = build_doc_pane()
+            # X9/Y9: the document preview pane used to live here as a 1/3
+            # column; it's now Shell.doc_pane, stacked into the sidebar
+            # drawer below step detail (host/web/shell.py) — the two are
+            # mutually exclusive there. This column is full-width again as
+            # a result; _refresh() below still polls shell.selected, just
+            # drives shell.show_document()/show_unanalyzed()/clear_document()
+            # instead of a local doc_pane handle.
+            conversation_column = ui.column().classes("w-full")
             status_label = ui.label()
             # V14/#40: a row, not a bare bar. The integer-percent label lives
             # ON the bar itself (absolute-center inside q-linear-progress),
@@ -333,6 +360,18 @@ async def run_page(run_id: str) -> None:
             )
             corpus_button.visible = session.done
 
+            # Y1: same session — graph_page only reads session.target, same
+            # reasoning as _browse_corpus above.
+            def _browse_graph() -> None:
+                ui.navigate.to(f"/graph/{session.run_id}")
+
+            graph_button = (
+                ui.button("Knowledge graph", on_click=_browse_graph, icon="hub")
+                .props("flat dense")
+                .mark("btn-graph")
+            )
+            graph_button.visible = session.done
+
             # Internal-step log strip (T6) — pinned at the bottom, always
             # visible, distinct from the conversation above: telcontar's own
             # tool activity never renders as a chat bubble. It's the
@@ -353,24 +392,11 @@ async def run_page(run_id: str) -> None:
         step_log_state = steplog.StepLogState()
 
         def _render_turn(item: web_session.TranscriptItem) -> None:
-            # V13a: `sent=` already picks the right side, but NiceGUI's
-            # `.nicegui-column` CSS (`align-items: flex-start`) shrink-wraps
-            # every chat-message to its content width, hiding that alignment
-            # — `.classes("w-full")` on the message itself is the fix.
-            # bg-color/text-color are genuine QChatMessage props (Quasar
-            # renders them as `text-<color>` utility classes under the hood,
-            # relying on `.q-message-text { background: currentColor }`)
-            # resolved against theme.PALETTE via run_web()'s app.colors().
-            is_user = item.speaker == "user"
-            bubble_props = (
-                "bg-color=secondary text-color=dark"
-                if is_user
-                else "bg-color=primary text-color=dark"
-            )
+            # Y7: rendering itself lives in host/web/chat.py, shared with
+            # query_view.py's identical call site — see that module's
+            # docstring for the markdown/sanitization/CSP reasoning.
             with conversation_column:
-                ui.chat_message(item.text, name=item.speaker, sent=is_user).classes("w-full").props(
-                    bubble_props
-                )
+                chat.render_turn_bubble(item)
 
         def _flip_activity_done() -> None:
             # Rewrite the newest rendered activity label from ⏳ to ✔️. Called
@@ -480,27 +506,29 @@ async def run_page(run_id: str) -> None:
                 await shell.reload_tree()
                 journal_button.set_text(f"Journal ({len(journal.load_entries(session.target))})")
 
-            # X9: document preview pane — only stat/look up when the sidebar
-            # selection actually changed since the last tick, never on
-            # every 0.5s poll.
+            # X9/Y9: document preview pane — only stat/look up when the
+            # sidebar selection actually changed since the last tick, never
+            # on every 0.5s poll. Rendering itself goes through Shell now
+            # (host/web/shell.py), which also enforces mutual exclusion with
+            # the step-detail section sharing the same drawer.
             if shell.selected != render_state.last_preview_path:
                 render_state.last_preview_path = shell.selected
                 if shell.selected is None:
-                    doc_pane.clear()
+                    shell.clear_document()
                 else:
                     preview = await run.io_bound(_load_preview, run_session.target, shell.selected)
                     if (
                         preview is None
                     ):  # io_bound returns None on cancellation/shutdown (NiceGUI interim shape)
-                        doc_pane.clear()
+                        shell.clear_document()
                     else:
                         is_file, record, meta_line = preview
                         if not is_file:
-                            doc_pane.clear()
+                            shell.clear_document()
                         elif record is not None:
-                            doc_pane.show(record)
+                            shell.show_document(record)
                         else:
-                            doc_pane.show_unanalyzed(shell.selected, meta_line)
+                            shell.show_unanalyzed(shell.selected, meta_line)
 
         ui.timer(web_session.REFRESH_INTERVAL, _refresh)
 
@@ -541,6 +569,25 @@ async def corpus_page(run_id: str) -> None:
 
         ui.page_title(theme.window_title(session.target))
         await build_corpus_view(session)
+
+
+@ui.page("/graph/{run_id}")
+async def graph_page(run_id: str) -> None:
+    session = web_session.get(run_id)
+
+    with app_shell(
+        target=session.target if session is not None else None,
+        session=session,
+        active="graph",
+    ):
+        if session is None:
+            ui.label(
+                "Run not found — it may have finished and been cleared, or the link is wrong."
+            ).classes("text-negative")
+            return
+
+        ui.page_title(theme.window_title(session.target))
+        await build_graph_view(session)
 
 
 def _pick_port() -> int:
@@ -625,10 +672,20 @@ class _AuthMiddleware:
                 # The approval gate is the highest-trust screen in the
                 # product; these two headers close the one browser-borne
                 # attack a valid token doesn't stop (framing the app inside
-                # an attacker page that guesses the port).
+                # an attacker page that guesses the port). `img-src` (Y7) is
+                # unrelated to framing: it closes the one thing DOMPurify
+                # sanitization of markdown chat messages doesn't stop — a
+                # sanitize-surviving `![](http://attacker/...)` image tag
+                # loading a remote URL, which would otherwise silently
+                # beacon out and violate telcontar's local-execution-only
+                # principle. 'self' and data: cover every real image this
+                # app ever serves.
                 extra = [
                     (b"x-frame-options", b"DENY"),
-                    (b"content-security-policy", b"frame-ancestors 'none'"),
+                    (
+                        b"content-security-policy",
+                        b"frame-ancestors 'none'; img-src 'self' data:",
+                    ),
                 ]
                 if decision.set_cookie:
                     cookie = security.build_cookie_header()
@@ -679,6 +736,10 @@ def run_web(target: Path | None = None, *, native: bool = True) -> None:
                     case "ask":
                         result = AskUserResult(reply="", provided=False)
                 session.resolve_pending(result)
+            # Y2: final checkpoint before the driving task is cancelled below
+            # — a graceful quit shouldn't lose the last <10s of activity a
+            # throttled mid-run checkpoint hasn't flushed yet.
+            web_sessions_store.snapshot(session)
             # U7: every organize/query session leaves its MCP server
             # subprocess running for the process's lifetime (nothing ever
             # calls web_session.close() today) — a real lifecycle is future

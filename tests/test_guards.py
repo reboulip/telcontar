@@ -10,8 +10,12 @@ from server.guards import (
     check_no_overwrite,
     check_not_quarantine_collision,
     check_within_root,
+    empty_marker_path,
+    is_dir_empty,
     is_quarantine_like_name,
+    is_sweep_protected,
     normalize_dir_name,
+    safe_quarantine_dir_path,
     safe_quarantine_path,
 )
 
@@ -66,6 +70,157 @@ class TestSafeQuarantinePath:
         (qdir / "Makefile").write_text("x")
         result = safe_quarantine_path(src, qdir)
         assert result == qdir / "Makefile_1"
+
+
+class TestIsDirEmpty:
+    def test_true_for_empty_dir(self, tmp_path: Path) -> None:
+        d = tmp_path / "empty"
+        d.mkdir()
+        assert is_dir_empty(d) is True
+
+    def test_false_for_dir_with_a_file(self, tmp_path: Path) -> None:
+        d = tmp_path / "full"
+        d.mkdir()
+        (d / "f.txt").write_text("x")
+        assert is_dir_empty(d) is False
+
+    def test_false_for_missing_path(self, tmp_path: Path) -> None:
+        assert is_dir_empty(tmp_path / "missing") is False
+
+    def test_false_for_a_file_not_a_dir(self, tmp_path: Path) -> None:
+        f = tmp_path / "file.txt"
+        f.write_text("x")
+        assert is_dir_empty(f) is False
+
+
+class TestSafeQuarantineDirPath:
+    def test_returns_direct_path_when_no_collision(self, tmp_path: Path) -> None:
+        src = tmp_path / "folder"
+        qdir = tmp_path / "q"
+        qdir.mkdir()
+        assert safe_quarantine_dir_path(src, qdir) == qdir / "folder"
+
+    def test_suffixes_whole_basename_on_collision(self, tmp_path: Path) -> None:
+        src = tmp_path / "2024.backup"
+        qdir = tmp_path / "q"
+        qdir.mkdir()
+        (qdir / "2024.backup").mkdir()
+        result = safe_quarantine_dir_path(src, qdir)
+        # Whole-basename suffixing, never a stem/suffix split (which would
+        # mangle a dotted directory name into "2024_1.backup").
+        assert result == qdir / "2024.backup_1"
+
+    def test_increments_suffix_until_free(self, tmp_path: Path) -> None:
+        src = tmp_path / "folder"
+        qdir = tmp_path / "q"
+        qdir.mkdir()
+        (qdir / "folder").mkdir()
+        (qdir / "folder_1").mkdir()
+        assert safe_quarantine_dir_path(src, qdir) == qdir / "folder_2"
+
+
+class TestEmptyMarkerPath:
+    def test_returns_prefixed_name_when_no_collision(self, tmp_path: Path) -> None:
+        folder = tmp_path / "sub" / "empty"
+        folder.mkdir(parents=True)
+        assert empty_marker_path(folder) == tmp_path / "sub" / "_empty_empty"
+
+    def test_increments_suffix_on_collision(self, tmp_path: Path) -> None:
+        folder = tmp_path / "empty"
+        folder.mkdir()
+        (tmp_path / "_empty_empty").mkdir()
+        assert empty_marker_path(folder) == tmp_path / "_empty_empty_1"
+
+
+class TestIsSweepProtected:
+    def _setup(self, tmp_path: Path) -> tuple[Path, Path, Path]:
+        target = tmp_path / "target"
+        target.mkdir()
+        quarantine = target / "_quarantine"
+        quarantine.mkdir()
+        organizer = target / ".organizer"
+        organizer.mkdir()
+        return target, quarantine, organizer
+
+    def test_target_root_itself_is_protected(self, tmp_path: Path) -> None:
+        target, quarantine, organizer = self._setup(tmp_path)
+        assert is_sweep_protected(
+            target,
+            target_root=target,
+            quarantine_dir=quarantine,
+            organizer_dir=organizer,
+            plan_created_dirs=set(),
+        )
+
+    def test_outside_target_root_is_protected(self, tmp_path: Path) -> None:
+        target, quarantine, organizer = self._setup(tmp_path)
+        outside = tmp_path / "elsewhere"
+        outside.mkdir()
+        assert is_sweep_protected(
+            outside,
+            target_root=target,
+            quarantine_dir=quarantine,
+            organizer_dir=organizer,
+            plan_created_dirs=set(),
+        )
+
+    def test_quarantine_dir_itself_is_protected(self, tmp_path: Path) -> None:
+        target, quarantine, organizer = self._setup(tmp_path)
+        assert is_sweep_protected(
+            quarantine,
+            target_root=target,
+            quarantine_dir=quarantine,
+            organizer_dir=organizer,
+            plan_created_dirs=set(),
+        )
+
+    def test_ancestor_of_quarantine_dir_is_protected(self, tmp_path: Path) -> None:
+        target, quarantine, organizer = self._setup(tmp_path)
+        # target is an ancestor of quarantine — moving it would relocate
+        # quarantine itself.
+        assert is_sweep_protected(
+            target,
+            target_root=target,
+            quarantine_dir=quarantine,
+            organizer_dir=organizer,
+            plan_created_dirs=set(),
+        )
+
+    def test_organizer_dir_is_protected(self, tmp_path: Path) -> None:
+        target, quarantine, organizer = self._setup(tmp_path)
+        assert is_sweep_protected(
+            organizer,
+            target_root=target,
+            quarantine_dir=quarantine,
+            organizer_dir=organizer,
+            plan_created_dirs=set(),
+        )
+
+    def test_plan_created_dir_is_protected(self, tmp_path: Path) -> None:
+        from server.guards import normkey
+
+        target, quarantine, organizer = self._setup(tmp_path)
+        created = target / "new_taxonomy_folder"
+        created.mkdir()
+        assert is_sweep_protected(
+            created,
+            target_root=target,
+            quarantine_dir=quarantine,
+            organizer_dir=organizer,
+            plan_created_dirs={normkey(created)},
+        )
+
+    def test_ordinary_empty_subfolder_is_not_protected(self, tmp_path: Path) -> None:
+        target, quarantine, organizer = self._setup(tmp_path)
+        ordinary = target / "some_folder"
+        ordinary.mkdir()
+        assert not is_sweep_protected(
+            ordinary,
+            target_root=target,
+            quarantine_dir=quarantine,
+            organizer_dir=organizer,
+            plan_created_dirs=set(),
+        )
 
 
 class TestCheckAllowlist:

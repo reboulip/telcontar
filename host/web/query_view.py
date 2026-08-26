@@ -15,6 +15,7 @@ from dataclasses import dataclass
 
 from nicegui import ui
 
+from host.web import chat
 from host.web import session as web_session
 from host.web import steplog
 from host.web.shell import Shell
@@ -55,18 +56,11 @@ def build_query_view(shell: Shell, session: web_session.RunSession) -> None:
     step_log_state = steplog.StepLogState()
 
     def _render_turn(item: web_session.TranscriptItem) -> None:
-        # V13a: alignment + bubble colour — see host/web/main.py's
-        # _render_turn (same idiom, duplicated rather than shared, matching
-        # this pair's existing duplication) for why `.classes("w-full")` and
-        # bg-color/text-color are the right fix.
-        is_user = item.speaker == "user"
-        bubble_props = (
-            "bg-color=secondary text-color=dark" if is_user else "bg-color=primary text-color=dark"
-        )
+        # Y7: rendering itself lives in host/web/chat.py, shared with
+        # host/web/main.py's identical call site — see that module's
+        # docstring for the markdown/sanitization/CSP reasoning.
         with conversation_column:
-            ui.chat_message(item.text, name=item.speaker, sent=is_user).classes("w-full").props(
-                bubble_props
-            )
+            chat.render_turn_bubble(item)
 
     def _refresh() -> None:
         for item in session.transcript:

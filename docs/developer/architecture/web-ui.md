@@ -47,7 +47,19 @@ detail pane, reached via a "Browse corpus" button beside "Query this corpus" —
 merging what used to be the separate V4 document-preview idea into one screen,
 and reachable without any LLM call or agent turn at all (unlike query mode). No
 TUI equivalent exists; see `host/web/corpus.py` and `host/web/corpus_view.py`
-below.
+below. As of Y1, it also has a knowledge-graph view at `/graph/{run_id}` — a
+ranked-actors table plus an optional force-directed graph panel over
+`server/graph.py`'s already-built graph, previously invisible behind no UI at
+all (a carryover from a deferred Phase 21 item) — reached via a "Knowledge
+graph" button beside "Browse corpus", again with no LLM call or agent turn
+involved. No TUI equivalent exists here either; see `host/web/graph.py` and
+`host/web/graph_view.py` below. As of Y2, it also has a session list/resume
+view at `/sessions` and `/sessions/{run_id}` — every session ever started
+(live or dead, across process restarts), grouped by target, with a "Resume"
+action that restarts a dead organize/query session from its last checkpoint —
+reached via an always-enabled "Sessions" nav tab (unlike Query/Graph, not
+target-scoped, since a session can belong to any target). See "Sessions"
+below and `host/web/sessions.py`/`host/web/sessions_view.py`.
 
 - `host/web/session.py` — `RunSession`, framework-agnostic per-run state. As of
   T5/T6, the transcript is turns-only: `RunSession.transcript: list[TranscriptItem]`
@@ -98,9 +110,11 @@ below.
   by `app_shell()` as the fallback for routes with no session of their own in
   scope (e.g. `/settings`).
   Deliberately has no `nicegui` import, so it is unit-testable in plain pytest. `get_sidebar_width()`/`set_sidebar_width(width)`
-  (T4) manage one in-memory sidebar-width preference (240-1000px, default 380 —
+  (T4) manage one in-memory sidebar-width preference (240-1000px, default 440 —
   the max raised from 720 in V13b, since the step-detail section now shares this
-  same drawer and wants more room) for
+  same drawer and wants more room; the default itself raised again 380 → 440 in
+  Y9, GH #58, once the document-preview pane joined the same stack visible by
+  default) for
   the process's lifetime, rather than a `RunSession` field, since it also applies on
   the picker route where no `RunSession` exists yet; `set_sidebar_width` clamps and
   returns the stored value. As of U4, `RunSession` also carries `fs_revision: int`,
@@ -307,17 +321,28 @@ below.
   "detail-content")`, created once at build time. `theme.CODEMIRROR_THEME`
   (`host/web/theme.py`, `= "basicDark"`) is required explicitly because
   `ui.codemirror` otherwise defaults to a light theme regardless of the app's own
-  dark palette. `app_shell` yields a
+  dark palette. As of Y9 (GH #58), the same drawer also stacks a
+  document-preview section directly below the step-detail one — a
+  visible-by-default `ui.column().mark("doc-section")` wrapping the existing
+  `host/web/docpane.py` widgets (`build_doc_pane()`, unchanged), in its own
+  `max-height: 40vh; overflow-y: auto` scroll region so the drawer doesn't
+  scroll as one long unit. `app_shell` yields a
   `Shell` dataclass (`drawer`, `tree`, `content`, `detail_section`, `detail_title`,
   `detail_content`, `target`,
-  `selected`, and — V7 — a private `_reloading: bool` guard) that the page body
+  `selected`, — V7 — a private `_reloading: bool` guard, and — Y9 —
+  `doc_section`/`doc_pane`) that the page body
   builds into via `with app_shell(...) as shell:` — no more standalone
   `detail_drawer` field.
   `Shell.show_detail(title, detail)` (rewritten V13b) now populates the existing
   widgets in place — `detail_title.set_text(title)`, `detail_content.set_value(
   detail)` — and reveals the section (`.visible = True`) instead of clearing and
   rebuilding a separate drawer each call; the new `Shell.hide_detail()` sets
-  `.visible = False` back. Never `ui.code`/`ui.markdown`
+  `.visible = False` back. As of Y9, `show_detail`/`hide_detail` also toggle
+  `doc_section`'s visibility the other way (hide/restore respectively) — the
+  step-detail and document-preview sections share this one drawer and are
+  mutually exclusive, so `Shell` gained matching `show_document(record)` /
+  `show_unanalyzed(path, meta_line)` / `clear_document()` methods that
+  populate/clear `doc_pane` and hide `detail_section` in turn. Never `ui.code`/`ui.markdown`
   — both of those render through a markdown fenced-code path, and step detail can
   carry untrusted document content (e.g. a `read_file_batch`/`extract_text_batch`
   result) that must never be interpreted as markup. `ui.codemirror` takes the
@@ -358,6 +383,22 @@ below.
   coarser than the 0.5s render poll, since `rebuild_nodes` recurses over every
   expanded directory.
 
+  **Landing-page picker root and controls (Y3, GH #62):** when `app_shell` gets no
+  explicit `target` (the picker route, `/`), the sidebar tree now roots at
+  `web_session.get_start_dir()` — the directory telcontar was launched from
+  (`Path.cwd()`, falling back to `Path.home()` if the cwd can't be read) — instead
+  of always defaulting to the home directory. This also fixed a latent dead-code
+  bug: the picker's "go up one level" button (`.mark("btn-go-up")`) and
+  Windows-only drive-root dropdown (`Shell.refresh_tree`, above) were already
+  gated on `on_select` being passed to `app_shell`, but `host/web/main.py`'s
+  `index_page` never actually passed one — so neither control ever rendered, and
+  the picker was permanently stuck at whichever directory it happened to root at.
+  `index_page` now passes a real `on_select` callback (clears the startup error
+  label on selection, threaded through a mutable cell since the label doesn't
+  exist yet at the point `app_shell` is entered), so both controls render and
+  work, keeping every other directory reachable even though the default root
+  changed from home to cwd.
+
   `app_shell`'s signature stayed frozen through Phase 20/21 (U1-U7, V7 all mounted
   through it unchanged) until Phase 23's X11 extended it with `session`/`active`/
   `nav` for a persistent nav header (below).
@@ -367,19 +408,27 @@ below.
   with a `ui.header()` mounted before the left-drawer sidebar — as of X13,
   `theme.LOGO_SVG` (the White Tree mark) beside the "telcontar" label —
   plus a `ui.tabs(value=active)` with one tab each for `conversation`/`corpus`/
-  `query`/`settings` — so every route (bar `/setup`, which passes `nav=False` since
+  `query`/`graph` (Y1)/`sessions` (Y2)/`settings` — so every route (bar `/setup`, which passes `nav=False` since
   the first-run wizard has nowhere valid to navigate to yet) gets the same
   top-level tab strip. `session` is the *organize*-mode `RunSession` driving the
-  current route (`/run/{run_id}`/`/corpus/{run_id}` pass their own; a query-mode
+  current route (`/run/{run_id}`/`/corpus/{run_id}`/`/graph/{run_id}` pass their own; a query-mode
   session is never passed here) and, via `web_session.set_active`, becomes what a
   session-less route's tabs fall back to. The Conversation/Corpus tabs disable
   when no organize-mode session is available (the route's own `session` or the
-  module-level active-run tracker, `session.py` above); the Query tab disables
-  when the resolved target has no analyzed corpus above it
-  (`host.paths.find_organizer_root`). Selecting a tab navigates to the
+  module-level active-run tracker, `session.py` above); the Query and Graph tabs
+  disable under the exact same condition — the resolved target has no analyzed
+  corpus above it (`host.paths.find_organizer_root`) — since a knowledge graph
+  is equally meaningless without one. The Sessions tab (Y2) is the one
+  exception to all of the above: it is never disabled, target-scoped or
+  otherwise, since a session can belong to any target, not just whichever one
+  the current route happens to be showing. Selecting a tab navigates to the
   corresponding route — Query reuses an existing query session for the target via
-  `web_session.find_by_target` where possible, else creates one — additive to,
-  not a replacement for, the left-drawer's own unconditional Settings button
+  `web_session.find_by_target` where possible, else creates one; Graph navigates
+  straight to `/graph/{effective_session.run_id}` using the current
+  organize-mode session (no separate graph-mode session type exists); Sessions
+  (Y2) always navigates to the fixed `/sessions` route, independent of any
+  session — additive
+  to, not a replacement for, the left-drawer's own unconditional Settings button
   described above.
   The drawer's width (T4) is set from `web_session.get_sidebar_width()` via the
   Quasar `width` prop (never raw CSS, since Quasar also offsets
@@ -560,7 +609,8 @@ below.
 - `host/web/query_view.py` (U7, extended by V13a) — the query page's UI: `build_query_view(shell,
   session)` renders a conversation column (`ui.chat_message`, the same idiom
   `run_page` uses for organize turns — including `run_page`'s V13a bubble
-  alignment/colour fix, deliberately duplicated here rather than shared) plus a step-log strip
+  alignment/colour fix, deliberately duplicated here rather than shared until
+  Y7 unified it — see the chat-bubble-rendering note below) plus a step-log strip
   (`host.web.steplog.sync_steps`, the same T5/T6 idiom `run_page` already
   established) instead of the TUI `QueryScreen`'s side-by-side dual-`RichLog`
   split — Phase 20 is parity with a cleaner surface, not a redesign, and the log
@@ -647,6 +697,116 @@ below.
   path, meta_line)` (filename + filesystem metadata only, no extraction, for a
   file with no registry record yet), and `.clear()` (collapse to placeholder).
   Same untrusted-content rule as `corpus_view.py`: `ui.label` only.
+- `host/web/graph.py` (Y1, new file) — knowledge-graph load/projection logic,
+  `nicegui`-free, mirroring `host/web/corpus.py`'s contract exactly: this
+  module owns the filesystem-adjacent logic, `host/web/graph_view.py` owns the
+  rendering. `load_graph(target) -> dict | None` always builds the graph
+  fresh, in-process, from the registry + event journal via `server.graph.build`
+  — deliberately never reading the persisted `.organizer/graph.json`, which
+  only exists once a run reaches its final write-outputs step and goes stale
+  the moment a single document is (re-)recorded afterward; `server.graph.build`
+  is a documented pure function of the same two stores this module already
+  polls, so rebuilding fresh costs nothing extra. `graph_mtime(target) ->
+  tuple[float, int, float, int] | None` is the poll pre-check — combined
+  `(mtime, size)` of both `registry.json` and `events.jsonl` — mirroring
+  `corpus.py`'s `registry_mtime`. `rank_actors_for(target, cap) -> list[dict]`
+  wraps `server.graph.rank_actors` for the ranked-actors table.
+  `project(graph, *, kinds, top_actors) -> tuple[list[dict], list[dict]]` is a
+  pure, unit-tested filter/cap function for the optional force-directed panel:
+  keeps only nodes whose `kind` is in `kinds`, caps entity nodes to the top
+  `top_actors` by the same three-component centrality ordering
+  `server.graph.rank_actors` uses (document count, then co-occurrence weight,
+  then mention count), and keeps only edges whose both endpoints survived.
+  `neighbors(graph, node_id) -> list[dict]` returns a node's immediate
+  neighbors (either edge direction), feeding the detail pane's "referencing
+  documents"/"mentioned entities" lists. Same defensive contract as
+  `corpus.py`: never raises, `None`/`[]` on any error.
+- `host/web/graph_view.py` (Y1, new file) — the knowledge-graph page's UI,
+  mirroring `corpus_view.py`'s structure. `build_graph_view(session)` renders
+  a sortable ranked-actors `ui.table` (`.mark("graph-table")`) as the primary
+  surface — clicking a row opens the same kind of detail pane `corpus_view.py`
+  uses, reusing `host/web/docpane.py`'s `build_doc_pane(marker_prefix="graph")`
+  unmodified for document nodes, with new sibling panels
+  (`.mark("graph-entity-detail")`/`.mark("graph-event-detail")`) for entity and
+  event nodes. An optional force-directed `ui.echart` panel
+  (`.mark("graph-echart")`) sits behind a "Show force-directed view" toggle,
+  default off — confirmed to use NiceGUI's fully locally-vendored echarts
+  bundle, no CDN fetch, consistent with telcontar's offline-first design — with
+  its tooltip disabled entirely (`tooltip: {"show": False}`) rather than an
+  HTML `tooltip.formatter` over untrusted node names/text, since every detail
+  already surfaces through the Python-side pane. Three kind filters — document
+  and entity are always on; a third, event, defaults **off**, since
+  `server/graph.py`'s event↔entity matching is a known naive-substring
+  approximation that produces false-positive edges for short entity names — and
+  a "Top actors" `ui.select` (25/50/100, default 50) cap both the table and the
+  panel. A `ui.timer(web_session.GRAPH_POLL_INTERVAL, _reload)` (Y1, 5.0s
+  default, same test-seam pattern as `TREE_POLL_INTERVAL`/`CORPUS_POLL_INTERVAL`)
+  mirrors `corpus_view.py::_reload`'s two disciplines — a re-entrancy flag and
+  a `graph_mtime` pre-check that skips the real reload when unchanged. Every
+  graph value rendered here is LLM-derived output from attacker-controllable
+  documents (entity names, document titles, event sentences): `ui.label`/
+  `ui.table` row values only, never `ui.markdown`/`ui.html`/`ui.code` — the
+  same rule `corpus_view.py` follows, predating and unrelated to Y7's
+  chat-message markdown exception (`host/web/chat.py`); see [Security
+  Model](../security-model.md).
+
+- **Sessions (Y2, GH #53):** a home-directory index plus per-target snapshots
+  give every session — organize or query — a life beyond one browser tab and
+  one process: it can be listed, re-opened while still live, or resumed from
+  disk after telcontar itself was restarted. Two tiers, deliberately split by
+  trust boundary: the **home-directory index**
+  (`~/.telcontar/sessions.json`, `config.settings.user_sessions_index_path()`)
+  is metadata only — `run_id`/`target`/`mode`/`created_at`/`last_active_at`/
+  `status` — and lives *outside* every allowlist/egress boundary the rest of
+  the security model reasons about (it's not under any target directory), so
+  it must never carry corpus-derived text; the **per-target snapshot**
+  (`<target>/.organizer/sessions/<run_id>.json`, `Settings.sessions_dir`)
+  holds the actual transcript, activity log, and full LLM message history —
+  all derived from the user's own documents — and stays inside the same
+  boundary the registry/journal/graph already trust. This split is why
+  `host/web/sessions.py`'s `record_started()` only ever touches the index,
+  while `snapshot()` writes both: the index entry is cheap and always-current
+  (so a session shows up on the list immediately), the snapshot is the actual
+  restorable state. `AgentBridge`/`QueryBridge` (`host/web/bridge.py`) each
+  grew a `_checkpoint(*, terminal: bool)` method called from their existing
+  `on_event` handler — unconditional on a terminal `done`/`error` event,
+  throttled to at most once every `_CHECKPOINT_INTERVAL_SECS = 10.0` seconds
+  otherwise, since `on_event` fires synchronously on the event loop on every
+  tool call/result, far more often than a snapshot needs to be current. The
+  app's shutdown hook (`run_web`, `host/web/main.py`) also does one
+  unconditional final `sessions_store.snapshot(session)` per session before
+  cancelling its driving task, so a graceful quit never loses the tail end of
+  activity a throttled write hasn't flushed yet. `/sessions` (`sessions_page`)
+  lists every known session grouped by target — live ones (cross-checked
+  against `host/web/session.py`'s in-memory `_SESSIONS` registry) link
+  straight to `/run/{run_id}` or `/query/{run_id}`; dead ones link to
+  `/sessions/{run_id}`, a read-only transcript replay with a "Resume" button;
+  both routes pass `active="sessions"` to `app_shell`. Clicking "Resume"
+  (`host/web/sessions_view.py`'s `build_session_detail_view`) loads the
+  snapshot, rebuilds a `RunSession` via `sessions.restore_session()` —
+  keeping the persisted `run_id` so existing links keep working — registers
+  it into the live registry (`host/web/session.py`'s new `register()`,
+  mirroring `create()`'s registration for a fresh session but preserving the
+  restored id instead of minting one), and re-enters the appropriate bridge.
+  For query mode, resume needed zero method changes: `QueryBridge.run()`'s
+  loop was already shaped to wait on the message queue from the very start
+  regardless of whether history was pre-populated. For organize mode, a new
+  `AgentBridge.start_resumed()` / `run(..., resume_history=...)` parameter
+  skips the fresh-run bootstrap (pre-pass/analysis/digest) entirely and seeds
+  `session.history` directly, landing in the exact same history-continuation
+  code path a live session already uses between chat turns — so a resumed
+  conversation is indistinguishable in mechanism from a live one waiting for
+  its next message. No special-cased approval/ask-user handling was needed:
+  the restored session's callbacks are the same live callbacks any run uses,
+  and `host/agent.py` already has a documented guard (`_seed_last_plan_id`,
+  its own docstring labels it "O7", literally for "a resumed conversation")
+  for history that ends with a plan never actually presented for approval.
+  Live re-attachment (a still-running session, opened again after a page
+  reload) needed no new work at all — `/run/{run_id}` already re-attached
+  correctly to an in-process session before Y2. Unlike Query/Graph, the
+  "Sessions" nav tab (`host/web/shell.py`) has no target-scoped disable
+  condition — it's always enabled, since a session can belong to any target,
+  not just whichever one the current route happens to be showing.
 - `host/web/main.py` now mounts `app_shell(...)` at the top of both page bodies
   instead of assembling its own layout. The landing page (`/`) first checks
   `config.settings.is_configured()`: if telcontar hasn't been set up yet, it
@@ -663,7 +823,21 @@ below.
   agent turn, since it reads the registry directly (`host/web/corpus.py`)
   rather than through the model. It reuses the *same* session/run_id the
   organize run already created rather than minting a new one, since the corpus
-  page only ever reads `session.target`. Once configured, folder selection is the
+  page only ever reads `session.target`. As of Y1, `/graph/{run_id}` is
+  registered the exact same thin-shell way, mirroring `/corpus/{run_id}`
+  precisely: same not-found handling, no bridge/MCP session/agent turn (it
+  reads the registry + event journal directly via `host/web/graph.py`), the
+  same reused session/run_id, and `active="graph"` passed to `app_shell` for
+  the nav-tab highlight. As of Y2, `/sessions` and `/sessions/{run_id}` are
+  registered the same thin-shell way too, both passing `active="sessions"` —
+  `/sessions` delegates to `build_sessions_view()` (no `run_id`, no session
+  lookup at all: it lists across every target from the home-directory index);
+  `/sessions/{run_id}` delegates to `build_session_detail_view(run_id)`,
+  which does its own `run_id` validation and live/dead/not-found handling
+  rather than the not-found pattern the other run-scoped routes share, since
+  a session id in this view is deliberately allowed to resolve to a *dead*
+  session (the whole point of the page) rather than always requiring one
+  already in the live registry. Once configured, folder selection is the
   sidebar tree, which now doubles as the directory picker (T3, superseding the
   browse-view half of Phase 20's U1): clicking a node sets `shell.selected`
   (which may now be a file, since the tree shows files too), and a "Use selected
@@ -714,10 +888,12 @@ below.
   (`.mark("btn-browse-corpus")`) sits beside it, gated the same `session.done`
   way — set both at build time and again on every `_refresh()` tick, the same
   two-places-set pattern the query button already needed — navigating to
-  `/corpus/{session.run_id}`: the same session, not a new one. As of X9, the
-  main view's conversation area sits in a `ui.row()` at 2/3 width beside a new
-  1/3-width document-preview pane (`.mark("doc-preview")`, built via
-  `host/web/docpane.py`'s `build_doc_pane()`, above) — polling `shell.selected`
+  `/corpus/{session.run_id}`: the same session, not a new one. As of Y1, a
+  "Knowledge graph" button (`.mark("btn-graph")`, icon `hub`) sits beside that,
+  gated and set the same `session.done` way, navigating to
+  `/graph/{session.run_id}` — again the same session, not a new one, since the
+  graph page only ever reads `session.target`. As of X9, the
+  main view gained a document-preview pane — polling `shell.selected`
   (the same attribute the sidebar tree click handler, X11, already populates)
   rather than being wired through the tree directly: `_refresh()` reacts only
   when the selection actually changes since the last tick, offloading the
@@ -725,6 +901,20 @@ below.
   `run.io_bound` and showing either the matching registry record
   (`host/web/corpus.py`'s `find_by_path`), a "not analyzed yet" placeholder
   with filesystem metadata, or clearing the pane, depending on what's found.
+  Originally (X9) this pane lived beside the conversation area, in a `ui.row()`
+  splitting it 2/3 conversation / 1/3 doc-preview (`.mark("doc-preview")`,
+  built via `host/web/docpane.py`'s `build_doc_pane()`, above). As of Y9 (GH
+  #58), that column is gone: the conversation area is full-width again, and
+  the doc-preview pane instead lives in the shared left-drawer inspector
+  (see `host/web/shell.py`'s `Shell`, below) — stacked below the internal-step
+  detail section (V13b), in its own scroll region, mutually exclusive with it
+  (`Shell.show_document`/`show_unanalyzed`/`clear_document` now hide step
+  detail the same way `Shell.show_detail` hides the doc pane). `_refresh()`
+  still does the same polling/offloading described above; it now calls those
+  `Shell` methods instead of driving a locally-built `DocPane` handle
+  directly. `host/web/docpane.py` itself — the `DocPane` dataclass and
+  `build_doc_pane()` — is unchanged; only where it is mounted and who calls
+  its `show`/`show_unanalyzed`/`clear` moved.
   As of T5/T6, that main view splits telcontar's own tool activity out of one
   interleaved stream: a
   `conversation_column` (turns only, `ui.chat_message`, rendering `session.transcript`)
@@ -755,7 +945,24 @@ below.
   `sent=`, hiding the left/right alignment `sent=` was already choosing correctly —
   plus explicit `bg-color`/`text-color` Quasar props resolved against
   `theme.PALETTE` (`secondary`/`dark` for the user, `primary`/`dark` for
-  telcontar), fixing low-contrast white-on-gold bubble text. As of U4 this rendering is
+  telcontar), fixing low-contrast white-on-gold bubble text. As of Y7 (GH #56),
+  the bubble-rendering call itself — previously `ui.chat_message(item.text,
+  ...)`, plain HTML-escaped text — moved into a new shared module,
+  `host/web/chat.py::render_turn_bubble(item)`, called identically from both
+  `run_page`'s `_render_turn` and `query_view.py`'s `_render_turn` (which had
+  duplicated this same rendering code since V13a — Y7 explicitly reverses that
+  earlier "duplicate, don't share" call now that the code is
+  security-relevant: a single unsanitized copy would defeat the point of
+  unifying it). The bubble content itself now renders via a nested
+  `ui.markdown(item.text, sanitize=True)` instead of the plain chat-message
+  text, so prompts and LLM output display as formatted markdown (bold, links,
+  lists, code blocks). This is the one deliberate exception to telcontar's
+  "never render corpus-derived text as markup" rule described in [Security
+  Model](../security-model.md) — `sanitize=True` runs the output through a
+  client-side, vendored DOMPurify before it reaches the DOM, and the CSP
+  header (`_AuthMiddleware`, `host/web/main.py`) gained `img-src 'self'
+  data:` to close the one gap DOMPurify alone leaves open (a sanitize-surviving
+  markdown image tag beaconing to a remote host). As of U4 this rendering is
   `host/web/steplog.py`'s `sync_steps`/`StepLogState` (above), not inline: `run_page`
   owns one `steplog.StepLogState()` and calls `steplog.sync_steps(log_column, shell,
   step_log_state, session.steps)` once per tick, which caps the DOM at

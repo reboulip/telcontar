@@ -121,6 +121,7 @@ def _fast_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(web_session, "REFRESH_INTERVAL", 0.02)
     monkeypatch.setattr(web_session, "TREE_POLL_INTERVAL", 0.02)
     monkeypatch.setattr(web_session, "CORPUS_POLL_INTERVAL", 0.02)
+    monkeypatch.setattr(web_session, "GRAPH_POLL_INTERVAL", 0.02)
 
 
 @pytest.fixture(autouse=True)
@@ -129,11 +130,13 @@ def _reset_session_registry() -> Iterator[None]:
     clear it around every test so one test's run can't leak into another's."""
     web_session._SESSIONS.clear()
     web_session.set_default_target(None)
+    web_session.set_start_dir(None)
     try:
         yield
     finally:
         web_session._SESSIONS.clear()
         web_session.set_default_target(None)
+        web_session.set_start_dir(None)
 
 
 # ── Seam smoke test ──────────────────────────────────────────────────────────
@@ -166,6 +169,35 @@ async def test_landing_page_shows_picker_prompt_with_no_default_target(user: Use
     await user.open("/")
 
     await user.should_see("Pick a directory in the sidebar")
+
+
+async def test_landing_page_roots_tree_at_start_dir_override(user: User, tmp_path: Path) -> None:
+    web_session.set_start_dir(tmp_path)
+
+    await user.open("/")
+
+    await user.should_see(tmp_path.name)
+
+
+async def test_landing_page_go_up_control_renders(user: User) -> None:
+    # Y3: index_page now passes app_shell an on_select callback, so the
+    # picker's "up a level" control (previously dead — gated on on_select
+    # being non-None) actually renders.
+    await user.open("/")
+
+    await user.should_see(marker="btn-go-up")
+
+
+async def test_landing_page_selecting_a_directory_clears_the_error(
+    user: User, tmp_path: Path
+) -> None:
+    await user.open("/")
+    user.find(marker="btn-startup-organize").click()
+    await user.should_see("Please choose a folder to organize.")
+
+    user.find(kind=ui.tree).trigger("update:selected", args=str(tmp_path))
+
+    await user.should_not_see("Please choose a folder to organize.")
 
 
 # ── Startup view (U1) ────────────────────────────────────────────────────────
@@ -1348,7 +1380,48 @@ async def test_step_detail_codemirror_uses_the_dark_theme(user: User, tmp_path: 
     await user.should_see(marker="detail-content")
 
     [codemirror] = user.find(marker="detail-content").elements
+
     assert codemirror.props["theme"] == theme.CODEMIRROR_THEME
+
+
+async def test_step_detail_and_document_preview_are_mutually_exclusive(
+    user: User, tmp_path: Path
+) -> None:
+    """Y9: the step-detail section and the document-preview pane share the
+    same sidebar drawer — opening one must hide the other, and closing
+    detail restores whatever the preview pane was already showing."""
+    doc_path = tmp_path / "report.pdf"
+    doc_path.write_text("hello")
+    registry = Registry()
+    registry.upsert(
+        DocumentRecord.new(
+            checksum="aaa",
+            path=str(doc_path),
+            title="Alpha Report",
+            type="report",
+            summary="s",
+            provenance="p",
+        )
+    )
+    save(registry, tmp_path / ".organizer" / "registry.json")
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.open_step("execute_plan", "execute_plan(plan_id='p1')")
+    session.close_step({"ops_applied": 3}, ok=True)
+
+    await user.open(f"/run/{session.run_id}")
+    user.find(kind=ui.tree).trigger("update:selected", str(doc_path))
+    await user.should_see(marker="doc-detail-content")
+
+    user.find(marker="step-detail-1").click()
+
+    await user.should_see(marker="detail-title")
+    await user.should_not_see(marker="doc-detail-content")
+
+    user.find(marker="btn-detail-close").click()
+
+    await user.should_not_see(marker="detail-title")
+    await user.should_see(marker="doc-detail-content")
 
 
 # ── Query view (U7) ──────────────────────────────────────────────────────────
@@ -1469,6 +1542,24 @@ async def test_run_page_chat_bubbles_are_full_width_and_themed_by_speaker(
     assert user_bubble.props["text-color"] == "dark"
     assert telcontar_bubble.props["bg-color"] == "primary"
     assert telcontar_bubble.props["text-color"] == "dark"
+
+
+async def test_run_page_chat_bubbles_render_markdown_sanitized(user: User, tmp_path: Path) -> None:
+    """Y7: chat turns render through ui.markdown(sanitize=True) — the client-
+    side sanitization itself can't be exercised by the headless `user`
+    fixture (no JS execution), but the sanitize prop being wired is
+    verifiable server-side, and this is the one deliberate exception to the
+    "never render corpus-derived text as markup" rule (host/web/chat.py)."""
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.add_turn("telcontar", "**bold** and a [link](https://example.com)")
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see("bold")
+
+    [markdown_el] = user.find(kind=ui.markdown).elements
+    assert markdown_el.content == "**bold** and a [link](https://example.com)"
+    assert markdown_el.props["sanitize"] is True
 
 
 async def test_query_page_chat_bubbles_are_full_width_and_themed_by_speaker(

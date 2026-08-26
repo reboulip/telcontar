@@ -23,7 +23,7 @@ When you run `telcontar`, the app checks whether a minimum configuration (AI ser
 
 - **First run** — the **setup wizard** (`/setup`) appears automatically. It guides you through choosing an endpoint (Azure OpenAI or another OpenAI-compatible service), entering the service URL and API key, and selecting a document profile. The key is stored in the OS credential store (Windows Credential Manager / macOS Keychain); other settings go to `~/.telcontar/config.env`.
 - **Returning user** — the startup page appears directly, with a directory tree in the sidebar and **Use selected directory** / **Query** actions.
-- **From anywhere** — a persistent nav bar at the top of every page offers **Conversation / Corpus / Query / Settings** tabs, each enabling as a run or an analyzed corpus becomes available (Settings is always enabled). **⚙ Settings**, also reachable from the sidebar on every page, lets you change the URL, API key, profile, and approval mode, including mid-run.
+- **From anywhere** — a persistent nav bar at the top of every page offers **Conversation / Corpus / Query / Graph / Sessions / Settings** tabs. Conversation, Corpus, Query, and Graph each enable as a run or an analyzed corpus becomes available; **Sessions** and **Settings** are always enabled, since a session can belong to any directory, not just the one currently open. **⚙ Settings**, also reachable from the sidebar on every page, lets you change the URL, API key, profile, and approval mode, including mid-run.
 
 ---
 
@@ -288,7 +288,7 @@ The host exposes only the tools in `QUERY_ALLOWED_TOOLS` to the model — no pla
 
 ## Document preview while organizing
 
-Once a run has started, clicking a file in the sidebar tree opens a live preview pane beside the conversation. If the file has already been analyzed, the pane shows the same fields as the corpus browser's detail pane — title, type, date, status, summary, provenance, and entities. If it hasn't been analyzed yet, the pane instead shows just the filename plus basic filesystem details (size, last modified) — no content is read or sent anywhere for an unanalyzed file. Clicking a folder, or nothing at all, collapses the pane back to its placeholder.
+Once a run has started, clicking a file in the sidebar tree opens a live preview in the sidebar itself, stacked below the internal-step detail view (opening one hides the other). If the file has already been analyzed, the preview shows the same fields as the corpus browser's detail pane — title, type, date, status, summary, provenance, and entities. If it hasn't been analyzed yet, the preview instead shows just the filename plus basic filesystem details (size, last modified) — no content is read or sent anywhere for an unanalyzed file. Clicking a folder, or nothing at all, collapses it back to its placeholder.
 
 ---
 
@@ -303,12 +303,36 @@ The web UI also has a **corpus browser** — a sortable, filterable table over e
 
 ---
 
+## Exploring the knowledge graph
+
+The web UI also has a **knowledge graph** view — a ranked table of the corpus's actors (people, organizations, and other recorded entities) plus, optionally, a force-directed graph — with no LLM call and no agent turn involved. It's reachable via the **Knowledge graph** button beside **Browse corpus**, once a run finishes, or the nav bar's **Graph** tab from any page once telcontar can resolve an analyzed corpus for the current directory.
+
+- **Ranked actors table** — sorted by how central each person/organization is to the corpus (documents mentioning them, co-occurrence with other actors, and event mentions), with sortable Documents/Co-occurrence/Mentions columns.
+- **Clicking a row** opens a detail pane: for a document, the same fields as the corpus browser's detail pane; for an entity, its roles and a clickable list of referencing documents; for an event, its full sentence and the entities it mentions.
+- **Top actors** limits the table (and, if shown, the graph panel) to the top 25/50/100 by that same ranking.
+- **Events** are off by default in the graph panel — event-to-entity matching is an approximation and can produce a few extra, imprecise connections for short names — turn it on to include event nodes.
+- **Show force-directed view** reveals an optional interactive graph panel (documents, entities, and — if enabled — events, as connected nodes) below the table; off by default to keep the page light for a large corpus.
+
+---
+
+## Sessions — listing and resuming past runs
+
+The nav bar's **Sessions** tab (`/sessions`) lists every Organize or Query session telcontar has ever started, grouped by directory — including sessions from a previous launch of telcontar, not just this browser tab or this process.
+
+- **Live sessions** show an **Open** button that jumps straight back into the running conversation, the same as clicking any other in-progress run.
+- **Dead sessions** (from a process that has since closed) show a **View** button that opens a read-only replay of the conversation so far, plus a **Resume** button. Resuming restarts the session exactly where it left off — same conversation history, same directory — so you can pick up a run you closed telcontar in the middle of instead of starting over.
+- Status (`live`/`running`/`done`/`error`) and the last-active time are shown next to each entry, so you can tell at a glance which sessions are still worth resuming.
+
+Only session metadata (which directory, when, what status) is ever stored outside the directory being organized; the actual conversation content stays inside that directory's own `.organizer/` folder, the same place its registry and journal already live — see [Configuration](../getting-started/configuration.md#persistent-state-locations).
+
+---
+
 ## The server's safety invariants
 
 The MCP server enforces five non-negotiable rules in code:
 
-1. **No delete tool exists.** The only removal path is `propose_quarantine`, which moves files to `QUARANTINE_DIR`.
+1. **No delete tool exists.** The only removal path is `propose_quarantine`, which moves files to `QUARANTINE_DIR`. This also holds for folders `execute_plan` leaves empty after its own moves: per `EMPTY_FOLDER_POLICY` (default `quarantine`), an emptied folder is moved into `QUARANTINE_DIR` too, never deleted (Y6, GH #57).
 2. **No overwrite.** `check_no_overwrite` raises `FileExistsError` before any move or rename touches an existing destination.
-3. **Every destructive op is journaled.** `execute_plan` appends to the undo journal before returning success.
+3. **Every destructive op is journaled.** `execute_plan` appends to the undo journal before returning success — including the folders its own empty-folder sweep disposes of, so `undo_last` reverses those the same way as any other move/quarantine.
 4. **Hard-stop on repeated failures.** More than 3 failures in one `execute_plan` run triggers a hard stop and surfaces the failed ops to the user.
 5. **Every mutation goes through the plan flow.** There is no tool that writes, moves, renames, quarantines, or archives a file directly — the agent must always stage a `propose_*` op and apply it via `execute_plan`. Undo, correspondingly, is not something the agent can trigger at all: it's a manual action in the web UI (see [Persistence](#persistence) below).

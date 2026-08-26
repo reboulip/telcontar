@@ -13,6 +13,7 @@ browser, an event loop trick, or a running NiceGUI server.
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 
 from host.agent import (
@@ -22,6 +23,7 @@ from host.agent import (
     CostApprovalResult,
 )
 from host.format import fmt_exc
+from host.web import sessions as sessions_store
 from host.web.session import RunSession
 
 # Tools whose successful result changes what's on disk under the target
@@ -30,6 +32,11 @@ from host.web.session import RunSession
 _TREE_MUTATING_TOOLS = frozenset(
     {"execute_plan", "write_index", "write_summary", "write_folder_readme"}
 )
+
+# Y2: minimum interval between non-terminal checkpoint writes — on_event
+# fires on every tool call/result, far more often than a snapshot needs to
+# be current. "done"/"error" always checkpoint regardless of this interval.
+_CHECKPOINT_INTERVAL_SECS = 10.0
 
 
 class AgentBridge:
@@ -40,6 +47,18 @@ class AgentBridge:
 
     def __init__(self, session: RunSession) -> None:
         self.session = session
+        self._last_checkpoint_at = 0.0
+
+    def _checkpoint(self, *, terminal: bool) -> None:
+        """Y2: persist this session's transcript/history so it survives a
+        process restart. Unconditional on a terminal event; otherwise
+        throttled — on_event fires far more often than a snapshot needs to
+        be current, and it runs synchronously on the event loop."""
+        now = time.monotonic()
+        if not terminal and (now - self._last_checkpoint_at) < _CHECKPOINT_INTERVAL_SECS:
+            return
+        self._last_checkpoint_at = now
+        sessions_store.snapshot(self.session)
 
     def on_event(self, event: AgentEvent) -> None:
         session = self.session
@@ -88,6 +107,7 @@ class AgentBridge:
                 session.status = "Error"
                 session.progress = {}
                 session.done = True
+        self._checkpoint(terminal=event.kind in ("done", "error"))
 
     async def on_approval_needed(self, plan_id: str, plan_data: dict) -> ApprovalResult:
         session = self.session
@@ -146,12 +166,28 @@ class AgentBridge:
         self.session.task = task
         return task
 
-    async def run(self, instructions: str | None = None) -> None:
+    def start_resumed(self) -> asyncio.Task:
+        """Y2: kick off a run for a session restored from a persisted
+        snapshot (`self.session.history` already populated) — same task
+        ownership as `start()`, but skips the fresh-run bootstrap (pre-pass/
+        analysis/digest) entirely, going straight to the same
+        history-continuation path a live session already uses between chat
+        turns."""
+        self.session.started = True
+        task = asyncio.create_task(self.run(resume_history=self.session.history))
+        self.session.task = task
+        return task
+
+    async def run(
+        self, instructions: str | None = None, *, resume_history: list[dict] | None = None
+    ) -> None:
         """Drive one full organize run against self.session: settings load
         through the run_agent_loop continuation loop. A near-verbatim port of
         OrganizerScreen._agent_worker onto a plain asyncio.Task. ``instructions``
         is the user's optional pre-analysis steering text (L3), only meaningful
-        on the first call."""
+        on the first call. ``resume_history`` (Y2), when given, skips the
+        fresh-run bootstrap and seeds `session.history` directly instead —
+        used by `start_resumed()` for a session restored from disk."""
         from config.settings import load as load_settings
         from host.agent import _TokenLedger, mcp_session, run_agent_loop
         from host.llm import make_client
@@ -163,32 +199,42 @@ class AgentBridge:
             session.add_turn("telcontar", f"Config error: {fmt_exc(exc)}")
             session.status = "Error — check settings"
             session.done = True
+            sessions_store.snapshot(session)
             return
 
         llm = make_client(settings)
         # One ledger for the whole session's lifetime (R1, GH #27) — threaded
         # through every run_agent_loop call below, initial and follow-up
         # alike, so running token totals persist across chat turns instead of
-        # resetting on each call.
+        # resetting on each call. Y2: a resumed session starts a fresh ledger
+        # too — prior-run token totals aren't carried across a restart, only
+        # the conversation history is; the cost they represent was already
+        # approved and spent in the prior process.
         ledger = _TokenLedger.new(settings)
         project_root = Path(__file__).resolve().parent.parent.parent
 
+        sessions_store.record_started(session)
+
         try:
             async with mcp_session(project_root, target=session.target) as mcp:
-                _summary, session.history = await run_agent_loop(
-                    target=session.target,
-                    settings=settings,
-                    llm=llm,
-                    session=mcp,
-                    on_event=self.on_event,
-                    on_approval_needed=self.on_approval_needed,
-                    on_ask_user_needed=self.on_ask_user_needed,
-                    on_cost_approval_needed=self.on_cost_approval_needed,
-                    project_root=project_root,
-                    instructions=instructions,
-                    message_queue=session.messages,
-                    ledger=ledger,
-                )
+                if resume_history is not None:
+                    session.history = resume_history
+                    session.status = "Ready — resumed from a previous session."
+                else:
+                    _summary, session.history = await run_agent_loop(
+                        target=session.target,
+                        settings=settings,
+                        llm=llm,
+                        session=mcp,
+                        on_event=self.on_event,
+                        on_approval_needed=self.on_approval_needed,
+                        on_ask_user_needed=self.on_ask_user_needed,
+                        on_cost_approval_needed=self.on_cost_approval_needed,
+                        project_root=project_root,
+                        instructions=instructions,
+                        message_queue=session.messages,
+                        ledger=ledger,
+                    )
 
                 # A run_agent_loop call only returns once the agent has fully
                 # finished AND no chat message was waiting at that instant —
@@ -216,6 +262,7 @@ class AgentBridge:
             session.add_turn("telcontar", f"Agent error: {fmt_exc(exc)}")
             session.status = "Error"
             session.done = True
+            sessions_store.snapshot(session)
 
 
 class QueryBridge:
@@ -229,6 +276,15 @@ class QueryBridge:
 
     def __init__(self, session: RunSession) -> None:
         self.session = session
+        self._last_checkpoint_at = 0.0
+
+    def _checkpoint(self, *, terminal: bool) -> None:
+        """Y2: same contract as AgentBridge._checkpoint."""
+        now = time.monotonic()
+        if not terminal and (now - self._last_checkpoint_at) < _CHECKPOINT_INTERVAL_SECS:
+            return
+        self._last_checkpoint_at = now
+        sessions_store.snapshot(self.session)
 
     def on_event(self, event: AgentEvent) -> None:
         session = self.session
@@ -256,6 +312,7 @@ class QueryBridge:
             # on_event has no "done" case either) — handling it here too
             # would render every answer twice. done/error here are also
             # per-question, not per-session: never set session.done.
+        self._checkpoint(terminal=event.kind == "error")
 
     def start(self) -> asyncio.Task:
         """Kick off the query worker immediately (TUI parity: QueryScreen
@@ -279,11 +336,14 @@ class QueryBridge:
         except Exception as exc:
             session.add_turn("telcontar", f"Config error: {fmt_exc(exc)}")
             session.status = "Error — check settings"
+            sessions_store.snapshot(session)
             return
 
         llm = make_client(settings)
         ledger = _TokenLedger.new(settings)
         project_root = Path(__file__).resolve().parent.parent.parent
+
+        sessions_store.record_started(session)
 
         try:
             async with mcp_session(project_root, target=session.target) as mcp:
@@ -303,6 +363,8 @@ class QueryBridge:
                     )
                     session.add_turn("telcontar", answer)
                     session.status = "Ready — ask a question."
+                    sessions_store.snapshot(session)
         except Exception as exc:
             session.add_turn("telcontar", f"Query error: {fmt_exc(exc)}")
             session.status = "Error"
+            sessions_store.snapshot(session)

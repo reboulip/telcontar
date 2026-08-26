@@ -19,3 +19,11 @@ The module is fully decoupled from any UI framework so it can be tested with pla
 OpenAI-compatible client factory supporting any endpoint via `base_url` override.
 
 ::: host.llm
+
+---
+
+## host.llmlog
+
+Always-on, redacted debug log of outbound LLM HTTP calls (request/response metadata only, no message content or credentials).
+
+::: host.llmlog

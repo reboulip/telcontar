@@ -56,6 +56,20 @@ def resolve_graph_path(target: Path) -> Path:
     return Settings().for_target(target).graph_path
 
 
+def resolve_events_path(target: Path) -> Path:
+    """Resolve the event-journal path for ``target`` from settings."""
+    from config.settings import Settings
+
+    return Settings().for_target(target).events_path
+
+
+def resolve_sessions_dir(target: Path) -> Path:
+    """Resolve the per-target session-snapshot directory for ``target`` from settings."""
+    from config.settings import Settings
+
+    return Settings().for_target(target).sessions_dir
+
+
 def quarantine_basename() -> str:
     """Basename of the configured quarantine dir, for discovery-hiding (P2).
 

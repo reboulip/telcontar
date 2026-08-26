@@ -115,6 +115,13 @@ class RunSession:
         self._seq += 1
         return self._seq
 
+    def seed_seq(self, value: int) -> None:
+        """Set the turn-sequence counter's starting point (Y2) — used when
+        restoring a session from a persisted snapshot, so newly appended
+        turns continue numbering after what was already there instead of
+        colliding with it."""
+        self._seq = value
+
     def add_turn(self, speaker: str, text: str) -> None:
         """Append a speaker-tagged turn — a genuine user<->telcontar exchange,
         never telcontar's own tool activity (that's `open_step`/`close_step`
@@ -229,6 +236,16 @@ def get(run_id: str) -> RunSession | None:
     return _SESSIONS.get(run_id)
 
 
+def register(session: RunSession) -> None:
+    """Insert an already-constructed RunSession into the live registry, as
+    ``create()`` does for a fresh one — used by the resume flow (Y2), which
+    restores a RunSession from a persisted snapshot and needs to preserve
+    the persisted run_id rather than mint a fresh one via create()."""
+    _SESSIONS[session.run_id] = session
+    if session.mode == "organize":
+        set_active(session.run_id)
+
+
 def close(run_id: str) -> None:
     _SESSIONS.pop(run_id, None)
 
@@ -295,6 +312,33 @@ def get_default_target() -> Path | None:
     return _default_target
 
 
+# ── Start directory (Y3 test-seam) ───────────────────────────────────────────
+#
+# Where the sidebar tree roots when no explicit target is set — the current
+# working directory rather than the home folder, so launching telcontar from
+# a project directory starts there. `_start_dir` is a test-only override
+# (None in real use); the real value is computed fresh on every call rather
+# than cached, so the headless `user` fixture (which runpy-executes main.py
+# for real) never pins the repo root into module state at import/run_web()
+# time — it just sees pytest's own cwd, like any other call site would.
+
+_start_dir: Path | None = None
+
+
+def set_start_dir(start_dir: Path | None) -> None:
+    global _start_dir
+    _start_dir = start_dir
+
+
+def get_start_dir() -> Path:
+    if _start_dir is not None:
+        return _start_dir
+    try:
+        return Path.cwd()
+    except OSError:
+        return Path.home()
+
+
 # ── Render refresh interval (U9 test-seam) ──────────────────────────────────
 #
 # Read by run_page's ui.timer at page-build time instead of a hardcoded
@@ -329,6 +373,16 @@ TREE_POLL_INTERVAL: float = 5.0
 CORPUS_POLL_INTERVAL: float = 5.0
 
 
+# ── Knowledge-graph poll interval (Y1 test-seam) ────────────────────────────
+#
+# Read by build_graph_view's ui.timer at mount time instead of a hardcoded
+# literal — same test-seam reasoning as CORPUS_POLL_INTERVAL above. As coarse
+# as the corpus poll: the graph_mtime pre-check (host/web/graph.py) already
+# skips rebuilding the whole graph on most ticks.
+
+GRAPH_POLL_INTERVAL: float = 5.0
+
+
 # ── Sidebar width (T4) ───────────────────────────────────────────────────────
 #
 # One in-memory preference for the process's lifetime rather than a field on
@@ -339,11 +393,14 @@ CORPUS_POLL_INTERVAL: float = 5.0
 # MAX raised 720 -> 1000 for V13b: the step-detail drawer now lives inside
 # this same sidebar (stacked below the tree) rather than a separate
 # right-side drawer, and its codemirror content wants more than 720px to be
-# comfortably readable. DEFAULT stays unchanged — most sessions never open
-# the detail view, so the common case (just browsing the tree) shouldn't
-# start wider than before.
+# comfortably readable. DEFAULT raised 380 -> 440 for Y9: the document-preview
+# pane joined the stack too, and unlike step detail it's visible by default
+# (not hidden until a step is inspected) — so the common case (tree + doc
+# pane) now needs the extra room, not just the occasional detail-view case
+# V13b's comment above was about. MIN/MAX left untouched — both are
+# interpolated into _RESIZE_JS below and were the site of a past drift bug.
 
-SIDEBAR_WIDTH_DEFAULT = 380
+SIDEBAR_WIDTH_DEFAULT = 440
 SIDEBAR_WIDTH_MIN = 240
 SIDEBAR_WIDTH_MAX = 1000
 

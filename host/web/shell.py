@@ -56,6 +56,7 @@ from host.paths import find_organizer_root
 from host.web import session as web_session
 from host.web import theme
 from host.web import tree as web_tree
+from host.web.docpane import DocPane, build_doc_pane
 from host.web.session import RunSession
 
 # Wired once per page build via a `window.__tcSidebarResizeWired` guard —
@@ -148,8 +149,10 @@ _RESIZE_JS = """
 class Shell:
     """Handle to one page build's mounted shell — the sidebar drawer/tree,
     the internal-step detail section (V13b: stacked inside this same left
-    drawer, not a separate right-side one), and the page's main content
-    column."""
+    drawer, not a separate right-side one), the document-preview pane (Y9:
+    likewise relocated into this drawer, mutually exclusive with the step
+    detail section — opening one hides the other), and the page's main
+    content column."""
 
     drawer: ui.left_drawer
     tree: ui.tree
@@ -157,6 +160,8 @@ class Shell:
     detail_section: ui.column
     detail_title: ui.label
     detail_content: ui.codemirror
+    doc_section: ui.column
+    doc_pane: DocPane
     target: Path | None = None
     selected: Path | None = None
     _reloading: bool = field(default=False, repr=False)
@@ -210,21 +215,40 @@ class Shell:
         view, not an editor. `theme.CODEMIRROR_THEME` is applied once at
         creation time (below); only the value/title change per call.
         """
+        self.doc_section.visible = False
         self.detail_title.set_text(title)
         self.detail_content.set_value(detail)
         self.detail_section.visible = True
 
     def hide_detail(self) -> None:
         """Collapse the step-detail section, returning the sidebar's full
-        height to the file tree (V13b)."""
+        height to the file tree (V13b). Restores the document-preview
+        section (Y9) — the two are mutually exclusive."""
         self.detail_section.visible = False
+        self.doc_section.visible = True
+
+    def show_document(self, record: dict) -> None:
+        """Populate and reveal the document-preview pane (Y9) from a
+        registry record dict, hiding step detail — the two share this
+        drawer and are mutually exclusive."""
+        self.detail_section.visible = False
+        self.doc_pane.show(record)
+
+    def show_unanalyzed(self, path: Path, meta_line: str) -> None:
+        """Preview a selected file with no registry record yet (Y9)."""
+        self.detail_section.visible = False
+        self.doc_pane.show_unanalyzed(path, meta_line)
+
+    def clear_document(self) -> None:
+        """Return the document-preview pane to its placeholder (Y9)."""
+        self.doc_pane.clear()
 
 
 def _apply_theme() -> None:
     """Hook point for T7/T8's host/web/theme.py — empty until then."""
 
 
-_NAV_TABS = ("conversation", "corpus", "query", "settings")
+_NAV_TABS = ("conversation", "corpus", "query", "graph", "sessions", "settings")
 
 
 @contextmanager
@@ -240,7 +264,9 @@ def app_shell(
 
     ``target`` roots the sidebar tree — the run's target directory on
     `/run/{run_id}`, or ``None`` on the picker/error routes, where it falls
-    back to the user's home directory. ``on_select`` is called with the
+    back to ``web_session.get_start_dir()`` (Y3: the current working
+    directory telcontar was launched from, itself falling back to the home
+    directory if the cwd is unreadable). ``on_select`` is called with the
     selected path whenever the user clicks a tree node.
 
     X11: ``session`` is the *organize*-mode `RunSession` driving the current
@@ -260,7 +286,7 @@ def app_shell(
         web_session.set_active(session.run_id)
     effective_session = session or web_session.get_active()
 
-    root = target or Path.home()
+    root = target or web_session.get_start_dir()
     width = web_session.get_sidebar_width()
 
     if nav:
@@ -278,6 +304,8 @@ def app_shell(
                 )
                 corpus_tab = ui.tab("corpus", label="Corpus").mark("nav-corpus")
                 query_tab = ui.tab("query", label="Query").mark("nav-query")
+                graph_tab = ui.tab("graph", label="Graph").mark("nav-graph")
+                ui.tab("sessions", label="Sessions").mark("nav-sessions")
                 ui.tab("settings", label="Settings").mark("nav-settings")
 
             if effective_session is None:
@@ -288,6 +316,7 @@ def app_shell(
             )
             if effective_target is None or find_organizer_root(effective_target) is None:
                 query_tab.disable()
+                graph_tab.disable()
 
             def _on_nav_change(e: ValueChangeEventArguments) -> None:
                 # Constructing ui.tabs(value=active) above must not itself
@@ -303,6 +332,10 @@ def app_shell(
                         effective_target, mode="query"
                     ) or web_session.create(effective_target, mode="query")
                     ui.navigate.to(f"/query/{query_session.run_id}")
+                elif e.value == "graph" and effective_session is not None:
+                    ui.navigate.to(f"/graph/{effective_session.run_id}")
+                elif e.value == "sessions":
+                    ui.navigate.to("/sessions")
                 elif e.value == "settings":
                     ui.navigate.to("/settings")
 
@@ -335,7 +368,7 @@ def app_shell(
 
                 ui.button(icon="arrow_upward", on_click=_go_up).props("flat dense").tooltip(
                     "Up one level"
-                )
+                ).mark("btn-go-up")
                 drives = web_tree.list_drive_roots()
                 if drives:
                     ui.select(
@@ -377,6 +410,16 @@ def app_shell(
                 .mark("detail-content")
             )
 
+        # Y9: document-preview pane, stacked below step detail in this same
+        # drawer — visible by default (mutually exclusive with detail_section,
+        # not with the drawer itself), its own scroll region rather than
+        # letting the whole drawer scroll as one unit.
+        doc_section = ui.column().classes("w-full gap-0").mark("doc-section")
+        with doc_section:
+            ui.separator()
+            with ui.column().classes("w-full").style("max-height: 40vh; overflow-y: auto"):
+                doc_pane = build_doc_pane()
+
     content = ui.column().classes("w-full")
     shell = Shell(
         drawer=drawer,
@@ -385,6 +428,8 @@ def app_shell(
         detail_section=detail_section,
         detail_title=detail_title,
         detail_content=detail_content,
+        doc_section=doc_section,
+        doc_pane=doc_pane,
         target=root,
     )
 

@@ -24,7 +24,12 @@
 
 ## Install telcontar
 
-=== "From GitHub (recommended)"
+=== "From PyPI (recommended)"
+    ```bash
+    uv tool install telcontar
+    ```
+
+=== "From GitHub"
     ```bash
     uv tool install git+https://github.com/reboulip/telcontar.git
     ```

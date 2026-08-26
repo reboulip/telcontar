@@ -54,11 +54,18 @@ on open work.
 
 ---
 
-## Phase 24 — Corpus intelligence surfaces
+## Phase 24 — Corpus intelligence surfaces and miscellaneous
 
-*(Split out from Phase 21's former Break 3: unlike V4/V5 — which surface data the agent already narrates in the transcript — this is new product surface with no settled design yet.)*
+*(Split out from Phase 21's former Break 3: unlike V4/V5 — which surface data the agent already narrates in the transcript — this is new product surface with no settled design yet. Items use a fresh `Y`-series label — Phase 21 already used `V6`/`V7`/`V10`–`V17` for different, shipped features; see `docs/developer/architecture/web-ui.md`.)*
 
-- [ ] V6 · Knowledge-graph view — `server/graph.py` already builds the graph; currently invisible. Needs a design pass before implementation: rendering choice (force-directed graph vs. a ranked-actors table, or both — `server/graph.py::rank_actors` already produces a ranked, scored actor list), node/edge caps for large corpora, kind filters (document/entity/event), and what a node click surfaces.
-- [ ] V7 · Session list/switch/resume view — persist the session list to disk (target directory, timestamp, status per session); add a view to list and switch between sessions; "Resume" live-reattaches the conversation when the session's agent state survives a restart, falling back to a read-only transcript view when it doesn't. Needs its own design pass first: storage format/location, what agent state must survive a restart, retention/cleanup of old sessions. [#53]
+- [x] Y1 · Knowledge-graph view — `server/graph.py` already builds the graph; currently invisible. Rendering: a ranked-actors table as the primary, sortable surface, with an optional force-directed graph panel behind a toggle (default off); fixed node/edge caps plus a "Top N actors" selector; document/entity/event kind filters, event nodes off by default (naive substring entity↔event matching floods the graph otherwise); node click opens a detail pane (reusing the corpus browser's doc-pane component for document nodes). Own route/nav tab.
+- [x] Y2 · Session list/switch/resume view, full scope including cross-restart live resume — persist the session list (target directory, timestamps, status) and enough of each session's LLM history to replay it; add a view to list sessions (grouped by target) and switch between live ones; "Resume" on a dead session re-opens the MCP server subprocess for its target and replays the persisted history into a fresh agent loop, falling back to a read-only transcript view if replay isn't possible. Persist metadata (home index) separately from transcript/history snapshots (per-target `.organizer/`), never LLM-derived corpus text in the home directory. [#53]
+- [x] Y3 · Start telcontar in the current working directory by default (not the home folder), keeping the landing-page picker and its "go up a level" controls usable so a different folder can still be chosen; scope the sidebar tree view to the resolved start directory's sub-tree; fall back to the home folder if the cwd is unreadable. [#62]
+- [x] Y4 · Fix Azure OpenAI integration `404 Resource Not Found` — align client config with Azure's `AzureOpenAI` pattern (`api_version`, `azure_endpoint`, deployment name as `model`), detecting Azure by an explicit `api_version` or an `*.azure.com` host so existing non-Azure configs are unaffected. [#61]
+- [x] Y5 · Add detailed debug logging around LLM endpoint calls (request/response summaries, errors, redacted of keys/content) to aid corporate/Azure troubleshooting; always on, file-only, no flag. [#60]
+- [x] Y6 · Quarantine (or fallback: rename with `_empty_` prefix) folders emptied by `execute_plan` moves, per the non-destructive safety rule (`server/guards.py`); disposal policy configurable via an `EMPTY_FOLDER_POLICY` setting (default: quarantine), fully journaled and undoable via `undo_last`. [#57]
+- [x] Y7 · Add markdown rendering for chat messages (prompts and LLM output) in the web UI conversation view, sanitized client-side (DOMPurify) and with remote image loads blocked via CSP `img-src`, since assistant turns can echo attacker-planted document text. [#56]
+- [x] Y8 · Fix header contrast in dark theme — darken the gold background so the Telcontar logo/title/nav links stay readable. [#55]
+- [x] Y9 · Move the document preview pane into the same area as command/step inspection in conversation mode (lower-left), so opening one replaces the other. [#58]
 
 ---

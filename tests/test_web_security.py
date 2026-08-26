@@ -222,6 +222,10 @@ async def test_middleware_adds_frame_protection_headers(_wrapped_app: _AuthMiddl
         response = await client.get("/?token=itest-token")
     assert response.headers["x-frame-options"] == "DENY"
     assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+    # Y7: closes the one thing DOMPurify-sanitized markdown chat messages
+    # don't stop — a remote-image beacon via a sanitize-surviving
+    # ![](http://attacker/...) tag.
+    assert "img-src 'self' data:" in response.headers["content-security-policy"]
 
 
 async def test_middleware_denies_request_from_wrong_host_header() -> None:

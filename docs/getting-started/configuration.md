@@ -12,10 +12,10 @@ The reference below is for **advanced or developer use**: env vars and a project
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `LLM_BASE_URL` | **yes** | `""` | Base URL of the OpenAI-compatible endpoint.<br>Azure: `https://<resource>.openai.azure.com/openai/deployments/<deployment>`<br>Mammouth: the standard Mammouth base URL.<br>Set by the wizard and stored in `~/.telcontar/config.env`. |
+| `LLM_BASE_URL` | **yes** | `""` | Base URL of the OpenAI-compatible endpoint.<br>Azure: any of a bare resource root (`https://<resource>.openai.azure.com`), `.../openai`, `.../openai/deployments/<deployment>`, or `.../openai/v1` — all four shapes are recognized (Y4, GH #61).<br>Mammouth: the standard Mammouth base URL.<br>Set by the wizard and stored in `~/.telcontar/config.env`. |
 | `LLM_API_KEY` | **yes** | `""` | API key for the endpoint. Set by the wizard and stored in the OS credential store. If the keyring is unavailable, the wizard/settings screen warns loudly and requires pressing the save/finish button a second time to explicitly confirm storing it in plaintext at `~/.telcontar/config.env` instead — it is never written there silently. |
 | `LLM_MODEL` | no | `gpt-5` | Model name passed in chat completion requests |
-| `LLM_API_VERSION` | no | `""` | Azure only — `api-version` query parameter (e.g. `2025-01-01-preview`). Leave blank for every other provider. |
+| `LLM_API_VERSION` | no | `""` | Azure only — `api-version` query parameter (e.g. `2025-01-01-preview`). Leave blank for every other provider. When left blank on an Azure host detected by hostname (`*.azure.com`) rather than an explicit version, telcontar now falls back to a built-in default API version automatically (Y4). Ignored entirely when `LLM_BASE_URL` ends in `/openai/v1` (Azure's own OpenAI-compatible surface, which must not receive an injected `api-version`). |
 
 ### Safety
 
@@ -24,6 +24,7 @@ The reference below is for **advanced or developer use**: env vars and a project
 | `APPROVAL_MODE` | no | `always` | When to require user approval. See [Approval Modes](../user-guide/approval-modes.md). |
 | `TARGET_DIR` | no | *(unset)* | The directory being organized this run. Not meant to be set by hand — the host sets it automatically (as a subprocess env var) whenever it launches an organize or query session, so the MCP server can confine every path-taking tool to it. Every path-taking tool call is checked against `TARGET_DIR` plus the server's own working directory via `check_within_root`; a path outside both is rejected regardless of `ALLOWLIST_DIRS`. As of per-directory memory, `TARGET_DIR` is also where `.organizer/` and the quarantine dir physically live for the run (see [Persistent state locations](#persistent-state-locations) below) — `Settings.for_target(target)` rebases all the memory paths below onto it whenever `TARGET_DIR` is set, which is every real organize/query session. |
 | `QUARANTINE_DIR` | no | `_quarantine` | Relative path (from the target directory) where clutter files are moved. Never deleted. |
+| `EMPTY_FOLDER_POLICY` | no | `quarantine` | How `execute_plan` disposes of a folder its own `move`/`quarantine`/`archive_document` ops left empty, once all ops have run (Y6, GH #57). `quarantine` (default) moves the folder into `QUARANTINE_DIR`, falling back to an in-place `_empty_`-prefixed rename on any error; `rename` always renames in place; `off` disables the sweep. Only activates when `TARGET_DIR` is set (every real organize/query session). Treated as an automatic, fully journaled/undoable consequence of the already-approved moves, not a separate approval-requiring op. |
 | `JOURNAL_PATH` | no | `.organizer/journal.jsonl` | Append-only undo journal (file operations, drives `undo_last`). Relative to the target directory being organized (rebased there per run — an explicit absolute override passes through unchanged). |
 | `EVENTS_PATH` | no | `.organizer/events.jsonl` | Append-only project event journal (narrative log, drives `create_event` / `list_events`). Relative to the target directory being organized (same rebasing as `JOURNAL_PATH`). |
 
@@ -41,6 +42,7 @@ The reference below is for **advanced or developer use**: env vars and a project
 | `REGISTRY_PATH` | no | `.organizer/registry.json` | Path to the persistent document registry (content-addressed, sha256-keyed). Relative to the target directory being organized (same rebasing as `JOURNAL_PATH`). |
 | `GRAPH_PATH` | no | `.organizer/graph.json` | Path where the knowledge graph is persisted. Rebuilt on demand by `build_graph`; read without rebuilding by `get_graph`. Relative to the target directory being organized (same rebasing as `JOURNAL_PATH`). |
 | `ARCHIVE_PATH` | no | `.organizer/archive.jsonl` | Append-only archive log: records every document withdrawn from active memory via `archive_document` (what was archived, why, and where the file moved). Relative to the target directory being organized (same rebasing as `JOURNAL_PATH`). |
+| `SESSIONS_DIR` | no | `.organizer/sessions` | Directory holding one JSON snapshot per session (transcript, activity log, full LLM message history), for cross-restart resume (Y2, GH #53). Relative to the target directory being organized (same rebasing as `JOURNAL_PATH`), since a snapshot carries corpus-derived text and must stay inside the same allowlist/egress boundary the rest of this table does. Not exposed as an MCP tool. See also `~/.telcontar/sessions.json` under [Persistent state locations](#persistent-state-locations) — a separate, metadata-only home-directory index of every session, not rebased by this variable. |
 
 ### Egress / extraction
 
@@ -58,6 +60,7 @@ The reference below is for **advanced or developer use**: env vars and a project
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `TOKEN_LOG_PATH` | no | `.organizer/tokens.jsonl` | Append-only profiling log: one entry per LLM call (analyze/organize/query/estimate phases) recording input/output/cached token counts and running totals, for optimization analysis (R2). Always on — no flag to disable it. Not exposed as an MCP tool — open the file directly. Relative to the target directory being organized (same rebasing as `JOURNAL_PATH`). |
+| `LLM_DEBUG_LOG_PATH` | no | `.organizer/llm-debug.jsonl` | Append-only debug log: one entry per outbound LLM HTTP call (client construction, request, response, transport error), recording redacted URLs, status codes, durations, and request ids — no message content, no API key (Y5, GH #60). Always on — no flag to disable it. Not exposed as an MCP tool — open the file directly. Relative to the target directory being organized (same rebasing as `JOURNAL_PATH`). |
 
 ---
 
@@ -126,15 +129,24 @@ Telcontar's memory is **per-directory**: each run's `.organizer/` state lives *i
 <target directory>/
 ├── .organizer/
 │   ├── plans/          # One JSON file per plan
+│   ├── sessions/        # One JSON snapshot per session (transcript/history, Y2)
 │   ├── journal.jsonl   # Append-only undo log (file operations)
 │   ├── events.jsonl    # Append-only project event journal (narrative log)
 │   ├── archive.jsonl   # Append-only archive log (why a document left active memory)
 │   ├── egress.jsonl    # Append-only audit log of content sent to the LLM endpoint
 │   ├── tokens.jsonl    # Append-only per-LLM-call token-usage profiling log
+│   ├── llm-debug.jsonl # Append-only debug log of outbound LLM HTTP calls (metadata only)
 │   ├── registry.json   # Document memory (sha256 → metadata)
 │   └── graph.json      # Knowledge graph (derived from registry + events; rebuilt on demand)
 └── _quarantine/         # Quarantined files (QUARANTINE_DIR)
 ```
+
+A separate, home-directory file — `~/.telcontar/sessions.json` — indexes every
+session ever started, across every target: metadata only (`run_id`/`target`/
+`mode`/timestamps/`status`), never the transcript/history above. It is
+deliberately **not** rebased by `SESSIONS_DIR` or anything else in this
+section — it lives outside every target directory (and its allowlist/egress
+boundary) on purpose, the same way `~/.telcontar/config.env` does.
 
 Both `.organizer/` and the quarantine folder are hidden from the agent's own directory discovery (`walk_tree`) so it never proposes moving or quarantining its own memory — the quarantine folder is deliberately still shown in the written `INDEX.md`, since a human reviewing results should be able to see it.
 

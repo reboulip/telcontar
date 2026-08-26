@@ -130,6 +130,7 @@ Fields in normal operation entries:
 - files (compress only): List of `{name, src, sha256, size}` dicts — one per bundled file.
 - deleted_originals (compress only): Boolean — whether the source files were deleted after verification.
 - status: Always done for successful journal entries (not present for compress entries).
+- target_kind, reason (Y6, empty-folder sweep entries only): a folder the sweep disposed of is journaled under the same `quarantine`/`rename` `op_type` as a normal file operation, plus these two extra fields: `target_kind: "dir"` and `reason: "emptied_by_plan"`. `undo_last` does not inspect either field — it reverses `quarantine`/`rename` entries the same way regardless of whether they target a file or a sweep-disposed folder, so no new undo code path was needed.
 
 Fields in hard_stop entries:
 - timestamp: When the hard stop was triggered.
@@ -217,9 +218,9 @@ Scan a plan for issues without modifying it.
 
 ## Executing a Plan
 
-### execute_plan(plan_id, plans_dir, journal_path, registry_path=None, quarantine_dir=None, archive_path=None) -> dict
+### execute_plan(plan_id, plans_dir, journal_path, registry_path=None, quarantine_dir=None, archive_path=None, target_dir=None, empty_folder_policy="quarantine") -> dict
 
-Apply all operations in an approved plan. Must be in approved state. `quarantine_dir` and `archive_path` are only required if the plan contains an `archive_document` or `compress_quarantine` op; the MCP-exposed tool signature is just `execute_plan(plan_id: str) -> dict` — the server fills in the rest from config.
+Apply all operations in an approved plan. Must be in approved state. `quarantine_dir` and `archive_path` are only required if the plan contains an `archive_document` or `compress_quarantine` op; the MCP-exposed tool signature is just `execute_plan(plan_id: str) -> dict` — the server fills in the rest from config. `target_dir` and `empty_folder_policy` (Y6, GH #57) are likewise config-sourced (`cfg.target_dir`/`cfg.empty_folder_policy`), not model-supplied.
 
 **Processing:**
 1. Load the plan file.
@@ -231,9 +232,21 @@ Apply all operations in an approved plan. Must be in approved state. `quarantine
    c. On success: update operation status to completed, append a journal entry for non-self-journaling op types (recording the resolved source, not necessarily the original `src`), record the file's new location for later ops, update plan file.
    d. On failure: retry — 3 attempts total. After the 3rd failed attempt, mark operation status as failed and continue.
 5. After all operations:
-   a. If failed count > 3, transition plan state to stopped, append a hard_stop journal entry.
-   b. Otherwise, transition plan state to done and write to disk.
-6. Return a summary.
+   a. If failed count > 3, transition plan state to stopped, append a hard_stop journal entry, and return immediately — the empty-folder sweep below does not run.
+   b. Otherwise, sweep for empty folders (Y6, see below), then transition plan state to done and write to disk.
+6. Return a summary, including `emptied_folders` (the sweep's results, `[]` on the hard-stop path or when the sweep did not run).
+
+**Empty-folder sweep (Y6, GH #57)**
+
+When `target_dir` is set (every host call site sets it via `server/main.py`'s wrapper), `execute_plan` disposes of any directory its own `move`/`quarantine`/`archive_document` ops left empty — never `rename`, and never a directory this same run created via `create_dir`. "Empty" is strictly zero entries.
+
+1. While applying ops (step 4 above), the parent directory of every completed `move`/`quarantine`/`archive_document` op's *original* location is recorded as a candidate, and every completed `create_dir`'s destination is recorded as plan-created (protected from disposal even if later found empty).
+2. After the op loop, each candidate is processed deepest-first: skipped if it no longer exists, is protected (`server/guards.py::is_sweep_protected` — the target root itself, anything outside it, `QUARANTINE_DIR` or an ancestor/descendant of it, `.organizer`, or a plan-created dir), or is not actually empty.
+3. An eligible folder is disposed of per `empty_folder_policy`: `"quarantine"` (default) moves it into `QUARANTINE_DIR` (`server/guards.py::safe_quarantine_dir_path`, whole-basename-suffixed on collision), falling back to an in-place `_empty_`-prefixed rename (`empty_marker_path`) on any `OSError`; `"rename"` always does the in-place rename; `"off"` skips the sweep entirely.
+4. Disposing of a folder re-queues its parent, so a multi-level hollow shell (e.g. both `a/b` and `a` left empty) collapses via two separate journaled entries, not one.
+5. Each disposal is journaled immediately, reusing the existing `quarantine`/`rename` `op_type` (see Journal fields below) — so `undo_last` reverses it with the same code path it already has for those op types, no new handling needed. A failed disposal (`OSError`) is recorded in the returned `emptied_folders` list with `"action": "skipped"` and an `error` message, but never aborts the sweep or fails the plan.
+
+This is treated as a fully journaled, automatic consequence of the already-approved moves, not a new operation requiring its own separate approval — an explicit decision made during sprint planning, not an implementation default (see [Security Model](../security-model.md)).
 
 **Chained operations within a single run**
 

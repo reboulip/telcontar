@@ -621,10 +621,12 @@ async def test_run_reports_config_error_without_raising(
 # ── Sidebar width (T4) ───────────────────────────────────────────────────────
 
 
-def test_get_sidebar_width_defaults_to_380(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_sidebar_width_defaults_to_default_constant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(web_session, "_sidebar_width", web_session.SIDEBAR_WIDTH_DEFAULT)
 
-    assert web_session.get_sidebar_width() == 380
+    assert web_session.get_sidebar_width() == web_session.SIDEBAR_WIDTH_DEFAULT
 
 
 def test_set_sidebar_width_persists_within_bounds(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -917,3 +919,40 @@ async def test_query_bridge_run_reports_config_error_without_raising(
 
     assert "Config error" in session.transcript[-1].text
     assert session.done is False  # query-mode sessions never set .done
+
+
+# ── Start directory (Y3) ─────────────────────────────────────────────────────
+
+
+def test_get_start_dir_defaults_to_cwd(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(web_session, "_start_dir", None)
+
+    assert web_session.get_start_dir() == Path.cwd()
+
+
+def test_get_start_dir_returns_the_override_when_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    web_session.set_start_dir(tmp_path)
+    try:
+        assert web_session.get_start_dir() == tmp_path
+    finally:
+        web_session.set_start_dir(None)
+
+
+def test_get_start_dir_falls_back_to_home_when_cwd_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(web_session, "_start_dir", None)
+    monkeypatch.setattr(Path, "cwd", lambda: (_ for _ in ()).throw(OSError("gone")))
+
+    assert web_session.get_start_dir() == Path.home()
+
+
+def test_set_start_dir_none_clears_the_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    web_session.set_start_dir(tmp_path)
+    web_session.set_start_dir(None)
+
+    assert web_session.get_start_dir() == Path.cwd()
