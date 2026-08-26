@@ -63,8 +63,10 @@ def _reset_session_registry() -> Iterator[None]:
     clear it around every test so one test's run can't leak into another's."""
     web_session._SESSIONS.clear()
     web_session.set_default_target(None)
+    web_session.set_start_dir(None)
     try:
         yield
     finally:
         web_session._SESSIONS.clear()
         web_session.set_default_target(None)
+        web_session.set_start_dir(None)

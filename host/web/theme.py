@@ -156,6 +156,21 @@ def css(font_dir: Path | None = None) -> str:
         ".q-btn.bg-primary {\n"
         "  color: #0E1116 !important;\n"
         "}\n"
+        # Y8: Quasar's own `.q-layout__section--marginal` rule paints
+        # ui.header() gold-on-white (`var(--q-primary)`/`color:#fff`), and
+        # the SVG logo's silver+gold reads poorly on that same gold field.
+        # NiceGUI 3.15 wraps its own stylesheets in CSS cascade layers, but
+        # `ui.add_css` injects this whole css() output UNLAYERED — an
+        # unlayered *normal* declaration beats every layered declaration
+        # regardless of specificity, so this plain rule (deliberately no
+        # `!important`, unlike the button fix above) wins outright. Title
+        # and nav-tab labels inherit `currentColor`, so this one `color`
+        # covers all three; the gold survives as the bottom border.
+        ".q-header {\n"
+        f"  background-color: {PALETTE['dark']};\n"
+        f"  color: {PALETTE['secondary']};\n"
+        f"  border-bottom: 1px solid {PALETTE['primary']};\n"
+        "}\n"
         ".tc-logo {\n"
         "  display: inline-flex;\n"
         "  align-items: center;\n"

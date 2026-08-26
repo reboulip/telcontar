@@ -129,11 +129,13 @@ def _reset_session_registry() -> Iterator[None]:
     clear it around every test so one test's run can't leak into another's."""
     web_session._SESSIONS.clear()
     web_session.set_default_target(None)
+    web_session.set_start_dir(None)
     try:
         yield
     finally:
         web_session._SESSIONS.clear()
         web_session.set_default_target(None)
+        web_session.set_start_dir(None)
 
 
 # ── Seam smoke test ──────────────────────────────────────────────────────────
@@ -166,6 +168,35 @@ async def test_landing_page_shows_picker_prompt_with_no_default_target(user: Use
     await user.open("/")
 
     await user.should_see("Pick a directory in the sidebar")
+
+
+async def test_landing_page_roots_tree_at_start_dir_override(user: User, tmp_path: Path) -> None:
+    web_session.set_start_dir(tmp_path)
+
+    await user.open("/")
+
+    await user.should_see(tmp_path.name)
+
+
+async def test_landing_page_go_up_control_renders(user: User) -> None:
+    # Y3: index_page now passes app_shell an on_select callback, so the
+    # picker's "up a level" control (previously dead — gated on on_select
+    # being non-None) actually renders.
+    await user.open("/")
+
+    await user.should_see(marker="btn-go-up")
+
+
+async def test_landing_page_selecting_a_directory_clears_the_error(
+    user: User, tmp_path: Path
+) -> None:
+    await user.open("/")
+    user.find(marker="btn-startup-organize").click()
+    await user.should_see("Please choose a folder to organize.")
+
+    user.find(kind=ui.tree).trigger("update:selected", args=str(tmp_path))
+
+    await user.should_not_see("Please choose a folder to organize.")
 
 
 # ── Startup view (U1) ────────────────────────────────────────────────────────

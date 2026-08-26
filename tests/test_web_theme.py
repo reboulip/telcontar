@@ -180,6 +180,28 @@ def test_css_contains_button_contrast_fix() -> None:
     assert "#0E1116" in result
 
 
+def test_css_contains_header_contrast_fix() -> None:
+    result = css()
+
+    assert ".q-header" in result
+    assert PALETTE["dark"] in result
+    assert PALETTE["secondary"] in result
+    assert PALETTE["primary"] in result
+
+
+def test_header_rule_has_no_important() -> None:
+    # Unlayered `!important` sorts BELOW NiceGUI's own quasar_importants
+    # layer and would lose — the header fix relies on being a plain,
+    # unlayered normal declaration instead. Isolate the .q-header block so a
+    # future unrelated `!important` elsewhere in css() can't false-pass this.
+    result = css()
+    start = result.index(".q-header {")
+    end = result.index("}", start)
+    header_rule = result[start:end]
+
+    assert "!important" not in header_rule
+
+
 def test_css_binds_display_font_to_quasar_heading_classes() -> None:
     result = css()
 

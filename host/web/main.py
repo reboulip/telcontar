@@ -128,7 +128,19 @@ def _load_preview(target: Path, path: Path) -> tuple[bool, dict | None, str]:
 async def index_page() -> None:
     from config.settings import is_configured
 
-    with app_shell() as shell:
+    # Y3: app_shell's on_select is wired to the tree at mount time (below,
+    # before the ui.label it needs to clear even exists), so the callback
+    # goes through this mutable cell instead of a direct closure over
+    # `error_label` — the cell is filled in once the label is actually
+    # created, further down in this same function.
+    error_label_cell: dict[str, ui.label] = {}
+
+    def _on_select(_path: Path) -> None:
+        label = error_label_cell.get("el")
+        if label is not None:
+            label.set_text("")
+
+    with app_shell(on_select=_on_select) as shell:
         if not is_configured():
             ui.navigate.to("/setup")
             return
@@ -142,6 +154,7 @@ async def index_page() -> None:
         ui.label("telcontar").classes("text-h5")
         ui.label("Pick a directory in the sidebar, then organize or query it:")
         error_label = ui.label().classes("text-negative").mark("startup-error")
+        error_label_cell["el"] = error_label
 
         def _organize() -> None:
             if shell.selected is None or not shell.selected.is_dir():

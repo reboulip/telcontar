@@ -240,7 +240,9 @@ def app_shell(
 
     ``target`` roots the sidebar tree — the run's target directory on
     `/run/{run_id}`, or ``None`` on the picker/error routes, where it falls
-    back to the user's home directory. ``on_select`` is called with the
+    back to ``web_session.get_start_dir()`` (Y3: the current working
+    directory telcontar was launched from, itself falling back to the home
+    directory if the cwd is unreadable). ``on_select`` is called with the
     selected path whenever the user clicks a tree node.
 
     X11: ``session`` is the *organize*-mode `RunSession` driving the current
@@ -260,7 +262,7 @@ def app_shell(
         web_session.set_active(session.run_id)
     effective_session = session or web_session.get_active()
 
-    root = target or Path.home()
+    root = target or web_session.get_start_dir()
     width = web_session.get_sidebar_width()
 
     if nav:
@@ -335,7 +337,7 @@ def app_shell(
 
                 ui.button(icon="arrow_upward", on_click=_go_up).props("flat dense").tooltip(
                     "Up one level"
-                )
+                ).mark("btn-go-up")
                 drives = web_tree.list_drive_roots()
                 if drives:
                     ui.select(

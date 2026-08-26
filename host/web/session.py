@@ -295,6 +295,33 @@ def get_default_target() -> Path | None:
     return _default_target
 
 
+# ── Start directory (Y3 test-seam) ───────────────────────────────────────────
+#
+# Where the sidebar tree roots when no explicit target is set — the current
+# working directory rather than the home folder, so launching telcontar from
+# a project directory starts there. `_start_dir` is a test-only override
+# (None in real use); the real value is computed fresh on every call rather
+# than cached, so the headless `user` fixture (which runpy-executes main.py
+# for real) never pins the repo root into module state at import/run_web()
+# time — it just sees pytest's own cwd, like any other call site would.
+
+_start_dir: Path | None = None
+
+
+def set_start_dir(start_dir: Path | None) -> None:
+    global _start_dir
+    _start_dir = start_dir
+
+
+def get_start_dir() -> Path:
+    if _start_dir is not None:
+        return _start_dir
+    try:
+        return Path.cwd()
+    except OSError:
+        return Path.home()
+
+
 # ── Render refresh interval (U9 test-seam) ──────────────────────────────────
 #
 # Read by run_page's ui.timer at page-build time instead of a hardcoded
