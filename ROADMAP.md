@@ -54,7 +54,7 @@ on open work.
 
 ---
 
-## Phase 24 — Corpus intelligence surfaces
+## Phase 24 — Corpus intelligence surfaces and miscellaneous
 
 *(Split out from Phase 21's former Break 3: unlike V4/V5 — which surface data the agent already narrates in the transcript — this is new product surface with no settled design yet.)*
 
