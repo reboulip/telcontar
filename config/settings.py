@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     egress_path: Path = Path(".organizer/egress.jsonl")
     # R2: per-step token-usage profiling log (input/output tokens per LLM call)
     token_log_path: Path = Path(".organizer/tokens.jsonl")
+    # Y5: redacted request/response metadata for every outbound LLM HTTP call
+    # (no message content, no credentials) — always on, to aid corporate/Azure
+    # troubleshooting without a reproduce-with-a-flag round trip.
+    llm_debug_log_path: Path = Path(".organizer/llm-debug.jsonl")
 
     # Egress / extraction
     max_snippet_chars: int = 4000
@@ -113,6 +117,7 @@ class Settings(BaseSettings):
                 "archive_path": _rebase(self.archive_path),
                 "egress_path": _rebase(self.egress_path),
                 "token_log_path": _rebase(self.token_log_path),
+                "llm_debug_log_path": _rebase(self.llm_debug_log_path),
             }
         )
 
