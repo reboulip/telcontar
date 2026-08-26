@@ -1586,7 +1586,7 @@
 <td><code>LLM_BASE_URL</code></td>
 <td><strong>yes</strong></td>
 <td><code>""</code></td>
-<td>Base URL of the OpenAI-compatible endpoint.<br>Azure: <code>https://&lt;resource&gt;.openai.azure.com/openai/deployments/&lt;deployment&gt;</code><br>Mammouth: the standard Mammouth base URL.<br>Set by the wizard and stored in <code>~/.telcontar/config.env</code>.</td>
+<td>Base URL of the OpenAI-compatible endpoint.<br>Azure: any of a bare resource root (<code>https://&lt;resource&gt;.openai.azure.com</code>), <code>.../openai</code>, <code>.../openai/deployments/&lt;deployment&gt;</code>, or <code>.../openai/v1</code> — all four shapes are recognized (Y4, GH #61).<br>Mammouth: the standard Mammouth base URL.<br>Set by the wizard and stored in <code>~/.telcontar/config.env</code>.</td>
 </tr>
 <tr>
 <td><code>LLM_API_KEY</code></td>
@@ -1604,7 +1604,7 @@
 <td><code>LLM_API_VERSION</code></td>
 <td>no</td>
 <td><code>""</code></td>
-<td>Azure only — <code>api-version</code> query parameter (e.g. <code>2025-01-01-preview</code>). Leave blank for every other provider.</td>
+<td>Azure only — <code>api-version</code> query parameter (e.g. <code>2025-01-01-preview</code>). Leave blank for every other provider. When left blank on an Azure host detected by hostname (<code>*.azure.com</code>) rather than an explicit version, telcontar now falls back to a built-in default API version automatically (Y4). Ignored entirely when <code>LLM_BASE_URL</code> ends in <code>/openai/v1</code> (Azure's own OpenAI-compatible surface, which must not receive an injected <code>api-version</code>).</td>
 </tr>
 </tbody>
 </table>
@@ -1636,6 +1636,12 @@
 <td>no</td>
 <td><code>_quarantine</code></td>
 <td>Relative path (from the target directory) where clutter files are moved. Never deleted.</td>
+</tr>
+<tr>
+<td><code>EMPTY_FOLDER_POLICY</code></td>
+<td>no</td>
+<td><code>quarantine</code></td>
+<td>How <code>execute_plan</code> disposes of a folder its own <code>move</code>/<code>quarantine</code>/<code>archive_document</code> ops left empty, once all ops have run (Y6, GH #57). <code>quarantine</code> (default) moves the folder into <code>QUARANTINE_DIR</code>, falling back to an in-place <code>_empty_</code>-prefixed rename on any error; <code>rename</code> always renames in place; <code>off</code> disables the sweep. Only activates when <code>TARGET_DIR</code> is set (every real organize/query session). Treated as an automatic, fully journaled/undoable consequence of the already-approved moves, not a separate approval-requiring op.</td>
 </tr>
 <tr>
 <td><code>JOURNAL_PATH</code></td>
@@ -1705,6 +1711,12 @@
 <td><code>.organizer/archive.jsonl</code></td>
 <td>Append-only archive log: records every document withdrawn from active memory via <code>archive_document</code> (what was archived, why, and where the file moved). Relative to the target directory being organized (same rebasing as <code>JOURNAL_PATH</code>).</td>
 </tr>
+<tr>
+<td><code>SESSIONS_DIR</code></td>
+<td>no</td>
+<td><code>.organizer/sessions</code></td>
+<td>Directory holding one JSON snapshot per session (transcript, activity log, full LLM message history), for cross-restart resume (Y2, GH #53). Relative to the target directory being organized (same rebasing as <code>JOURNAL_PATH</code>), since a snapshot carries corpus-derived text and must stay inside the same allowlist/egress boundary the rest of this table does. Not exposed as an MCP tool. See also <code>~/.telcontar/sessions.json</code> under <a href="#persistent-state-locations">Persistent state locations</a> — a separate, metadata-only home-directory index of every session, not rebased by this variable.</td>
+</tr>
 </tbody>
 </table>
 <h3 id="egress-extraction">Egress / extraction<a class="headerlink" href="#egress-extraction" title="Permanent link">&para;</a></h3>
@@ -1773,6 +1785,12 @@
 <td><code>.organizer/tokens.jsonl</code></td>
 <td>Append-only profiling log: one entry per LLM call (analyze/organize/query/estimate phases) recording input/output/cached token counts and running totals, for optimization analysis (R2). Always on — no flag to disable it. Not exposed as an MCP tool — open the file directly. Relative to the target directory being organized (same rebasing as <code>JOURNAL_PATH</code>).</td>
 </tr>
+<tr>
+<td><code>LLM_DEBUG_LOG_PATH</code></td>
+<td>no</td>
+<td><code>.organizer/llm-debug.jsonl</code></td>
+<td>Append-only debug log: one entry per outbound LLM HTTP call (client construction, request, response, transport error), recording redacted URLs, status codes, durations, and request ids — no message content, no API key (Y5, GH #60). Always on — no flag to disable it. Not exposed as an MCP tool — open the file directly. Relative to the target directory being organized (same rebasing as <code>JOURNAL_PATH</code>).</td>
+</tr>
 </tbody>
 </table>
 <hr />
@@ -1836,15 +1854,23 @@ contract above should work.</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>&lt;target directory&gt;/
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>├── .organizer/
 <a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>│   ├── plans/          # One JSON file per plan
-<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>│   ├── journal.jsonl   # Append-only undo log (file operations)
-<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>│   ├── events.jsonl    # Append-only project event journal (narrative log)
-<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>│   ├── archive.jsonl   # Append-only archive log (why a document left active memory)
-<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>│   ├── egress.jsonl    # Append-only audit log of content sent to the LLM endpoint
-<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>│   ├── tokens.jsonl    # Append-only per-LLM-call token-usage profiling log
-<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>│   ├── registry.json   # Document memory (sha256 → metadata)
-<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>│   └── graph.json      # Knowledge graph (derived from registry + events; rebuilt on demand)
-<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>└── _quarantine/         # Quarantined files (QUARANTINE_DIR)
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>│   ├── sessions/        # One JSON snapshot per session (transcript/history, Y2)
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>│   ├── journal.jsonl   # Append-only undo log (file operations)
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>│   ├── events.jsonl    # Append-only project event journal (narrative log)
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>│   ├── archive.jsonl   # Append-only archive log (why a document left active memory)
+<a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>│   ├── egress.jsonl    # Append-only audit log of content sent to the LLM endpoint
+<a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>│   ├── tokens.jsonl    # Append-only per-LLM-call token-usage profiling log
+<a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>│   ├── llm-debug.jsonl # Append-only debug log of outbound LLM HTTP calls (metadata only)
+<a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>│   ├── registry.json   # Document memory (sha256 → metadata)
+<a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>│   └── graph.json      # Knowledge graph (derived from registry + events; rebuilt on demand)
+<a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>└── _quarantine/         # Quarantined files (QUARANTINE_DIR)
 </code></pre></div>
+<p>A separate, home-directory file — <code>~/.telcontar/sessions.json</code> — indexes every
+session ever started, across every target: metadata only (<code>run_id</code>/<code>target</code>/
+<code>mode</code>/timestamps/<code>status</code>), never the transcript/history above. It is
+deliberately <strong>not</strong> rebased by <code>SESSIONS_DIR</code> or anything else in this
+section — it lives outside every target directory (and its allowlist/egress
+boundary) on purpose, the same way <code>~/.telcontar/config.env</code> does.</p>
 <p>Both <code>.organizer/</code> and the quarantine folder are hidden from the agent's own directory discovery (<code>walk_tree</code>) so it never proposes moving or quarantining its own memory — the quarantine folder is deliberately still shown in the written <code>INDEX.md</code>, since a human reviewing results should be able to see it.</p>
 <p><code>PROFILES_DIR</code> and <code>.organizer/NAMING.md</code> are the exception: they are cross-corpus, project-level conventions rather than per-run memory, and are deliberately <strong>not</strong> rebased — they always resolve relative to telcontar's own project root regardless of which directory you're organizing.</p>
 <p>These files survive between runs. If the target directory is itself a git repository, add your own <code>.organizer/</code> and <code>_quarantine/</code> entries to its <code>.gitignore</code> if you don't want them tracked — telcontar's own <code>.gitignore</code> only covers its project root, not directories you organize. There is no migration path for <code>.organizer</code> folders created at the project root by a pre-per-directory-memory version of telcontar — a fresh run against a new target simply starts that target's memory from scratch.</p>

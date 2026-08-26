@@ -1589,10 +1589,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#execute_planplan_id-plans_dir-journal_path-registry_pathnone-quarantine_dirnone-archive_pathnone-dict" class="md-nav__link">
+  <a href="#execute_planplan_id-plans_dir-journal_path-registry_pathnone-quarantine_dirnone-archive_pathnone-target_dirnone-empty_folder_policyquarantine-dict" class="md-nav__link">
     <span class="md-ellipsis">
       
-        execute_plan(plan_id, plans_dir, journal_path, registry_path=None, quarantine_dir=None, archive_path=None) -&gt; dict
+        execute_plan(plan_id, plans_dir, journal_path, registry_path=None, quarantine_dir=None, archive_path=None, target_dir=None, empty_folder_policy="quarantine") -&gt; dict
       
     </span>
   </a>
@@ -1817,7 +1817,8 @@ Reserved for future use: if execute_plan is called on a plan that is already in 
 - quarantine_dir (compress only): Absolute path of the quarantine directory that was compressed.
 - files (compress only): List of <code>{name, src, sha256, size}</code> dicts — one per bundled file.
 - deleted_originals (compress only): Boolean — whether the source files were deleted after verification.
-- status: Always done for successful journal entries (not present for compress entries).</p>
+- status: Always done for successful journal entries (not present for compress entries).
+- target_kind, reason (Y6, empty-folder sweep entries only): a folder the sweep disposed of is journaled under the same <code>quarantine</code>/<code>rename</code> <code>op_type</code> as a normal file operation, plus these two extra fields: <code>target_kind: "dir"</code> and <code>reason: "emptied_by_plan"</code>. <code>undo_last</code> does not inspect either field — it reverses <code>quarantine</code>/<code>rename</code> entries the same way regardless of whether they target a file or a sweep-disposed folder, so no new undo code path was needed.</p>
 <p>Fields in hard_stop entries:
 - timestamp: When the hard stop was triggered.
 - plan_id: References the plan that encountered the failure.
@@ -1880,8 +1881,8 @@ Reserved for future use: if execute_plan is called on a plan that is already in 
 3. Validate that all source files still exist, except for <code>create_dir</code> ops — their <code>src</code> holds the not-yet-created destination directory, not an existing path, so they are skipped by this check.
 4. Return a report.</p>
 <h2 id="executing-a-plan">Executing a Plan<a class="headerlink" href="#executing-a-plan" title="Permanent link">&para;</a></h2>
-<h3 id="execute_planplan_id-plans_dir-journal_path-registry_pathnone-quarantine_dirnone-archive_pathnone-dict">execute_plan(plan_id, plans_dir, journal_path, registry_path=None, quarantine_dir=None, archive_path=None) -&gt; dict<a class="headerlink" href="#execute_planplan_id-plans_dir-journal_path-registry_pathnone-quarantine_dirnone-archive_pathnone-dict" title="Permanent link">&para;</a></h3>
-<p>Apply all operations in an approved plan. Must be in approved state. <code>quarantine_dir</code> and <code>archive_path</code> are only required if the plan contains an <code>archive_document</code> or <code>compress_quarantine</code> op; the MCP-exposed tool signature is just <code>execute_plan(plan_id: str) -&gt; dict</code> — the server fills in the rest from config.</p>
+<h3 id="execute_planplan_id-plans_dir-journal_path-registry_pathnone-quarantine_dirnone-archive_pathnone-target_dirnone-empty_folder_policyquarantine-dict">execute_plan(plan_id, plans_dir, journal_path, registry_path=None, quarantine_dir=None, archive_path=None, target_dir=None, empty_folder_policy="quarantine") -&gt; dict<a class="headerlink" href="#execute_planplan_id-plans_dir-journal_path-registry_pathnone-quarantine_dirnone-archive_pathnone-target_dirnone-empty_folder_policyquarantine-dict" title="Permanent link">&para;</a></h3>
+<p>Apply all operations in an approved plan. Must be in approved state. <code>quarantine_dir</code> and <code>archive_path</code> are only required if the plan contains an <code>archive_document</code> or <code>compress_quarantine</code> op; the MCP-exposed tool signature is just <code>execute_plan(plan_id: str) -&gt; dict</code> — the server fills in the rest from config. <code>target_dir</code> and <code>empty_folder_policy</code> (Y6, GH #57) are likewise config-sourced (<code>cfg.target_dir</code>/<code>cfg.empty_folder_policy</code>), not model-supplied.</p>
 <p><strong>Processing:</strong>
 1. Load the plan file.
 2. Check state is approved; raise if not.
@@ -1892,9 +1893,19 @@ Reserved for future use: if execute_plan is called on a plan that is already in 
    c. On success: update operation status to completed, append a journal entry for non-self-journaling op types (recording the resolved source, not necessarily the original <code>src</code>), record the file's new location for later ops, update plan file.
    d. On failure: retry — 3 attempts total. After the 3rd failed attempt, mark operation status as failed and continue.
 5. After all operations:
-   a. If failed count &gt; 3, transition plan state to stopped, append a hard_stop journal entry.
-   b. Otherwise, transition plan state to done and write to disk.
-6. Return a summary.</p>
+   a. If failed count &gt; 3, transition plan state to stopped, append a hard_stop journal entry, and return immediately — the empty-folder sweep below does not run.
+   b. Otherwise, sweep for empty folders (Y6, see below), then transition plan state to done and write to disk.
+6. Return a summary, including <code>emptied_folders</code> (the sweep's results, <code>[]</code> on the hard-stop path or when the sweep did not run).</p>
+<p><strong>Empty-folder sweep (Y6, GH #57)</strong></p>
+<p>When <code>target_dir</code> is set (every host call site sets it via <code>server/main.py</code>'s wrapper), <code>execute_plan</code> disposes of any directory its own <code>move</code>/<code>quarantine</code>/<code>archive_document</code> ops left empty — never <code>rename</code>, and never a directory this same run created via <code>create_dir</code>. "Empty" is strictly zero entries.</p>
+<ol>
+<li>While applying ops (step 4 above), the parent directory of every completed <code>move</code>/<code>quarantine</code>/<code>archive_document</code> op's <em>original</em> location is recorded as a candidate, and every completed <code>create_dir</code>'s destination is recorded as plan-created (protected from disposal even if later found empty).</li>
+<li>After the op loop, each candidate is processed deepest-first: skipped if it no longer exists, is protected (<code>server/guards.py::is_sweep_protected</code> — the target root itself, anything outside it, <code>QUARANTINE_DIR</code> or an ancestor/descendant of it, <code>.organizer</code>, or a plan-created dir), or is not actually empty.</li>
+<li>An eligible folder is disposed of per <code>empty_folder_policy</code>: <code>"quarantine"</code> (default) moves it into <code>QUARANTINE_DIR</code> (<code>server/guards.py::safe_quarantine_dir_path</code>, whole-basename-suffixed on collision), falling back to an in-place <code>_empty_</code>-prefixed rename (<code>empty_marker_path</code>) on any <code>OSError</code>; <code>"rename"</code> always does the in-place rename; <code>"off"</code> skips the sweep entirely.</li>
+<li>Disposing of a folder re-queues its parent, so a multi-level hollow shell (e.g. both <code>a/b</code> and <code>a</code> left empty) collapses via two separate journaled entries, not one.</li>
+<li>Each disposal is journaled immediately, reusing the existing <code>quarantine</code>/<code>rename</code> <code>op_type</code> (see Journal fields below) — so <code>undo_last</code> reverses it with the same code path it already has for those op types, no new handling needed. A failed disposal (<code>OSError</code>) is recorded in the returned <code>emptied_folders</code> list with <code>"action": "skipped"</code> and an <code>error</code> message, but never aborts the sweep or fails the plan.</li>
+</ol>
+<p>This is treated as a fully journaled, automatic consequence of the already-approved moves, not a new operation requiring its own separate approval — an explicit decision made during sprint planning, not an implementation default (see <a href="../../security-model/">Security Model</a>).</p>
 <p><strong>Chained operations within a single run</strong></p>
 <p>Ops are staged against the file's original path (<code>src</code> at propose time). Within one <code>execute_plan</code> run, an earlier op may relocate a file before a later op that was staged against that same original path runs — the canonical case is a <code>rename</code> followed by a <code>move</code> on the same file. <code>execute_plan</code> tracks each file's current on-disk location in an in-memory map, keyed by the op's original <code>src</code>, and resolves that map before applying every op. So a rename A → B followed by a move (both staged against original path A) moves the <em>renamed</em> file B into the destination, landing at <code>dest/B</code> — not a stale reference to A. Each journal entry records the resolved (effective) source path actually used for that op, so <code>undo_last</code> continues to reverse operations against the correct on-disk locations, in reverse order.</p>
 <h2 id="undoing-operations">Undoing Operations<a class="headerlink" href="#undoing-operations" title="Permanent link">&para;</a></h2>

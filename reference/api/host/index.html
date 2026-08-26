@@ -1127,6 +1127,106 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="llm">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#host.llm.resolve_azure_target" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        resolve_azure_target
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#hostllmlog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        host.llmlog
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#host.llmlog" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        llmlog
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="llmlog">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#host.llmlog.LLMLogEntry" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LLMLogEntry
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#host.llmlog.all_entries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        all_entries
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#host.llmlog.append" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        append
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#host.llmlog.build_http_client" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        build_http_client
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#host.llmlog.log_client" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        log_client
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
     </ul>
@@ -2031,6 +2131,12 @@ default), a fresh ledger is constructed for this call only.</p>
     <div class="doc doc-contents first">
 
         <p>OpenAI-compatible client factory for any endpoint via base_url override.</p>
+<p>Also branches to Azure OpenAI's own client class when the configured endpoint
+looks like Azure — a plain AsyncOpenAI sends <code>Authorization: Bearer &lt;key&gt;</code> and
+whatever path the SDK builds from <code>base_url</code>, neither of which Azure accepts
+outside its <code>/openai/v1</code> compatibility surface (see issue #61 for a real
+misconfiguration walkthrough: a full operation URL with an embedded dated
+<code>api-version</code> broke both request signing and the deployment route).</p>
 
 
 
@@ -2051,6 +2157,212 @@ default), a fresh ledger is constructed for this call only.</p>
 
 
 
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="host.llm.resolve_azure_target" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">resolve_azure_target</span><span class="p">(</span><span class="n">base_url</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">api_version</span><span class="p">)</span></code>
+
+<a href="#host.llm.resolve_azure_target" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Return an AzureTarget when <code>base_url</code> looks like Azure OpenAI, else
+None (meaning: use the plain AsyncOpenAI path).</p>
+<p>Azure is detected by an explicit <code>api_version</code> OR an <code>*.azure.com</code>
+host — EXCEPT when the path ends in <code>/openai/v1</code>, Azure's newer,
+genuinely OpenAI-compatible surface: that combination (a dated
+api-version alongside <code>/openai/v1</code>) is exactly what produced "API version
+not supported" for a real user (issue #61) — <code>/openai/v1</code> must never get
+an api-version query injected, so it always takes the plain client path.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div><hr />
+<h2 id="hostllmlog">host.llmlog<a class="headerlink" href="#hostllmlog" title="Permanent link">&para;</a></h2>
+<p>Always-on, redacted debug log of outbound LLM HTTP calls (request/response metadata only, no message content or credentials).</p>
+
+
+<div class="doc doc-object doc-module">
+
+
+
+<h2 id="host.llmlog" class="doc doc-heading">
+            <code>host.llmlog</code>
+
+
+<a href="#host.llmlog" class="headerlink" title="Permanent link">&para;</a></h2>
+
+    <div class="doc doc-contents first">
+
+        <p>Local, redacted debug log for outbound LLM endpoint calls (Y5) — request and
+response metadata only, never message content or credentials, to help diagnose
+corporate/Azure connectivity issues without adding this app's own message
+content to the egress surface documented in docs/developer/security-model.md.</p>
+<p>Deliberately does NOT enable the OpenAI SDK's own <code>OPENAI_LOG</code>/logger — that
+dumps full request bodies, including extracted document text, to whatever
+handler is configured. This module only ever writes counts, statuses, and
+(on an HTTP error response) the error body Azure/the provider returned, which
+carries no document content.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-class">
+
+
+
+<h3 id="host.llmlog.LLMLogEntry" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">LLMLogEntry</span><span class="p">(</span><span class="n">ts</span><span class="p">,</span> <span class="n">kind</span><span class="p">,</span> <span class="n">detail</span><span class="p">)</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#host.llmlog.LLMLogEntry" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>One debug-log line: a client/request/response/error event.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="host.llmlog.all_entries" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">all_entries</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></code>
+
+<a href="#host.llmlog.all_entries" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Read back every logged entry, oldest first. <code>[]</code> if the file is missing
+or unreadable.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="host.llmlog.append" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">append</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">entry</span><span class="p">)</span></code>
+
+<a href="#host.llmlog.append" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Append a single log entry; creates parent dirs if needed. Never raises —
+a debug log must never break the run it's diagnosing.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="host.llmlog.build_http_client" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">build_http_client</span><span class="p">(</span><span class="n">log_path</span><span class="p">)</span></code>
+
+<a href="#host.llmlog.build_http_client" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>An httpx.AsyncClient wired to log every LLM HTTP call to <code>log_path</code>,
+with the openai SDK's own transport defaults preserved explicitly (a bare
+<code>httpx.AsyncClient()</code> defaults to a 5s timeout, which would break every
+long analyze call).</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="host.llmlog.log_client" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">log_client</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">client_class</span><span class="p">,</span> <span class="n">endpoint</span><span class="p">,</span> <span class="n">api_version</span><span class="p">,</span> <span class="n">deployment</span><span class="p">,</span> <span class="n">model</span><span class="p">,</span> <span class="n">auth_header</span><span class="p">)</span></code>
+
+<a href="#host.llmlog.log_client" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Log the resolved client shape once, right after <code>make_client</code> builds it —
+this single line is enough to diagnose a future Azure/endpoint misconfiguration
+without reproducing the failure first.</p>
+
+
+    </div>
+
+</div>
 
 
 

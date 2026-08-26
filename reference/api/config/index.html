@@ -1125,6 +1125,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#config.settings.user_sessions_index_path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        user_sessions_index_path
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1815,6 +1826,29 @@ Keychain, SecretService on Linux). If the keyring is unavailable, this
 raises <code>PlaintextKeyFallbackNeeded</code> instead of silently writing the key in
 plaintext — pass <code>allow_plaintext_fallback=True</code> only after the caller has
 explicitly warned the user and gotten their confirmation.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="config.settings.user_sessions_index_path" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">user_sessions_index_path</span><span class="p">()</span></code>
+
+<a href="#config.settings.user_sessions_index_path" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Path to the home-directory session index (Y2) — metadata only
+(run_id/target/mode/timestamps/status), never corpus-derived text (that
+lives per-target under Settings.sessions_dir instead). Derived at call
+time from the module global rather than a frozen constant, so tests
+patching <code>_USER_CONFIG_DIR</code> (see tests/test_settings.py's isolation
+fixture) redirect this too.</p>
 
 
     </div>

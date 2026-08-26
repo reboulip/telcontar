@@ -2457,6 +2457,7 @@
 <li><code>archive_document</code> and <code>compress_quarantine</code> ops reuse the standalone functions of the same name, which self-journal under their own <code>op_type</code> (<code>quarantine</code> and <code>compress</code> respectively) instead of the generic per-op entry <code>execute_plan</code> writes for other op types</li>
 <li>Ops chained within the same run resolve correctly: if an earlier op already relocated a file (e.g. a <code>rename</code> followed by a <code>move</code> on the same original path), the later op is applied to the file's current location, not its original path</li>
 <li>Execution order is not strictly plan order: all <code>create_dir</code> ops run first (each group keeping its authored relative order), then every other op type — so a <code>move</code> into a not-yet-existing folder always finds it created regardless of how the two ops were interleaved when proposed. The <code>move</code> executor also creates its destination directory itself (<code>mkdir(parents=True, exist_ok=True)</code>) before checking for collision, as a second line of defense. Neither the persisted plan file nor the approval-modal display order is affected — only this run's internal iteration order</li>
+<li><strong>Empty-folder sweep (Y6, GH #57):</strong> after the op loop, provided a <code>target_dir</code> was set for this run (every host call site sets it), any directory left empty by a completed <code>move</code>/<code>quarantine</code>/<code>archive_document</code> op — never <code>rename</code>, and never a directory this same plan created via <code>create_dir</code> — is disposed of per <code>EMPTY_FOLDER_POLICY</code>: <code>"quarantine"</code> (default — moves the folder into <code>QUARANTINE_DIR</code>, falling back to an in-place <code>_empty_</code>-prefixed rename on any <code>OSError</code>), <code>"rename"</code> (always in-place), or <code>"off"</code> (sweep disabled). Processing is deepest-first and re-queues a disposed folder's parent, so a multi-level hollow shell collapses fully. The target root, anything outside it, <code>QUARANTINE_DIR</code> (or an ancestor/descendant of it), and <code>.organizer</code> are never swept. Each disposed folder is journaled under the existing <code>quarantine</code>/<code>rename</code> <code>op_type</code>, with two extra fields: <code>target_kind: "dir"</code> and <code>reason: "emptied_by_plan"</code> — <code>undo_last</code> reverses it with no new code path. Treated as a fully journaled, automatic consequence of the already-approved moves, not a new op requiring its own approval. Skipped entirely on a hard stop.</li>
 </ul>
 <p><strong>Returns:</strong></p>
 <table>
@@ -2497,6 +2498,11 @@
 <td><code>ops</code></td>
 <td>list</td>
 <td>Full op list with per-op status and error</td>
+</tr>
+<tr>
+<td><code>emptied_folders</code></td>
+<td>list</td>
+<td>(Y6) One <code>{path, action, dst, error}</code> dict per folder the sweep disposed of or attempted — <code>action</code> is <code>"quarantined"</code>, <code>"renamed"</code>, or <code>"skipped"</code> (on an <code>OSError</code>, with <code>error</code> set). <code>[]</code> when nothing was swept, including when <code>target_dir</code> is unset or <code>EMPTY_FOLDER_POLICY</code> is <code>"off"</code>. Always present, even on the hard-stop early return.</td>
 </tr>
 </tbody>
 </table>

@@ -1870,10 +1870,32 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#server.guards.empty_marker_path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        empty_marker_path
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#server.guards.format_io_error" class="md-nav__link">
     <span class="md-ellipsis">
       
         format_io_error
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server.guards.is_dir_empty" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        is_dir_empty
       
     </span>
   </a>
@@ -1892,10 +1914,43 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#server.guards.is_sweep_protected" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        is_sweep_protected
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#server.guards.normalize_dir_name" class="md-nav__link">
     <span class="md-ellipsis">
       
         normalize_dir_name
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server.guards.normkey" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        normkey
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server.guards.safe_quarantine_dir_path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        safe_quarantine_dir_path
       
     </span>
   </a>
@@ -2763,7 +2818,7 @@ if unknown).</p>
 
 
 <h3 id="server.tools.execute_plan" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">execute_plan</span><span class="p">(</span><span class="n">plan_id</span><span class="p">,</span> <span class="n">plans_dir</span><span class="p">,</span> <span class="n">journal_path</span><span class="p">,</span> <span class="n">registry_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">quarantine_dir</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">archive_path</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">execute_plan</span><span class="p">(</span><span class="n">plan_id</span><span class="p">,</span> <span class="n">plans_dir</span><span class="p">,</span> <span class="n">journal_path</span><span class="p">,</span> <span class="n">registry_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">quarantine_dir</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">archive_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">target_dir</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">empty_folder_policy</span><span class="o">=</span><span class="s1">&#39;quarantine&#39;</span><span class="p">)</span></code>
 
 <a href="#server.tools.execute_plan" class="headerlink" title="Permanent link">&para;</a></h3>
 
@@ -2780,6 +2835,14 @@ are only required if the plan contains an <code>archive_document</code> or
 <code>archive_document</code>/<code>compress_quarantine</code> functions, which self-journal with
 the same <code>op_type</code> strings <code>undo_last</code> already understands ("quarantine" /
 "compress"), so this loop skips its generic journal append for them.</p>
+<p>Y6: when <code>target_dir</code> is given (and only then — every existing caller that
+omits it keeps the old, sweep-free behaviour), any directory left empty by a
+completed <code>move</code>/<code>quarantine</code>/<code>archive_document</code> op is disposed of per
+<code>empty_folder_policy</code> ("quarantine" [default], "rename", or "off") after all
+ops run, skipped entirely on a hard stop. This is a fully journaled, automatic
+consequence of already-approved moves — not a new op needing its own approval
+— reusing the existing "quarantine"/"rename" journal op types so <code>undo_last</code>
+needs no new code path.</p>
 
 
     </div>
@@ -4257,6 +4320,25 @@ either is rejected the same way as any other out-of-bounds path.</p>
 <div class="doc doc-object doc-function">
 
 
+<h3 id="server.guards.empty_marker_path" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">empty_marker_path</span><span class="p">(</span><span class="n">folder</span><span class="p">,</span> <span class="n">prefix</span><span class="o">=</span><span class="s1">&#39;_empty_&#39;</span><span class="p">)</span></code>
+
+<a href="#server.guards.empty_marker_path" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Collision-safe in-place rename target for a folder emptied by
+<code>execute_plan</code> moves (Y6) that can't be quarantined.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h3 id="server.guards.format_io_error" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">format_io_error</span><span class="p">(</span><span class="n">action</span><span class="p">,</span> <span class="n">path</span><span class="p">,</span> <span class="n">exc</span><span class="p">)</span></code>
 
@@ -4271,6 +4353,25 @@ path it targeted, and surfaces the two operator-actionable cases in plain
 language: a Windows "file is in use" lock (WinError 32) and a plain
 permission denial. Callers re-raise with this message while preserving the
 original exception <em>type</em> (so retry classification is unaffected).</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="server.guards.is_dir_empty" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">is_dir_empty</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></code>
+
+<a href="#server.guards.is_dir_empty" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>True if <code>path</code> is a directory with zero entries. False (never
+raises) if <code>path</code> doesn't exist, isn't a directory, or can't be listed.</p>
 
 
     </div>
@@ -4300,6 +4401,28 @@ match only, never substring containment.</p>
 <div class="doc doc-object doc-function">
 
 
+<h3 id="server.guards.is_sweep_protected" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">is_sweep_protected</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">target_root</span><span class="p">,</span> <span class="n">quarantine_dir</span><span class="p">,</span> <span class="n">organizer_dir</span><span class="p">,</span> <span class="n">plan_created_dirs</span><span class="p">)</span></code>
+
+<a href="#server.guards.is_sweep_protected" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>True if <code>path</code> must never be auto-disposed of by the empty-folder
+sweep (Y6): the target root itself, anything outside it, the quarantine
+dir (or an ancestor/descendant of it), the <code>.organizer</code> working dir
+(likewise), and any directory this same plan run created via a
+<code>create_dir</code> op (<code>plan_created_dirs</code>, pre-normalized via <code>normkey</code>).</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h3 id="server.guards.normalize_dir_name" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">normalize_dir_name</span><span class="p">(</span><span class="n">name</span><span class="p">)</span></code>
 
@@ -4314,6 +4437,46 @@ together, e.g. "Quarantäine" ~ "quarantaine"), casefolds (locale-
 insensitive, unlike <code>.lower()</code>), strips a leading ordering prefix
 ("01_", "2. ", ...), trims leading/trailing separators, and collapses
 inner separator runs to a single underscore.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="server.guards.normkey" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">normkey</span><span class="p">(</span><span class="n">path</span><span class="p">)</span></code>
+
+<a href="#server.guards.normkey" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Case/separator-normalized comparison key for a resolved path — used to
+compare paths for equality/membership across platforms (Windows path
+comparisons are case-insensitive).</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="server.guards.safe_quarantine_dir_path" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">safe_quarantine_dir_path</span><span class="p">(</span><span class="n">src</span><span class="p">,</span> <span class="n">quarantine_dir</span><span class="p">)</span></code>
+
+<a href="#server.guards.safe_quarantine_dir_path" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Like <code>safe_quarantine_path</code> but for directories: suffixes the WHOLE
+basename on collision (<code>2024.backup</code> -&gt; <code>2024.backup_1</code>) instead of
+splitting a stem/suffix, which would mangle a dotted directory name.</p>
 
 
     </div>

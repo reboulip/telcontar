@@ -913,6 +913,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#exploring-the-knowledge-graph" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exploring the knowledge graph
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sessions-listing-and-resuming-past-runs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sessions — listing and resuming past runs
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#the-servers-safety-invariants" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1724,7 +1746,7 @@
 <ul>
 <li><strong>First run</strong> — the <strong>setup wizard</strong> (<code>/setup</code>) appears automatically. It guides you through choosing an endpoint (Azure OpenAI or another OpenAI-compatible service), entering the service URL and API key, and selecting a document profile. The key is stored in the OS credential store (Windows Credential Manager / macOS Keychain); other settings go to <code>~/.telcontar/config.env</code>.</li>
 <li><strong>Returning user</strong> — the startup page appears directly, with a directory tree in the sidebar and <strong>Use selected directory</strong> / <strong>Query</strong> actions.</li>
-<li><strong>From anywhere</strong> — a persistent nav bar at the top of every page offers <strong>Conversation / Corpus / Query / Settings</strong> tabs, each enabling as a run or an analyzed corpus becomes available (Settings is always enabled). <strong>⚙ Settings</strong>, also reachable from the sidebar on every page, lets you change the URL, API key, profile, and approval mode, including mid-run.</li>
+<li><strong>From anywhere</strong> — a persistent nav bar at the top of every page offers <strong>Conversation / Corpus / Query / Graph / Sessions / Settings</strong> tabs. Conversation, Corpus, Query, and Graph each enable as a run or an analyzed corpus becomes available; <strong>Sessions</strong> and <strong>Settings</strong> are always enabled, since a session can belong to any directory, not just the one currently open. <strong>⚙ Settings</strong>, also reachable from the sidebar on every page, lets you change the URL, API key, profile, and approval mode, including mid-run.</li>
 </ul>
 <hr />
 <h2 id="the-starter-pane">The starter pane<a class="headerlink" href="#the-starter-pane" title="Permanent link">&para;</a></h2>
@@ -1955,7 +1977,7 @@
 <p>The host exposes only the tools in <code>QUERY_ALLOWED_TOOLS</code> to the model — no plan, execution, write, <code>build_graph</code>, <code>create_event</code>, or archive tools are available. Even if the model were to name a mutating tool, the host blocks it before forwarding to the server (defense in depth). Query mode <strong>cannot modify the corpus</strong>.</p>
 <hr />
 <h2 id="document-preview-while-organizing">Document preview while organizing<a class="headerlink" href="#document-preview-while-organizing" title="Permanent link">&para;</a></h2>
-<p>Once a run has started, clicking a file in the sidebar tree opens a live preview pane beside the conversation. If the file has already been analyzed, the pane shows the same fields as the corpus browser's detail pane — title, type, date, status, summary, provenance, and entities. If it hasn't been analyzed yet, the pane instead shows just the filename plus basic filesystem details (size, last modified) — no content is read or sent anywhere for an unanalyzed file. Clicking a folder, or nothing at all, collapses the pane back to its placeholder.</p>
+<p>Once a run has started, clicking a file in the sidebar tree opens a live preview in the sidebar itself, stacked below the internal-step detail view (opening one hides the other). If the file has already been analyzed, the preview shows the same fields as the corpus browser's detail pane — title, type, date, status, summary, provenance, and entities. If it hasn't been analyzed yet, the preview instead shows just the filename plus basic filesystem details (size, last modified) — no content is read or sent anywhere for an unanalyzed file. Clicking a folder, or nothing at all, collapses it back to its placeholder.</p>
 <hr />
 <h2 id="browsing-the-corpus-directly">Browsing the corpus directly<a class="headerlink" href="#browsing-the-corpus-directly" title="Permanent link">&para;</a></h2>
 <p>The web UI also has a <strong>corpus browser</strong> — a sortable, filterable table over every analyzed document, with no LLM call and no agent turn involved at all. It's reachable via the <strong>Browse corpus</strong> button beside <strong>Query this corpus</strong>, once a run finishes.</p>
@@ -1966,12 +1988,31 @@
 <li>The table refreshes itself automatically every few seconds, so it stays in sync as a plan is approved and files get renamed or moved elsewhere — press the refresh button beside the heading for an immediate update instead of waiting.</li>
 </ul>
 <hr />
+<h2 id="exploring-the-knowledge-graph">Exploring the knowledge graph<a class="headerlink" href="#exploring-the-knowledge-graph" title="Permanent link">&para;</a></h2>
+<p>The web UI also has a <strong>knowledge graph</strong> view — a ranked table of the corpus's actors (people, organizations, and other recorded entities) plus, optionally, a force-directed graph — with no LLM call and no agent turn involved. It's reachable via the <strong>Knowledge graph</strong> button beside <strong>Browse corpus</strong>, once a run finishes, or the nav bar's <strong>Graph</strong> tab from any page once telcontar can resolve an analyzed corpus for the current directory.</p>
+<ul>
+<li><strong>Ranked actors table</strong> — sorted by how central each person/organization is to the corpus (documents mentioning them, co-occurrence with other actors, and event mentions), with sortable Documents/Co-occurrence/Mentions columns.</li>
+<li><strong>Clicking a row</strong> opens a detail pane: for a document, the same fields as the corpus browser's detail pane; for an entity, its roles and a clickable list of referencing documents; for an event, its full sentence and the entities it mentions.</li>
+<li><strong>Top actors</strong> limits the table (and, if shown, the graph panel) to the top 25/50/100 by that same ranking.</li>
+<li><strong>Events</strong> are off by default in the graph panel — event-to-entity matching is an approximation and can produce a few extra, imprecise connections for short names — turn it on to include event nodes.</li>
+<li><strong>Show force-directed view</strong> reveals an optional interactive graph panel (documents, entities, and — if enabled — events, as connected nodes) below the table; off by default to keep the page light for a large corpus.</li>
+</ul>
+<hr />
+<h2 id="sessions-listing-and-resuming-past-runs">Sessions — listing and resuming past runs<a class="headerlink" href="#sessions-listing-and-resuming-past-runs" title="Permanent link">&para;</a></h2>
+<p>The nav bar's <strong>Sessions</strong> tab (<code>/sessions</code>) lists every Organize or Query session telcontar has ever started, grouped by directory — including sessions from a previous launch of telcontar, not just this browser tab or this process.</p>
+<ul>
+<li><strong>Live sessions</strong> show an <strong>Open</strong> button that jumps straight back into the running conversation, the same as clicking any other in-progress run.</li>
+<li><strong>Dead sessions</strong> (from a process that has since closed) show a <strong>View</strong> button that opens a read-only replay of the conversation so far, plus a <strong>Resume</strong> button. Resuming restarts the session exactly where it left off — same conversation history, same directory — so you can pick up a run you closed telcontar in the middle of instead of starting over.</li>
+<li>Status (<code>live</code>/<code>running</code>/<code>done</code>/<code>error</code>) and the last-active time are shown next to each entry, so you can tell at a glance which sessions are still worth resuming.</li>
+</ul>
+<p>Only session metadata (which directory, when, what status) is ever stored outside the directory being organized; the actual conversation content stays inside that directory's own <code>.organizer/</code> folder, the same place its registry and journal already live — see <a href="../../getting-started/configuration/#persistent-state-locations">Configuration</a>.</p>
+<hr />
 <h2 id="the-servers-safety-invariants">The server's safety invariants<a class="headerlink" href="#the-servers-safety-invariants" title="Permanent link">&para;</a></h2>
 <p>The MCP server enforces five non-negotiable rules in code:</p>
 <ol>
-<li><strong>No delete tool exists.</strong> The only removal path is <code>propose_quarantine</code>, which moves files to <code>QUARANTINE_DIR</code>.</li>
+<li><strong>No delete tool exists.</strong> The only removal path is <code>propose_quarantine</code>, which moves files to <code>QUARANTINE_DIR</code>. This also holds for folders <code>execute_plan</code> leaves empty after its own moves: per <code>EMPTY_FOLDER_POLICY</code> (default <code>quarantine</code>), an emptied folder is moved into <code>QUARANTINE_DIR</code> too, never deleted (Y6, GH #57).</li>
 <li><strong>No overwrite.</strong> <code>check_no_overwrite</code> raises <code>FileExistsError</code> before any move or rename touches an existing destination.</li>
-<li><strong>Every destructive op is journaled.</strong> <code>execute_plan</code> appends to the undo journal before returning success.</li>
+<li><strong>Every destructive op is journaled.</strong> <code>execute_plan</code> appends to the undo journal before returning success — including the folders its own empty-folder sweep disposes of, so <code>undo_last</code> reverses those the same way as any other move/quarantine.</li>
 <li><strong>Hard-stop on repeated failures.</strong> More than 3 failures in one <code>execute_plan</code> run triggers a hard stop and surfaces the failed ops to the user.</li>
 <li><strong>Every mutation goes through the plan flow.</strong> There is no tool that writes, moves, renames, quarantines, or archives a file directly — the agent must always stage a <code>propose_*</code> op and apply it via <code>execute_plan</code>. Undo, correspondingly, is not something the agent can trigger at all: it's a manual action in the web UI (see <a href="#persistence">Persistence</a> below).</li>
 </ol>
