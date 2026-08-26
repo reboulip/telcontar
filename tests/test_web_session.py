@@ -621,10 +621,12 @@ async def test_run_reports_config_error_without_raising(
 # ── Sidebar width (T4) ───────────────────────────────────────────────────────
 
 
-def test_get_sidebar_width_defaults_to_380(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_sidebar_width_defaults_to_default_constant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(web_session, "_sidebar_width", web_session.SIDEBAR_WIDTH_DEFAULT)
 
-    assert web_session.get_sidebar_width() == 380
+    assert web_session.get_sidebar_width() == web_session.SIDEBAR_WIDTH_DEFAULT
 
 
 def test_set_sidebar_width_persists_within_bounds(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1379,7 +1379,48 @@ async def test_step_detail_codemirror_uses_the_dark_theme(user: User, tmp_path: 
     await user.should_see(marker="detail-content")
 
     [codemirror] = user.find(marker="detail-content").elements
+
     assert codemirror.props["theme"] == theme.CODEMIRROR_THEME
+
+
+async def test_step_detail_and_document_preview_are_mutually_exclusive(
+    user: User, tmp_path: Path
+) -> None:
+    """Y9: the step-detail section and the document-preview pane share the
+    same sidebar drawer — opening one must hide the other, and closing
+    detail restores whatever the preview pane was already showing."""
+    doc_path = tmp_path / "report.pdf"
+    doc_path.write_text("hello")
+    registry = Registry()
+    registry.upsert(
+        DocumentRecord.new(
+            checksum="aaa",
+            path=str(doc_path),
+            title="Alpha Report",
+            type="report",
+            summary="s",
+            provenance="p",
+        )
+    )
+    save(registry, tmp_path / ".organizer" / "registry.json")
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.open_step("execute_plan", "execute_plan(plan_id='p1')")
+    session.close_step({"ops_applied": 3}, ok=True)
+
+    await user.open(f"/run/{session.run_id}")
+    user.find(kind=ui.tree).trigger("update:selected", str(doc_path))
+    await user.should_see(marker="doc-detail-content")
+
+    user.find(marker="step-detail-1").click()
+
+    await user.should_see(marker="detail-title")
+    await user.should_not_see(marker="doc-detail-content")
+
+    user.find(marker="btn-detail-close").click()
+
+    await user.should_not_see(marker="detail-title")
+    await user.should_see(marker="doc-detail-content")
 
 
 # ── Query view (U7) ──────────────────────────────────────────────────────────

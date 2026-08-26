@@ -66,6 +66,6 @@ on open work.
 - [x] Y6 · Quarantine (or fallback: rename with `_empty_` prefix) folders emptied by `execute_plan` moves, per the non-destructive safety rule (`server/guards.py`); disposal policy configurable via an `EMPTY_FOLDER_POLICY` setting (default: quarantine), fully journaled and undoable via `undo_last`. [#57]
 - [ ] Y7 · Add markdown rendering for chat messages (prompts and LLM output) in the web UI conversation view, sanitized client-side (DOMPurify) and with remote image loads blocked via CSP `img-src`, since assistant turns can echo attacker-planted document text. [#56]
 - [x] Y8 · Fix header contrast in dark theme — darken the gold background so the Telcontar logo/title/nav links stay readable. [#55]
-- [ ] Y9 · Move the document preview pane into the same area as command/step inspection in conversation mode (lower-left), so opening one replaces the other. [#58]
+- [x] Y9 · Move the document preview pane into the same area as command/step inspection in conversation mode (lower-left), so opening one replaces the other. [#58]
 
 ---

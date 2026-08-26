@@ -52,7 +52,6 @@ from host.web.dialogs import (
     build_cost_dialog,
     build_journal_dialog,
 )
-from host.web.docpane import build_doc_pane
 from host.web.query_view import build_query_view
 from host.web.settings import build_settings_view
 from host.web.shell import app_shell
@@ -274,16 +273,14 @@ async def run_page(run_id: str) -> None:
             overview_label.set_text(await run.io_bound(directory_overview, session.target) or "")
 
         with main_column:
-            # X9: document preview pane, reusing the corpus browser's (V5)
-            # detail-pane approach — triggered by polling shell.selected in
-            # _refresh() below, never by wiring through app_shell()/the
-            # sidebar tree directly (keeps this out of host/web/shell.py,
-            # which already has heavy contention this sprint).
-            with ui.row().classes("w-full no-wrap items-start gap-4"):
-                with ui.column().classes("w-2/3"):
-                    conversation_column = ui.column().classes("w-full")
-                with ui.column().classes("w-1/3").mark("doc-preview"):
-                    doc_pane = build_doc_pane()
+            # X9/Y9: the document preview pane used to live here as a 1/3
+            # column; it's now Shell.doc_pane, stacked into the sidebar
+            # drawer below step detail (host/web/shell.py) — the two are
+            # mutually exclusive there. This column is full-width again as
+            # a result; _refresh() below still polls shell.selected, just
+            # drives shell.show_document()/show_unanalyzed()/clear_document()
+            # instead of a local doc_pane handle.
+            conversation_column = ui.column().classes("w-full")
             status_label = ui.label()
             # V14/#40: a row, not a bare bar. The integer-percent label lives
             # ON the bar itself (absolute-center inside q-linear-progress),
@@ -493,27 +490,29 @@ async def run_page(run_id: str) -> None:
                 await shell.reload_tree()
                 journal_button.set_text(f"Journal ({len(journal.load_entries(session.target))})")
 
-            # X9: document preview pane — only stat/look up when the sidebar
-            # selection actually changed since the last tick, never on
-            # every 0.5s poll.
+            # X9/Y9: document preview pane — only stat/look up when the
+            # sidebar selection actually changed since the last tick, never
+            # on every 0.5s poll. Rendering itself goes through Shell now
+            # (host/web/shell.py), which also enforces mutual exclusion with
+            # the step-detail section sharing the same drawer.
             if shell.selected != render_state.last_preview_path:
                 render_state.last_preview_path = shell.selected
                 if shell.selected is None:
-                    doc_pane.clear()
+                    shell.clear_document()
                 else:
                     preview = await run.io_bound(_load_preview, run_session.target, shell.selected)
                     if (
                         preview is None
                     ):  # io_bound returns None on cancellation/shutdown (NiceGUI interim shape)
-                        doc_pane.clear()
+                        shell.clear_document()
                     else:
                         is_file, record, meta_line = preview
                         if not is_file:
-                            doc_pane.clear()
+                            shell.clear_document()
                         elif record is not None:
-                            doc_pane.show(record)
+                            shell.show_document(record)
                         else:
-                            doc_pane.show_unanalyzed(shell.selected, meta_line)
+                            shell.show_unanalyzed(shell.selected, meta_line)
 
         ui.timer(web_session.REFRESH_INTERVAL, _refresh)
 

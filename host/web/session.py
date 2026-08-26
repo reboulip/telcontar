@@ -366,11 +366,14 @@ CORPUS_POLL_INTERVAL: float = 5.0
 # MAX raised 720 -> 1000 for V13b: the step-detail drawer now lives inside
 # this same sidebar (stacked below the tree) rather than a separate
 # right-side drawer, and its codemirror content wants more than 720px to be
-# comfortably readable. DEFAULT stays unchanged — most sessions never open
-# the detail view, so the common case (just browsing the tree) shouldn't
-# start wider than before.
+# comfortably readable. DEFAULT raised 380 -> 440 for Y9: the document-preview
+# pane joined the stack too, and unlike step detail it's visible by default
+# (not hidden until a step is inspected) — so the common case (tree + doc
+# pane) now needs the extra room, not just the occasional detail-view case
+# V13b's comment above was about. MIN/MAX left untouched — both are
+# interpolated into _RESIZE_JS below and were the site of a past drift bug.
 
-SIDEBAR_WIDTH_DEFAULT = 380
+SIDEBAR_WIDTH_DEFAULT = 440
 SIDEBAR_WIDTH_MIN = 240
 SIDEBAR_WIDTH_MAX = 1000
 
