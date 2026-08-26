@@ -229,6 +229,8 @@ uv run --group test pytest -q --tb=short
 
 For dev, point `LLM_BASE_URL`/`LLM_API_KEY` at Mammouth. For prod, point them at the Azure OpenAI private endpoint. Nothing else changes.
 
+**Git remote access — use HTTPS, not SSH:** `origin` is configured as an SSH remote (`git@github.com:...`), but in this container `~/.ssh` is root-owned and unwritable by the `dev` user, so `known_hosts` can never be populated and any SSH `git pull`/`push`/`fetch` fails with "Host key verification failed" — this is not transient, don't waste a round-trip rediscovering it. Use the HTTPS form instead (`gh`'s credential helper is already authenticated): `git -c url."https://github.com/".insteadOf="git@github.com:" pull/push/fetch`, or just run the one-off command against `https://github.com/<org>/<repo>.git` directly.
+
 **Toolchain:** ruff (lint + format), mypy (type check, CI gate: `uv run mypy host server config`), ty (fast local type check: `uv run ty check host server config`), pytest (tests). All four run in `.pre-commit-config.yaml`; pytest is the exception kept out of the git hook (too slow per-commit) — it's gated instead by `/test-select` before each commit and by CI on every PR. Full reference: `docs/developer/contributing.md`.
 
 **Full test suite runtime:** ~104s for 960 tests (measured 2026-08-11 — grows as the roadmap adds tests; re-measure occasionally). `/test-select` uses this figure to decide whether to just run the full suite instead of computing a scoped subset — see that skill for the current threshold logic.
@@ -242,6 +244,7 @@ For dev, point `LLM_BASE_URL`/`LLM_API_KEY` at Mammouth. For prod, point them at
 - Use pathlib everywhere; keep Windows path handling correct.
 - Journal every destructive op so `undo_last` always works.
 - Prefer idempotent operations; re-running a plan must not double-apply.
+- Any change that reads or writes a path derived from `config.settings._USER_CONFIG_DIR`, or introduces a new `Path.home()`/`os.path.expanduser`-derived path that touches `~/.telcontar/`, must be manually verified not to leak into the real `~/.telcontar/` during a test run (e.g. `ls -la ~/.telcontar/` before/after `pytest`) as part of that change's own test pass. The global `_isolated_user_config_dir` autouse fixture in `tests/conftest.py` only patches `_USER_CONFIG_DIR` — a hardcoded `Path.home()` call that bypasses it (writing/reading `~/.telcontar` directly instead of going through `_USER_CONFIG_DIR`) would leak silently; this class of bug has already happened once, via AgentBridge/QueryBridge session checkpointing before the fixture existed.
 
 ## Branch Model
 
