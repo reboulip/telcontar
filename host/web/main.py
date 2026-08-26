@@ -39,7 +39,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from host.agent import ApprovalResult, AskUserResult, CostApprovalResult
 from host.paths import directory_overview, find_organizer_root
-from host.web import corpus, journal
+from host.web import chat, corpus, journal
 from host.web import security
 from host.web import session as web_session
 from host.web import steplog
@@ -363,24 +363,11 @@ async def run_page(run_id: str) -> None:
         step_log_state = steplog.StepLogState()
 
         def _render_turn(item: web_session.TranscriptItem) -> None:
-            # V13a: `sent=` already picks the right side, but NiceGUI's
-            # `.nicegui-column` CSS (`align-items: flex-start`) shrink-wraps
-            # every chat-message to its content width, hiding that alignment
-            # — `.classes("w-full")` on the message itself is the fix.
-            # bg-color/text-color are genuine QChatMessage props (Quasar
-            # renders them as `text-<color>` utility classes under the hood,
-            # relying on `.q-message-text { background: currentColor }`)
-            # resolved against theme.PALETTE via run_web()'s app.colors().
-            is_user = item.speaker == "user"
-            bubble_props = (
-                "bg-color=secondary text-color=dark"
-                if is_user
-                else "bg-color=primary text-color=dark"
-            )
+            # Y7: rendering itself lives in host/web/chat.py, shared with
+            # query_view.py's identical call site — see that module's
+            # docstring for the markdown/sanitization/CSP reasoning.
             with conversation_column:
-                ui.chat_message(item.text, name=item.speaker, sent=is_user).classes("w-full").props(
-                    bubble_props
-                )
+                chat.render_turn_bubble(item)
 
         def _flip_activity_done() -> None:
             # Rewrite the newest rendered activity label from ⏳ to ✔️. Called
@@ -637,10 +624,20 @@ class _AuthMiddleware:
                 # The approval gate is the highest-trust screen in the
                 # product; these two headers close the one browser-borne
                 # attack a valid token doesn't stop (framing the app inside
-                # an attacker page that guesses the port).
+                # an attacker page that guesses the port). `img-src` (Y7) is
+                # unrelated to framing: it closes the one thing DOMPurify
+                # sanitization of markdown chat messages doesn't stop — a
+                # sanitize-surviving `![](http://attacker/...)` image tag
+                # loading a remote URL, which would otherwise silently
+                # beacon out and violate telcontar's local-execution-only
+                # principle. 'self' and data: cover every real image this
+                # app ever serves.
                 extra = [
                     (b"x-frame-options", b"DENY"),
-                    (b"content-security-policy", b"frame-ancestors 'none'"),
+                    (
+                        b"content-security-policy",
+                        b"frame-ancestors 'none'; img-src 'self' data:",
+                    ),
                 ]
                 if decision.set_cookie:
                     cookie = security.build_cookie_header()

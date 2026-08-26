@@ -64,7 +64,7 @@ on open work.
 - [x] Y4 · Fix Azure OpenAI integration `404 Resource Not Found` — align client config with Azure's `AzureOpenAI` pattern (`api_version`, `azure_endpoint`, deployment name as `model`), detecting Azure by an explicit `api_version` or an `*.azure.com` host so existing non-Azure configs are unaffected. [#61]
 - [x] Y5 · Add detailed debug logging around LLM endpoint calls (request/response summaries, errors, redacted of keys/content) to aid corporate/Azure troubleshooting; always on, file-only, no flag. [#60]
 - [x] Y6 · Quarantine (or fallback: rename with `_empty_` prefix) folders emptied by `execute_plan` moves, per the non-destructive safety rule (`server/guards.py`); disposal policy configurable via an `EMPTY_FOLDER_POLICY` setting (default: quarantine), fully journaled and undoable via `undo_last`. [#57]
-- [ ] Y7 · Add markdown rendering for chat messages (prompts and LLM output) in the web UI conversation view, sanitized client-side (DOMPurify) and with remote image loads blocked via CSP `img-src`, since assistant turns can echo attacker-planted document text. [#56]
+- [x] Y7 · Add markdown rendering for chat messages (prompts and LLM output) in the web UI conversation view, sanitized client-side (DOMPurify) and with remote image loads blocked via CSP `img-src`, since assistant turns can echo attacker-planted document text. [#56]
 - [x] Y8 · Fix header contrast in dark theme — darken the gold background so the Telcontar logo/title/nav links stay readable. [#55]
 - [x] Y9 · Move the document preview pane into the same area as command/step inspection in conversation mode (lower-left), so opening one replaces the other. [#58]
 

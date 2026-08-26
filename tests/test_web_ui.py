@@ -1543,6 +1543,24 @@ async def test_run_page_chat_bubbles_are_full_width_and_themed_by_speaker(
     assert telcontar_bubble.props["text-color"] == "dark"
 
 
+async def test_run_page_chat_bubbles_render_markdown_sanitized(user: User, tmp_path: Path) -> None:
+    """Y7: chat turns render through ui.markdown(sanitize=True) — the client-
+    side sanitization itself can't be exercised by the headless `user`
+    fixture (no JS execution), but the sanitize prop being wired is
+    verifiable server-side, and this is the one deliberate exception to the
+    "never render corpus-derived text as markup" rule (host/web/chat.py)."""
+    session = web_session.create(tmp_path)
+    session.started = True
+    session.add_turn("telcontar", "**bold** and a [link](https://example.com)")
+
+    await user.open(f"/run/{session.run_id}")
+    await user.should_see("bold")
+
+    [markdown_el] = user.find(kind=ui.markdown).elements
+    assert markdown_el.content == "**bold** and a [link](https://example.com)"
+    assert markdown_el.props["sanitize"] is True
+
+
 async def test_query_page_chat_bubbles_are_full_width_and_themed_by_speaker(
     user: User, tmp_path: Path
 ) -> None:
