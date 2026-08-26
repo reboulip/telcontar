@@ -52,6 +52,7 @@ from host.web.dialogs import (
     build_cost_dialog,
     build_journal_dialog,
 )
+from host.web.graph_view import build_graph_view
 from host.web.query_view import build_query_view
 from host.web.settings import build_settings_view
 from host.web.shell import app_shell
@@ -343,6 +344,18 @@ async def run_page(run_id: str) -> None:
             )
             corpus_button.visible = session.done
 
+            # Y1: same session — graph_page only reads session.target, same
+            # reasoning as _browse_corpus above.
+            def _browse_graph() -> None:
+                ui.navigate.to(f"/graph/{session.run_id}")
+
+            graph_button = (
+                ui.button("Knowledge graph", on_click=_browse_graph, icon="hub")
+                .props("flat dense")
+                .mark("btn-graph")
+            )
+            graph_button.visible = session.done
+
             # Internal-step log strip (T6) — pinned at the bottom, always
             # visible, distinct from the conversation above: telcontar's own
             # tool activity never renders as a chat bubble. It's the
@@ -540,6 +553,25 @@ async def corpus_page(run_id: str) -> None:
 
         ui.page_title(theme.window_title(session.target))
         await build_corpus_view(session)
+
+
+@ui.page("/graph/{run_id}")
+async def graph_page(run_id: str) -> None:
+    session = web_session.get(run_id)
+
+    with app_shell(
+        target=session.target if session is not None else None,
+        session=session,
+        active="graph",
+    ):
+        if session is None:
+            ui.label(
+                "Run not found — it may have finished and been cleared, or the link is wrong."
+            ).classes("text-negative")
+            return
+
+        ui.page_title(theme.window_title(session.target))
+        await build_graph_view(session)
 
 
 def _pick_port() -> int:

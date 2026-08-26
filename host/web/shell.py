@@ -248,7 +248,7 @@ def _apply_theme() -> None:
     """Hook point for T7/T8's host/web/theme.py — empty until then."""
 
 
-_NAV_TABS = ("conversation", "corpus", "query", "settings")
+_NAV_TABS = ("conversation", "corpus", "query", "graph", "settings")
 
 
 @contextmanager
@@ -304,6 +304,7 @@ def app_shell(
                 )
                 corpus_tab = ui.tab("corpus", label="Corpus").mark("nav-corpus")
                 query_tab = ui.tab("query", label="Query").mark("nav-query")
+                graph_tab = ui.tab("graph", label="Graph").mark("nav-graph")
                 ui.tab("settings", label="Settings").mark("nav-settings")
 
             if effective_session is None:
@@ -314,6 +315,7 @@ def app_shell(
             )
             if effective_target is None or find_organizer_root(effective_target) is None:
                 query_tab.disable()
+                graph_tab.disable()
 
             def _on_nav_change(e: ValueChangeEventArguments) -> None:
                 # Constructing ui.tabs(value=active) above must not itself
@@ -329,6 +331,8 @@ def app_shell(
                         effective_target, mode="query"
                     ) or web_session.create(effective_target, mode="query")
                     ui.navigate.to(f"/query/{query_session.run_id}")
+                elif e.value == "graph" and effective_session is not None:
+                    ui.navigate.to(f"/graph/{effective_session.run_id}")
                 elif e.value == "settings":
                     ui.navigate.to("/settings")
 

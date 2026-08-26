@@ -17,6 +17,7 @@ from host import paths as host_paths
 from host.paths import (
     directory_overview,
     is_op_out_of_scope,
+    resolve_events_path,
     resolve_graph_path,
     resolve_journal_path,
     resolve_registry_path,
@@ -99,6 +100,13 @@ def test_resolve_graph_path_rebases_under_target(tmp_path: Path) -> None:
     target.mkdir()
 
     assert resolve_graph_path(target) == target.resolve() / ".organizer" / "graph.json"
+
+
+def test_resolve_events_path_rebases_under_target(tmp_path: Path) -> None:
+    target = tmp_path / "corpus"
+    target.mkdir()
+
+    assert resolve_events_path(target) == target.resolve() / ".organizer" / "events.jsonl"
 
 
 # ── directory_overview ──────────────────────────────────────────────────────────

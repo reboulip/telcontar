@@ -121,6 +121,7 @@ def _fast_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(web_session, "REFRESH_INTERVAL", 0.02)
     monkeypatch.setattr(web_session, "TREE_POLL_INTERVAL", 0.02)
     monkeypatch.setattr(web_session, "CORPUS_POLL_INTERVAL", 0.02)
+    monkeypatch.setattr(web_session, "GRAPH_POLL_INTERVAL", 0.02)
 
 
 @pytest.fixture(autouse=True)

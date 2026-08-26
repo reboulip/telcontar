@@ -356,6 +356,16 @@ TREE_POLL_INTERVAL: float = 5.0
 CORPUS_POLL_INTERVAL: float = 5.0
 
 
+# ── Knowledge-graph poll interval (Y1 test-seam) ────────────────────────────
+#
+# Read by build_graph_view's ui.timer at mount time instead of a hardcoded
+# literal — same test-seam reasoning as CORPUS_POLL_INTERVAL above. As coarse
+# as the corpus poll: the graph_mtime pre-check (host/web/graph.py) already
+# skips rebuilding the whole graph on most ticks.
+
+GRAPH_POLL_INTERVAL: float = 5.0
+
+
 # ── Sidebar width (T4) ───────────────────────────────────────────────────────
 #
 # One in-memory preference for the process's lifetime rather than a field on
