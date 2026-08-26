@@ -60,5 +60,12 @@ on open work.
 
 - [ ] V6 · Knowledge-graph view — `server/graph.py` already builds the graph; currently invisible. Needs a design pass before implementation: rendering choice (force-directed graph vs. a ranked-actors table, or both — `server/graph.py::rank_actors` already produces a ranked, scored actor list), node/edge caps for large corpora, kind filters (document/entity/event), and what a node click surfaces.
 - [ ] V7 · Session list/switch/resume view — persist the session list to disk (target directory, timestamp, status per session); add a view to list and switch between sessions; "Resume" live-reattaches the conversation when the session's agent state survives a restart, falling back to a read-only transcript view when it doesn't. Needs its own design pass first: storage format/location, what agent state must survive a restart, retention/cleanup of old sessions. [#53]
+- [ ] V8 · Start telcontar in the current working directory by default (not the home folder); scope the sidebar tree view to that directory's sub-tree. [#62]
+- [ ] V9 · Fix Azure OpenAI integration `404 Resource Not Found` — align client config with Azure's `AzureOpenAI` pattern (`api_version`, `azure_endpoint`, deployment name as `model`). [#61]
+- [ ] V10 · Add detailed debug logging around LLM endpoint calls (request/response summaries, errors) to aid corporate/Azure troubleshooting. [#60]
+- [ ] V11 · Quarantine (or fallback: rename with `_empty_` prefix) folders emptied by `execute_plan` moves, per the non-destructive safety rule (`server/guards.py`). [#57]
+- [ ] V12 · Add markdown rendering for chat messages (prompts and LLM output) in the web UI conversation view. [#56]
+- [ ] V13 · Fix header contrast in dark theme — darken the gold background or switch text to black so the Telcontar logo/title/nav links stay readable. [#55]
+- [ ] V14 · Move the document preview pane into the same area as command/step inspection in conversation mode (lower-left), so opening one replaces the other. [#58]
 
 ---
