@@ -32,7 +32,20 @@ registry with a per-document detail pane, reached via a "Browse corpus" button
 beside "Query this corpus" once a run finishes — merging what used to be the
 separate V4 document-preview idea into one screen, and reachable without any
 LLM call or agent turn at all (unlike query mode). No TUI equivalent exists;
-see `host/web/corpus.py`/`host/web/corpus_view.py` below.
+see `host/web/corpus.py`/`host/web/corpus_view.py` below. As of Y1, it also
+has a knowledge-graph view at `/graph/{run_id}` — a ranked-actors table plus
+an optional force-directed graph panel over `server/graph.py`'s already-built
+graph, previously invisible behind no UI at all (a carryover from a deferred
+Phase 21 item) — reached via a "Knowledge graph" button beside "Browse
+corpus", again with no LLM call or agent turn involved. No TUI equivalent
+exists here either; see `host/web/graph.py`/`host/web/graph_view.py` below. As
+of Y2, it also has a session list/resume view at `/sessions` and
+`/sessions/{run_id}` — every session ever started, live or dead across
+process restarts, grouped by target, with a "Resume" action that restarts a
+dead organize/query session from its last checkpoint — reached via an
+always-enabled "Sessions" nav tab (unlike Query/Graph, not target-scoped). No
+TUI equivalent exists; see `host/web/sessions.py`/`host/web/sessions_view.py`
+below.
 
 **`host/web/session.py`** — framework-agnostic per-run state, no `nicegui` import.
 Key types: `RunSession` (`run_id`, `target`, `mode: Literal["organize", "query"] =
@@ -105,20 +118,53 @@ gates `build_journal_dialog`'s Undo button: undo must be blocked in this state,
 since `server.journal.pop_last` rewrites the whole journal file while the MCP
 server subprocess may still be appending to it, and racing them can silently
 drop audit records.
+`seed_seq(value: int) -> None` (Y2) sets the private `_seq` turn-sequence
+counter's starting point directly (bypassing `_next_seq()`'s increment-and-
+return) — used only by `host/web/sessions.py`'s `restore_session()` when
+rebuilding a `RunSession` from a persisted snapshot, so turns/activity
+appended after resume continue numbering from the snapshot's highest `seq`
+instead of restarting at 0 and colliding with what was already there.
 Module-level registry `create(target, *, mode="organize") -> RunSession` /
 `get(run_id)` / `close(run_id)` / `all_sessions()`, keyed by a
 `secrets.token_urlsafe(16)` run id —
 deliberately unit-testable in plain pytest, since a page (`host/web/main.py`) only
-polls and mutates this data rather than deciding how it's drawn. `get_sidebar_width()
+polls and mutates this data rather than deciding how it's drawn.
+`register(session: RunSession) -> None` (Y2) is `create()`'s counterpart for a
+session that already exists as an object rather than needing one minted:
+`_SESSIONS[session.run_id] = session`, plus `set_active(session.run_id)` when
+`session.mode == "organize"` — the same active-run bookkeeping `create()`
+does. Used exclusively by the resume flow (`host/web/sessions_view.py`'s
+`_resume`, below), which restores a `RunSession` from a persisted snapshot
+via `host/web/sessions.py`'s `restore_session()` and must preserve that
+snapshot's `run_id` (so existing `/run/{run_id}`/`/query/{run_id}` links keep
+resolving) rather than have `create()` mint a fresh one. `get_sidebar_width()
 -> int` / `set_sidebar_width(width: int) -> int` (T4) manage one in-memory
-sidebar-width preference (`SIDEBAR_WIDTH_DEFAULT`/`_MIN`/`_MAX` = 380/240/1000px —
+sidebar-width preference (`SIDEBAR_WIDTH_DEFAULT`/`_MIN`/`_MAX` = 440/240/1000px —
 `_MAX` raised from 720 in V13b, since the step-detail section now shares this
-same drawer and its codemirror content wants more horizontal room) for
+same drawer and its codemirror content wants more horizontal room; `DEFAULT`
+raised again 380 → 440 in Y9 (GH #58), since the document-preview pane joined
+the same stack and, unlike step detail, is visible by default rather than
+hidden until a step is inspected — so the common case (tree + doc pane, no
+detail view open) now needs the extra width, not just the occasional
+detail-view case V13b's `_MAX` bump was about; `_MIN`/`_MAX` themselves are
+untouched by Y9) for
 the process's lifetime — a module-level global rather than a `RunSession` field,
 since it must also apply on the picker route where no `RunSession` exists yet, and
 telcontar is single-user so there's no other viewer's preference it could clobber.
 `set_sidebar_width` clamps to `[SIDEBAR_WIDTH_MIN, SIDEBAR_WIDTH_MAX]` and returns
 the clamped value actually stored.
+
+`get_start_dir() -> Path` / `set_start_dir(start_dir: Path | None) -> None` (Y3,
+GH #62) — a test-seam pair, the same shape as `TREE_POLL_INTERVAL`'s below: where
+the sidebar tree roots when `app_shell` is given no explicit `target` (the picker
+route). `get_start_dir()` returns the module-level `_start_dir` override when
+`set_start_dir` has set one (tests only — `None` in real use), otherwise computes
+`Path.cwd()` fresh on every call, falling back to `Path.home()` if the cwd can't be
+read (`OSError`). Deliberately not cached, so the headless test `user` fixture
+(which runpy-executes `main.py` for real) picks up pytest's own cwd at call time
+like any other caller, rather than pinning the repo root into module state at
+import/`run_web()` time. Replaces the previous hardcoded `Path.home()` fallback in
+`host/web/shell.py`'s `app_shell` — see below.
 
 `find_by_target(target, mode="query") -> RunSession | None` (X11) linear-scans
 `_SESSIONS` for one whose `.mode` matches and whose `.target.resolve()` equals the
@@ -184,6 +230,34 @@ is in the module-level `_TREE_MUTATING_TOOLS = frozenset({"execute_plan",
 these are the only tools that change what's on disk under the target directory.
 This is what drives `run_page`'s sidebar-tree refresh.
 
+**Checkpointing and resume (Y2, GH #53):** `AgentBridge.__init__` gains
+`self._last_checkpoint_at = 0.0`, and a new `_checkpoint(*, terminal: bool)`
+persists the session via `host/web/sessions.py`'s `snapshot(self.session)` —
+unconditional when `terminal` is true, otherwise throttled to at most once
+every module-level `_CHECKPOINT_INTERVAL_SECS = 10.0` seconds (compared
+against `time.monotonic()`), since `on_event` fires synchronously on the
+event loop far more often than a snapshot needs to be current. `on_event`'s
+final line now always calls `self._checkpoint(terminal=event.kind in ("done",
+"error"))`. `run()` calls `sessions_store.record_started(session)` right
+before entering `mcp_session`, and now snapshots explicitly on both of its
+exception paths (config-load failure, agent error) in addition to the
+throttled/terminal `on_event` path, so an exception that never reaches a
+`"done"`/`"error"` `AgentEvent` still persists. `run()` also gained a
+keyword-only `resume_history: list[dict] | None = None` parameter: when
+given, it skips the `run_agent_loop` bootstrap call entirely, instead just
+setting `session.history = resume_history` and `session.status = "Ready —
+resumed from a previous session."` — landing in the exact same
+history-continuation shape a live session already has between chat turns
+(the loop below still runs, waiting on `session.messages`). A resumed
+session still constructs its own fresh `_TokenLedger` — prior-run token
+totals aren't carried across a restart, only the conversation history is; the
+cost they represent was already approved and spent in the prior process. New
+`start_resumed() -> asyncio.Task` is `start()`'s counterpart for a session
+restored from a snapshot (`self.session.history` already populated): same
+task-ownership shape (`session.started = True`, `session.task = task`), but
+calls `self.run(resume_history=self.session.history)` instead of a bare
+`run()`.
+
 **`host/web/bridge.py` also exports `QueryBridge(session)`** (U7) — the same shape
 (`on_event`/`start`/`run`) as `AgentBridge`, but driving `host.agent.run_query_loop`
 instead of `run_agent_loop`. It has no `on_approval_needed`/`on_cost_approval_needed`/
@@ -202,6 +276,23 @@ button). `run()` is a near-verbatim port of `QueryScreen._query_worker`: one MCP
 session and one `_TokenLedger` for the whole chat, threading `history` across
 questions for multi-turn context. `done`/`error` here are per-question, not
 per-session: `QueryBridge` never sets `session.done`.
+
+**Checkpointing (Y2):** the same `_checkpoint(*, terminal: bool)` contract as
+`AgentBridge` — `terminal=` is `event.kind == "error"` here (query mode has no
+per-session `"done"`, only per-question). `run()` calls
+`sessions_store.record_started(session)` before entering `mcp_session`, and
+snapshots explicitly on its config-load-failure and query-error exception
+paths, plus once after every successfully answered question (right after
+`session.status` is reset to `"Ready — ask a question."`) — the last of these
+is what makes an interrupted query session's answered-so-far transcript
+resumable even though no `"done"`/terminal event exists per session to
+trigger it otherwise. Resume needed no `QueryBridge` method changes at all:
+`run()`'s loop already waits on `session.messages` from the very start
+regardless of whether `session.history` arrives pre-populated (a restored
+session sets `history` directly via `sessions.restore_session()`, below,
+before `QueryBridge(restored).start()` is called) — the fresh-vs-resumed
+distinction that needed `AgentBridge.start_resumed()`/`resume_history` simply
+doesn't exist on this path.
 
 **`host/web/dialogs.py`** (U4, extended by U5/U6/V12) — one builder per `PendingRequest` kind, replacing
 the dialog-building code that used to live inline in `run_page`'s
@@ -430,9 +521,15 @@ language="JSON", theme=theme.CODEMIRROR_THEME).disable().mark("detail-content")`
 `theme.CODEMIRROR_THEME` (V13b, `host/web/theme.py`, `= "basicDark"`) is passed
 explicitly because `ui.codemirror` otherwise defaults to a light theme
 regardless of the app's own dark palette, rendering as a jarring white panel on
-the dark shell. `app_shell` yields a
+the dark shell. As of Y9 (GH #58), this same drawer also stacks a
+document-preview section directly below step detail — `ui.column().mark(
+"doc-section")`, visible by default (unlike `detail-section`), wrapping
+`host/web/docpane.py`'s existing `build_doc_pane()` widgets (that module is
+otherwise unchanged — only where it's mounted moved) inside their own
+`max-height: 40vh; overflow-y: auto` scroll region, so the drawer as a whole
+doesn't scroll as one unit. `app_shell` yields a
 `Shell` dataclass (`drawer`, `tree`, `content`, `detail_section`, `detail_title`,
-`detail_content`, `target`,
+`detail_content`, — Y9 — `doc_section`, `doc_pane`, `target`,
 `selected`, and — V7 — a private `_reloading: bool` re-entrancy flag) — there is
 no longer a standalone `detail_drawer` field.
 `Shell.show_detail(title: str, detail: str)` (T6, rewritten V13b) now populates
@@ -441,8 +538,17 @@ the existing widgets in place — `detail_title.set_text(title)`,
 (`detail_section.visible = True`), instead of clearing and rebuilding a separate
 drawer on every call; the codemirror instance itself is created once, at
 `app_shell` build time, so only its title/value change per `show_detail` call.
-The new `Shell.hide_detail()` (V13b) sets `detail_section.visible = False` back,
-wired to the close button above. Never
+As of Y9, it also hides `doc_section` (`.visible = False`) — the two sections
+share this one drawer and are mutually exclusive, so opening one always closes
+the other. The new `Shell.hide_detail()` (V13b) sets `detail_section.visible = False` back,
+wired to the close button above; as of Y9 it also restores `doc_section.visible = True`.
+Three new Y9 counterparts do the mirror-image thing for the document pane:
+`Shell.show_document(record: dict)` hides `detail_section` and calls
+`self.doc_pane.show(record)`; `Shell.show_unanalyzed(path: Path, meta_line: str)`
+likewise hides `detail_section` then calls `self.doc_pane.show_unanalyzed(path,
+meta_line)`; `Shell.clear_document()` just calls `self.doc_pane.clear()` (no
+visibility toggle — clearing doesn't need to fight for space with step detail).
+Never
 `ui.code`/`ui.markdown`, since both render through a markdown fenced-code path and
 step detail can carry untrusted document content that must never be interpreted
 as markup; `ui.codemirror` takes the content as a plain value/prop instead, with
@@ -462,10 +568,18 @@ still running, detaching the earlier reference from what's actually live and
 silently dropping the expand. This was a latent bug in the pre-V7 code (there
 was only ever one writer of `nodes` before, so it never manifested) fixed as
 part of introducing the second writer. `Shell.refresh_tree(root)` (T3) re-roots the tree at `root` and
-updates `Shell.target` to match — used by the picker's "go up one level" button and
+updates `Shell.target` to match — used by the picker's "go up one level" button
+(`.mark("btn-go-up")`, Y3) and
 a Windows-only drive-root `ui.select` dropdown, both rendered only when `on_select`
 is passed in (the picker route, `/`; hidden on `/run/{run_id}`, where the tree is
-for verification only).
+for verification only). Until Y3 (GH #62), `host/web/main.py`'s `index_page` never
+actually passed `on_select`, so this whole branch was dead code — the picker was
+stuck at whatever directory the tree rooted at, with no way to browse elsewhere.
+`index_page` now passes a real `on_select` (a callback that clears the startup
+error label, threaded through a mutable cell since the label doesn't exist yet at
+mount time), so both controls render and work. Separately, when `app_shell` is
+given no explicit `target` (the picker route), the tree now roots at
+`web_session.get_start_dir()` instead of `Path.home()` — see `session.py` below.
 
 **`Shell.reload_tree()`** (V7) is now the one writer for `tree.props["nodes"]`:
 rebuilds the tree from disk via `host.web.tree.rebuild_nodes` (off the event loop,
@@ -503,13 +617,14 @@ with a `ui.header()` — as of X13, `theme.LOGO_SVG` rendered via
 `ui.row()`, so the mark stays vertically centered against the wordmark) — plus
 a `ui.tabs(value=active)`
 (`.props("dense")`) holding one `ui.tab` per entry in the module-level
-`_NAV_TABS = ("conversation", "corpus", "query", "settings")`, each `.mark()`ed
-`nav-conversation`/`nav-corpus`/`nav-query`/`nav-settings` — mounted before the
+`_NAV_TABS = ("conversation", "corpus", "query", "graph", "sessions", "settings")` (Y1
+added `"graph"`, Y2 added `"sessions"`), each `.mark()`ed
+`nav-conversation`/`nav-corpus`/`nav-query`/`nav-graph`/`nav-sessions`/`nav-settings` — mounted before the
 left-drawer sidebar, so every route gets the same top-level tab strip. `/setup`
 is the one route that passes `nav=False`, hiding the header entirely, since the
 first-run wizard has nowhere valid to navigate to yet. `session` is the
-*organize*-mode `RunSession` driving the current route — `/run/{run_id}` and
-`/corpus/{run_id}` pass their own; a query-mode session is deliberately never
+*organize*-mode `RunSession` driving the current route — `/run/{run_id}`,
+`/corpus/{run_id}`, and (Y1) `/graph/{run_id}` pass their own; a query-mode session is deliberately never
 passed here, since a query session must never become the nav shell's "active"
 pointer (reserved for organize-mode runs). Passing `session` both updates the
 module-level active-run pointer (`web_session.set_active(session.run_id)`, see
@@ -518,10 +633,15 @@ web_session.get_active()`, to decide what the Conversation/Corpus tabs navigate
 to — `effective_session` is what lets a route with no session of its own in scope
 (`/settings`) still resolve a working target for those tabs instead of just
 disabling them. The Conversation/Corpus tabs are `.disable()`d when
-`effective_session is None`; the Query tab is disabled when there's no
+`effective_session is None`; the Query **and Graph** (Y1) tabs are disabled
+under the exact same condition — there's no
 `effective_target` (`target` or `effective_session.target`) or
 `host.paths.find_organizer_root(effective_target)` finds no analyzed corpus above
-it. `active` names which tab (if any) matches the current route, seeding
+it — since a knowledge graph is equally meaningless without an analyzed corpus.
+The **Sessions** tab (Y2) is never disabled at all — it is the one tab in
+`_NAV_TABS` with no `.disable()` call anywhere, target-scoped or otherwise,
+since a session can belong to any target, not just whichever one (if any) the
+current route happens to be showing. `active` names which tab (if any) matches the current route, seeding
 `ui.tabs(value=active)`'s initial selection. `tabs.on_value_change(_on_nav_change)`
 no-ops when the new value already equals `active` (guards against the initial
 `ui.tabs(value=active)` construction itself firing a spurious navigation) and
@@ -529,7 +649,13 @@ otherwise calls `ui.navigate.to(...)`: Conversation/Corpus go to
 `/run/{effective_session.run_id}` / `/corpus/{effective_session.run_id}`; Query
 reuses `web_session.find_by_target(effective_target, mode="query")` if one
 already exists for that target, else creates one, before navigating to
-`/query/{run_id}`; Settings always navigates to `/settings`. This is additive to
+`/query/{run_id}`; Graph (Y1) navigates straight to
+`/graph/{effective_session.run_id}` — guarded by `effective_session is not
+None` rather than resolving/creating a session the way Query does, since graph
+mode reuses the current organize-mode session directly, with no separate
+graph-mode session type; Sessions (Y2) always navigates to the fixed
+`/sessions` route, unconditionally — no session/target resolution at all, the
+only nav-tab destination that doesn't need one; Settings always navigates to `/settings`. This is additive to
 the left-drawer's own unconditional Settings button, above — both now route to
 `/settings`, and neither replaced the other.
 
@@ -674,7 +800,20 @@ base:
   and `.tc-tree-row { padding: 1px 0; }` are the plan-approval dialog's
   before/after tree's CSS-only guide lines — that tree is hand-rolled indented
   rows, not a real `ui.tree`, so it has no built-in QTree connectors to
-  re-enable; see `host/web/dialogs.py`'s `_render_tree_guides`, above.
+  re-enable; see `host/web/dialogs.py`'s `_render_tree_guides`, above, plus —
+  as of Y8 (GH #55) — a `.q-header { background-color: <dark>; color: <secondary>;
+  border-bottom: 1px solid <primary>; }` rule fixing gold-on-white/gold header
+  contrast: Quasar's own `.q-layout__section--marginal` rule paints `ui.header()`
+  gold-on-white (`var(--q-primary)` background, white text by default), which the
+  silver+gold logo also read poorly against. Unlike the `.q-btn.bg-primary` fix
+  above, this rule deliberately carries **no** `!important` — NiceGUI 3.15 wraps
+  its own stylesheets in CSS cascade layers, but `ui.add_css` injects this whole
+  `css()` string *unlayered*, and an unlayered normal declaration already beats
+  every layered declaration regardless of specificity; adding `!important` here
+  would instead make it lose, since an unlayered `!important` sorts below
+  NiceGUI's own layered `quasar_importants` layer. Title and nav-tab labels
+  inherit `currentColor`, so the one `color` declaration covers all three; the
+  gold survives as the header's bottom border.
 - `FONT_DIR`, `FONT_URL_PATH` (`/tc-fonts`) — the static-assets directory and its
   `app.add_static_files` mount point, both consumed by `run_web()`.
 - `CODEMIRROR_THEME: Final = "basicDark"` (V13b) — `ui.codemirror` defaults to a
@@ -767,11 +906,40 @@ it can't show: the corpus digest and the user's pre-analysis steering
 instructions, both composed at run time from a live target/registry this
 target-free view never has.
 
-**`host/web/query_view.py`** (U7, extended by V13a) — the query page's UI, `nicegui`-importing (like
+**`host/web/chat.py`** (Y7, GH #56, new file) — `render_turn_bubble(item:
+web_session.TranscriptItem) -> None`, the one shared chat-bubble renderer for
+the conversation view, called from both `run_page`'s (`host/web/main.py`) and
+`query_view.py`'s `_render_turn` — previously identical, deliberately
+duplicated `ui.chat_message(...)` code (V13a's call, made when the rendering
+was just cosmetic) that Y7 unifies now that it's security-relevant. Must be
+called with the destination column already active (`with
+conversation_column:`), matching how both call sites already scope every
+other render call. Builds the same `sent=`/`bg-color`/`text-color` bubble
+(`secondary`/`dark` for a user turn, `primary`/`dark` otherwise) V13a
+established, but the bubble's default slot now nests
+`ui.markdown(item.text, sanitize=True)` instead of passing `item.text`
+straight to `ui.chat_message(...)` — so prompts and LLM output render as
+formatted markdown (bold, links, lists, code blocks) rather than plain
+HTML-escaped text. The module docstring documents why this is safe — the ONE
+deliberate, documented exception to telcontar's "never render corpus-derived
+text as markup" rule every other `host/web/` surface follows
+(`docpane.py`/`corpus_view.py`/`shell.py`'s step-detail `ui.codemirror`):
+`sanitize=True` runs the output through a client-side, vendored DOMPurify
+before it reaches the DOM (no new dependency, no network fetch), and the CSP
+header `_AuthMiddleware` sets (`host/web/main.py`) now includes
+`img-src 'self' data:`, closing the one gap DOMPurify alone leaves — a
+sanitize-surviving markdown image tag beaconing to a remote host. See
+[Security Model](../security-model.md) for the full reasoning. Applies
+uniformly to both user and assistant turns.
+
+**`host/web/query_view.py`** (U7, extended by V13a, Y7) — the query page's UI, `nicegui`-importing (like
 `dialogs.py`/`steplog.py`/`shell.py`). `build_query_view(shell, session)` renders a
 conversation column (`ui.chat_message`, reusing the same idiom `run_page` already
 uses for organize turns, including `run_page`'s V13a bubble alignment/colour fix
-— duplicated here rather than shared, per this pair's existing precedent) plus a question input/Ask button
+— duplicated here rather than shared, per this pair's existing precedent until
+Y7 unified the rendering call itself into `chat.render_turn_bubble`, above;
+`_render_turn` here now just calls that instead of building the bubble inline)
+plus a question input/Ask button
 (`.mark("query-input")`/`.mark("btn-query-ask")`) that echoes the question as a
 `user`-speaker turn (`session.add_turn`) and pushes it onto `session.messages` —
 and, below a separator, a step-log strip
@@ -907,6 +1075,209 @@ instead of displaying it as text — the same rule V13b's step-detail view and
 V11's prompt inspection already follow for untrusted content; see
 `docs/developer/security-model.md`.
 
+**`host/web/graph.py`** (Y1, GH #58 continuation — a carryover Phase 21 item
+deferred to Phase 24, new file) — knowledge-graph load/projection logic,
+`nicegui`-free, mirroring `host/web/corpus.py`'s contract exactly: this module
+owns the filesystem-adjacent logic, `host/web/graph_view.py` owns the
+rendering. `load_graph(target: Path) -> dict | None` builds the graph fresh,
+in-process, every call, via `server.graph.build(registry, events)` (loading
+both stores itself: `server.registry.load(resolve_registry_path(target))` and
+`server.events.all_events(resolve_events_path(target))`) and returns
+`.to_dict()` — never `None` on success, `None` on any exception, mirroring
+`corpus.py`'s never-raises contract. Deliberately never reads the persisted
+`.organizer/graph.json`: that file only exists once an organize run reaches
+its final write-outputs step, so reading it would show an empty graph during
+and immediately after most runs, and it goes stale the instant a single
+document is (re-)recorded afterward — `server.graph.build` is already a pure
+function of the same two stores this module polls anyway, so rebuilding fresh
+costs nothing extra. `graph_mtime(target: Path) -> tuple[float, int, float,
+int] | None` is the poll pre-check, mirroring `corpus.py`'s `registry_mtime`:
+combined `(mtime, size)` of both `registry.json` and `events.jsonl` via two
+plain `.stat()` calls, `None` on any `OSError` (either file missing/unreadable).
+`rank_actors_for(target: Path, cap: int) -> list[dict]` loads both stores,
+builds the graph, and wraps `server.graph.rank_actors(built, cap)` for the
+ranked-actors table (`[]` on any error) — `cap <= 0` means no limit.
+`project(graph: dict, *, kinds: set[str], top_actors: int) -> tuple[list[dict],
+list[dict]]` is a pure, no-I/O function over an *already-loaded* graph dict
+(not a fresh load — the unit-testable heart of this module): keeps only nodes
+whose `kind` is in `kinds`; if `"entity"` is in `kinds` and `top_actors > 0`,
+caps entity nodes to the top `top_actors` via the private `_score_entities`
+helper, which recomputes the same three centrality components
+`server.graph.rank_actors` uses (`document_count`, `cooccurrence_weight`,
+`mention_count`) by walking `edges` directly, since `project` works from an
+already-serialized dict rather than a `server.graph.Graph` object; sorts
+descending by that triple, ties broken by lowercase name; non-entity kept
+nodes are never capped. Finally keeps only edges whose both endpoints
+survived the node filter/cap. `neighbors(graph: dict, node_id: str) ->
+list[dict]` returns `node_id`'s immediate-neighbor nodes (matching either edge
+direction) for the detail pane's "referencing documents"/"mentioned entities"
+listings — `[]` if the node has no edges or isn't in the graph.
+`server.registry`/`server.events`/`server.graph` imports are late (inside the
+functions), the same discipline `corpus.py`/`journal.py` follow.
+
+**`host/web/graph_view.py`** (Y1, new file) — the knowledge-graph page's UI,
+`nicegui`-importing, mirroring `corpus_view.py`'s structure.
+`_GraphViewState` (dataclass) holds `reloading`/`last_mtime` (the same
+re-entrancy-guard/skip-unchanged pair `_CorpusViewState` uses), the currently
+loaded `graph` dict, and `top_n` (the active "Top actors" selection).
+`build_graph_view(session: RunSession) -> None` loads the graph and its mtime
+via `run.io_bound` at mount time (`or {"nodes": [], "edges": []}` guarding
+`load_graph`'s cancellation-`None` case, the same pattern `corpus_view.py`
+uses). Renders, top to bottom: a heading with a refresh icon button
+(`.mark("btn-graph-refresh")`); an empty-state label (`.mark("graph-empty")`)
+toggled on `not graph.get("nodes")`, the same X10 "always build, just toggle
+visibility" pattern `corpus_view.py` uses rather than early-returning; a
+filter row — an "Events" checkbox (`.mark("graph-filter-event")`, **default
+off**, since `server/graph.py`'s event↔entity matching is a known
+naive-substring approximation that floods the graph with false-positive edges
+for short entity names), a "Top actors" `ui.select` (`.mark(
+"graph-top-n-select")`, `{25, 50, 100}`, default 50), and a "Show
+force-directed view" checkbox (`.mark("graph-show-echart")`, default off); a
+`ui.table` (`.mark("graph-table")`, columns name/entity_kind/roles/
+document_count/cooccurrence_weight/mention_count, `row_key="id"`,
+`pagination=10`) fed by `rank_actors_for` and pre-flattened by the private
+`_actor_row` (`roles` list joined to a display string — the same
+list-valued-cell trap `corpus_view.py` documents); and a detail column
+(`.mark("graph-detail")`) holding three mutually-exclusive panels: a reused
+`host/web/docpane.py` pane (`build_doc_pane(marker_prefix="graph")`,
+unmodified) for document nodes, plus two new Y1 panels
+(`.mark("graph-entity-detail")`/`.mark("graph-event-detail")`) for entity and
+event nodes, each with a title/meta line and a neighbor listing built from
+`web_graph.neighbors` — entity detail lists referencing documents as clickable
+buttons (`.mark("graph-entity-doc-link")`) that open the document pane for
+that checksum; event detail lists mentioned entities as plain labels
+(`.mark("graph-event-entity")`). `table.on("rowClick", _on_row_click)`
+defensively unpacks Quasar's `[evt, row, index]` payload, the same idiom
+`corpus_view.py` uses, and dispatches by the clicked node id's prefix
+(`doc:`/`entity:`/`event:`) via `_select_node`. The optional panel
+(`echart_container`, built/rebuilt on demand inside `_apply_filters` rather
+than once at mount time) renders `ui.echart(_echart_options(nodes, edges))`
+over `project(state.graph, kinds=_kinds(), top_actors=state.top_n)`'s output
+(so the "Top actors" selection already caps entity nodes there), further
+hard-capped to `GRAPH_MAX_NODES = 150`/`GRAPH_MAX_EDGES = 400` as a second,
+unconditional ceiling on what ever reaches the browser — a `"graph"`-type
+force-layout series (`roam: True`, one category per kind, colors from
+`theme.PALETTE`) with `tooltip: {"show": False}` (deliberately no HTML
+`tooltip.formatter` over untrusted node names — every detail already surfaces
+through the Python-side panels above) and its own `on_point_click` wired to
+the same `_select_node` dispatch as the table. `_apply_filters()` (called on
+every filter/select change and once at mount) re-fetches `rank_actors_for`
+for the table — always, regardless of the echart toggle — and only rebuilds
+the echart panel (`echart_container.clear()`, then a fresh `ui.echart(...)`)
+when `show_force_graph.value` is true, else just hides the container; the
+table `rows` assignment is skip-if-unchanged, the same `Shell.reload_tree`/
+`corpus_view.py` discipline. `_reload()` (`async`, wired to a
+`ui.timer(web_session.GRAPH_POLL_INTERVAL, _reload)`, below) mirrors
+`corpus_view.py::_reload`'s two disciplines: a `state.reloading` re-entrancy
+guard, and a `graph_mtime` pre-check that returns early when unchanged from
+`state.last_mtime` — on an actual change it re-fetches the whole graph via
+`run.io_bound(load_graph, ...)`, updates `state.graph`, toggles
+`empty_label.visible`, and calls `_apply_filters()` again so the table and any
+open force-directed panel (including a live-toggled Events filter) reflect the
+new data. Every graph value rendered here is LLM-derived output from
+attacker-controllable documents (entity names, document titles, event
+sentences): `ui.label`/`ui.table` row values only, never
+`ui.markdown`/`ui.html`/`ui.code` — the same rule `corpus_view.py` follows.
+This predates and is unrelated to Y7's chat-message markdown exception
+(`host/web/chat.py`) — nothing here reuses that reasoning; see
+`docs/developer/security-model.md`.
+
+**`host/web/sessions.py`** (Y2, GH #53, new file) — session persistence,
+`nicegui`-free, the same NiceGUI-free-data-module contract as
+`host/web/corpus.py`: this module owns the filesystem-adjacent logic,
+`host/web/sessions_view.py` owns the rendering. Two tiers, deliberately: the
+home-directory index (`config.settings.user_sessions_index_path()`, i.e.
+`~/.telcontar/sessions.json`) lives outside every allowlist/egress boundary
+this project's security model reasons about, so it must carry only
+`run_id`/`target`/`mode`/`created_at`/`last_active_at`/`status` — never
+corpus-derived text; the per-target snapshot (`host.paths.resolve_sessions_dir(
+target)`, i.e. `<target>/.organizer/sessions/<run_id>.json`) lives inside the
+same boundary the registry/journal/graph already trust, so the transcript,
+activity log, and LLM message history — all derived from the user's own
+documents — belong there instead. `is_valid_run_id(run_id: str) -> bool`
+checks a module-level `_RUN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")` —
+every route/function that joins a URL-supplied or index-read `run_id` into a
+filesystem path must check this first, since the home index is itself a
+user-writable JSON file and its `target`/`run_id` values are therefore
+untrusted too; `_snapshot_path(target, run_id)` returns `None` for an invalid
+id rather than building a path from it. `_atomic_write(path, content)` writes
+to a `.tmp` sibling then `os.replace()`s it into place — the same
+crash-safety idiom used elsewhere for JSON state files. `record_started(
+session)` upserts the home-index entry only (never touches the snapshot) —
+called once at the start of a run, fresh or resumed, so the session appears
+in the list immediately rather than only after the first checkpoint;
+preserves an existing entry's `created_at` on resume. `snapshot(session)`
+writes both tiers: the per-target file (`run_id`/`target`/`mode`/`status`
+computed from `session.error`/`session.done`/`_status_of`/`last_active_at`/
+`transcript`/`activity_log`/`history`, each `TranscriptItem`/`ActivityEntry`
+serialized via `dataclasses.asdict`) and refreshes the same home-index entry
+`record_started` would. Both `record_started` and `snapshot` never raise —
+wrapped in a bare `except Exception: pass`, mirroring `host/llmlog.py`'s same
+contract: a failed checkpoint must never break the run it's checkpointing.
+`list_index() -> list[dict]` returns every known session's metadata, newest
+`last_active_at` first, `[]` on any error. `load_snapshot(run_id, target) ->
+dict | None` reads one per-target snapshot file, `None` if
+missing/unreadable/invalid/the id fails `is_valid_run_id`. `restore_session(
+snapshot_data: dict) -> RunSession` rebuilds a `RunSession` from a loaded
+snapshot — deserializing `transcript`/`activity_log` back into
+`TranscriptItem`/`ActivityEntry` objects, defaulting an unrecognized `mode`
+to `"organize"`, setting `started=True` — and calls the new
+`session.seed_seq(...)` (`host/web/session.py`, above) with the max `seq`
+seen across both lists, so appending continues numbering correctly rather
+than restarting at 0. Keeps the snapshot's own `run_id`, so existing
+`/run/{run_id}`/`/query/{run_id}` links keep resolving after a resume.
+`server.*`/`config.settings` imports are late (inside the functions), the
+same discipline `corpus.py`/`journal.py` follow.
+
+**`host/web/sessions_view.py`** (Y2, new file) — the sessions list and
+read-only transcript-replay UI, `nicegui`-importing, mirroring
+`corpus_view.py`'s general shape but genuinely new rendering (no shared
+predecessor). `build_sessions_view() -> None` loads `sessions_store.list_index()`
+via `run.io_bound`, cross-references it against `web_session.all_sessions()`'s
+live run ids to compute an `is_live` flag per entry, groups entries by
+`target` (`.mark("sessions-group")` per group, a `ui.column`), and renders one
+row per session (`.mark("session-row")`) showing `mode · status ·
+last_active_at` — `status` is the literal string `"live"` when the session is
+in the in-memory registry, else whatever `snapshot()` last recorded
+(`"running"`/`"done"`/`"error"`). A live entry gets an "Open" button
+(`.mark("btn-session-open")`) navigating straight to `/run/{run_id}` or
+`/query/{run_id}` (by `entry["mode"]`); a dead one gets a "View" button
+(`.mark("btn-session-view")`) navigating to `/sessions/{run_id}`. An empty
+index renders a single `.mark("sessions-empty")` label instead. `_target_label(
+target_str)` is `Path(target_str).name`, falling back to the raw string if
+that's empty (e.g. a Windows drive root), the same "always show *something*
+readable" idiom `theme.window_title` uses elsewhere. `build_session_detail_view(
+run_id: str) -> None` first validates `run_id` via `sessions_store.is_valid_run_id`
+(`.mark("sessions-invalid")` on failure) — belt-and-suspenders, since the
+`@ui.page("/sessions/{run_id}")` route (`host/web/main.py`, below) passes this
+straight through from the URL. If the session is still live
+(`web_session.get(run_id) is not None`), it renders a short notice plus an
+"Open" button (`.mark("btn-session-open-live")`) instead of a transcript
+replay — this page's job is dead-session inspection/resume, not a second live
+view. Otherwise it looks the entry up in `list_index()`
+(`.mark("sessions-not-found")` if absent), loads its snapshot via
+`load_snapshot` (`.mark("sessions-unreadable")` if that fails), and renders a
+heading, a `mode · status` caption, and a merged, `seq`-sorted transcript +
+activity replay (`.mark("sessions-transcript")` container; each item is
+`.mark("sessions-turn")` — `f"{speaker}: {text}"` — for a transcript entry, or
+a smaller `.mark("sessions-activity")` caption for an activity-log entry,
+distinguished by whether the dict has a `"speaker"` key) — a `.mark(
+"sessions-empty")`-style single label if there's nothing recorded. Every
+value rendered here is LLM-derived output from attacker-controllable
+documents: `ui.label` only, never `ui.markdown`/`ui.html`/`ui.code` — the
+module's own docstring is explicit that this does **not** extend Y7's
+chat-message markdown exception (`host/web/chat.py`), which is scoped to the
+live conversation view only; a persisted snapshot is exactly the kind of
+at-rest artifact that shouldn't grow a new interpreted-markup surface. A
+"Resume" button (`.mark("btn-session-resume")`) is offered beside the
+transcript for a dead session: its `_resume()` handler calls
+`sessions_store.restore_session(data)`, then `web_session.register(restored)`
+(`host/web/session.py`, above) to re-enter it into the live registry, then —
+by `restored.mode` — either `QueryBridge(restored).start()` (navigating to
+`/query/{run_id}`) or `AgentBridge(restored).start_resumed()` (navigating to
+`/run/{run_id}`), a late `from host.web.bridge import AgentBridge, QueryBridge`
+inside the closure to avoid a module-level import cycle with `bridge.py`.
+
 **`host/web/docpane.py`** (X9, new file) — the run screen's document-preview
 pane, mirroring `corpus_view.py`'s detail pane field-for-field but
 deliberately duplicated rather than refactored to share code with it this
@@ -925,13 +1296,18 @@ analyzed yet." as summary, no provenance/entities section, since there's
 nothing to show and no extraction happens on this path. `DocPane.clear()`
 hides `content` and restores `placeholder`. Same untrusted-content rule as
 `corpus_view.py` above: every registry value renders via `ui.label` only,
-never `ui.markdown`/`ui.html`/`ui.code`. Consumed by `host/web/main.py`'s
-`run_page`, below.
+never `ui.markdown`/`ui.html`/`ui.code`. This module is itself unchanged by
+Y9 (GH #58) — only where it's mounted moved: `build_doc_pane()` is now called
+from `host/web/shell.py`'s `app_shell` (`Shell.doc_pane`, above) rather than
+from `host/web/main.py`'s `run_page` directly, and its `show`/`show_unanalyzed`/
+`clear` are driven via `Shell`'s matching methods instead of a `run_page`-local
+handle — see both sections above/below.
 
 **`host/web/main.py`** (extended by T5/T6/T7/T8, U1/U2/U3/U4/U6/U7, V1/V5/V12/V13a) — now shares nicegui-importing duties
 with `host/web/shell.py` (T2). Pages are registered at import time (`@ui.page("/")`,
 `@ui.page("/run/{run_id}")`, `@ui.page("/query/{run_id}")` (U7), `@ui.page("/corpus/{run_id}")`
-(V5)) but nothing binds a port until `run_web(target: Path |
+(V5), `@ui.page("/graph/{run_id}")` (Y1), `@ui.page("/sessions")`, `@ui.page(
+"/sessions/{run_id}")` (Y2)) but nothing binds a port until `run_web(target: Path |
 None = None, *, native: bool = True)` (V1 added `native`) is called, so importing the module is side-effect-free. Each
 connected browser tab or native-window client polls `RunSession`/`TranscriptItem`/`StepRecord` state with
 its own `ui.timer`, rather than the bridge touching NiceGUI elements directly —
@@ -947,8 +1323,10 @@ title of the very first HTML response. `index_page` (the picker route) never cal
 
 Both page bodies now open with `with app_shell(...) as shell:` (T2), mounting the
 persistent sidebar before any page-specific content. As of X11, every route also
-passes its own `active=` tab name to `app_shell` (`/run/{run_id}`/`/corpus/{run_id}`
-additionally pass `session=session`) so the nav header (`host/web/shell.py`, above)
+passes its own `active=` tab name to `app_shell` (`/run/{run_id}`/`/corpus/{run_id}`/`/graph/{run_id}` (Y1)
+additionally pass `session=session`; `/sessions`/`/sessions/{run_id}` (Y2)
+pass `active="sessions"` and no `session=` at all, since a sessions-list page
+isn't scoped to any one session) so the nav header (`host/web/shell.py`, above)
 highlights the current route and can navigate back to the run in progress; `/setup`
 alone passes `nav=False`, since the first-run wizard has nowhere valid to navigate
 to yet. The landing page (`/`, S5)
@@ -968,7 +1346,23 @@ not-found handling as the other two run-scoped routes) and delegates to
 no agent turn, since it reads the registry directly (`host/web/corpus.py`)
 rather than through the model. It reuses the *same* session/run_id the
 organize run already created rather than minting a new one, since the corpus
-page only ever reads `session.target`. Once configured, folder selection is the
+page only ever reads `session.target`. As of Y1, `graph_page` at
+`/graph/{run_id}` is registered the exact same thin-shell way, mirroring
+`corpus_page` precisely: same not-found handling, same reused session/run_id,
+no bridge/MCP session/agent turn (reads the registry + event journal directly
+via `host/web/graph.py`), and delegates to
+`host.web.graph_view.build_graph_view(session)`; passes `active="graph"` to
+`app_shell`. As of Y2, `sessions_page` at `/sessions` and
+`session_detail_page` at `/sessions/{run_id}` are registered the same
+thin-shell way, both passing `active="sessions"` — `sessions_page` takes no
+`run_id` at all and delegates straight to
+`host.web.sessions_view.build_sessions_view()` (it lists across every target
+from the home-directory index, so there is no one `RunSession`/target to look
+up); `session_detail_page` passes its `run_id` straight through to
+`host.web.sessions_view.build_session_detail_view(run_id)`, which does its
+own validation/live/dead/not-found handling internally rather than the
+shared not-found pattern the other run-scoped routes use, since resolving to
+a *dead* session here is the expected, successful case, not an error. Once configured, folder selection is the
 sidebar tree, which now doubles as the directory picker (T3, superseding the
 browse-view half of Phase 20's U1): clicking a node sets `shell.selected`
 (which may now be a file, since the tree shows files too), and a "Use selected
@@ -1020,9 +1414,7 @@ navigating to
 way — set both at build time and again on every `_refresh()` tick, the same
 two-places-set pattern the query button already needed — navigating to
 `/corpus/{session.run_id}`: the same session, not a new one. As of X9, the
-main view's conversation area sits in a `ui.row()` at 2/3 width beside a new
-1/3-width document-preview pane (`.mark("doc-preview")`, built via
-`host/web/docpane.py`'s `build_doc_pane()`, above) — polling `shell.selected`
+main view gained a document-preview pane — polling `shell.selected`
 (the same attribute the sidebar tree click handler, X11, already populates)
 rather than being wired through the tree directly: `_refresh()` reacts only
 when the selection actually changes since the last tick, offloading the
@@ -1030,6 +1422,19 @@ stat/registry lookup (`_load_preview`, new module-level helper) via
 `run.io_bound` and showing either the matching registry record
 (`host/web/corpus.py`'s `find_by_path`), a "not analyzed yet" placeholder
 with filesystem metadata, or clearing the pane, depending on what's found.
+X9's own layout put this in a `ui.row()` splitting the main view 2/3
+conversation / 1/3 doc-preview (`.mark("doc-preview")`, built via
+`host/web/docpane.py`'s `build_doc_pane()`, above). As of Y9 (GH #58), that
+column and its `build_doc_pane()` call are gone from here entirely:
+`conversation_column` is a plain full-width `ui.column()` again, and the doc
+pane itself was relocated into `Shell` (`host/web/shell.py`'s `doc_section`/
+`doc_pane`, above), stacked below step detail in the sidebar drawer and
+mutually exclusive with it. `_refresh()` still does exactly the polling and
+`_load_preview` offloading described above; only the last step changed —
+it now calls `shell.show_document(record)` / `shell.show_unanalyzed(shell.selected,
+meta_line)` / `shell.clear_document()` instead of driving a `doc_pane` handle
+built locally in `run_page`. The now-unused `from host.web.docpane import
+build_doc_pane` import was dropped from `main.py` as part of this move.
 As of T5/T6, that main view splits telcontar's own tool activity out of one
 interleaved stream: a
 `conversation_column` (turns only, `ui.chat_message`, rendering `session.transcript`)
@@ -1060,7 +1465,14 @@ otherwise shrink-wraps every `ui.chat_message` to its content width regardless o
 `sent=`, hiding the left/right alignment `sent=` was already choosing correctly —
 plus explicit `bg-color`/`text-color` Quasar props resolved against
 `theme.PALETTE` (`secondary`/`dark` for the user, `primary`/`dark` for
-telcontar), fixing low-contrast white-on-gold bubble text. As of U4 this rendering is
+telcontar), fixing low-contrast white-on-gold bubble text. As of Y7 (GH #56),
+`_render_turn` no longer builds this bubble inline — it delegates to
+`host/web/chat.py`'s new `render_turn_bubble(item)` (above), which renders
+`item.text` via `ui.markdown(item.text, sanitize=True)` inside the same
+bubble instead of passing it straight to `ui.chat_message(...)`, so prompts
+and LLM output display as formatted markdown; see that section for the
+sanitization/CSP reasoning. `query_view.py`'s `_render_turn` calls the same
+function, ending the two modules' previously-duplicated bubble code. As of U4 this rendering is
 `host/web/steplog.py`'s `sync_steps`/`StepLogState` (above), not inline: `run_page`
 owns one `steplog.StepLogState()` and calls `steplog.sync_steps(log_column, shell,
 step_log_state, session.steps)` once per tick, which caps the DOM at
@@ -1123,7 +1535,12 @@ fonts directory exists, and `ui.add_css(theme.css(), shared=True)`. As of U7,
 organize or query session's MCP server subprocess previously had no lifecycle at
 all past shutdown; a full lifecycle/reaper (nothing ever calls
 `web_session.close()` today) is still future work, this is minimal hardening
-only. In native mode, `run_web` points the window at the running server via
+only. As of Y2, the same hook also calls `web_sessions_store.snapshot(session)`
+for every session, right before its pending-future rejection and task
+cancellation — an unconditional final checkpoint, independent of
+`AgentBridge`/`QueryBridge`'s own throttled `_checkpoint`, so a graceful quit
+never loses the tail end of activity a mid-run checkpoint hasn't flushed yet
+(the throttle window is up to `_CHECKPOINT_INTERVAL_SECS = 10.0` seconds). In native mode, `run_web` points the window at the running server via
 `app.native.window_args.update(_native_window_args(url))` — as of X2, no
 longer a direct dict-key assignment. `_native_window_args(url: str) -> dict`
 is a pure helper (`{"url": url, "text_select": True}`) split out so its
@@ -1189,6 +1606,14 @@ same two-places-set pattern the query button already needed (a test caught the
 second site being missed during development). Clicking it navigates to
 `/corpus/{session.run_id}` — the *same* session/run_id, not a new one, since
 `corpus_page` only ever reads `session.target`.
+
+**Knowledge graph button (Y1):** beside that, a "Knowledge graph" button
+(`.mark("btn-graph")`, icon `hub`), hidden until `session.done` and set at
+both build time and every `_refresh()` tick, the exact same two-places-set
+pattern the corpus/query buttons already established. `_browse_graph()`
+navigates to `/graph/{session.run_id}` — again the *same* session/run_id, not
+a new one, since `graph_page` (below) only ever reads `session.target`, same
+reasoning as `_browse_corpus`.
 
 **Dialogs (U4, extended by V12):** `_show_pending_dialog`'s inline checkbox/button-building code is
 gone too — it now just tracks which `pending.request_id` has already been shown

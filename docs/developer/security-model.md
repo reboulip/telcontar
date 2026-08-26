@@ -72,10 +72,13 @@ Three boundaries matter:
    navigation, then via an `HttpOnly; SameSite=Strict` cookie for every request
    after). A denied HTTP request gets `403`; a denied websocket upgrade is
    closed with code `1008`. Every response also carries
-   `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'`,
+   `X-Frame-Options: DENY` and
+   `Content-Security-Policy: frame-ancestors 'none'; img-src 'self' data:`,
    closing a clickjacking path against the approval dialog specifically — the
-   highest-trust screen in the product. See finding **S9** below for what this
-   does and does not close.
+   highest-trust screen in the product — plus (Y7, GH #56) blocking a
+   sanitize-surviving markdown image tag in a chat bubble from beaconing to a
+   remote host (see §5's chat-bubble-rendering bullet). See finding **S9**
+   below for what this does and does not close.
 
 ---
 
@@ -105,6 +108,36 @@ As of P6, this analyzer is wired into `run_agent_loop`, and it is now the
 `extract_text_batch` from the ORGANIZE-phase model's own toolset, so the model
 itself can no longer trigger this egress path directly in organize mode (it
 still can in query mode, via `QUERY_ALLOWED_TOOLS`).
+
+Separately (Y5, GH #60), `.organizer/llm-debug.jsonl` (`host/llmlog.py`) is a
+new local artifact logging every outbound LLM HTTP call's request/response
+*metadata* only (redacted URL, status, duration, request id, message count,
+and — on an HTTP error — the provider's own truncated error body) — never
+message/document content and never the API key.
+
+Separately again (Y2, GH #53), session persistence (`host/web/sessions.py`)
+adds two new local artifacts, deliberately split by the same target-directory
+trust boundary the rest of this section reasons about:
+
+- `~/.telcontar/sessions.json` (`config.settings.user_sessions_index_path()`)
+  — a home-directory index of every session ever started, **metadata only**:
+  `run_id`/`target`/`mode`/`created_at`/`last_active_at`/`status`. This file
+  lives *outside* the target directory and its `ALLOWLIST_DIRS`/
+  `check_within_root` boundary entirely — it must never carry document
+  content, a title, a summary, or any other corpus-derived text, since
+  nothing about its location is confined the way `.organizer/` is.
+- `<target>/.organizer/sessions/<run_id>.json` (`Settings.sessions_dir`) — the
+  per-target snapshot: the session's transcript, activity log, and full LLM
+  message history, all derived from the user's own documents. This one lives
+  *inside* `.organizer/`, the same boundary the registry/journal/graph/egress
+  log already trust, precisely because it does carry corpus-derived text.
+
+Both are written by `AgentBridge`/`QueryBridge`'s throttled `_checkpoint`
+(`host/web/bridge.py`, at most once every 10s, always on a terminal
+done/error event) and by `run_web`'s shutdown hook (one final, unconditional
+checkpoint per session before it cancels the session's task). `run_id` values
+read back from either file are treated as untrusted before being joined into
+a path — see the "untrusted URL route parameters" bullet in §5 below.
 
 **Key point for reviewers:** **[Partially remediated — 2026-07-07, see P0 #2]** the
 target directory is now a real egress boundary in the normal case: `check_within_root`
@@ -159,6 +192,8 @@ defence-in-depth second check — this path is well isolated.
 | **Plan → approve → execute** | `create_plan`, `propose_rename`/`propose_move`/`propose_quarantine`/`propose_create_file`/`propose_update_file`/`propose_create_dir`/`propose_archive_document`/`propose_compress_quarantine`, `review_plan`, `approve_plan`, `execute_plan` | **Yes** — `execute_plan` routes through the approval modal |
 | **Undo** (not an MCP tool) | `undo_last` | **Yes, exclusively** — the agent cannot call it at all; it is triggered only by the user clicking "Undo last operation" in the web UI's journal dialog (opened via the "Journal" toolbar button) |
 | **Reveal in file explorer** (not an MCP tool, X5) | `reveal_in_file_manager` (`host/paths.py`) | **Yes, exclusively** — spawns a native OS file-manager process (Explorer's `/select,`, `open -R`, or `xdg-open`) only from the user clicking the approval dialog's "Reveal in file explorer" button. The agent has no path to it; the button operates on `ops_json_path`, a host-authoritative value the model never supplies, and the call site still confines it to `session.target` defensively before spawning |
+
+**Empty-folder sweep (Y6, GH #57):** after an approved plan's ops run, `execute_plan` disposes of any directory its own `move`/`quarantine`/`archive_document` ops left empty (per `EMPTY_FOLDER_POLICY`, quarantining or renaming it — never deleting). This is a deliberate design choice made during Y6's sprint planning: the sweep is not itself an approval-gated op — it does not go back through the approval modal — because it is treated as a fully journaled, automatic, and undoable *consequence* of moves the user already approved, not a new mutation the agent decided on. It still respects the non-negotiable rules above: never deletes (quarantines or renames only), is fully journaled (`target_kind: "dir"`, `reason: "emptied_by_plan"` on the existing `quarantine`/`rename` journal entries), and is reversible via `undo_last`.
 
 **Remediated (S1, 2026-07-07):** `move_file`, `rename_file`, `create_file`, `update_file`, `create_dir`, `archive_document`, and `compress_quarantine` no longer exist as standalone tools. Every filesystem-mutating operation they used to perform — file writes, folder creation, archiving a document, and compressing quarantine — is now staged via a `propose_*` call and applied only through `execute_plan`, exactly like moves/renames/quarantines already were. `undo_last` was removed from the MCP tool surface entirely rather than gated; it survives only as a plain function invoked directly by the web UI (bypassing the agent and MCP both). See §6, P0 #1.
 
@@ -326,6 +361,22 @@ To be fair to the design, these mitigations exist and should be preserved:
   `check_within_root` rejects any path outside `target_dir` + the server's working
   directory, for both reads and mutations, closing off absolute and `..` escapes
   alike.
+- **Untrusted URL route parameters are validated before they touch a
+  filesystem path (Y2, GH #53)**: `/sessions/{run_id}`'s `run_id` (and any
+  other caller reaching `host/web/sessions.py`'s `_snapshot_path`/
+  `load_snapshot`) is checked against `is_valid_run_id` —
+  `_RUN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")` — before it's joined
+  into `resolve_sessions_dir(target) / f"{run_id}.json"`; a failing id short-
+  circuits to `None`/an error label rather than ever reaching the join. This
+  is the same defense-in-depth principle `check_within_root` applies to the
+  MCP server's own path-taking tool arguments, applied here to the web UI's
+  own request-routing layer instead — a different capability surface (a
+  NiceGUI `@ui.page("/sessions/{run_id}")` route parameter, not an
+  agent-supplied tool argument), closing off the equivalent risk (path
+  traversal/injection via an untrusted string reaching a filesystem join).
+  Worth noting alongside S6's still-open finding below (`PROFILE` used in a
+  path with no traversal guard) as the same class of risk, differently
+  mitigated here.
 - **Never-overwrite is enforced** on plan ops, moves, renames, quarantine, and
   `propose_create_file`/`create_file` (`check_no_overwrite`, re-checked again at
   `execute_plan` time); `propose_update_file` defaults to `overwrite=False`;
@@ -365,11 +416,51 @@ To be fair to the design, these mitigations exist and should be preserved:
   a plain value/prop, so there is no path from document content to interpreted
   markup in the browser. The same discipline is applied everywhere else
   LLM-derived, attacker-influenceable text reaches the browser: `host/web/settings.py`'s
-  prompt-inspection panels (V11, also disabled `ui.codemirror`) and, as of V5,
+  prompt-inspection panels (V11, also disabled `ui.codemirror`), as of V5,
   the corpus browser's table and document-detail pane
-  (`host/web/corpus_view.py`) — every registry field shown there (title, type,
-  summary, provenance, entity names) is rendered via plain `ui.label`/`ui.table`
+  (`host/web/corpus_view.py`), and, as of Y1, the knowledge-graph view
+  (`host/web/graph.py`/`host/web/graph_view.py`) — every graph node value
+  (entity names, document titles, event sentences) is likewise LLM-derived
+  from attacker-controllable documents and renders via plain `ui.label`/
+  `ui.table` row values only; the optional force-directed `ui.echart` panel
+  disables its tooltip entirely (`tooltip: {"show": False}`) rather than using
+  an HTML `tooltip.formatter` over that same untrusted data, routing every
+  detail through the Python-side pane instead. As of Y2, the sessions
+  read-only transcript replay (`host/web/sessions_view.py`'s
+  `build_session_detail_view`) follows the same rule: a persisted
+  transcript/activity-log snapshot is exactly the kind of at-rest,
+  corpus-derived artifact this rule exists for, rendered via `ui.label` only
+  — the module's own docstring says so explicitly — every registry field shown
+  across all of these is rendered via plain `ui.label`/`ui.table`
   row values only, never `ui.markdown`/`ui.html`/`ui.code`.
+  **One deliberate, documented exception (Y7, GH #56):** the conversation
+  view's chat bubbles (`host/web/chat.py::render_turn_bubble`, shared by both
+  organize-mode `run_page` and query-mode `query_view` — previously identical
+  code the two modules deliberately duplicated rather than shared, until Y7
+  unified it now that it's security-relevant; see [Architecture — Web
+  UI](architecture/web-ui.md)) render `TranscriptItem.text` — which can
+  include an assistant turn echoing attacker-planted document text, i.e. this
+  is exactly the indirect-prompt-injection surface above — via
+  `ui.markdown(item.text, sanitize=True)`, so prompts and LLM output display
+  as formatted markdown instead of raw escaped text. This is judged safe
+  because two independent layers close the two ways markup could otherwise
+  turn hostile: (1) `sanitize=True` (NiceGUI's default) runs the rendered HTML
+  through a client-side, vendored DOMPurify before it reaches the DOM — no new
+  dependency, no network fetch — stripping `<script>`, event-handler
+  attributes, `javascript:` URLs, etc.; (2) DOMPurify alone does not stop a
+  sanitize-surviving markdown image tag (`![](http://attacker/...)`) from
+  loading a remote URL — a plain image load isn't script execution, so
+  DOMPurify has no reason to strip it — which would silently beacon out and
+  violate telcontar's local-execution-only principle, so the CSP header
+  (§1 above) gained `img-src 'self' data:` specifically to close that gap.
+  `host/web/chat.py`'s module docstring carries this same reasoning and warns
+  against reusing `ui.markdown`/`ui.html` anywhere else in `host/web/` without
+  re-deriving it. **Neither Y1's knowledge-graph view nor Y2's sessions
+  replay view (both above) extend this exception** — Y1 predates Y7's
+  chat-message work, and Y2's `sessions_view.py` postdates it but stayed on
+  the `ui.label`/`ui.table`-only rule deliberately (its own docstring says
+  so explicitly); nothing about either view reuses `ui.markdown`/
+  DOMPurify/CSP reasoning.
 
 ---
 

@@ -45,7 +45,7 @@ The wizard saves your settings and takes you straight to the startup page. You w
 
 ## 3. Choose a directory to organize
 
-The startup page shows a browsable directory tree in the left sidebar, rooted at your home directory. Browse the tree and click the folder you want to organize — the sidebar highlights your selection. Then press **Use selected directory** to start an Organize run, or **Query** to open a read-only chat over an already-analyzed corpus.
+The startup page shows a browsable directory tree in the left sidebar, rooted at the directory you launched `telcontar` from (falling back to your home directory if that directory can't be read). Use the sidebar's "up one level" button or drive-root dropdown to browse elsewhere, then click the folder you want to organize — the sidebar highlights your selection. Then press **Use selected directory** to start an Organize run, or **Query** to open a read-only chat over an already-analyzed corpus.
 
 !!! tip
     **Query** requires the selected folder, or a parent of it, to contain a `.organizer/` from a previous Organize run. Use it after a previous Organize run to ask natural-language questions without touching the files.

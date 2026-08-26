@@ -421,6 +421,7 @@ Apply all operations in an `approved` plan.
 - `archive_document` and `compress_quarantine` ops reuse the standalone functions of the same name, which self-journal under their own `op_type` (`quarantine` and `compress` respectively) instead of the generic per-op entry `execute_plan` writes for other op types
 - Ops chained within the same run resolve correctly: if an earlier op already relocated a file (e.g. a `rename` followed by a `move` on the same original path), the later op is applied to the file's current location, not its original path
 - Execution order is not strictly plan order: all `create_dir` ops run first (each group keeping its authored relative order), then every other op type — so a `move` into a not-yet-existing folder always finds it created regardless of how the two ops were interleaved when proposed. The `move` executor also creates its destination directory itself (`mkdir(parents=True, exist_ok=True)`) before checking for collision, as a second line of defense. Neither the persisted plan file nor the approval-modal display order is affected — only this run's internal iteration order
+- **Empty-folder sweep (Y6, GH #57):** after the op loop, provided a `target_dir` was set for this run (every host call site sets it), any directory left empty by a completed `move`/`quarantine`/`archive_document` op — never `rename`, and never a directory this same plan created via `create_dir` — is disposed of per `EMPTY_FOLDER_POLICY`: `"quarantine"` (default — moves the folder into `QUARANTINE_DIR`, falling back to an in-place `_empty_`-prefixed rename on any `OSError`), `"rename"` (always in-place), or `"off"` (sweep disabled). Processing is deepest-first and re-queues a disposed folder's parent, so a multi-level hollow shell collapses fully. The target root, anything outside it, `QUARANTINE_DIR` (or an ancestor/descendant of it), and `.organizer` are never swept. Each disposed folder is journaled under the existing `quarantine`/`rename` `op_type`, with two extra fields: `target_kind: "dir"` and `reason: "emptied_by_plan"` — `undo_last` reverses it with no new code path. Treated as a fully journaled, automatic consequence of the already-approved moves, not a new op requiring its own approval. Skipped entirely on a hard stop.
 
 **Returns:**
 
@@ -432,6 +433,7 @@ Apply all operations in an `approved` plan.
 | `ops_failed` | int | Failed ops |
 | `hard_stop` | bool | True if execution was cut short |
 | `ops` | list | Full op list with per-op status and error |
+| `emptied_folders` | list | (Y6) One `{path, action, dst, error}` dict per folder the sweep disposed of or attempted — `action` is `"quarantined"`, `"renamed"`, or `"skipped"` (on an `OSError`, with `error` set). `[]` when nothing was swept, including when `target_dir` is unset or `EMPTY_FOLDER_POLICY` is `"off"`. Always present, even on the hard-stop early return. |
 
 **Safety category:** Gated execution — the host routes this call through the approval callback in `always` and `destructive_only`; in `never` it is auto-approved. This is the only tool ever subject to `APPROVAL_MODE`.
 
