@@ -378,6 +378,30 @@ Three parts:
   call `execute_plan`, the run ends normally but the final text names the
   unexecuted plan id instead of losing it silently.
 
+### Mid-session LLM config reload (Z2)
+
+An in-flight run used to hold a build-once, held-for-the-session client: a bad
+LLM config (wrong model name, an HTTP 429 grind) meant restarting telcontar
+entirely to pick up a fix. `AgentBridge`/`QueryBridge` (`host/web/bridge.py`)
+now build the LLM client via `host/llm.py`'s `make_reloading_client` instead
+of `make_client`. The returned `ReloadingClient` duck-types `AsyncOpenAI` for
+the one surface `host/agent.py` calls (`llm.chat.completions.create`) and, on
+every call, polls a process-global config revision counter
+(`config.settings.config_revision()`, bumped once per successful
+`save_user_config()`) to detect that the on-disk config changed since the
+client was built; if it has, it reloads `Settings`, rebuilds the client, and
+reports what changed as a visible chat turn (model + endpoint hostname, never
+the key).
+
+Only the LLM endpoint fields (`llm_base_url`, `llm_api_key`, `llm_model`,
+`llm_api_version`) are ever hot-swapped this way — `approval_mode` and every
+path field stay pinned for the whole session's lifetime by design, so a live
+run's already-consented-to approval gate can never be silently relaxed by an
+unrelated settings save elsewhere. A Settings-page save while a run is in
+progress therefore reconnects that run to the new model/endpoint/key
+automatically; everything else in the settings form only takes effect for
+sessions started after the save.
+
 ### NiceGUI web UI foundations
 
 The web UI's own foundational design decisions — routing/session model, the persistent nav header, dialogs, sidebar tree, reload-safety, theming, and the native-window launch — are documented separately, since they make up roughly two-thirds of this document's original content: see [Architecture — Web UI](web-ui.md).
@@ -411,8 +435,15 @@ The web UI's own foundational design decisions — routing/session model, the pe
    known + newly-analyzed documents — per-doc title/type/path (capped at 200
    listed) plus totals and any error count — and seeds it into the first
    ORGANIZE-phase user message in place of blank "please organize" instructions;
-   the organize view's starter-pane steering-instructions input, if the user
-   typed any, is appended to this same seed message
+   the persistent per-directory memory file's content (_load_memory, Z5,
+   .organizer/memory.md), if non-blank, is appended next, framed as the user's
+   standing preferences that can never override the safety rules and lose to
+   this run's own instructions on conflict; the organize view's starter-pane
+   steering-instructions input, if the user typed any, is appended last to this
+   same seed message. All three are injected at USER-turn privilege, never the
+   system prompt — memory.md is read from the target directory (potentially
+   attacker-influenced territory, the same trust class as document content),
+   unlike the repo-root-trusted .organizer/NAMING.md
 5b. Host drains any chat message queued via message_queue since the run started
     (P7) — catches anything typed during steps 2-4 above — and appends each as
     a user turn before the first LLM call. The #organize-input chat box is
@@ -453,7 +484,13 @@ The web UI's own foundational design decisions — routing/session model, the pe
     folder (idempotent; no folder created for absent categories) alongside
     propose_rename / propose_move / propose_quarantine / propose_create_file /
     propose_update_file / propose_archive_document ops — every mutation is
-    staged, never applied directly
+    staged, never applied directly. Alongside set_plan_rationale/
+    set_plan_folder_notes, the agent MAY also stage propose_memory_note (Z5,
+    #64) for a durable standing preference or non-obvious taxonomy decision
+    this run established — one short sentence, at most 3-4 per run; the note is
+    shown to the user for approval with the rest of the plan, same as any other
+    op, and is the only way to write to the persistent memory file (there is no
+    direct write tool)
 15. On execute_plan call:
     a. Host fetches plan details (get_plan) and writes the full ops list to
        .organizer/plan_ops.json (path shown in the dialog)

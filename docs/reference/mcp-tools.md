@@ -240,6 +240,8 @@ Read-only pre-flight check. Detects:
 - **Duplicate ops** — same `(src, op_type)` pair proposed more than once
 - **Missing sources** — `src` paths that no longer exist on disk
 
+`memory_note` ops (Z5) are exempt from both checks: like `create_dir`, a note's `src` (the memory file) legitimately doesn't exist yet on the first-ever note; and unlike every other op type, several notes legitimately share one `src` (the same memory file) within a single plan, which is not a duplicate-op mistake to flag.
+
 **Returns:**
 
 | Field | Type | Description |
@@ -247,7 +249,7 @@ Read-only pre-flight check. Detects:
 | `plan_id` | str | UUID of the plan |
 | `total_ops` | int | Total ops in the plan |
 | `duplicates` | list | Duplicate op groups `{src, op_type, op_ids}` |
-| `missing_sources` | list | Missing file entries `{op_id, op_type, src}` — `create_dir` ops are exempt, since their `src` is the not-yet-created destination directory rather than a path expected to already exist |
+| `missing_sources` | list | Missing file entries `{op_id, op_type, src}` — `create_dir` and `memory_note` ops are exempt (see above) |
 | `is_valid` | bool | True when no duplicates and no missing sources |
 
 Does not modify the plan.
@@ -402,9 +404,27 @@ Idempotent: a run with no loose files is a no-op. Never overwrites an existing a
 
 ---
 
+### `propose_memory_note`
+
+```python
+propose_memory_note(note: str, plan_id: str) -> dict
+```
+
+Stage a short, durable note to remember about this directory across future sessions (e.g. a standing user preference or a non-obvious taxonomy decision) in the named plan (Z5). This is the **only** way to write to the persistent per-directory memory file (`MEMORY_PATH`, default `.organizer/memory.md`) — there is no direct write tool; the note is shown to the user for approval with the rest of the plan, same as any other change, and is individually removable. `memory_path` itself is server-resolved from config, never agent-supplied, so the agent cannot aim a note at an arbitrary file.
+
+Raises `ValueError` if `note` is blank or longer than 500 characters. Rather than erroring, silently **skips** staging (returns `{"skipped": True, "reason": ...}`, no op added) when: the plan already has 10 memory notes staged, an equivalent note (case/whitespace-insensitive) is already staged in this plan, an equivalent note is already recorded in `memory.md`, or `memory.md` is already at its read cap (`MAX_SNIPPET_CHARS`) — writing further would be invisible to future runs since `_load_memory` head-truncates at that same cap.
+
+At `execute_plan` time the op reuses the standalone, self-journaling `append_memory_note()` function: it appends one dated, provenance-tagged line (`- [YYYY-MM-DD] (telcontar) <note>`, with a file header prepended on the very first write) and journals `{op_type: "memory_note", src, dst: "", note, offset, bytes, timestamp}` — `offset`/`bytes` are the exact byte range written, letting `undo_last` truncate the file back precisely. `execute_plan`'s own `memory_path` parameter (server-supplied via config, not model-facing — the MCP-exposed signature stays just `execute_plan(plan_id: str)`) is required only if the plan contains a `memory_note` op.
+
+**Returns:** `{plan_id, op_id, op_type, src, dst, status, ops_count}` on success — `src` is the memory file's path, `dst` is `""` — or `{plan_id, skipped: True, reason}` when silently skipped (see above).
+
+**Safety category:** Plan-building — stages an op, does not touch disk. The actual write happens only inside `execute_plan`, subject to the same `APPROVAL_MODE` gating as every other op.
+
+---
+
 ## Gated execution tools
 
-Execute operations or write output. `execute_plan` is the sole tool subject to `APPROVAL_MODE` — it applies every kind of staged op (`rename`, `move`, `quarantine`, `create_file`, `update_file`, `create_dir`, `archive_document`, `compress_quarantine`), and is gated in `always` and `destructive_only`, auto-approved in `never`. As of the plan-flow security hardening (M1), **every filesystem-mutating tool is staged via a `propose_*` call and applied only through `execute_plan`** — there is no tool left that mutates the filesystem directly. `write_index`, `write_summary`, and `write_folder_readme` write output directly and are never gated, in any mode.
+Execute operations or write output. `execute_plan` is the sole tool subject to `APPROVAL_MODE` — it applies every kind of staged op (`rename`, `move`, `quarantine`, `create_file`, `update_file`, `create_dir`, `archive_document`, `compress_quarantine`, `memory_note`), and is gated in `always` and `destructive_only`, auto-approved in `never`. As of the plan-flow security hardening (M1), **every filesystem-mutating tool is staged via a `propose_*` call and applied only through `execute_plan`** — there is no tool left that mutates the filesystem directly. `write_index`, `write_summary`, and `write_folder_readme` write output directly and are never gated, in any mode.
 
 ### `execute_plan`
 
@@ -418,7 +438,7 @@ Apply all operations in an `approved` plan.
 - Non-retryable errors (`ValueError`, `FileNotFoundError`, `FileExistsError`) fail immediately
 - More than **3 cumulative failures** trigger a **hard stop** — execution halts, a `hard_stop` entry is appended to the journal, and the plan transitions to `stopped`
 - On success, each op is appended to the undo journal and the registry is path-reconciled
-- `archive_document` and `compress_quarantine` ops reuse the standalone functions of the same name, which self-journal under their own `op_type` (`quarantine` and `compress` respectively) instead of the generic per-op entry `execute_plan` writes for other op types
+- `archive_document` and `compress_quarantine` ops reuse the standalone functions of the same name, which self-journal under their own `op_type` (`quarantine` and `compress` respectively) instead of the generic per-op entry `execute_plan` writes for other op types; `memory_note` ops likewise reuse a standalone, self-journaling function (`append_memory_note`) but journal under their own `op_type`, `memory_note`, unchanged
 - Ops chained within the same run resolve correctly: if an earlier op already relocated a file (e.g. a `rename` followed by a `move` on the same original path), the later op is applied to the file's current location, not its original path
 - Execution order is not strictly plan order: all `create_dir` ops run first (each group keeping its authored relative order), then every other op type — so a `move` into a not-yet-existing folder always finds it created regardless of how the two ops were interleaved when proposed. The `move` executor also creates its destination directory itself (`mkdir(parents=True, exist_ok=True)`) before checking for collision, as a second line of defense. Neither the persisted plan file nor the approval-modal display order is affected — only this run's internal iteration order
 - **Empty-folder sweep (Y6, GH #57):** after the op loop, provided a `target_dir` was set for this run (every host call site sets it), any directory left empty by a completed `move`/`quarantine`/`archive_document` op — never `rename`, and never a directory this same plan created via `create_dir` — is disposed of per `EMPTY_FOLDER_POLICY`: `"quarantine"` (default — moves the folder into `QUARANTINE_DIR`, falling back to an in-place `_empty_`-prefixed rename on any `OSError`), `"rename"` (always in-place), or `"off"` (sweep disabled). Processing is deepest-first and re-queues a disposed folder's parent, so a multi-level hollow shell collapses fully. The target root, anything outside it, `QUARANTINE_DIR` (or an ancestor/descendant of it), and `.organizer` are never swept. Each disposed folder is journaled under the existing `quarantine`/`rename` `op_type`, with two extra fields: `target_kind: "dir"` and `reason: "emptied_by_plan"` — `undo_last` reverses it with no new code path. Treated as a fully journaled, automatic consequence of the already-approved moves, not a new op requiring its own approval. Skipped entirely on a hard stop.

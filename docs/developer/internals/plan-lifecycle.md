@@ -91,15 +91,15 @@ Fields:
 - folder_notes: Agent-supplied per-folder purpose notes, set via `set_plan_folder_notes(plan_id, notes)`. Maps a target folder path to a short one-line purpose note (e.g. `{"01_decisions": "Formal decision records"}`); blank keys/notes are dropped and non-string values coerced to str. Empty dict (`{}`) by default and when not yet set. Rendered beside each folder in the host's target-layout tree preview, shown between the rationale and the op list when the plan has any `move`/`quarantine` destinations (not shown in the example below, which predates this field).
 - operations: List of proposed operations.
   - op_id: Sequential index within the plan (0, 1, 2, ...).
-  - op_type: rename, move, quarantine, create_file, update_file, create_dir, archive_document, or compress_quarantine.
-  - src: Absolute path to the source file or directory.
+  - op_type: rename, move, quarantine, create_file, update_file, create_dir, archive_document, compress_quarantine, or memory_note (Z5).
+  - src: Absolute path to the source file or directory. For memory_note, the persistent memory file's own path (`MEMORY_PATH`) — several memory_note ops legitimately share this same `src` within one plan.
   - new_name (rename only): New name for the file (not a path).
   - dest_dir (move only): Absolute path to the destination directory.
-  - params: Op-specific data that doesn't fit src/dst — e.g. `{"content": ...}` for create_file/update_file, `{"content": ..., "overwrite": ...}` for update_file, `{"reason": ...}` for quarantine (V10 — a user-facing justification such as "duplicate of X"; empty string if the agent supplied none), `{"checksum": ..., "reason": ...}` for archive_document, `{"delete_originals": ...}` for compress_quarantine. `null` for op types that carry no extra data (rename, move, create_dir).
+  - params: Op-specific data that doesn't fit src/dst — e.g. `{"content": ...}` for create_file/update_file, `{"content": ..., "overwrite": ...}` for update_file, `{"reason": ...}` for quarantine (V10 — a user-facing justification such as "duplicate of X"; empty string if the agent supplied none), `{"checksum": ..., "reason": ...}` for archive_document, `{"delete_originals": ...}` for compress_quarantine, `{"note": ...}` for memory_note (Z5 — the note text, ≤500 chars). `null` for op types that carry no extra data (rename, move, create_dir).
   - proposed_at: ISO 8601 timestamp when the operation was proposed.
   - status: Current status of the operation within the plan. May be pending, completed, or failed.
 
-**All mutating tools are staged this way.** As of the M1 security-hardening pass, there is no tool that touches the filesystem directly — `propose_create_file`, `propose_update_file`, `propose_create_dir`, `propose_archive_document`, and `propose_compress_quarantine` stage ops onto a plan exactly like `propose_rename`/`propose_move`/`propose_quarantine`, and only `execute_plan` applies them. `archive_document` and `compress_quarantine` ops reuse the pre-existing standalone functions of the same name at execution time rather than duplicating their logic; both self-journal under their own `op_type` (`quarantine` and `compress` respectively) instead of the generic entry `execute_plan` writes for other op types.
+**All mutating tools are staged this way.** As of the M1 security-hardening pass, there is no tool that touches the filesystem directly — `propose_create_file`, `propose_update_file`, `propose_create_dir`, `propose_archive_document`, and `propose_compress_quarantine` stage ops onto a plan exactly like `propose_rename`/`propose_move`/`propose_quarantine`, and only `execute_plan` applies them. `archive_document` and `compress_quarantine` ops reuse the pre-existing standalone functions of the same name at execution time rather than duplicating their logic; both self-journal under their own `op_type` (`quarantine` and `compress` respectively) instead of the generic entry `execute_plan` writes for other op types. As of Z5, `propose_memory_note` stages a `memory_note` op the same way — the sole write path into the persistent per-directory memory file (`MEMORY_PATH`, default `.organizer/memory.md`); at execution it too reuses a standalone function (`append_memory_note`), self-journaling under its own `op_type`, `memory_note` (unlike `archive_document`/`compress_quarantine`, it is not renamed on write).
 
 ### Journal (JSONL)
 
@@ -117,10 +117,10 @@ Example journal entries:
 
 Fields in normal operation entries:
 - timestamp: ISO 8601 timestamp when the operation was executed.
-- plan_id: References the plan this operation belongs to (not present for compress entries).
-- op_id: Index within the plan (not present for compress entries).
-- op_type: rename, move, quarantine, or compress.
-- src: Source path (rename, move, quarantine).
+- plan_id: References the plan this operation belongs to (not present for compress or memory_note entries).
+- op_id: Index within the plan (not present for compress or memory_note entries).
+- op_type: rename, move, quarantine, compress, or memory_note (Z5).
+- src: Source path (rename, move, quarantine, memory_note — the memory file's own path).
 - new_name (rename only): New name.
 - dest_dir (move only): Destination directory.
 - final_path (move only): Absolute path to the file after the move.
@@ -129,7 +129,8 @@ Fields in normal operation entries:
 - quarantine_dir (compress only): Absolute path of the quarantine directory that was compressed.
 - files (compress only): List of `{name, src, sha256, size}` dicts — one per bundled file.
 - deleted_originals (compress only): Boolean — whether the source files were deleted after verification.
-- status: Always done for successful journal entries (not present for compress entries).
+- note, offset, bytes (memory_note only, Z5): the appended note text, the file's byte size before the append (`offset`), and the number of bytes written (`bytes`) — together these let `undo_last` truncate the file back to exactly `offset`, verifying first that the file's current size still equals `offset + bytes` (refusing, rather than corrupting the file, if a later note or a hand-edit changed it since).
+- status: Always done for successful journal entries (not present for compress or memory_note entries).
 - target_kind, reason (Y6, empty-folder sweep entries only): a folder the sweep disposed of is journaled under the same `quarantine`/`rename` `op_type` as a normal file operation, plus these two extra fields: `target_kind: "dir"` and `reason: "emptied_by_plan"`. `undo_last` does not inspect either field — it reverses `quarantine`/`rename` entries the same way regardless of whether they target a file or a sweep-disposed folder, so no new undo code path was needed.
 
 Fields in hard_stop entries:
@@ -204,6 +205,21 @@ Propose moving a file to the quarantine directory.
 
 Added by the M1 security-hardening pass, these stage the create_file, update_file, create_dir, archive_document, and compress_quarantine op types the same way: an eager check at proposal time (collision check for create_file/create_dir; existence check for update_file unless `overwrite=True`; registry lookup for archive_document), then append the op — with any op-specific data in `params` (see the op schema above) — to the plan and write it back to disk. None of the five touches the filesystem at proposal time; all five only take effect when the plan is approved and executed.
 
+### propose_memory_note(note: str, plan_id: str, plans_dir, memory_path, max_chars) -> dict
+
+Added by Z5. Stage a `memory_note` op — the only write path into the persistent per-directory memory file. `memory_path`/`max_chars` are server-resolved from config (`MEMORY_PATH`/`MAX_SNIPPET_CHARS`), never agent-supplied.
+
+**Processing:**
+1. Validate `note`: raise `ValueError` if blank, or longer than 500 chars (`_MAX_MEMORY_NOTE_CHARS`).
+2. Load the pending plan for `plan_id`.
+3. If the plan already has 10 memory_note ops staged (`_MAX_MEMORY_NOTES_PER_PLAN`), skip: return `{"skipped": True, "reason": ...}`, no op added.
+4. If an equivalent note (case/whitespace-insensitive, via `contains_note`) is already staged in this plan, skip the same way.
+5. If an equivalent note is already recorded in the memory file itself, skip the same way.
+6. If the memory file's current content is already at `max_chars` (the same cap `read_memory` head-truncates at for prompt injection — writing further would never actually be seen by a future run), skip the same way.
+7. Otherwise append a `memory_note` op (`src` = `memory_path`, `dst` = `""`, `params.note` = the stripped note text) to the plan and write it back to disk.
+
+None of the skip conditions is an error — they're expected outcomes the agent doesn't need to react to, distinct from the `ValueError`s in step 1.
+
 ## Reviewing a Plan
 
 ### review_plan(plan_id: str) -> dict
@@ -212,15 +228,15 @@ Scan a plan for issues without modifying it.
 
 **Processing:**
 1. Load the plan file for plan_id.
-2. Scan all operations for duplicate (src, op_type) pairs. Flag these as conflicts.
-3. Validate that all source files still exist, except for `create_dir` ops — their `src` holds the not-yet-created destination directory, not an existing path, so they are skipped by this check.
+2. Scan all operations for duplicate (src, op_type) pairs. Flag these as conflicts. `memory_note` ops (Z5) are skipped entirely by this scan — several notes legitimately share one `src` (the memory file's own path) within a single plan, which is not a duplicate-op mistake.
+3. Validate that all source files still exist, except for `create_dir` ops — their `src` holds the not-yet-created destination directory, not an existing path — and `memory_note` ops (Z5) — their `src`, the memory file, legitimately doesn't exist yet on the first-ever note — both skipped by this check.
 4. Return a report.
 
 ## Executing a Plan
 
-### execute_plan(plan_id, plans_dir, journal_path, registry_path=None, quarantine_dir=None, archive_path=None, target_dir=None, empty_folder_policy="quarantine") -> dict
+### execute_plan(plan_id, plans_dir, journal_path, registry_path=None, quarantine_dir=None, archive_path=None, target_dir=None, empty_folder_policy="quarantine", memory_path=None) -> dict
 
-Apply all operations in an approved plan. Must be in approved state. `quarantine_dir` and `archive_path` are only required if the plan contains an `archive_document` or `compress_quarantine` op; the MCP-exposed tool signature is just `execute_plan(plan_id: str) -> dict` — the server fills in the rest from config. `target_dir` and `empty_folder_policy` (Y6, GH #57) are likewise config-sourced (`cfg.target_dir`/`cfg.empty_folder_policy`), not model-supplied.
+Apply all operations in an approved plan. Must be in approved state. `quarantine_dir` and `archive_path` are only required if the plan contains an `archive_document` or `compress_quarantine` op; `memory_path` (Z5) is only required if the plan contains a `memory_note` op; the MCP-exposed tool signature is just `execute_plan(plan_id: str) -> dict` — the server fills in the rest from config. `target_dir` and `empty_folder_policy` (Y6, GH #57) are likewise config-sourced (`cfg.target_dir`/`cfg.empty_folder_policy`), not model-supplied.
 
 **Processing:**
 1. Load the plan file.
@@ -228,7 +244,7 @@ Apply all operations in an approved plan. Must be in approved state. `quarantine
 3. Transition plan state to executing and write to disk.
 4. Execute operations in two sub-phases, not strict plan order: all `create_dir` ops run first (each group keeping its original relative order), then every other op type, also in its original relative order. This guarantees a `create_dir` an op like `move` depends on has already run, regardless of how the two were interleaved when authored. The persisted `Plan.ops` order and the approval-view display order are untouched — only the in-memory iteration order for this run is reshuffled. For each operation in that iteration order:
    a. Resolve the op's source: if an earlier op in this same run already relocated the file (see below), use its current path; otherwise use the op's original `src`.
-   b. Attempt to execute it against the resolved source: `rename`/`move`/`quarantine`/`create_file`/`update_file`/`create_dir` are applied directly; `archive_document`/`compress_quarantine` are delegated to the pre-existing standalone functions of the same name (they self-journal and are skipped by step c's generic journal append). `move`, like `quarantine`, creates its destination directory (`mkdir(parents=True, exist_ok=True)`) before checking for collision — a second line of defense if the op's own `create_dir` was deselected, failed, or never proposed, so a move targeting a missing destination self-heals instead of hard-stopping.
+   b. Attempt to execute it against the resolved source: `rename`/`move`/`quarantine`/`create_file`/`update_file`/`create_dir` are applied directly; `archive_document`/`compress_quarantine`/`memory_note` (Z5) are delegated to the pre-existing standalone functions of the same name (they self-journal and are skipped by step c's generic journal append) — the `memory_note` branch raises `ValueError` if `memory_path` was not supplied. `move`, like `quarantine`, creates its destination directory (`mkdir(parents=True, exist_ok=True)`) before checking for collision — a second line of defense if the op's own `create_dir` was deselected, failed, or never proposed, so a move targeting a missing destination self-heals instead of hard-stopping.
    c. On success: update operation status to completed, append a journal entry for non-self-journaling op types (recording the resolved source, not necessarily the original `src`), record the file's new location for later ops, update plan file.
    d. On failure: retry — 3 attempts total. After the 3rd failed attempt, mark operation status as failed and continue.
 5. After all operations:
@@ -271,6 +287,7 @@ Revert the most recent journaled operation.
    - **create_file** / **update_file**: delete the file this op wrote (an `overwrite=True` update cannot restore the content it replaced — undo only removes what this op itself wrote)
    - **create_dir**: no-op — idempotent by design, the directory is left in place rather than risk deleting something created into it since
    - **compress**: restore each original file from the archive into its recorded `src` path, then delete the zip. All targets are pre-checked for collisions before any file is written. If `deleted_originals` was `False` (originals were kept), only the zip is deleted.
+   - **memory_note** (Z5): truncate the memory file back to `offset` bytes — but only after verifying the file's current size still equals `offset + bytes` (this op's own recorded write). If it doesn't (a later note was appended, or the file was hand-edited, since this op ran), refuse and leave the journal entry in place rather than risk truncating away content this op never wrote.
 5. On success, call pop_last() to remove the entry from the journal.
 6. Return the inverted operation.
 
@@ -279,6 +296,7 @@ Revert the most recent journaled operation.
 - If the destination of the undo operation already exists, raise FileExistsError and do not remove the journal entry.
 - Hard stops are skipped and never undone; the user must manually assess the situation.
 - For compress undo: if `deleted_originals` was `True` and the archive is missing, an error is returned without removing the journal entry.
+- For memory_note undo: a size mismatch (see above) returns an error without removing the journal entry or touching the file.
 
 ## Journal Module
 

@@ -155,8 +155,16 @@ below and `host/web/sessions.py`/`host/web/sessions_view.py`.
   `tool_call` narrates into `session.activity` (via `Narrator.narrate`) — and, as
   of V16, also into `session.activity_log` via `session.add_activity(phrase)`,
   appended right alongside the `activity` assignment and only when the Narrator
-  actually returns a new phrase (a repeated phrase collapses to nothing before
-  either is touched) — and calls
+  actually returns a new phrase (a repeated *consecutive* phrase collapses to
+  nothing before either is touched). `add_activity` itself (host/web/session.py)
+  applies a further recency-window dedupe on top (Z1, #65): it also skips a
+  phrase matching any of the last 4 entries already in `activity_log`, so a
+  batched tool-call sequence that interleaves phases (e.g. read → record → read
+  → record across an analysis batch) — which defeats Narrator's
+  consecutive-only collapse — still doesn't fill the persisted log with an
+  alternating repeat. The two mechanisms are deliberately separate: Narrator
+  keeps the live status line from flickering call-to-call, `add_activity` keeps
+  the persisted log small across a whole batch loop — and calls
   `session.open_step(tool, event.text, args)`, reading `tool`/`args` off `event.data`
   (`host/agent.py`'s 5 `AgentEvent("tool_call", ...)` sites now carry `data={"tool":
   name, "args": args}`, previously just the tool name); `tool_result` calls
@@ -862,8 +870,14 @@ below and `host/web/sessions.py`/`host/web/sessions_view.py`.
   **starter pane** shown before the run begins: a directory overview (reusing
   `host.paths.directory_overview`, also offloaded via `run.io_bound`) plus an
   optional free-text steering-instructions input (mirrors the Textual TUI's
-  pre-analysis steering box) and a "Start organizing" button. Only clicking that
-  button constructs the `AgentBridge` and calls `start(instructions=...)` — S4's
+  pre-analysis steering box; as of Z4, `ui.textarea(rows=4, autogrow)` rather
+  than a single-line `ui.input`, so longer steering instructions stay readable
+  — Enter inserts a newline, it never submitted the run), a "Documents per
+  analysis batch" number input (Z3, `ui.number`, default 10, bounds 1–50,
+  overriding `Settings.analyzer_batch_size` for this run only), and a "Start
+  organizing" button. Only clicking that
+  button constructs the `AgentBridge` and calls `start(instructions=...,
+  analyzer_batch_size=...)` — S4's
   version started the run immediately on directory selection. Once started
   (`session.started`), the starter pane hides and the main view (status/progress
   bar/chat input/approval-cost-ask dialogs, now via `host/web/dialogs.py`,

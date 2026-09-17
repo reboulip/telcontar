@@ -73,6 +73,13 @@ persists one entry per macro-phase change, appended via `add_activity(text)`
 (called alongside the pre-existing `activity: str` scalar, which is unchanged
 and still what earlier tests assert against) — giving the web UI a reviewable
 history of phase changes instead of a single line that's overwritten and lost.
+As of Z1 (#65), `add_activity` also guards against a *non-consecutive* repeat:
+before appending, it checks `text` against the last `_ACTIVITY_DEDUPE_WINDOW =
+4` entries already in `activity_log` and silently returns (consuming no `_seq`)
+if it matches one — batched tool calls interleave phases (e.g. read → record →
+read → record across an analysis batch), which defeats `Narrator`'s
+consecutive-only collapse (`host/narration.py`, above) and would otherwise fill
+the log with an A/B/A/B alternation across a whole batch loop.
 Deliberately not folded into `transcript`: `activity_log`, like `steps`, is
 telcontar's own narration, not a genuine user↔telcontar exchange — this data-model
 separation is unchanged by X3's `thread()` below, which only merges the two into
@@ -192,7 +199,8 @@ question into the transcript and reading the reply off `session.messages`, the
 same queue `_send()` (`host/web/main.py`) already posts a `"user"` transcript turn
 into; the old path posted the reply twice (once via the queue, once explicitly) —
 `on_ask_user_needed` no longer touches `session.messages` at all, fixing it.
-`start(instructions: str | None = None)` launches
+`start(instructions: str | None = None, analyzer_batch_size: int | None = None)`
+launches
 `run(instructions)` as a detached `asyncio.Task` owned by the `RunSession` (not by
 any one NiceGUI client); `run()` is a near-verbatim port of
 `OrganizerScreen._agent_worker` onto a plain `asyncio.Task` — loads settings, opens
@@ -200,7 +208,30 @@ any one NiceGUI client); `run()` is a near-verbatim port of
 O7-style follow-up continuations, threading one `_TokenLedger` across all of them.
 `instructions` (S5) is the starter pane's optional steering text; it is passed
 only to the first `run_agent_loop` call, never to a continuation, matching
-`host/app.py`'s `_agent_worker(instructions=...)` contract.
+`host/app.py`'s `_agent_worker(instructions=...)` contract. `analyzer_batch_size`
+(Z3), when given, is stashed into a new `self._overrides` dict before `run()`
+starts, rather than threaded through as a parameter — see `_load_settings()`
+below.
+
+`_load_settings() -> Settings` (Z3) is the single place `run()` loads settings
+from: `load_settings().for_target(session.target)`, then, if `self._overrides` is
+non-empty, `.model_copy(update=self._overrides)` on top — replacing an inline
+`load_settings().for_target(...)` call at the `run()` call site. Centralizing it
+here (rather than inlining the load) is what lets a run-scoped override like
+`analyzer_batch_size` apply without a settings-loading call site having to know
+about it individually.
+
+**Mid-session LLM reload (Z2, #67):** `run()` now builds its client via
+`host/llm.py`'s `make_reloading_client(settings, on_reload=_on_reload)` instead
+of `make_client`, so an in-flight run recovers from a bad LLM config (wrong
+model name, HTTP 429) without a full telcontar restart — a Settings-page save
+elsewhere bumps `config.settings.config_revision()`, and the reloading client
+picks up the change on its next call. The `_TokenLedger` is now constructed
+*before* the client specifically so `_on_reload(message, new_model)` can close
+over it: it appends `message` as a visible `"telcontar"` chat turn via
+`session.add_turn` (not a silent log line) and sets `ledger.model = new_model`
+so `tokens.jsonl`'s per-call profiling stays attributed to the right model
+after a swap.
 
 As of T5/T6, `on_event`'s `tool_call`/`tool_result` handling no longer appends a
 chat turn — that fixed the "telcontar talking to itself in bubbles" issue T5 was
@@ -208,8 +239,10 @@ written to address. `tool_call` narrates via `session.narrator.narrate(tool)` in
 `session.activity` (the log zone's "current activity" line) — and, as of V16,
 also into `session.activity_log` via `session.add_activity(phrase)`, appended
 right alongside the `activity` assignment and only when the Narrator actually
-returns a new phrase (a repeated phrase collapses to nothing before either is
-touched) — and opens a step —
+returns a new phrase (a repeated *consecutive* phrase collapses to nothing
+before either is touched — `add_activity` itself applies a further
+recency-window dedupe on top for cross-batch repeats Narrator can't catch, see
+`session.py` above) — and opens a step —
 `session.open_step(tool, event.text, args)` — reading `tool`/`args` off
 `event.data`; `tool_result` closes it — `session.close_step(result, ok=ok)` —
 inferring `ok` from whether `event.data`'s `"result"` value is a dict containing
@@ -275,7 +308,10 @@ parity: `QueryScreen` starts its worker in `on_mount`, no explicit "start"
 button). `run()` is a near-verbatim port of `QueryScreen._query_worker`: one MCP
 session and one `_TokenLedger` for the whole chat, threading `history` across
 questions for multi-turn context. `done`/`error` here are per-question, not
-per-session: `QueryBridge` never sets `session.done`.
+per-session: `QueryBridge` never sets `session.done`. Like `AgentBridge` (Z2),
+`run()` builds its client via `make_reloading_client` with the same
+`_on_reload` closure shape (chat turn + `ledger.model` update), so a running
+query chat also reconnects automatically on a mid-session config change.
 
 **Checkpointing (Y2):** the same `_checkpoint(*, terminal: bool)` contract as
 `AgentBridge` — `terminal=` is `event.kind == "error"` here (query mode has no
@@ -880,6 +916,11 @@ recovery_action="cancel")`. `host/web/main.py` mounts it at `@ui.page("/settings
 calling `build_settings_view(on_done=lambda: ui.navigate.back())` inside
 `app_shell(active="settings")`; both the sidebar's Settings button and (X11) the
 nav header's Settings tab (`host/web/shell.py`) route here from any screen.
+As of Z2, a caption below the approval-mode `ui.select` tells the user that
+saving here reconnects any currently running session to the new
+model/endpoint/key immediately (`host/llm.py`'s `make_reloading_client`,
+above), while approval mode and everything else in the form only applies to
+sessions started after the save.
 
 As of V11, `build_settings_view` also awaits `_build_prompt_inspection()` after
 rendering the form — a collapsed "What telcontar tells the model" `ui.expansion`
@@ -1386,9 +1427,15 @@ target directory stays visible in the main content area for the whole run,
 not just on the pre-start starter pane. The organizer view (`/run/{run_id}`) now opens on a
 **starter pane** shown before the run begins: a directory overview (reusing
 `host.paths.directory_overview`, also offloaded via `run.io_bound`) plus an
-optional free-text steering-instructions input (mirrors the Textual TUI's
-pre-analysis steering box) and a "Start organizing" button. Only clicking that
-button constructs the `AgentBridge` and calls `start(instructions=...)` — S4's
+optional free-text steering-instructions input (`instructions_input`, mirrors
+the Textual TUI's pre-analysis steering box; as of Z4, `.mark("starter-
+instructions")` `ui.textarea(rows=4, autogrow)` rather than a single-line
+`ui.input` — Enter inserts a newline, there is no submit-on-enter handler), a
+"Documents per analysis batch" number input (`batch_size_input`, Z3,
+`.mark("starter-batch-size")` `ui.number(value=10, min=1, max=50,
+precision=0)`), and a "Start organizing" button. Only clicking that
+button constructs the `AgentBridge` and calls `start(instructions=...,
+analyzer_batch_size=int(batch_size_input.value or 10))` — S4's
 version started the run immediately on directory selection. Once started
 (`session.started`), the starter pane hides and the main view (status/progress
 bar/chat input/approval-cost-ask dialogs, now via `host/web/dialogs.py`,
