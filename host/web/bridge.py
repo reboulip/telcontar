@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 from host.agent import (
     AgentEvent,
@@ -25,6 +26,9 @@ from host.agent import (
 from host.format import fmt_exc
 from host.web import sessions as sessions_store
 from host.web.session import RunSession
+
+if TYPE_CHECKING:
+    from config.settings import Settings
 
 # Tools whose successful result changes what's on disk under the target
 # directory — closing one of these bumps RunSession.fs_revision (U4), which
@@ -48,6 +52,25 @@ class AgentBridge:
     def __init__(self, session: RunSession) -> None:
         self.session = session
         self._last_checkpoint_at = 0.0
+        # Run-scoped settings overrides (Z3's analyzer_batch_size, e.g.),
+        # applied on top of a freshly-loaded/rebased Settings by
+        # `_load_settings()` — the single entry point a later mid-session
+        # config reload (Z2) also re-enters, so it never silently drops
+        # these overrides.
+        self._overrides: dict[str, Any] = {}
+
+    def _load_settings(self) -> "Settings":
+        """Load settings for this session's target, with any run-scoped
+        overrides applied on top. Centralizing this (rather than inlining
+        `load_settings().for_target(...)` at each call site) is what lets a
+        mid-session config reload re-enter the same override-aware path
+        instead of dropping them."""
+        from config.settings import load as load_settings
+
+        settings = load_settings().for_target(self.session.target)
+        if self._overrides:
+            settings = settings.model_copy(update=self._overrides)
+        return settings
 
     def _checkpoint(self, *, terminal: bool) -> None:
         """Y2: persist this session's transcript/history so it survives a
@@ -157,10 +180,15 @@ class AgentBridge:
         session.add_turn("user", result.reply if result.provided else "(skipped)")
         return result
 
-    def start(self, instructions: str | None = None) -> asyncio.Task:
+    def start(
+        self, instructions: str | None = None, analyzer_batch_size: int | None = None
+    ) -> asyncio.Task:
         """Kick off the run as a detached task owned by the RunSession, not by
         any NiceGUI client — the task must keep running across a page
-        reload/close, per the reconnect design."""
+        reload/close, per the reconnect design. ``analyzer_batch_size`` (Z3),
+        when given, overrides the configured default for this run only."""
+        if analyzer_batch_size is not None:
+            self._overrides["analyzer_batch_size"] = analyzer_batch_size
         self.session.started = True
         task = asyncio.create_task(self.run(instructions))
         self.session.task = task
@@ -188,13 +216,12 @@ class AgentBridge:
         on the first call. ``resume_history`` (Y2), when given, skips the
         fresh-run bootstrap and seeds `session.history` directly instead —
         used by `start_resumed()` for a session restored from disk."""
-        from config.settings import load as load_settings
         from host.agent import _TokenLedger, mcp_session, run_agent_loop
         from host.llm import make_client
 
         session = self.session
         try:
-            settings = load_settings().for_target(session.target)
+            settings = self._load_settings()
         except Exception as exc:
             session.add_turn("telcontar", f"Config error: {fmt_exc(exc)}")
             session.status = "Error — check settings"

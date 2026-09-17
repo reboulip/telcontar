@@ -268,6 +268,27 @@ async def test_startup_organize_button_navigates_for_valid_selection(
     assert len(organize_sessions) == 1
 
 
+async def test_starter_column_has_marked_instructions_textarea_and_batch_size_input(
+    user: User, tmp_path: Path
+) -> None:
+    """Z4: steering instructions is a textarea (multi-line), not a single-line
+    input. Z3: a batch-size number input sits alongside it, defaulting to the
+    configured value and bounded 1-50."""
+    await user.open("/")
+    user.find(kind=ui.tree).trigger("update:selected", args=str(tmp_path))
+    user.find(marker="btn-startup-organize").click()
+    await user.should_see("Here's what I found")
+
+    (instructions,) = user.find(marker="starter-instructions").elements
+    assert isinstance(instructions, ui.textarea)
+
+    (batch_size,) = user.find(marker="starter-batch-size").elements
+    assert isinstance(batch_size, ui.number)
+    assert batch_size.value == 10
+    assert batch_size.min == 1
+    assert batch_size.max == 50
+
+
 # ── Setup wizard (U2) ────────────────────────────────────────────────────────
 
 

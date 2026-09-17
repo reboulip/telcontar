@@ -20,6 +20,7 @@ from host.agent import (
     _extract_content,
     _new_docs_cost_estimate,
     _ProgressTracker,
+    _resolve_analyzer_batch_size,
     _TokenLedger,
     run_agent_loop,
     run_prepass,
@@ -108,7 +109,30 @@ def _settings(plans_dir: Path, approval_mode: str = "always") -> MagicMock:
     cfg.approval_mode = approval_mode
     cfg.quarantine_dir = Path("_quarantine")
     cfg.max_snippet_chars = 4000
+    # A bare MagicMock's int() is 1, not the real default of 10 — set this
+    # explicitly or every batch_size-dependent assertion below silently
+    # drifts to 1 (Z3, _resolve_analyzer_batch_size's fallback only kicks in
+    # on a genuine lookup failure, not on a mock that "succeeds" with 1).
+    cfg.analyzer_batch_size = 10
     return cfg
+
+
+# ── _resolve_analyzer_batch_size (Z3) ─────────────────────────────────────────
+
+
+def test_resolve_analyzer_batch_size_reads_the_configured_value() -> None:
+    settings = MagicMock()
+    settings.analyzer_batch_size = 25
+    assert _resolve_analyzer_batch_size(settings) == 25
+
+
+def test_resolve_analyzer_batch_size_falls_back_to_ten_on_lookup_failure() -> None:
+    """A settings object whose analyzer_batch_size can't convert to int (e.g.
+    a genuinely broken/stubbed config) must not break prompt rendering or the
+    batching loop — same defensive contract as _resolve_quarantine_name."""
+    settings = MagicMock()
+    settings.analyzer_batch_size = "not-a-number"
+    assert _resolve_analyzer_batch_size(settings) == 10
 
 
 async def _run(

@@ -79,6 +79,13 @@ class PendingRequest:
     future: asyncio.Future
 
 
+# How many recent activity-log entries `add_activity` looks back through to
+# suppress a repeat (V16 follow-up, #65) — batched tool calls interleave
+# phases (e.g. read -> record -> read -> record), which a purely-consecutive
+# collapse can't catch.
+_ACTIVITY_DEDUPE_WINDOW = 4
+
+
 @dataclass
 class RunSession:
     run_id: str
@@ -131,8 +138,17 @@ class RunSession:
     def add_activity(self, text: str) -> None:
         """Append a macro-phase activity entry (V16) — the persisted history
         behind `activity`. Callers should only invoke this on a genuine phase
-        change (bridge.py's Narrator already collapses repeats), so entries
-        stay "small, discrete" rather than one per tool call."""
+        change (bridge.py's Narrator already collapses *consecutive* repeats),
+        so entries stay "small, discrete" rather than one per tool call.
+
+        Batched tool calls still interleave phases (e.g. read -> record ->
+        read -> record across an analysis batch), which defeats Narrator's
+        consecutive-only collapse. Suppress a repeat within a recency window
+        here instead, so the log doesn't fill with an A/B/A/B alternation.
+        Suppressed calls consume no `_seq`, so seq stays a true record of
+        what actually got appended."""
+        if any(e.text == text for e in self.activity_log[-_ACTIVITY_DEDUPE_WINDOW:]):
+            return
         self.activity_log.append(ActivityEntry(self._next_seq(), text))
 
     def thread(self) -> list[TranscriptItem | ActivityEntry]:

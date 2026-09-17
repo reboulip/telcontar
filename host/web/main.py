@@ -273,14 +273,33 @@ async def run_page(run_id: str) -> None:
         with starter_column:
             ui.label("Here's what I found").classes("text-h6")
             overview_label = ui.label("Scanning…").classes("whitespace-pre font-mono text-sm")
-            instructions_input = ui.input(
-                "Steering instructions (optional) — e.g. "
-                '"group by workstream", "don\'t quarantine drafts"'
-            ).classes("w-full")
+            instructions_input = (
+                ui.textarea(
+                    "Steering instructions (optional) — e.g. "
+                    '"group by workstream", "don\'t quarantine drafts"'
+                )
+                .classes("w-full")
+                .props("rows=4 autogrow")
+                .mark("starter-instructions")
+            )
+            batch_size_input = (
+                ui.number(
+                    "Documents per analysis batch",
+                    value=10,
+                    min=1,
+                    max=50,
+                    precision=0,
+                )
+                .classes("w-full")
+                .mark("starter-batch-size")
+            )
 
             def _start() -> None:
                 text = instructions_input.value.strip()
-                AgentBridge(session).start(instructions=text or None)
+                AgentBridge(session).start(
+                    instructions=text or None,
+                    analyzer_batch_size=int(batch_size_input.value or 10),
+                )
                 starter_column.visible = False
                 main_column.visible = True
 

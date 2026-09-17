@@ -75,6 +75,12 @@ class Settings(BaseSettings):
     # see config.settings.user_sessions_index_path().
     sessions_dir: Path = Path(".organizer/sessions")
 
+    # Run configuration
+    # Z3: how many documents the ANALYZE step sends to the LLM per batch —
+    # user-settable at run start (host/web/main.py's starter column). A plain
+    # scalar field, not rebased in for_target() (only Path fields are).
+    analyzer_batch_size: int = Field(default=10, ge=1, le=50)
+
     # Egress / extraction
     max_snippet_chars: int = 4000
     # S5: bounds on untrusted-document parsing (markitdown/pypdf) — a crash/DoS/

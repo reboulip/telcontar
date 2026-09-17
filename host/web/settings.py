@@ -150,14 +150,14 @@ def _load_prompt_inspection_data() -> _PromptInspectionData:
     hide the failure the same way, so this surfaces it for display instead.
     """
     from config.settings import Settings
-    from host.agent import _ANALYZER_BATCH_SIZE, _resolved_profile_name, composed_system_prompts
+    from host.agent import _resolved_profile_name, composed_system_prompts
 
     settings = Settings()
     return _PromptInspectionData(
         prompts=composed_system_prompts(settings),
         resolved_profile=_resolved_profile_name(settings),
         configured_profile=settings.profile,
-        analyzer_batch_size=_ANALYZER_BATCH_SIZE,
+        analyzer_batch_size=settings.analyzer_batch_size,
     )
 
 

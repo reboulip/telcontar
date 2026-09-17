@@ -55,6 +55,17 @@ class TestForTarget:
 
         assert rebased.profiles_dir == settings.profiles_dir
 
+    def test_analyzer_batch_size_is_not_rebased(self, tmp_path: Path) -> None:
+        """Z3: a plain scalar field — carried through by model_copy, never
+        touched by for_target's Path-rebasing update dict."""
+        target = tmp_path / "corpus"
+        target.mkdir()
+        settings = Settings(analyzer_batch_size=25)
+
+        rebased = settings.for_target(target)
+
+        assert rebased.analyzer_batch_size == 25
+
     def test_original_settings_object_is_unchanged(self, tmp_path: Path) -> None:
         target = tmp_path / "corpus"
         target.mkdir()
@@ -64,6 +75,20 @@ class TestForTarget:
 
         assert settings.target_dir is None
         assert settings.journal_path == Path(".organizer/journal.jsonl")
+
+
+class TestAnalyzerBatchSize:
+    def test_defaults_to_ten(self) -> None:
+        assert Settings().analyzer_batch_size == 10
+
+    @pytest.mark.parametrize("value", [0, -1, 51])
+    def test_rejects_values_outside_one_to_fifty(self, value: int) -> None:
+        with pytest.raises(ValueError):
+            Settings(analyzer_batch_size=value)
+
+    @pytest.mark.parametrize("value", [1, 50])
+    def test_accepts_boundary_values(self, value: int) -> None:
+        assert Settings(analyzer_batch_size=value).analyzer_batch_size == value
 
 
 class TestLoadRebasesWhenTargetDirSet:

@@ -112,6 +112,53 @@ def test_thread_excludes_steps(tmp_path: Path) -> None:
     assert len(session.thread()) == 1
 
 
+# ── RunSession: activity-log cross-batch dedupe (Z1, #65) ────────────────────────
+
+
+def test_add_activity_collapses_alternating_phrases_across_a_batch(tmp_path: Path) -> None:
+    """Interleaved batch tool calls (read -> record -> read -> record...)
+    defeat Narrator's consecutive-only collapse; add_activity's recency
+    window must still collapse the whole alternation to two entries."""
+    session = RunSession(run_id="x", target=tmp_path)
+    for _ in range(6):
+        session.add_activity("Reading documents…")
+        session.add_activity("Recording documents in memory…")
+
+    assert [e.text for e in session.activity_log] == [
+        "Reading documents…",
+        "Recording documents in memory…",
+    ]
+
+
+def test_add_activity_reappears_after_window_of_distinct_phrases(tmp_path: Path) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+    session.add_activity("Reading documents…")
+    session.add_activity("Computing checksums…")
+    session.add_activity("Checking for duplicates…")
+    session.add_activity("Checking for newer versions…")
+    session.add_activity("Applying the plan…")
+    session.add_activity("Reading documents…")
+
+    assert [e.text for e in session.activity_log] == [
+        "Reading documents…",
+        "Computing checksums…",
+        "Checking for duplicates…",
+        "Checking for newer versions…",
+        "Applying the plan…",
+        "Reading documents…",
+    ]
+
+
+def test_add_activity_suppression_consumes_no_seq(tmp_path: Path) -> None:
+    session = RunSession(run_id="x", target=tmp_path)
+    session.add_activity("Reading documents…")
+    session.add_activity("Reading documents…")  # suppressed
+    session.add_turn("telcontar", "next")
+
+    assert [e.seq for e in session.activity_log] == [1]
+    assert [t.seq for t in session.transcript] == [2]
+
+
 # ── RunSession: internal steps (T6) ───────────────────────────────────────────────
 
 
@@ -269,6 +316,32 @@ def test_on_event_consecutive_same_narration_does_not_grow_activity_log(
     # Same collapse rule as `activity` itself — "small, discrete" entries,
     # one per macro-phase, not one per tool call.
     assert len(session.activity_log) == 1
+
+
+def test_on_event_alternating_batch_narration_collapses_log_but_tracks_activity(
+    tmp_path: Path,
+) -> None:
+    """Regression guard (Z1, #65): a real analysis-batch sequence
+    (extract/read -> record, repeated) must collapse activity_log to two
+    entries via add_activity's recency window, while `activity` — the live
+    status line, driven by Narrator's separate consecutive-only collapse —
+    still tracks whichever phase happened most recently, not going stale."""
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = AgentBridge(session)
+
+    for tool in [
+        "extract_text_batch",
+        "record_document_batch",
+        "read_file_batch",
+        "record_document_batch",
+    ]:
+        bridge.on_event(AgentEvent("tool_call", f"{tool}(...)", data={"tool": tool}))
+
+    assert [e.text for e in session.activity_log] == [
+        "Reading documents…",
+        "Recording documents in memory…",
+    ]
+    assert session.activity == "Recording documents in memory…"
 
 
 def test_on_event_different_narration_appends_a_second_activity_log_entry(
@@ -595,6 +668,94 @@ async def test_start_passes_instructions_only_on_first_call(
     await asyncio.sleep(0.05)
 
     assert seen_instructions == ["group by workstream", None]
+
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
+async def test_start_analyzer_batch_size_override_reaches_settings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Z3: a starter-pane batch-size override must reach the Settings object
+    run_agent_loop actually receives, via AgentBridge._load_settings — the
+    same entry point a later mid-session config reload re-enters, so it must
+    never be dropped."""
+    from contextlib import asynccontextmanager
+
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+
+    @asynccontextmanager
+    async def fake_mcp_session(
+        project_root: Path, target: Path | None = None
+    ) -> AsyncIterator[object]:
+        yield object()
+
+    monkeypatch.setattr("host.agent.mcp_session", fake_mcp_session)
+
+    seen_batch_sizes: list[int] = []
+
+    async def fake_run_agent_loop(**kwargs: object) -> tuple[str, list]:
+        seen_batch_sizes.append(kwargs["settings"].analyzer_batch_size)  # type: ignore[union-attr]
+        on_event = kwargs["on_event"]
+        on_event(AgentEvent("done", "done"))  # type: ignore[operator]
+        return "done", [{"role": "assistant"}]
+
+    monkeypatch.setattr("host.agent.run_agent_loop", fake_run_agent_loop)
+
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = AgentBridge(session)
+    task = bridge.start(analyzer_batch_size=30)
+
+    await asyncio.sleep(0.05)
+    assert seen_batch_sizes == [30]
+
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
+async def test_start_without_batch_size_override_uses_configured_default(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from contextlib import asynccontextmanager
+
+    from config.settings import Settings
+
+    monkeypatch.setattr(
+        "config.settings.load",
+        lambda: Settings(llm_base_url="https://example.com", llm_api_key="k"),
+    )
+
+    @asynccontextmanager
+    async def fake_mcp_session(
+        project_root: Path, target: Path | None = None
+    ) -> AsyncIterator[object]:
+        yield object()
+
+    monkeypatch.setattr("host.agent.mcp_session", fake_mcp_session)
+
+    seen_batch_sizes: list[int] = []
+
+    async def fake_run_agent_loop(**kwargs: object) -> tuple[str, list]:
+        seen_batch_sizes.append(kwargs["settings"].analyzer_batch_size)  # type: ignore[union-attr]
+        on_event = kwargs["on_event"]
+        on_event(AgentEvent("done", "done"))  # type: ignore[operator]
+        return "done", [{"role": "assistant"}]
+
+    monkeypatch.setattr("host.agent.run_agent_loop", fake_run_agent_loop)
+
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = AgentBridge(session)
+    task = bridge.start()
+
+    await asyncio.sleep(0.05)
+    assert seen_batch_sizes == [10]
 
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):

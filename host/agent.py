@@ -506,9 +506,9 @@ def composed_system_prompts(settings: Settings, project_root: Path | None = None
     reused across all three builders below, rather than three separate
     loads/parses.
 
-    The ANALYZE prompt is rendered for a full batch of `_ANALYZER_BATCH_SIZE`
-    documents — illustrative, since an actual run's batches (especially the
-    last one) are often smaller.
+    The ANALYZE prompt is rendered for a full batch of
+    `settings.analyzer_batch_size` documents — illustrative, since an actual
+    run's batches (especially the last one) are often smaller.
 
     Two things composed at runtime from a live run are deliberately NOT
     reflected here: the corpus digest (built from an actual target's analyzed
@@ -523,7 +523,7 @@ def composed_system_prompts(settings: Settings, project_root: Path | None = None
             profile, project_root, _resolve_quarantine_name(settings)
         ),
         "query": _render_query_system_prompt(profile),
-        "analyze": _build_analyzer_system_prompt(profile, _ANALYZER_BATCH_SIZE),
+        "analyze": _build_analyzer_system_prompt(profile, _resolve_analyzer_batch_size(settings)),
     }
 
 
@@ -707,6 +707,17 @@ def _resolve_quarantine_name(settings: Settings) -> str:
         return Path(str(settings.quarantine_dir)).name or "_quarantine"
     except Exception:
         return "_quarantine"
+
+
+def _resolve_analyzer_batch_size(settings: Settings) -> int:
+    """The configured analysis batch size (Z3), for prompt text and the batch
+    loop — falls back to the default on any lookup failure so a bare
+    mock/stub ``settings`` (several tests pass a plain ``MagicMock()``) never
+    breaks prompt rendering or the batching loop."""
+    try:
+        return int(settings.analyzer_batch_size)
+    except Exception:
+        return 10
 
 
 def _should_skip_discovery(name: str, path: str, settings: Settings) -> bool:
@@ -964,10 +975,6 @@ async def run_prepass(
 # for plain text) — the pre-pass/analyzer flow makes this a host-side decision
 # instead, since there is no per-document agent turn to reason it out anymore.
 _ANALYZER_EXTRACT_EXTENSIONS = frozenset({".pdf", ".docx", ".xlsx", ".pptx", ".msg"})
-
-# Isolated analysis is one LLM call per batch of at most this many NEW documents —
-# matches the batch size the old in-loop ANALYZE instructions used.
-_ANALYZER_BATCH_SIZE = 10
 
 _SUBMIT_RECORDS_TOOL_NAME = "submit_document_records"
 # Host-side-only synthetic tool (like ask_clarification/propose_options): never
@@ -1238,7 +1245,7 @@ async def _analyze_new_documents(
 ) -> dict[str, Any]:
     """Stateless per-batch analysis of NEW documents only (P5).
 
-    Each batch of at most `_ANALYZER_BATCH_SIZE` docs is one isolated LLM call —
+    Each batch of at most `settings.analyzer_batch_size` docs is one isolated LLM call —
     the analyzer's messages list is throwaway per batch, never threaded into the
     main ORGANIZE conversation — with a FORCED `submit_document_records` tool
     call. Returned records are rejoined to host-authoritative path/checksum BY
@@ -1259,9 +1266,10 @@ async def _analyze_new_documents(
     """
     recorded: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
+    batch_size = _resolve_analyzer_batch_size(settings)
 
-    for i in range(0, len(new_docs), _ANALYZER_BATCH_SIZE):
-        batch = new_docs[i : i + _ANALYZER_BATCH_SIZE]
+    for i in range(0, len(new_docs), batch_size):
+        batch = new_docs[i : i + batch_size]
 
         # V8a: emit a progress event BEFORE this batch's LLM call, carrying
         # basenames only (never full paths — that would leak directory layout
@@ -1287,7 +1295,7 @@ async def _analyze_new_documents(
             profile=profile,
             batch=batch,
             ledger=ledger,
-            batch_index=i // _ANALYZER_BATCH_SIZE,
+            batch_index=i // batch_size,
             on_event=on_event,
         )
         errors.extend(batch_errors)
@@ -2070,16 +2078,17 @@ async def _handle_cost_approval(
     documents (M already analyzed, skipped)" instead of leaving the skipped
     majority of a re-run corpus unmentioned.
     """
+    batch_size = _resolve_analyzer_batch_size(settings)
     summary = (
         f"~{doc_count} new document(s) ({already_analyzed} already analyzed, skipped), "
         f"~{estimated_tokens} input tokens estimated, batched in groups of "
-        f"{_ANALYZER_BATCH_SIZE} — proceed?"
+        f"{batch_size} — proceed?"
     )
     data = {
         "new": doc_count,
         "already_analyzed": already_analyzed,
         "estimated_tokens": estimated_tokens,
-        "batch_size": _ANALYZER_BATCH_SIZE,
+        "batch_size": batch_size,
     }
     on_event(AgentEvent("cost_estimate", summary, data=data))
 
