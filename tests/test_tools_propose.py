@@ -16,6 +16,7 @@ from server.tools import (
     propose_compress_quarantine,
     propose_create_dir,
     propose_create_file,
+    propose_memory_note,
     propose_move,
     propose_quarantine,
     propose_rename,
@@ -438,6 +439,103 @@ class TestProposeCompressQuarantine:
         propose_compress_quarantine(pending_plan.plan_id, plans_dir, q_dir, delete_originals=False)
         reloaded = load(pending_plan.plan_id, plans_dir)
         assert reloaded.ops[0].params == {"delete_originals": False}
+
+
+class TestProposeMemoryNote:
+    def test_appends_op_with_note_in_params(
+        self, tmp_path: Path, plans_dir: Path, pending_plan: Plan
+    ) -> None:
+        memory_path = tmp_path / ".organizer" / "memory.md"
+        result = propose_memory_note(
+            "always keep invoices grouped by year",
+            pending_plan.plan_id,
+            plans_dir,
+            memory_path,
+            4000,
+        )
+        assert result["op_type"] == "memory_note"
+        assert result["src"] == str(memory_path)
+        reloaded = load(pending_plan.plan_id, plans_dir)
+        assert reloaded.ops[0].params == {"note": "always keep invoices grouped by year"}
+
+    def test_strips_the_note(self, tmp_path: Path, plans_dir: Path, pending_plan: Plan) -> None:
+        memory_path = tmp_path / "memory.md"
+        propose_memory_note(
+            "  a note with padding  ", pending_plan.plan_id, plans_dir, memory_path, 4000
+        )
+        reloaded = load(pending_plan.plan_id, plans_dir)
+        assert reloaded.ops[0].params == {"note": "a note with padding"}
+
+    def test_blank_note_raises(self, tmp_path: Path, plans_dir: Path, pending_plan: Plan) -> None:
+        memory_path = tmp_path / "memory.md"
+        with pytest.raises(ValueError):
+            propose_memory_note("   ", pending_plan.plan_id, plans_dir, memory_path, 4000)
+
+    def test_over_long_note_raises(
+        self, tmp_path: Path, plans_dir: Path, pending_plan: Plan
+    ) -> None:
+        memory_path = tmp_path / "memory.md"
+        with pytest.raises(ValueError):
+            propose_memory_note("x" * 501, pending_plan.plan_id, plans_dir, memory_path, 4000)
+
+    def test_skips_when_note_already_in_memory_file(
+        self, tmp_path: Path, plans_dir: Path, pending_plan: Plan
+    ) -> None:
+        memory_path = tmp_path / "memory.md"
+        memory_path.write_text(
+            "- [2026-01-01] (telcontar) keep invoices by year\n", encoding="utf-8"
+        )
+
+        result = propose_memory_note(
+            "keep invoices by year", pending_plan.plan_id, plans_dir, memory_path, 4000
+        )
+
+        assert result["skipped"] is True
+        reloaded = load(pending_plan.plan_id, plans_dir)
+        assert reloaded.ops == []
+
+    def test_skips_when_note_already_staged_in_this_plan(
+        self, tmp_path: Path, plans_dir: Path, pending_plan: Plan
+    ) -> None:
+        memory_path = tmp_path / "memory.md"
+        propose_memory_note(
+            "keep invoices by year", pending_plan.plan_id, plans_dir, memory_path, 4000
+        )
+
+        result = propose_memory_note(
+            "Keep Invoices By Year", pending_plan.plan_id, plans_dir, memory_path, 4000
+        )
+
+        assert result["skipped"] is True
+        reloaded = load(pending_plan.plan_id, plans_dir)
+        assert len(reloaded.ops) == 1
+
+    def test_skips_when_memory_file_already_at_cap(
+        self, tmp_path: Path, plans_dir: Path, pending_plan: Plan
+    ) -> None:
+        memory_path = tmp_path / "memory.md"
+        memory_path.write_text("x" * 4000, encoding="utf-8")
+
+        result = propose_memory_note(
+            "a brand new note", pending_plan.plan_id, plans_dir, memory_path, 4000
+        )
+
+        assert result["skipped"] is True
+        reloaded = load(pending_plan.plan_id, plans_dir)
+        assert reloaded.ops == []
+
+    def test_rejects_an_eleventh_note_in_one_plan(
+        self, tmp_path: Path, plans_dir: Path, pending_plan: Plan
+    ) -> None:
+        memory_path = tmp_path / "memory.md"
+        for i in range(10):
+            propose_memory_note(f"note {i}", pending_plan.plan_id, plans_dir, memory_path, 4000)
+
+        result = propose_memory_note("note 10", pending_plan.plan_id, plans_dir, memory_path, 4000)
+
+        assert result["skipped"] is True
+        reloaded = load(pending_plan.plan_id, plans_dir)
+        assert len(reloaded.ops) == 10
 
 
 class TestSetPlanRationale:

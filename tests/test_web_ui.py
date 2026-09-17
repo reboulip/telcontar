@@ -289,6 +289,39 @@ async def test_starter_column_has_marked_instructions_textarea_and_batch_size_in
     assert batch_size.max == 50
 
 
+async def test_starter_column_shows_memory_status_when_memory_file_exists(
+    user: User, tmp_path: Path
+) -> None:
+    """Z5: a pre-existing memory.md is surfaced before the run starts, so the
+    injection is visible rather than silent."""
+    memory_dir = tmp_path / ".organizer"
+    memory_dir.mkdir()
+    (memory_dir / "memory.md").write_text(
+        "- [2026-01-01] (telcontar) keep invoices by year\n", encoding="utf-8"
+    )
+
+    await user.open("/")
+    user.find(kind=ui.tree).trigger("update:selected", args=str(tmp_path))
+    user.find(marker="btn-startup-organize").click()
+    await user.should_see("Here's what I found")
+
+    await user.should_see(marker="starter-memory-status")
+    (status,) = user.find(marker="starter-memory-status").elements
+    assert "memory.md" in status.text
+
+
+async def test_starter_column_memory_status_blank_when_no_memory_file(
+    user: User, tmp_path: Path
+) -> None:
+    await user.open("/")
+    user.find(kind=ui.tree).trigger("update:selected", args=str(tmp_path))
+    user.find(marker="btn-startup-organize").click()
+    await user.should_see("Here's what I found")
+
+    (status,) = user.find(marker="starter-memory-status").elements
+    assert status.text == ""
+
+
 # ── Setup wizard (U2) ────────────────────────────────────────────────────────
 
 

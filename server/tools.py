@@ -13,6 +13,7 @@ from typing import TypedDict
 from server import archive as _archive
 from server import events as _events
 from server import graph as _graph
+from server import memory as _memory
 from server import plan as _plan
 from server import registry as _registry
 from server.extract import extract as _extract
@@ -301,6 +302,13 @@ def review_plan(plan_id: str, plans_dir: Path) -> dict:
     missing: list[dict] = []
 
     for op in p.ops:
+        # memory_note ops are exempt from both checks below: like create_dir,
+        # a note's target (memory.md) legitimately doesn't exist yet on the
+        # first-ever note; and unlike every other op type, several notes
+        # legitimately share one src (the same memory.md path) within a
+        # single plan — that's not a duplicate-op mistake to flag.
+        if op.op_type == "memory_note":
+            continue
         key = (op.src, op.op_type)
         seen.setdefault(key, []).append(op.op_id)
         if op.op_type != "create_dir" and not Path(op.src).exists():
@@ -585,7 +593,75 @@ def propose_compress_quarantine(
     }
 
 
-_SELF_JOURNALING_OP_TYPES = frozenset({"archive_document", "compress_quarantine"})
+_MAX_MEMORY_NOTE_CHARS = 500
+_MAX_MEMORY_NOTES_PER_PLAN = 10
+
+
+def propose_memory_note(
+    note: str,
+    plan_id: str,
+    plans_dir: Path,
+    memory_path: Path,
+    max_chars: int,
+) -> dict:
+    """Append a memory_note op to an existing pending plan (Z5) — the ONLY
+    write path into the persistent per-directory memory file, so it goes
+    through the same plan/approve/execute gate as every other mutation.
+
+    ``memory_path`` is server-resolved, never agent-supplied — the agent
+    can't aim a note at an arbitrary file. Silently skips (no op added,
+    ``{"skipped": True, ...}`` returned) rather than erroring when the note
+    is already recorded, already staged in this plan, or the file is already
+    at its read cap (writing further would be invisible to future runs) —
+    these are expected, not failures the agent needs to react to.
+    """
+    text = (note or "").strip()
+    if not text:
+        raise ValueError("Memory note must be a non-empty string")
+    if len(text) > _MAX_MEMORY_NOTE_CHARS:
+        raise ValueError(f"Memory note too long ({len(text)} chars, max {_MAX_MEMORY_NOTE_CHARS})")
+
+    p = _load_pending_plan(plan_id, plans_dir)
+
+    existing_notes = sum(1 for op in p.ops if op.op_type == "memory_note")
+    if existing_notes >= _MAX_MEMORY_NOTES_PER_PLAN:
+        return {
+            "plan_id": plan_id,
+            "skipped": True,
+            "reason": f"Plan already has {_MAX_MEMORY_NOTES_PER_PLAN} memory notes staged",
+        }
+
+    for op in p.ops:
+        if op.op_type == "memory_note" and _memory.contains_note(
+            (op.params or {}).get("note", ""), text
+        ):
+            return {"plan_id": plan_id, "skipped": True, "reason": "Already staged in this plan"}
+
+    current_text = _memory.read_memory(memory_path, max_chars)
+    if _memory.contains_note(current_text, text):
+        return {"plan_id": plan_id, "skipped": True, "reason": "Already recorded in memory.md"}
+    if len(current_text) >= max_chars:
+        return {
+            "plan_id": plan_id,
+            "skipped": True,
+            "reason": "memory.md is already at its size cap — note not staged",
+        }
+
+    op = _plan.PlanOp.new("memory_note", str(memory_path), "", params={"note": text})
+    p.add_op(op)
+    _plan.save(p, plans_dir)
+    return {
+        "plan_id": plan_id,
+        "op_id": op.op_id,
+        "op_type": "memory_note",
+        "src": str(memory_path),
+        "dst": "",
+        "status": op.status,
+        "ops_count": len(p.ops),
+    }
+
+
+_SELF_JOURNALING_OP_TYPES = frozenset({"archive_document", "compress_quarantine", "memory_note"})
 
 
 def execute_plan(
@@ -597,6 +673,7 @@ def execute_plan(
     archive_path: Path | None = None,
     target_dir: Path | None = None,
     empty_folder_policy: str = "quarantine",
+    memory_path: Path | None = None,
 ) -> dict:
     """Apply approved ops with per-op retry; hard-stop if >3 fail in one run.
 
@@ -609,6 +686,9 @@ def execute_plan(
     ``archive_document``/``compress_quarantine`` functions, which self-journal with
     the same ``op_type`` strings ``undo_last`` already understands ("quarantine" /
     "compress"), so this loop skips its generic journal append for them.
+    ``memory_path`` (Z5) is required only if the plan contains a ``memory_note``
+    op — that op type reuses the standalone, self-journaling
+    ``append_memory_note`` function the same way.
 
     Y6: when ``target_dir`` is given (and only then — every existing caller that
     omits it keeps the old, sweep-free behaviour), any directory left empty by a
@@ -695,6 +775,12 @@ def execute_plan(
                         Path(op.src), journal_path, bool(params.get("delete_originals", True))
                     )
                     new_location = result.get("archive") or op.src
+                elif op.op_type == "memory_note":
+                    if memory_path is None:
+                        raise ValueError("memory_path is required to execute a memory_note op")
+                    params = op.params or {}
+                    append_memory_note(memory_path, params.get("note", ""), journal_path)
+                    new_location = src_path
                 else:
                     new_location = _apply_op(op, src_path)
                 success = True
@@ -1121,6 +1207,9 @@ def undo_last(journal_path: Path, plans_dir: Path) -> dict:
     if op_type == "compress":
         return _undo_compress(entry, journal_path)
 
+    if op_type == "memory_note":
+        return _undo_memory_note(entry, journal_path)
+
     if op_type in ("create_file", "update_file"):
         # overwrite=True on update_file loses the prior content forever — undo
         # can only remove what this op wrote, not restore what it replaced.
@@ -1313,6 +1402,76 @@ def _undo_compress(entry: dict, journal_path: Path) -> dict:
         if archive.is_file():
             archive.unlink()
     except (FileNotFoundError, FileExistsError, OSError, KeyError) as exc:
+        return {"undone": None, "error": str(exc)}
+
+    _journal.pop_last(journal_path)
+    return {"undone": entry}
+
+
+# ── Persistent memory (Z5) ───────────────────────────────────────────────────
+
+
+def append_memory_note(memory_path: Path, note: str, journal_path: Path) -> dict:
+    """Append one note to the persistent memory file, journaling the exact
+    byte range written so ``undo_last`` can revert it precisely.
+
+    The only caller is ``execute_plan``'s ``memory_note`` branch — this
+    function self-journals (like ``archive_document``/``compress_quarantine``),
+    so ``execute_plan``'s generic journal append is skipped for this op type.
+    """
+    from datetime import datetime, timezone
+
+    from server import journal as _journal
+
+    p = Path(memory_path)
+    first_write = not p.is_file() or p.stat().st_size == 0
+    block = _memory.render_block(note, first_write=first_write)
+    offset, written = _memory.append_block(p, block)
+
+    _journal.append(
+        journal_path,
+        {
+            "op_type": "memory_note",
+            "src": str(p),
+            "dst": "",
+            "note": note,
+            "offset": offset,
+            "bytes": written,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    return {"path": str(p), "offset": offset, "bytes": written}
+
+
+def _undo_memory_note(entry: dict, journal_path: Path) -> dict:
+    """Reverse a ``memory_note`` op: truncate memory.md back to before the
+    note was appended. Refuses (and leaves the journal entry in place) if the
+    file's size no longer matches what this op wrote — e.g. a later note was
+    appended since, or the user hand-edited the file — rather than risk
+    truncating away content this op never wrote."""
+    from server import journal as _journal
+
+    path = Path(entry["src"])
+    offset = entry["offset"]
+    bytes_written = entry["bytes"]
+
+    try:
+        current_size = path.stat().st_size
+    except OSError as exc:
+        return {"undone": None, "error": str(exc)}
+
+    if current_size != offset + bytes_written:
+        return {
+            "undone": None,
+            "error": (
+                "memory.md has changed since this note was written "
+                "(a later note, or a hand-edit) — refusing to undo"
+            ),
+        }
+
+    try:
+        _memory.truncate_to(path, offset)
+    except OSError as exc:
         return {"undone": None, "error": str(exc)}
 
     _journal.pop_last(journal_path)

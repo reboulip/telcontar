@@ -196,8 +196,9 @@ async def _build_prompt_inspection() -> None:
             ).classes("text-negative").mark("prompt-profile-status")
 
         ui.label(
-            "Not shown here: the corpus digest (built from the analyzed registry) "
-            "and any steering instructions you gave before analysis — both are "
+            "Not shown here: the corpus digest (built from the analyzed registry), "
+            "the persistent per-directory memory file (.organizer/memory.md), and "
+            "any steering instructions you gave before analysis — all three are "
             "composed at run time from a live target directory, which this "
             "settings view does not have."
         ).classes("text-caption")

@@ -74,6 +74,11 @@ class Settings(BaseSettings):
     # text; the home-directory sessions index (metadata only) is separate —
     # see config.settings.user_sessions_index_path().
     sessions_dir: Path = Path(".organizer/sessions")
+    # Z5: persistent per-directory notes that carry across sessions — read on
+    # every fresh run and, via the plan-gated memory_note op, appendable by
+    # the agent. A Path field, so (unlike analyzer_batch_size) it IS rebased
+    # by for_target() below.
+    memory_path: Path = Path(".organizer/memory.md")
 
     # Run configuration
     # Z3: how many documents the ANALYZE step sends to the LLM per batch —
@@ -135,6 +140,7 @@ class Settings(BaseSettings):
                 "token_log_path": _rebase(self.token_log_path),
                 "llm_debug_log_path": _rebase(self.llm_debug_log_path),
                 "sessions_dir": _rebase(self.sessions_dir),
+                "memory_path": _rebase(self.memory_path),
             }
         )
 

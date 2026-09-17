@@ -235,3 +235,47 @@ class TestReviewPlanCreateDir:
         result = review_plan(p.plan_id, plans_dir)
         assert len(result["missing_sources"]) == 1
         assert result["missing_sources"][0]["src"] == missing_path
+
+
+class TestReviewPlanMemoryNote:
+    def test_memory_note_op_not_flagged_as_missing(self, tmp_path: Path, plans_dir: Path) -> None:
+        """The first-ever note targets memory.md before it exists — same
+        exemption as create_dir, for the same reason."""
+        p = Plan.new()
+        memory_path = str(tmp_path / ".organizer" / "memory.md")
+        p.ops.append(PlanOp.new("memory_note", memory_path, "", params={"note": "a note"}))
+        save(p, plans_dir)
+
+        result = review_plan(p.plan_id, plans_dir)
+        assert result["missing_sources"] == []
+        assert result["is_valid"] is True
+
+    def test_multiple_memory_note_ops_sharing_one_src_not_a_duplicate(
+        self, tmp_path: Path, plans_dir: Path
+    ) -> None:
+        """Unlike every other op type, several notes legitimately share one
+        src (the same memory.md path) within a single plan."""
+        p = Plan.new()
+        memory_path = str(tmp_path / "memory.md")
+        p.ops.append(PlanOp.new("memory_note", memory_path, "", params={"note": "note one"}))
+        p.ops.append(PlanOp.new("memory_note", memory_path, "", params={"note": "note two"}))
+        save(p, plans_dir)
+
+        result = review_plan(p.plan_id, plans_dir)
+        assert result["duplicates"] == []
+        assert result["is_valid"] is True
+
+    def test_other_missing_op_still_flagged_alongside_memory_note(
+        self, tmp_path: Path, plans_dir: Path
+    ) -> None:
+        p = Plan.new()
+        p.ops.append(
+            PlanOp.new("memory_note", str(tmp_path / "memory.md"), "", params={"note": "a note"})
+        )
+        missing_path = str(tmp_path / "gone.txt")
+        p.ops.append(PlanOp.new("rename", missing_path, "new.txt"))
+        save(p, plans_dir)
+
+        result = review_plan(p.plan_id, plans_dir)
+        assert len(result["missing_sources"]) == 1
+        assert result["missing_sources"][0]["src"] == missing_path

@@ -14,6 +14,7 @@ from host.format import (
     fmt_journal_entry,
     fmt_op,
     fmt_progress,
+    memory_note_text,
     plan_tree_diff,
     quarantine_reason,
     render_target_layout,
@@ -68,6 +69,40 @@ def test_fmt_op_markup_false_strips_rich_tags() -> None:
     formatted = fmt_op(op, markup=False)
     assert "[dim]" not in formatted
     assert "(overwrite)" in formatted
+
+
+# ── memory_note_text / fmt_op memory_note (Z5) ───────────────────────────────────
+
+
+def test_memory_note_text_returns_the_staged_note() -> None:
+    op = {"op_type": "memory_note", "params": {"note": "keep invoices grouped by year"}}
+    assert memory_note_text(op) == "keep invoices grouped by year"
+
+
+def test_memory_note_text_caps_long_text() -> None:
+    op = {"op_type": "memory_note", "params": {"note": "x" * 200}}
+    formatted = memory_note_text(op)
+    assert len(formatted) == 120
+    assert formatted.endswith("…")
+
+
+def test_memory_note_text_blank_when_params_missing() -> None:
+    assert memory_note_text({"op_type": "memory_note"}) == ""
+
+
+def test_fmt_op_memory_note_shows_the_note_text() -> None:
+    """A safety-visible requirement, not cosmetic: the approver must see what
+    the note says, not just that a memory_note op exists (the case _
+    fallback would hide it)."""
+    op = {
+        "op_type": "memory_note",
+        "src": "/target/.organizer/memory.md",
+        "dst": "",
+        "params": {"note": "always keep invoices grouped by year"},
+    }
+    formatted = fmt_op(op)
+    assert "always keep invoices grouped by year" in formatted
+    assert "REMEMBER" in formatted
 
 
 # ── quarantine_reason / fmt_op quarantine (V10) ─────────────────────────────────
