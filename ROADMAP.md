@@ -69,3 +69,15 @@ on open work.
 - [x] Y9 · Move the document preview pane into the same area as command/step inspection in conversation mode (lower-left), so opening one replaces the other. [#58]
 
 ---
+
+## Phase 25 — Reliability, run configuration & session memory
+
+*(Post-release follow-ups from the GH issue backlog. Items use a fresh `Z`-series label.)*
+
+- [ ] Z1 · Collapse repeated "Reading documents…" / "Recording documents in memory…" activity-log entries during multi-document batches — `Narrator`/`add_activity` (`host/narration.py`, `host/web/session.py`) only collapse *consecutive* identical phrases, so interleaved batch tool calls (`host/agent.py`) defeat it; collapse by phrase across a batch instead. [#65]
+- [ ] Z2 · Let an in-flight analysis run recover from a bad LLM config (wrong model name, HTTP 429) without a full telcontar restart — `AgentBridge`/`QuerySession` (`host/web/bridge.py`) build the OpenAI/Azure client once via `make_client` (`host/llm.py`) and hold it for the session's lifetime; add a reload path that re-reads `Settings` (`config/settings.py`) and rebuilds the client mid-session after the user edits config. [#67]
+- [ ] Z3 · Make the analysis batch size user-settable at run start instead of the hardcoded `_ANALYZER_BATCH_SIZE = 10` (`host/agent.py`) — thread a new `Settings` field through `for_target()` (`config/settings.py`) and expose an input near the steering-instructions starter UI (`host/web/main.py`). [#66]
+- [ ] Z4 · Change the initial steering-instructions field from `ui.input` to `ui.textarea` in `host/web/main.py`'s starter column, so the first prompt after target-directory selection accepts multi-line detailed instructions. [#68]
+- [ ] Z5 · Add a persistent per-directory `memory.md` under `.organizer/` (`memory_path` in `config/settings.py`'s `Settings`/`for_target`, resolved via a new `resolve_memory_path()` in `host/paths.py`) holding user instructions and decisions that carry across sessions over the same target directory; fold it into the system/steering prompt build (`host/agent.py`) alongside existing steering-instruction handling. [#64]
+
+---
