@@ -217,7 +217,7 @@ class AgentBridge:
         fresh-run bootstrap and seeds `session.history` directly instead —
         used by `start_resumed()` for a session restored from disk."""
         from host.agent import _TokenLedger, mcp_session, run_agent_loop
-        from host.llm import make_client
+        from host.llm import make_reloading_client
 
         session = self.session
         try:
@@ -229,15 +229,21 @@ class AgentBridge:
             sessions_store.snapshot(session)
             return
 
-        llm = make_client(settings)
         # One ledger for the whole session's lifetime (R1, GH #27) — threaded
         # through every run_agent_loop call below, initial and follow-up
         # alike, so running token totals persist across chat turns instead of
         # resetting on each call. Y2: a resumed session starts a fresh ledger
         # too — prior-run token totals aren't carried across a restart, only
         # the conversation history is; the cost they represent was already
-        # approved and spent in the prior process.
+        # approved and spent in the prior process. Created before the client
+        # (Z2) so the reload callback below can update its `model` in place.
         ledger = _TokenLedger.new(settings)
+
+        def _on_reload(message: str, new_model: str) -> None:
+            session.add_turn("telcontar", message)
+            ledger.model = new_model
+
+        llm = make_reloading_client(settings, on_reload=_on_reload)
         project_root = Path(__file__).resolve().parent.parent.parent
 
         sessions_store.record_started(session)
@@ -355,7 +361,7 @@ class QueryBridge:
         chat, threading history across questions for multi-turn context."""
         from config.settings import load as load_settings
         from host.agent import _TokenLedger, mcp_session, run_query_loop
-        from host.llm import make_client
+        from host.llm import make_reloading_client
 
         session = self.session
         try:
@@ -366,8 +372,13 @@ class QueryBridge:
             sessions_store.snapshot(session)
             return
 
-        llm = make_client(settings)
         ledger = _TokenLedger.new(settings)
+
+        def _on_reload(message: str, new_model: str) -> None:
+            session.add_turn("telcontar", message)
+            ledger.model = new_model
+
+        llm = make_reloading_client(settings, on_reload=_on_reload)
         project_root = Path(__file__).resolve().parent.parent.parent
 
         sessions_store.record_started(session)

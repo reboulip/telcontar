@@ -623,6 +623,68 @@ async def test_run_threads_same_ledger_and_queue_across_continuation(
         await task
 
 
+async def test_run_reload_posts_a_turn_and_updates_ledger_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Z2: a mid-run config change (detected via config_revision) must post
+    a visible turn naming the new model/host and update the token ledger's
+    attributed model, without the run itself failing or restarting."""
+    from contextlib import asynccontextmanager
+    from unittest.mock import AsyncMock
+
+    from config.settings import Settings
+
+    call_count = {"n": 0}
+
+    def fake_load() -> Settings:
+        call_count["n"] += 1
+        model = "gpt-5" if call_count["n"] == 1 else "gpt-5-new"
+        return Settings(llm_base_url="https://example.com", llm_api_key="k", llm_model=model)
+
+    monkeypatch.setattr("config.settings.load", fake_load)
+
+    revision = {"n": 0}
+    monkeypatch.setattr("config.settings.config_revision", lambda: revision["n"])
+
+    fake_client = AsyncMock()
+    monkeypatch.setattr("host.llm.make_client", lambda settings: fake_client)
+
+    @asynccontextmanager
+    async def fake_mcp_session(
+        project_root: Path, target: Path | None = None
+    ) -> AsyncIterator[object]:
+        yield object()
+
+    monkeypatch.setattr("host.agent.mcp_session", fake_mcp_session)
+
+    seen_models: list[str] = []
+
+    async def fake_run_agent_loop(**kwargs: object) -> tuple[str, list]:
+        llm = kwargs["llm"]
+        revision["n"] = 1  # simulate a settings save happened mid-run
+        await llm.chat.completions.create(model="gpt-5", messages=[])  # type: ignore[union-attr]
+        seen_models.append(kwargs["ledger"].model)  # type: ignore[union-attr]
+        on_event = kwargs["on_event"]
+        on_event(AgentEvent("done", "done"))  # type: ignore[operator]
+        return "done", [{"role": "assistant"}]
+
+    monkeypatch.setattr("host.agent.run_agent_loop", fake_run_agent_loop)
+
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = AgentBridge(session)
+    task = bridge.start()
+
+    await asyncio.sleep(0.05)
+
+    turns = [t.text for t in session.transcript]
+    assert any("gpt-5-new" in t and "example.com" in t for t in turns)
+    assert seen_models == ["gpt-5-new"]
+
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
 async def test_start_passes_instructions_only_on_first_call(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1014,6 +1076,64 @@ async def test_query_bridge_run_renders_answer_from_return_value_once(
     answers = [t.text for t in session.transcript if t.text == "the answer"]
     assert answers == ["the answer"]  # rendered exactly once, from the return value
     assert session.status == "Ready — ask a question."
+
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
+async def test_query_bridge_run_reload_posts_a_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Z2: QueryBridge gets the same mid-session reload wiring as
+    AgentBridge — a config change is visible as a turn, not silent."""
+    from contextlib import asynccontextmanager
+    from unittest.mock import AsyncMock
+
+    from config.settings import Settings
+
+    call_count = {"n": 0}
+
+    def fake_load() -> Settings:
+        call_count["n"] += 1
+        model = "gpt-5" if call_count["n"] == 1 else "gpt-5-new"
+        return Settings(llm_base_url="https://example.com", llm_api_key="k", llm_model=model)
+
+    monkeypatch.setattr("config.settings.load", fake_load)
+
+    revision = {"n": 0}
+    monkeypatch.setattr("config.settings.config_revision", lambda: revision["n"])
+
+    fake_client = AsyncMock()
+    monkeypatch.setattr("host.llm.make_client", lambda settings: fake_client)
+
+    @asynccontextmanager
+    async def fake_mcp_session(
+        project_root: Path, target: Path | None = None
+    ) -> AsyncIterator[object]:
+        yield object()
+
+    monkeypatch.setattr("host.agent.mcp_session", fake_mcp_session)
+
+    async def fake_run_query_loop(**kwargs: object) -> tuple[str, list]:
+        llm = kwargs["llm"]
+        revision["n"] = 1
+        await llm.chat.completions.create(model="gpt-5", messages=[])  # type: ignore[union-attr]
+        on_event = kwargs["on_event"]
+        on_event(AgentEvent("done", "the answer"))  # type: ignore[operator]
+        return "the answer", [{"role": "assistant"}]
+
+    monkeypatch.setattr("host.agent.run_query_loop", fake_run_query_loop)
+
+    session = RunSession(run_id="x", target=tmp_path)
+    bridge = QueryBridge(session)
+    task = bridge.start()
+
+    session.messages.put_nowait("what's in here?")
+    await asyncio.sleep(0.05)
+
+    turns = [t.text for t in session.transcript]
+    assert any("gpt-5-new" in t for t in turns)
 
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):

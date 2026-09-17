@@ -86,6 +86,13 @@ def _render_form(
         .mark("select-approval")
     )
 
+    ui.label(
+        "Saving here reconnects any currently running session to the new "
+        'model/endpoint/key immediately (Z2). "How careful should the app '
+        'be?" and everything else only applies to sessions started after '
+        "this save."
+    ).classes("text-caption")
+
     if state.error:
         ui.label(state.error).classes("text-negative").mark("settings-error")
 
