@@ -17,6 +17,16 @@ The reference below is for **advanced or developer use**: env vars and a project
 | `LLM_MODEL` | no | `gpt-5` | Model name passed in chat completion requests |
 | `LLM_API_VERSION` | no | `""` | Azure only — `api-version` query parameter (e.g. `2025-01-01-preview`). Leave blank for every other provider. When left blank on an Azure host detected by hostname (`*.azure.com`) rather than an explicit version, telcontar now falls back to a built-in default API version automatically (Y4). Ignored entirely when `LLM_BASE_URL` ends in `/openai/v1` (Azure's own OpenAI-compatible surface, which must not receive an injected `api-version`). |
 
+!!! tip
+    Got a bad LLM config mid-run (wrong model name, a `429`)? You don't need
+    to restart telcontar. Fix `LLM_BASE_URL`/`LLM_API_KEY`/`LLM_MODEL`/
+    `LLM_API_VERSION` on the **⚙ Settings** screen and save — any session
+    currently running (organize or query) reconnects to the new
+    model/endpoint/key automatically on its next LLM call, and posts a chat
+    message telling you what it reconnected to. Everything else on that
+    screen (approval mode, profile) only applies to sessions started after
+    the save.
+
 ### Safety
 
 | Variable | Required | Default | Description |
@@ -27,6 +37,12 @@ The reference below is for **advanced or developer use**: env vars and a project
 | `EMPTY_FOLDER_POLICY` | no | `quarantine` | How `execute_plan` disposes of a folder its own `move`/`quarantine`/`archive_document` ops left empty, once all ops have run (Y6, GH #57). `quarantine` (default) moves the folder into `QUARANTINE_DIR`, falling back to an in-place `_empty_`-prefixed rename on any error; `rename` always renames in place; `off` disables the sweep. Only activates when `TARGET_DIR` is set (every real organize/query session). Treated as an automatic, fully journaled/undoable consequence of the already-approved moves, not a separate approval-requiring op. |
 | `JOURNAL_PATH` | no | `.organizer/journal.jsonl` | Append-only undo journal (file operations, drives `undo_last`). Relative to the target directory being organized (rebased there per run — an explicit absolute override passes through unchanged). |
 | `EVENTS_PATH` | no | `.organizer/events.jsonl` | Append-only project event journal (narrative log, drives `create_event` / `list_events`). Relative to the target directory being organized (same rebasing as `JOURNAL_PATH`). |
+
+### Run configuration
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `ANALYZER_BATCH_SIZE` | no | `10` | Documents per ANALYZE batch (1–50). Also settable per run via the "Documents per analysis batch" field on the organize starter pane, which overrides the configured default for that run only. |
 
 ### Domain profile
 

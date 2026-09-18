@@ -19,6 +19,7 @@ OpType = Literal[
     "create_dir",
     "archive_document",
     "compress_quarantine",
+    "memory_note",
 ]
 OpStatus = Literal["pending", "completed", "failed"]
 

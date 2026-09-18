@@ -55,6 +55,13 @@ class Narrator:
     An unknown tool (not in ``TOOL_NARRATION``) yields no phrase and leaves the
     last-seen phrase untouched — so a `list_dir` -> unknown-tool -> `list_dir`
     sequence still collapses to a single narration, not two.
+
+    This only catches *consecutive* repeats, and drives the live `activity`
+    status line, not the persisted `activity_log`. Batched tool calls
+    interleave phases (e.g. read -> record -> read -> record across an
+    analysis batch), which this collapse can't catch — `RunSession.add_activity`
+    (host/web/session.py) applies a further recency-window dedupe on top, for
+    the log.
     """
 
     def __init__(self) -> None:

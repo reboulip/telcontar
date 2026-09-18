@@ -395,6 +395,19 @@ def propose_compress_quarantine(plan_id: str, delete_originals: bool = True) -> 
     )
 
 
+@mcp.tool()
+def propose_memory_note(note: str, plan_id: str) -> dict:
+    """Stage a short, durable note to remember about this directory across
+    future sessions (e.g. a standing user preference or taxonomy decision) in
+    the named plan. This is the ONLY way to write to persistent memory —
+    there is no direct write tool. The note is shown to the user for
+    approval with the rest of the plan, same as any other change."""
+    cfg = _get_settings()
+    return tools.propose_memory_note(
+        note, plan_id, cfg.plans_dir, cfg.memory_path, cfg.max_snippet_chars
+    )
+
+
 # ── Gated execution tools ────────────────────────────────────────────────────
 
 
@@ -412,6 +425,7 @@ def execute_plan(plan_id: str) -> dict:
         cfg.archive_path,
         cfg.target_dir,
         cfg.empty_folder_policy,
+        cfg.memory_path,
     )
 
 

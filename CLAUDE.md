@@ -345,3 +345,17 @@ concurrency risk is lower: they're shared across projects and edited far less of
 - Persistent embedding index for semantic search (optional Stack C add-on).
 - Reusable MCP server consumable by other MCP hosts (e.g., Claude Desktop).
 - Batch/parallel extraction for large trees.
+- Fix `destructive_only`'s behavior to match its documentation: `CLAUDE.md`/the
+  user guide say it lets read-only ops (`index`, `summary`) run without approval,
+  but `execute_plan` currently gates on every mode except `never`, and
+  `write_index`/`write_summary` are ungated in every mode. Found during Phase 25
+  planning; deliberately left unfixed there to keep that sprint's scope to Z5.
+- Web-UI editor for `.organizer/memory.md` (Phase 25 Z5 shipped agent-write +
+  file-read only; hand-editing the file currently requires an external text
+  editor).
+- Consecutive-analysis-failure circuit breaker: today a bad LLM config (wrong
+  model, etc.) burns through an entire corpus's analysis batches — each failing
+  once, retrying once, then getting skipped — before Z2's mid-session reload
+  (Phase 25) gets a chance to help. Abort analysis after some number of
+  consecutive failed batches with an actionable error, and/or re-queue batches
+  skipped before a successful reload.

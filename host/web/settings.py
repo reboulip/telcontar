@@ -86,6 +86,13 @@ def _render_form(
         .mark("select-approval")
     )
 
+    ui.label(
+        "Saving here reconnects any currently running session to the new "
+        'model/endpoint/key immediately (Z2). "How careful should the app '
+        'be?" and everything else only applies to sessions started after '
+        "this save."
+    ).classes("text-caption")
+
     if state.error:
         ui.label(state.error).classes("text-negative").mark("settings-error")
 
@@ -150,14 +157,14 @@ def _load_prompt_inspection_data() -> _PromptInspectionData:
     hide the failure the same way, so this surfaces it for display instead.
     """
     from config.settings import Settings
-    from host.agent import _ANALYZER_BATCH_SIZE, _resolved_profile_name, composed_system_prompts
+    from host.agent import _resolved_profile_name, composed_system_prompts
 
     settings = Settings()
     return _PromptInspectionData(
         prompts=composed_system_prompts(settings),
         resolved_profile=_resolved_profile_name(settings),
         configured_profile=settings.profile,
-        analyzer_batch_size=_ANALYZER_BATCH_SIZE,
+        analyzer_batch_size=settings.analyzer_batch_size,
     )
 
 
@@ -196,8 +203,9 @@ async def _build_prompt_inspection() -> None:
             ).classes("text-negative").mark("prompt-profile-status")
 
         ui.label(
-            "Not shown here: the corpus digest (built from the analyzed registry) "
-            "and any steering instructions you gave before analysis — both are "
+            "Not shown here: the corpus digest (built from the analyzed registry), "
+            "the persistent per-directory memory file (.organizer/memory.md), and "
+            "any steering instructions you gave before analysis — all three are "
             "composed at run time from a live target directory, which this "
             "settings view does not have."
         ).classes("text-caption")

@@ -70,6 +70,29 @@ def resolve_sessions_dir(target: Path) -> Path:
     return Settings().for_target(target).sessions_dir
 
 
+def resolve_memory_path(target: Path) -> Path:
+    """Resolve the persistent per-directory memory file (Z5) for ``target``."""
+    from config.settings import Settings
+
+    return Settings().for_target(target).memory_path
+
+
+def memory_status_text(target: Path) -> str:
+    """One-line starter-pane status (Z5): whether a persistent memory file
+    already exists for ``target``, and roughly how much it holds — makes the
+    injection visible before a run starts, since a hostile corpus could in
+    principle ship its own memory.md. Empty string if there is none, or on
+    any error — this is a display nicety, never a safety guard."""
+    try:
+        path = resolve_memory_path(target)
+        if not path.is_file():
+            return ""
+        size = len(path.read_text(encoding="utf-8", errors="replace"))
+        return f"Using notes from {path.name} — {size:,} characters"
+    except Exception:
+        return ""
+
+
 def quarantine_basename() -> str:
     """Basename of the configured quarantine dir, for discovery-hiding (P2).
 

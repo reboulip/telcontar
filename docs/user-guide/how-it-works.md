@@ -32,8 +32,9 @@ When you run `telcontar`, the app checks whether a minimum configuration (AI ser
 Pressing **Organize** does not launch the agent immediately. The `OrganizerScreen` opens on a **starter pane** first:
 
 - A code-generated, deterministic **directory overview** (`_directory_overview`) — file count, subfolder count, and the most common file extensions, computed by scanning names and directory structure only. No file content is read and no LLM call is made.
-- An optional **steering instructions** field for free text, e.g. "group by workstream", "keep the 2024 invoices together", or "don't quarantine drafts".
-- A **Start organizing** button (pressing Enter in the instructions field works too).
+- An optional, multi-line **steering instructions** field for free text, e.g. "group by workstream", "keep the 2024 invoices together", or "don't quarantine drafts". Pressing Enter in this field inserts a newline rather than starting the run.
+- A **Documents per analysis batch** number field, letting you override the number of documents sent to the model per analysis batch for this run (default 10).
+- A **Start organizing** button.
 
 Only once you proceed does the chat transcript appear and the agent loop start. Any instructions you typed are shown as a `you` turn in the transcript and passed to `run_agent_loop(..., instructions=...)`, which appends them to the agent's first user message so the run follows your intent instead of organizing blind.
 
@@ -247,6 +248,10 @@ A couple of things carry over differently on a continuation:
 - Each chat message gets its **own fresh turn budget**, not a share of the original run's. Since a continuation doesn't re-run the discovery/analysis stage, the adaptive turn-budget calculation (which scales with corpus size) resets to its floor of 50 turns — in practice not a limitation, since a follow-up message is normally a small, targeted ask rather than a fresh full-corpus analysis.
 - The desktop notification fires only once, on the *first* terminal state — not again after every subsequent chat turn.
 - If a turn raises an unhandled error partway through a batch of tool calls, telcontar no longer crashes the conversation: any tool call left without a result is answered with a synthetic error so the history stays valid, and you can keep typing to try again.
+
+### Recovering from a bad LLM config mid-run
+
+If a run is stuck on a bad LLM config — a wrong model name, a `429` — you don't need to stop it and restart telcontar. Open **⚙ Settings** from any screen and fix `LLM_BASE_URL`/`LLM_API_KEY`/`LLM_MODEL`/`LLM_API_VERSION`, then save. The running session (organize or query) picks up the change automatically on its next LLM call and posts a chat message telling you what it reconnected to — the new model and the endpoint's host, never the key. Everything else on the Settings screen — approval mode, document profile — only applies to sessions started after the save; it does not change how the session already in progress behaves.
 
 ---
 

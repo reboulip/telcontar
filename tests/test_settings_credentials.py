@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from config import settings as settings_module
-from config.settings import PlaintextKeyFallbackNeeded, save_user_config
+from config.settings import PlaintextKeyFallbackNeeded, config_revision, save_user_config
 
 
 @pytest.fixture(autouse=True)
@@ -99,3 +99,53 @@ class TestSaveUserConfigKeyringUnavailable:
 
         content = _isolated_user_config.read_text(encoding="utf-8")
         assert "LLM_API_KEY=sk-secret" in content
+
+
+class TestConfigRevision:
+    """Z2: host/llm.py's ReloadingClient polls config_revision() to detect a
+    settings change mid-session. The counter is a module global shared
+    across the whole test run, so every assertion here is a DELTA, never an
+    absolute value."""
+
+    def test_successful_save_bumps_the_revision(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _isolated_user_config: Path
+    ) -> None:
+        monkeypatch.setattr(settings_module, "_keyring_set", lambda key: True)
+        before = config_revision()
+
+        save_user_config({"llm_base_url": "https://example.com", "llm_api_key": "sk-secret"})
+
+        assert config_revision() > before
+
+    def test_non_sensitive_save_also_bumps_the_revision(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _isolated_user_config: Path
+    ) -> None:
+        before = config_revision()
+
+        save_user_config({"profile": "personal_files"})
+
+        assert config_revision() > before
+
+    def test_plaintext_fallback_needed_does_not_bump_the_revision(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _isolated_user_config: Path
+    ) -> None:
+        """The PlaintextKeyFallbackNeeded raise happens before anything is
+        written — a rejected attempt must not look like a successful save to
+        a ReloadingClient polling the revision."""
+        monkeypatch.setattr(settings_module, "_keyring_set", lambda key: False)
+        before = config_revision()
+
+        with pytest.raises(PlaintextKeyFallbackNeeded):
+            save_user_config({"llm_base_url": "https://example.com", "llm_api_key": "sk-secret"})
+
+        assert config_revision() == before
+
+    def test_each_save_bumps_by_exactly_one(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _isolated_user_config: Path
+    ) -> None:
+        before = config_revision()
+
+        save_user_config({"profile": "personal_files"})
+        save_user_config({"profile": "research_papers"})
+
+        assert config_revision() == before + 2

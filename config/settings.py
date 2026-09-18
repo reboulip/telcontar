@@ -15,6 +15,20 @@ _USER_CONFIG: Path = _USER_CONFIG_DIR / "config.env"
 # Package root: config/ → project root (or site-packages/ when installed)
 _PACKAGE_ROOT: Path = Path(__file__).resolve().parent.parent
 
+# Z2: bumped at the end of a successful save_user_config() — host/llm.py's
+# ReloadingClient polls this to detect a config change mid-session and
+# reload without a full telcontar restart. Module-global, process-lifetime;
+# tests must assert a DELTA, never an absolute value.
+_config_revision: int = 0
+
+
+def config_revision() -> int:
+    """The current config revision — bumps once per successful
+    ``save_user_config()`` call (never on a ``PlaintextKeyFallbackNeeded``
+    raise, since that happens before anything is written)."""
+    return _config_revision
+
+
 # ── Settings model ────────────────────────────────────────────────────────────
 
 
@@ -74,6 +88,17 @@ class Settings(BaseSettings):
     # text; the home-directory sessions index (metadata only) is separate —
     # see config.settings.user_sessions_index_path().
     sessions_dir: Path = Path(".organizer/sessions")
+    # Z5: persistent per-directory notes that carry across sessions — read on
+    # every fresh run and, via the plan-gated memory_note op, appendable by
+    # the agent. A Path field, so (unlike analyzer_batch_size) it IS rebased
+    # by for_target() below.
+    memory_path: Path = Path(".organizer/memory.md")
+
+    # Run configuration
+    # Z3: how many documents the ANALYZE step sends to the LLM per batch —
+    # user-settable at run start (host/web/main.py's starter column). A plain
+    # scalar field, not rebased in for_target() (only Path fields are).
+    analyzer_batch_size: int = Field(default=10, ge=1, le=50)
 
     # Egress / extraction
     max_snippet_chars: int = 4000
@@ -129,6 +154,7 @@ class Settings(BaseSettings):
                 "token_log_path": _rebase(self.token_log_path),
                 "llm_debug_log_path": _rebase(self.llm_debug_log_path),
                 "sessions_dir": _rebase(self.sessions_dir),
+                "memory_path": _rebase(self.memory_path),
             }
         )
 
@@ -233,6 +259,9 @@ def save_user_config(updates: dict[str, str], allow_plaintext_fallback: bool = F
 
     lines = [f"{k}={v}" for k, v in existing.items()]
     _USER_CONFIG.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    global _config_revision
+    _config_revision += 1
 
 
 def read_user_config() -> dict[str, str]:

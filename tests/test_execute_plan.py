@@ -758,6 +758,102 @@ class TestExecutePlanNewOpTypes:
         archives = list(quarantine_dir.glob("quarantine_*.zip"))
         assert len(archives) == 1
 
+    def test_memory_note_op_appends_to_the_file(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        memory_path = tmp_path / ".organizer" / "memory.md"
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(
+            PlanOp.new(
+                "memory_note", str(memory_path), "", params={"note": "keep invoices by year"}
+            )
+        )
+        save(p, plans_dir)
+
+        result = execute_plan(p.plan_id, plans_dir, journal_path, memory_path=memory_path)
+
+        assert result["state"] == "done"
+        text = memory_path.read_text(encoding="utf-8")
+        assert "keep invoices by year" in text
+        assert "# telcontar memory" in text
+
+    def test_memory_note_op_without_memory_path_fails(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(
+            PlanOp.new("memory_note", str(tmp_path / "memory.md"), "", params={"note": "a note"})
+        )
+        save(p, plans_dir)
+
+        result = execute_plan(p.plan_id, plans_dir, journal_path)
+
+        assert result["state"] == "failed"
+
+    def test_memory_note_op_is_self_journaling_not_double_journaled(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        """memory_note is self-journaling (like archive_document/
+        compress_quarantine) — execute_plan's generic journal append must be
+        skipped for it, or undo_last would see the wrong entry shape."""
+        memory_path = tmp_path / "memory.md"
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("memory_note", str(memory_path), "", params={"note": "a note"}))
+        save(p, plans_dir)
+
+        execute_plan(p.plan_id, plans_dir, journal_path, memory_path=memory_path)
+
+        entries = json.loads(
+            "[" + ",".join(journal_path.read_text(encoding="utf-8").splitlines()) + "]"
+        )
+        assert len(entries) == 1
+        assert entries[0]["op_type"] == "memory_note"
+        assert "offset" in entries[0] and "bytes" in entries[0]
+
+    def test_memory_note_op_undoable_via_undo_last(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        from server.tools import undo_last
+
+        memory_path = tmp_path / "memory.md"
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("memory_note", str(memory_path), "", params={"note": "a note"}))
+        save(p, plans_dir)
+
+        execute_plan(p.plan_id, plans_dir, journal_path, memory_path=memory_path)
+        assert "a note" in memory_path.read_text(encoding="utf-8")
+
+        result = undo_last(journal_path, plans_dir)
+
+        assert result["undone"] is not None
+        assert not memory_path.exists() or "a note" not in memory_path.read_text(encoding="utf-8")
+
+    def test_memory_note_undo_refuses_if_file_changed_since(
+        self, tmp_path: Path, plans_dir: Path, journal_path: Path
+    ) -> None:
+        from server.tools import undo_last
+
+        memory_path = tmp_path / "memory.md"
+        p = Plan.new()
+        p.transition("approved")
+        p.ops.append(PlanOp.new("memory_note", str(memory_path), "", params={"note": "a note"}))
+        save(p, plans_dir)
+        execute_plan(p.plan_id, plans_dir, journal_path, memory_path=memory_path)
+
+        # Simulate a hand-edit (or a later note) appending more content since.
+        with memory_path.open("a", encoding="utf-8") as f:
+            f.write("- [2026-01-01] (user) hand-written note\n")
+
+        result = undo_last(journal_path, plans_dir)
+
+        assert result["undone"] is None
+        assert "error" in result
+        assert "hand-written note" in memory_path.read_text(encoding="utf-8")
+
 
 class TestExecutePlanChainedOps:
     """F7: a file relocated by an earlier op is tracked so later ops still resolve."""

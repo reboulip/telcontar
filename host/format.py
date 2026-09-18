@@ -95,6 +95,19 @@ def quarantine_reason(op: dict) -> str:
     return reason
 
 
+def memory_note_text(op: dict) -> str:
+    """Format a memory_note op's staged text for display (Z5), capped at
+    ``_MAX_QUARANTINE_REASON_CHARS`` like `quarantine_reason` — the full note
+    is always available verbatim in ``plan_ops.json``. Hiding this text
+    behind `fmt_op`'s generic fallback would let the user approve a note
+    without seeing what it says, which is a safety-visible defect, not a
+    cosmetic one."""
+    note = ((op.get("params") or {}).get("note") or "").strip()
+    if len(note) > _MAX_QUARANTINE_REASON_CHARS:
+        return note[: _MAX_QUARANTINE_REASON_CHARS - 1] + "…"
+    return note
+
+
 def fmt_op(op: dict, target: Path | None = None, *, markup: bool = True) -> str:
     op_type = op.get("op_type", "?")
     src = Path(op.get("src", "")).name
@@ -119,6 +132,8 @@ def fmt_op(op: dict, target: Path | None = None, *, markup: bool = True) -> str:
             else:
                 overwrite_flag = ""
             label = f"UPDATE   {src}{overwrite_flag}"
+        case "memory_note":
+            label = f"REMEMBER  {memory_note_text(op)}"
         case _:
             label = f"{op_type.upper()}  {src}"
     if is_op_out_of_scope(op, target):
@@ -279,8 +294,8 @@ def _chain_ops(ops: list[dict], target: Path | None) -> tuple[list[_FileChain], 
 
     Returns ``(chains, other_ops)``: ``other_ops`` holds every op with no
     clean before/after tree slot (``create_dir``, ``compress_quarantine``,
-    ``update_file``, and any ``quarantine``/``archive_document`` with no
-    destination computed) — unchanged from ``plan_tree_diff``'s prior
+    ``memory_note``, ``update_file``, and any ``quarantine``/``archive_document``
+    with no destination computed) — unchanged from ``plan_tree_diff``'s prior
     per-op behaviour. No op is ever dropped: every op_id ends up in exactly
     one chain's ``op_ids`` or in ``other_ops``.
     """

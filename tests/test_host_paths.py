@@ -17,9 +17,11 @@ from host import paths as host_paths
 from host.paths import (
     directory_overview,
     is_op_out_of_scope,
+    memory_status_text,
     resolve_events_path,
     resolve_graph_path,
     resolve_journal_path,
+    resolve_memory_path,
     resolve_registry_path,
     reveal_in_file_manager,
 )
@@ -107,6 +109,54 @@ def test_resolve_events_path_rebases_under_target(tmp_path: Path) -> None:
     target.mkdir()
 
     assert resolve_events_path(target) == target.resolve() / ".organizer" / "events.jsonl"
+
+
+def test_resolve_memory_path_rebases_under_target(tmp_path: Path) -> None:
+    target = tmp_path / "corpus"
+    target.mkdir()
+
+    assert resolve_memory_path(target) == target.resolve() / ".organizer" / "memory.md"
+
+
+# ── memory_status_text (Z5) ────────────────────────────────────────────────────
+
+
+def test_memory_status_text_empty_when_no_memory_file(tmp_path: Path) -> None:
+    target = tmp_path / "corpus"
+    target.mkdir()
+
+    assert memory_status_text(target) == ""
+
+
+def test_memory_status_text_reports_character_count(tmp_path: Path) -> None:
+    target = tmp_path / "corpus"
+    target.mkdir()
+    memory_path = resolve_memory_path(target)
+    memory_path.parent.mkdir(parents=True)
+    memory_path.write_text("x" * 42, encoding="utf-8")
+
+    status = memory_status_text(target)
+
+    assert "memory.md" in status
+    assert "42" in status
+
+
+def test_memory_status_text_never_raises_on_unreadable_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = tmp_path / "corpus"
+    target.mkdir()
+    memory_path = resolve_memory_path(target)
+    memory_path.parent.mkdir(parents=True)
+    memory_path.write_text("some notes", encoding="utf-8")
+
+    monkeypatch.setattr(
+        host_paths.Path,
+        "read_text",
+        lambda self, *a, **k: (_ for _ in ()).throw(OSError("boom")),
+    )
+
+    assert memory_status_text(target) == ""
 
 
 # ── directory_overview ──────────────────────────────────────────────────────────
