@@ -976,6 +976,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#server.tools.append_memory_note" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        append_memory_note
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#server.tools.approve_plan" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1288,6 +1299,17 @@
     <span class="md-ellipsis">
       
         propose_create_file
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server.tools.propose_memory_note" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        propose_memory_note
       
     </span>
   </a>
@@ -2631,6 +2653,28 @@
 <div class="doc doc-object doc-function">
 
 
+<h3 id="server.tools.append_memory_note" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">append_memory_note</span><span class="p">(</span><span class="n">memory_path</span><span class="p">,</span> <span class="n">note</span><span class="p">,</span> <span class="n">journal_path</span><span class="p">)</span></code>
+
+<a href="#server.tools.append_memory_note" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Append one note to the persistent memory file, journaling the exact
+byte range written so <code>undo_last</code> can revert it precisely.</p>
+<p>The only caller is <code>execute_plan</code>'s <code>memory_note</code> branch — this
+function self-journals (like <code>archive_document</code>/<code>compress_quarantine</code>),
+so <code>execute_plan</code>'s generic journal append is skipped for this op type.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h3 id="server.tools.approve_plan" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">approve_plan</span><span class="p">(</span><span class="n">plan_id</span><span class="p">,</span> <span class="n">plans_dir</span><span class="p">)</span></code>
 
@@ -2818,7 +2862,7 @@ if unknown).</p>
 
 
 <h3 id="server.tools.execute_plan" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">execute_plan</span><span class="p">(</span><span class="n">plan_id</span><span class="p">,</span> <span class="n">plans_dir</span><span class="p">,</span> <span class="n">journal_path</span><span class="p">,</span> <span class="n">registry_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">quarantine_dir</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">archive_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">target_dir</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">empty_folder_policy</span><span class="o">=</span><span class="s1">&#39;quarantine&#39;</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">execute_plan</span><span class="p">(</span><span class="n">plan_id</span><span class="p">,</span> <span class="n">plans_dir</span><span class="p">,</span> <span class="n">journal_path</span><span class="p">,</span> <span class="n">registry_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">quarantine_dir</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">archive_path</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">target_dir</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">empty_folder_policy</span><span class="o">=</span><span class="s1">&#39;quarantine&#39;</span><span class="p">,</span> <span class="n">memory_path</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
 
 <a href="#server.tools.execute_plan" class="headerlink" title="Permanent link">&para;</a></h3>
 
@@ -2834,7 +2878,10 @@ are only required if the plan contains an <code>archive_document</code> or
 <code>compress_quarantine</code> op (M1) — those op types reuse the standalone
 <code>archive_document</code>/<code>compress_quarantine</code> functions, which self-journal with
 the same <code>op_type</code> strings <code>undo_last</code> already understands ("quarantine" /
-"compress"), so this loop skips its generic journal append for them.</p>
+"compress"), so this loop skips its generic journal append for them.
+<code>memory_path</code> (Z5) is required only if the plan contains a <code>memory_note</code>
+op — that op type reuses the standalone, self-journaling
+<code>append_memory_note</code> function the same way.</p>
 <p>Y6: when <code>target_dir</code> is given (and only then — every existing caller that
 omits it keeps the old, sweep-free behaviour), any directory left empty by a
 completed <code>move</code>/<code>quarantine</code>/<code>archive_document</code> op is disposed of per
@@ -3188,6 +3235,32 @@ single call instead of one <code>get_document</code> round trip per checksum.</p
     <div class="doc doc-contents ">
 
         <p>Append a create_file op to an existing pending plan; eager collision check.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="server.tools.propose_memory_note" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">propose_memory_note</span><span class="p">(</span><span class="n">note</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">,</span> <span class="n">plans_dir</span><span class="p">,</span> <span class="n">memory_path</span><span class="p">,</span> <span class="n">max_chars</span><span class="p">)</span></code>
+
+<a href="#server.tools.propose_memory_note" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Append a memory_note op to an existing pending plan (Z5) — the ONLY
+write path into the persistent per-directory memory file, so it goes
+through the same plan/approve/execute gate as every other mutation.</p>
+<p><code>memory_path</code> is server-resolved, never agent-supplied — the agent
+can't aim a note at an arbitrary file. Silently skips (no op added,
+<code>{"skipped": True, ...}</code> returned) rather than erroring when the note
+is already recorded, already staged in this plan, or the file is already
+at its read cap (writing further would be invisible to future runs) —
+these are expected, not failures the agent needs to react to.</p>
 
 
     </div>

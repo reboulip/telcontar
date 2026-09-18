@@ -588,6 +588,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#run-configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run configuration
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#domain-profile" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1608,6 +1619,17 @@
 </tr>
 </tbody>
 </table>
+<div class="admonition tip">
+<p class="admonition-title">Tip</p>
+<p>Got a bad LLM config mid-run (wrong model name, a <code>429</code>)? You don't need
+to restart telcontar. Fix <code>LLM_BASE_URL</code>/<code>LLM_API_KEY</code>/<code>LLM_MODEL</code>/
+<code>LLM_API_VERSION</code> on the <strong>⚙ Settings</strong> screen and save — any session
+currently running (organize or query) reconnects to the new
+model/endpoint/key automatically on its next LLM call, and posts a chat
+message telling you what it reconnected to. Everything else on that
+screen (approval mode, profile) only applies to sessions started after
+the save.</p>
+</div>
 <h3 id="safety">Safety<a class="headerlink" href="#safety" title="Permanent link">&para;</a></h3>
 <table>
 <thead>
@@ -1654,6 +1676,25 @@
 <td>no</td>
 <td><code>.organizer/events.jsonl</code></td>
 <td>Append-only project event journal (narrative log, drives <code>create_event</code> / <code>list_events</code>). Relative to the target directory being organized (same rebasing as <code>JOURNAL_PATH</code>).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="run-configuration">Run configuration<a class="headerlink" href="#run-configuration" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Required</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>ANALYZER_BATCH_SIZE</code></td>
+<td>no</td>
+<td><code>10</code></td>
+<td>Documents per ANALYZE batch (1–50). Also settable per run via the "Documents per analysis batch" field on the organize starter pane, which overrides the configured default for that run only.</td>
 </tr>
 </tbody>
 </table>

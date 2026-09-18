@@ -1131,6 +1131,45 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#host.llm.ReloadingClient" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ReloadingClient
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ReloadingClient">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#host.llm.ReloadingClient.ensure_current" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ensure_current
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#host.llm.make_reloading_client" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        make_reloading_client
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#host.llm.resolve_azure_target" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1874,13 +1913,14 @@ directory, so re-deriving this differently here would display a prompt
 telcontar does not actually send. The domain profile is loaded ONCE and
 reused across all three builders below, rather than three separate
 loads/parses.</p>
-<p>The ANALYZE prompt is rendered for a full batch of <code>_ANALYZER_BATCH_SIZE</code>
-documents — illustrative, since an actual run's batches (especially the
-last one) are often smaller.</p>
-<p>Two things composed at runtime from a live run are deliberately NOT
+<p>The ANALYZE prompt is rendered for a full batch of
+<code>settings.analyzer_batch_size</code> documents — illustrative, since an actual
+run's batches (especially the last one) are often smaller.</p>
+<p>Three things composed at runtime from a live run are deliberately NOT
 reflected here: the corpus digest (built from an actual target's analyzed
-registry) and the user's own pre-analysis steering instructions — both
-require a live target/registry this target-free view does not have.</p>
+registry), the persistent per-directory memory file (Z5, <code>.organizer/memory.md</code>),
+and the user's own pre-analysis steering instructions — all three require a
+live target this target-free view does not have.</p>
 
 
     </div>
@@ -2157,6 +2197,109 @@ misconfiguration walkthrough: a full operation URL with an embedded dated
 
 
 
+<div class="doc doc-object doc-class">
+
+
+
+<h3 id="host.llm.ReloadingClient" class="doc doc-heading">
+              <code class="highlight language-python"><span class="n">ReloadingClient</span><span class="p">(</span><span class="n">settings</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">on_reload</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+<a href="#host.llm.ReloadingClient" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+
+
+        <p>Duck-types as an <code>AsyncOpenAI</code> for the one surface <code>host.agent</code>
+actually calls — <code>.chat.completions.create(**kwargs)</code> — delegating to
+whichever underlying client is current, rebuilding it transparently when
+the config has changed since the last call.</p>
+<p>Mutates the SAME <code>Settings</code> instance passed in, in place, rather than
+swapping to a new object: the agent loop holds a reference to that same
+object, so a reload is invisible to every other reader of it without
+needing to plumb a new settings object through <code>run_agent_loop</code>.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h4 id="host.llm.ReloadingClient.ensure_current" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">ensure_current</span><span class="p">()</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-async"><code>async</code></small>
+  </span>
+
+<a href="#host.llm.ReloadingClient.ensure_current" class="headerlink" title="Permanent link">&para;</a></h4>
+
+
+    <div class="doc doc-contents ">
+
+        <p>No-op if the config revision hasn't changed since the current
+client was built (the overwhelmingly common path — one integer
+compare per call). On a changed revision: reload settings off the
+event loop (<code>load()</code> can hit the OS keyring, which can block),
+hot-swap only the reloadable fields, rebuild the client, close the
+superseded one, and report via <code>on_reload</code>. Never raises into the
+run — a failed reload keeps the existing client.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="host.llm.make_reloading_client" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">make_reloading_client</span><span class="p">(</span><span class="n">settings</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">on_reload</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+<a href="#host.llm.make_reloading_client" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Build a self-reloading LLM client (Z2). Returns a <code>ReloadingClient</code>
+cast to <code>AsyncOpenAI</code> — the cast is the one deliberate lie in this
+module: it lets every <code>host/agent.py</code> call site keep its existing
+<code>llm: AsyncOpenAI</code> annotation unchanged, since the only member it ever
+touches (<code>llm.chat.completions.create</code>) is exactly what this wrapper
+implements.</p>
+
+
+    </div>
+
+</div>
 
 <div class="doc doc-object doc-function">
 

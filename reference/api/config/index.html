@@ -1082,6 +1082,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#config.settings.config_revision" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        config_revision
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#config.settings.is_configured" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1751,6 +1762,26 @@ deliberately left untouched.</p>
 
 </div>
 
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="config.settings.config_revision" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">config_revision</span><span class="p">()</span></code>
+
+<a href="#config.settings.config_revision" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>The current config revision — bumps once per successful
+<code>save_user_config()</code> call (never on a <code>PlaintextKeyFallbackNeeded</code>
+raise, since that happens before anything is written).</p>
+
+
+    </div>
+
+</div>
 
 <div class="doc doc-object doc-function">
 

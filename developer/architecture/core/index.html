@@ -1445,6 +1445,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#mid-session-llm-config-reload-z2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mid-session LLM config reload (Z2)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#nicegui-web-ui-foundations" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2121,6 +2132,27 @@ UI-layer change was needed.</p>
   call <code>execute_plan</code>, the run ends normally but the final text names the
   unexecuted plan id instead of losing it silently.</li>
 </ul>
+<h3 id="mid-session-llm-config-reload-z2">Mid-session LLM config reload (Z2)<a class="headerlink" href="#mid-session-llm-config-reload-z2" title="Permanent link">&para;</a></h3>
+<p>An in-flight run used to hold a build-once, held-for-the-session client: a bad
+LLM config (wrong model name, an HTTP 429 grind) meant restarting telcontar
+entirely to pick up a fix. <code>AgentBridge</code>/<code>QueryBridge</code> (<code>host/web/bridge.py</code>)
+now build the LLM client via <code>host/llm.py</code>'s <code>make_reloading_client</code> instead
+of <code>make_client</code>. The returned <code>ReloadingClient</code> duck-types <code>AsyncOpenAI</code> for
+the one surface <code>host/agent.py</code> calls (<code>llm.chat.completions.create</code>) and, on
+every call, polls a process-global config revision counter
+(<code>config.settings.config_revision()</code>, bumped once per successful
+<code>save_user_config()</code>) to detect that the on-disk config changed since the
+client was built; if it has, it reloads <code>Settings</code>, rebuilds the client, and
+reports what changed as a visible chat turn (model + endpoint hostname, never
+the key).</p>
+<p>Only the LLM endpoint fields (<code>llm_base_url</code>, <code>llm_api_key</code>, <code>llm_model</code>,
+<code>llm_api_version</code>) are ever hot-swapped this way — <code>approval_mode</code> and every
+path field stay pinned for the whole session's lifetime by design, so a live
+run's already-consented-to approval gate can never be silently relaxed by an
+unrelated settings save elsewhere. A Settings-page save while a run is in
+progress therefore reconnects that run to the new model/endpoint/key
+automatically; everything else in the settings form only takes effect for
+sessions started after the save.</p>
 <h3 id="nicegui-web-ui-foundations">NiceGUI web UI foundations<a class="headerlink" href="#nicegui-web-ui-foundations" title="Permanent link">&para;</a></h3>
 <p>The web UI's own foundational design decisions — routing/session model, the persistent nav header, dialogs, sidebar tree, reload-safety, theming, and the native-window launch — are documented separately, since they make up roughly two-thirds of this document's original content: see <a href="../web-ui/">Architecture — Web UI</a>.</p>
 <hr />
@@ -2149,68 +2181,81 @@ UI-layer change was needed.</p>
 <a id="__codelineno-2-22" name="__codelineno-2-22" href="#__codelineno-2-22"></a>   known + newly-analyzed documents — per-doc title/type/path (capped at 200
 <a id="__codelineno-2-23" name="__codelineno-2-23" href="#__codelineno-2-23"></a>   listed) plus totals and any error count — and seeds it into the first
 <a id="__codelineno-2-24" name="__codelineno-2-24" href="#__codelineno-2-24"></a>   ORGANIZE-phase user message in place of blank &quot;please organize&quot; instructions;
-<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a>   the organize view&#39;s starter-pane steering-instructions input, if the user
-<a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a>   typed any, is appended to this same seed message
-<a id="__codelineno-2-27" name="__codelineno-2-27" href="#__codelineno-2-27"></a>5b. Host drains any chat message queued via message_queue since the run started
-<a id="__codelineno-2-28" name="__codelineno-2-28" href="#__codelineno-2-28"></a>    (P7) — catches anything typed during steps 2-4 above — and appends each as
-<a id="__codelineno-2-29" name="__codelineno-2-29" href="#__codelineno-2-29"></a>    a user turn before the first LLM call. The #organize-input chat box is
-<a id="__codelineno-2-30" name="__codelineno-2-30" href="#__codelineno-2-30"></a>    enabled from the very start of the run, not just after it stops
-<a id="__codelineno-2-31" name="__codelineno-2-31" href="#__codelineno-2-31"></a>6. Host calls session.list_tools(denied=ORGANIZE_DENIED_TOOLS) → discovers the
-<a id="__codelineno-2-32" name="__codelineno-2-32" href="#__codelineno-2-32"></a>   ORGANIZE-phase toolset, structurally excluding the content-fetching/recording
-<a id="__codelineno-2-33" name="__codelineno-2-33" href="#__codelineno-2-33"></a>   tools already used in steps 2-4 (P6); if the caller wired in an
-<a id="__codelineno-2-34" name="__codelineno-2-34" href="#__codelineno-2-34"></a>   on_ask_user_needed callback, the host also appends its own host-side ask_user
-<a id="__codelineno-2-35" name="__codelineno-2-35" href="#__codelineno-2-35"></a>   tool spec (P8; never forwarded to the server)
-<a id="__codelineno-2-36" name="__codelineno-2-36" href="#__codelineno-2-36"></a>7. Host sends the ORGANIZE-only system prompt (built from config + active
-<a id="__codelineno-2-37" name="__codelineno-2-37" href="#__codelineno-2-37"></a>   profile: document types, naming conventions, and synthesis template — no
-<a id="__codelineno-2-38" name="__codelineno-2-38" href="#__codelineno-2-38"></a>   ANALYZE section, since the corpus is already analyzed) + the digest-seeded
-<a id="__codelineno-2-39" name="__codelineno-2-39" href="#__codelineno-2-39"></a>   user message from step 5
-<a id="__codelineno-2-40" name="__codelineno-2-40" href="#__codelineno-2-40"></a>8. The model responds with tool calls
-<a id="__codelineno-2-41" name="__codelineno-2-41" href="#__codelineno-2-41"></a>9. Host dispatches to server via MCP — a hallucinated call to one of
-<a id="__codelineno-2-42" name="__codelineno-2-42" href="#__codelineno-2-42"></a>   ORGANIZE_DENIED_TOOLS is rejected with an explicit error instead of being
-<a id="__codelineno-2-43" name="__codelineno-2-43" href="#__codelineno-2-43"></a>   forwarded, even though none of them were advertised in step 6 (defense in
-<a id="__codelineno-2-44" name="__codelineno-2-44" href="#__codelineno-2-44"></a>   depth, P6)
-<a id="__codelineno-2-45" name="__codelineno-2-45" href="#__codelineno-2-45"></a>10. Server executes tool, returns result
-<a id="__codelineno-2-46" name="__codelineno-2-46" href="#__codelineno-2-46"></a>11. Host feeds result back to the model as a tool message — any document content a
-<a id="__codelineno-2-47" name="__codelineno-2-47" href="#__codelineno-2-47"></a>    tool result still carries (e.g. compare_documents&#39;s diff field, in query
-<a id="__codelineno-2-48" name="__codelineno-2-48" href="#__codelineno-2-48"></a>    mode only — ORGANIZE mode no longer exposes it) is wrapped in the
-<a id="__codelineno-2-49" name="__codelineno-2-49" href="#__codelineno-2-49"></a>    untrusted-content delimiter first (M10)
-<a id="__codelineno-2-50" name="__codelineno-2-50" href="#__codelineno-2-50"></a>12. Host drains message_queue again (P7) — catches anything typed during this
-<a id="__codelineno-2-51" name="__codelineno-2-51" href="#__codelineno-2-51"></a>    turn&#39;s tool calls (step 9-11) — appending each queued message as a user
-<a id="__codelineno-2-52" name="__codelineno-2-52" href="#__codelineno-2-52"></a>    turn; steps 8-11 then repeat (up to the adaptive turn budget — see above,
-<a id="__codelineno-2-53" name="__codelineno-2-53" href="#__codelineno-2-53"></a>    effectively static for a fresh run since the O5 progress tracker no longer
-<a id="__codelineno-2-54" name="__codelineno-2-54" href="#__codelineno-2-54"></a>    grows once the ORGANIZE loop starts)
-<a id="__codelineno-2-55" name="__codelineno-2-55" href="#__codelineno-2-55"></a>13. At any point before or while building the plan, the agent MAY call ask_user
-<a id="__codelineno-2-56" name="__codelineno-2-56" href="#__codelineno-2-56"></a>    (P8) with 1-5 items — plain questions, multiple-choice ones (2-5 options), or
-<a id="__codelineno-2-57" name="__codelineno-2-57" href="#__codelineno-2-57"></a>    a mix; the host emits an &quot;ask_user&quot; AgentEvent, renders the item(s) as a
-<a id="__codelineno-2-58" name="__codelineno-2-58" href="#__codelineno-2-58"></a>    transcript turn, and blocks on the live-chat message queue (P7) for the
-<a id="__codelineno-2-59" name="__codelineno-2-59" href="#__codelineno-2-59"></a>    user&#39;s next chat reply (or a &quot;proceed with best judgement&quot; note if the
-<a id="__codelineno-2-60" name="__codelineno-2-60" href="#__codelineno-2-60"></a>    callback is unavailable or nothing well-formed was asked) — unlimited per
-<a id="__codelineno-2-61" name="__codelineno-2-61" href="#__codelineno-2-61"></a>    run, no once-per-run guard
-<a id="__codelineno-2-62" name="__codelineno-2-62" href="#__codelineno-2-62"></a>14. Agent designs a target taxonomy from the types/themes already recorded in the
-<a id="__codelineno-2-63" name="__codelineno-2-63" href="#__codelineno-2-63"></a>    digest, opens a plan (create_plan), and stages propose_create_dir for each
-<a id="__codelineno-2-64" name="__codelineno-2-64" href="#__codelineno-2-64"></a>    folder (idempotent; no folder created for absent categories) alongside
-<a id="__codelineno-2-65" name="__codelineno-2-65" href="#__codelineno-2-65"></a>    propose_rename / propose_move / propose_quarantine / propose_create_file /
-<a id="__codelineno-2-66" name="__codelineno-2-66" href="#__codelineno-2-66"></a>    propose_update_file / propose_archive_document ops — every mutation is
-<a id="__codelineno-2-67" name="__codelineno-2-67" href="#__codelineno-2-67"></a>    staged, never applied directly
-<a id="__codelineno-2-68" name="__codelineno-2-68" href="#__codelineno-2-68"></a>15. On execute_plan call:
-<a id="__codelineno-2-69" name="__codelineno-2-69" href="#__codelineno-2-69"></a>    a. Host fetches plan details (get_plan) and writes the full ops list to
-<a id="__codelineno-2-70" name="__codelineno-2-70" href="#__codelineno-2-70"></a>       .organizer/plan_ops.json (path shown in the dialog)
-<a id="__codelineno-2-71" name="__codelineno-2-71" href="#__codelineno-2-71"></a>    b. Host shows the approval dialog to the user (`build_approval_dialog`,
-<a id="__codelineno-2-72" name="__codelineno-2-72" href="#__codelineno-2-72"></a>       `host/web/dialogs.py`)
-<a id="__codelineno-2-73" name="__codelineno-2-73" href="#__codelineno-2-73"></a>    c. User approves (optionally deselecting ops), refines with free text, or rejects
-<a id="__codelineno-2-74" name="__codelineno-2-74" href="#__codelineno-2-74"></a>    d. On approve: host calls approve_plan → execute_plan; server applies ops,
-<a id="__codelineno-2-75" name="__codelineno-2-75" href="#__codelineno-2-75"></a>       journals each, reconciles registry
-<a id="__codelineno-2-76" name="__codelineno-2-76" href="#__codelineno-2-76"></a>    e. On refine: the plan is NOT executed — the free-text request is returned to the
-<a id="__codelineno-2-77" name="__codelineno-2-77" href="#__codelineno-2-77"></a>       agent as a tool result, which revises the plan (ops/rationale/folder notes) and
-<a id="__codelineno-2-78" name="__codelineno-2-78" href="#__codelineno-2-78"></a>       calls execute_plan again to re-present it (back to step 15)
-<a id="__codelineno-2-79" name="__codelineno-2-79" href="#__codelineno-2-79"></a>16. Agent calls build_graph → get_actors → list_events, then composes SUMMARY.md
-<a id="__codelineno-2-80" name="__codelineno-2-80" href="#__codelineno-2-80"></a>    from registry + events + graph + actors per the profile&#39;s [synthesis] template;
-<a id="__codelineno-2-81" name="__codelineno-2-81" href="#__codelineno-2-81"></a>    calls write_index + write_summary to persist INDEX.md, manifest.json, SUMMARY.md
-<a id="__codelineno-2-82" name="__codelineno-2-82" href="#__codelineno-2-82"></a>17. Agent calls write_folder_readme(path=&lt;folder&gt;, content=&lt;markdown&gt;) once per
-<a id="__codelineno-2-83" name="__codelineno-2-83" href="#__codelineno-2-83"></a>    meaningful folder of the organized tree; empty/trivial folders are skipped
-<a id="__codelineno-2-84" name="__codelineno-2-84" href="#__codelineno-2-84"></a>18. Agent sends final text (no tool calls) → normally the loop would end here, UNLESS a chat message is waiting in message_queue at this exact instant (P7): if so, the queued message(s) are appended as a user turn and the loop continues from step 8 instead of ending — letting a live chat message redirect an in-progress run. Otherwise, the T1 plan-completion guard checks whether a plan it has seen (`last_plan_id`) is still genuinely `pending` (live-checked via `get_plan`) despite `execute_plan` never having been dispatched this call — this is the same check that can also fire right after step 14 if the model stops immediately after staging/reviewing a plan without ever reaching step 15; either way, it re-prompts the model once, and only ends the loop if that single re-prompt still doesn&#39;t produce an `execute_plan` call (in which case the final text names the unexecuted plan instead of losing it silently). Barring that, this is one of three ways the loop can reach a terminal state — the others being an unhandled exception (caught and returned as an error, O7) or the turn budget running out
-<a id="__codelineno-2-85" name="__codelineno-2-85" href="#__codelineno-2-85"></a>19. Desktop notification fires and the &quot;press g / keep chatting&quot; cue is shown — but only on this first terminal state (O7)
-<a id="__codelineno-2-86" name="__codelineno-2-86" href="#__codelineno-2-86"></a>20. The MCP session from step 1 stays open, and the #organize-input chat box (live since the start of the run, P7) stays enabled. The host&#39;s worker loop waits on `#organize-input` for any message that arrives strictly AFTER run_agent_loop has already returned (i.e. the agent is fully idle and no live call remains to drain the queue itself) — each such message resumes run_agent_loop on the SAME session with (history=&lt;returned from the previous call&gt;, message=&lt;your text&gt;, message_queue=&lt;the same queue&gt;) — back to step 8 directly (steps 2-7 do NOT repeat; no new pre-pass or analysis happens on a continuation), with the same ORGANIZE-only toolset, its own fresh turn budget, and the same live-chat draining (step 5b/12/18) as the initial run. An unhandled exception during any of these turns is caught rather than propagating: any tool call left without a matching result is answered with a synthesized {&quot;error&quot;: ...} entry, an &quot;error&quot; AgentEvent fires, and the conversation history stays valid for the next chat message
+<a id="__codelineno-2-25" name="__codelineno-2-25" href="#__codelineno-2-25"></a>   the persistent per-directory memory file&#39;s content (_load_memory, Z5,
+<a id="__codelineno-2-26" name="__codelineno-2-26" href="#__codelineno-2-26"></a>   .organizer/memory.md), if non-blank, is appended next, framed as the user&#39;s
+<a id="__codelineno-2-27" name="__codelineno-2-27" href="#__codelineno-2-27"></a>   standing preferences that can never override the safety rules and lose to
+<a id="__codelineno-2-28" name="__codelineno-2-28" href="#__codelineno-2-28"></a>   this run&#39;s own instructions on conflict; the organize view&#39;s starter-pane
+<a id="__codelineno-2-29" name="__codelineno-2-29" href="#__codelineno-2-29"></a>   steering-instructions input, if the user typed any, is appended last to this
+<a id="__codelineno-2-30" name="__codelineno-2-30" href="#__codelineno-2-30"></a>   same seed message. All three are injected at USER-turn privilege, never the
+<a id="__codelineno-2-31" name="__codelineno-2-31" href="#__codelineno-2-31"></a>   system prompt — memory.md is read from the target directory (potentially
+<a id="__codelineno-2-32" name="__codelineno-2-32" href="#__codelineno-2-32"></a>   attacker-influenced territory, the same trust class as document content),
+<a id="__codelineno-2-33" name="__codelineno-2-33" href="#__codelineno-2-33"></a>   unlike the repo-root-trusted .organizer/NAMING.md
+<a id="__codelineno-2-34" name="__codelineno-2-34" href="#__codelineno-2-34"></a>5b. Host drains any chat message queued via message_queue since the run started
+<a id="__codelineno-2-35" name="__codelineno-2-35" href="#__codelineno-2-35"></a>    (P7) — catches anything typed during steps 2-4 above — and appends each as
+<a id="__codelineno-2-36" name="__codelineno-2-36" href="#__codelineno-2-36"></a>    a user turn before the first LLM call. The #organize-input chat box is
+<a id="__codelineno-2-37" name="__codelineno-2-37" href="#__codelineno-2-37"></a>    enabled from the very start of the run, not just after it stops
+<a id="__codelineno-2-38" name="__codelineno-2-38" href="#__codelineno-2-38"></a>6. Host calls session.list_tools(denied=ORGANIZE_DENIED_TOOLS) → discovers the
+<a id="__codelineno-2-39" name="__codelineno-2-39" href="#__codelineno-2-39"></a>   ORGANIZE-phase toolset, structurally excluding the content-fetching/recording
+<a id="__codelineno-2-40" name="__codelineno-2-40" href="#__codelineno-2-40"></a>   tools already used in steps 2-4 (P6); if the caller wired in an
+<a id="__codelineno-2-41" name="__codelineno-2-41" href="#__codelineno-2-41"></a>   on_ask_user_needed callback, the host also appends its own host-side ask_user
+<a id="__codelineno-2-42" name="__codelineno-2-42" href="#__codelineno-2-42"></a>   tool spec (P8; never forwarded to the server)
+<a id="__codelineno-2-43" name="__codelineno-2-43" href="#__codelineno-2-43"></a>7. Host sends the ORGANIZE-only system prompt (built from config + active
+<a id="__codelineno-2-44" name="__codelineno-2-44" href="#__codelineno-2-44"></a>   profile: document types, naming conventions, and synthesis template — no
+<a id="__codelineno-2-45" name="__codelineno-2-45" href="#__codelineno-2-45"></a>   ANALYZE section, since the corpus is already analyzed) + the digest-seeded
+<a id="__codelineno-2-46" name="__codelineno-2-46" href="#__codelineno-2-46"></a>   user message from step 5
+<a id="__codelineno-2-47" name="__codelineno-2-47" href="#__codelineno-2-47"></a>8. The model responds with tool calls
+<a id="__codelineno-2-48" name="__codelineno-2-48" href="#__codelineno-2-48"></a>9. Host dispatches to server via MCP — a hallucinated call to one of
+<a id="__codelineno-2-49" name="__codelineno-2-49" href="#__codelineno-2-49"></a>   ORGANIZE_DENIED_TOOLS is rejected with an explicit error instead of being
+<a id="__codelineno-2-50" name="__codelineno-2-50" href="#__codelineno-2-50"></a>   forwarded, even though none of them were advertised in step 6 (defense in
+<a id="__codelineno-2-51" name="__codelineno-2-51" href="#__codelineno-2-51"></a>   depth, P6)
+<a id="__codelineno-2-52" name="__codelineno-2-52" href="#__codelineno-2-52"></a>10. Server executes tool, returns result
+<a id="__codelineno-2-53" name="__codelineno-2-53" href="#__codelineno-2-53"></a>11. Host feeds result back to the model as a tool message — any document content a
+<a id="__codelineno-2-54" name="__codelineno-2-54" href="#__codelineno-2-54"></a>    tool result still carries (e.g. compare_documents&#39;s diff field, in query
+<a id="__codelineno-2-55" name="__codelineno-2-55" href="#__codelineno-2-55"></a>    mode only — ORGANIZE mode no longer exposes it) is wrapped in the
+<a id="__codelineno-2-56" name="__codelineno-2-56" href="#__codelineno-2-56"></a>    untrusted-content delimiter first (M10)
+<a id="__codelineno-2-57" name="__codelineno-2-57" href="#__codelineno-2-57"></a>12. Host drains message_queue again (P7) — catches anything typed during this
+<a id="__codelineno-2-58" name="__codelineno-2-58" href="#__codelineno-2-58"></a>    turn&#39;s tool calls (step 9-11) — appending each queued message as a user
+<a id="__codelineno-2-59" name="__codelineno-2-59" href="#__codelineno-2-59"></a>    turn; steps 8-11 then repeat (up to the adaptive turn budget — see above,
+<a id="__codelineno-2-60" name="__codelineno-2-60" href="#__codelineno-2-60"></a>    effectively static for a fresh run since the O5 progress tracker no longer
+<a id="__codelineno-2-61" name="__codelineno-2-61" href="#__codelineno-2-61"></a>    grows once the ORGANIZE loop starts)
+<a id="__codelineno-2-62" name="__codelineno-2-62" href="#__codelineno-2-62"></a>13. At any point before or while building the plan, the agent MAY call ask_user
+<a id="__codelineno-2-63" name="__codelineno-2-63" href="#__codelineno-2-63"></a>    (P8) with 1-5 items — plain questions, multiple-choice ones (2-5 options), or
+<a id="__codelineno-2-64" name="__codelineno-2-64" href="#__codelineno-2-64"></a>    a mix; the host emits an &quot;ask_user&quot; AgentEvent, renders the item(s) as a
+<a id="__codelineno-2-65" name="__codelineno-2-65" href="#__codelineno-2-65"></a>    transcript turn, and blocks on the live-chat message queue (P7) for the
+<a id="__codelineno-2-66" name="__codelineno-2-66" href="#__codelineno-2-66"></a>    user&#39;s next chat reply (or a &quot;proceed with best judgement&quot; note if the
+<a id="__codelineno-2-67" name="__codelineno-2-67" href="#__codelineno-2-67"></a>    callback is unavailable or nothing well-formed was asked) — unlimited per
+<a id="__codelineno-2-68" name="__codelineno-2-68" href="#__codelineno-2-68"></a>    run, no once-per-run guard
+<a id="__codelineno-2-69" name="__codelineno-2-69" href="#__codelineno-2-69"></a>14. Agent designs a target taxonomy from the types/themes already recorded in the
+<a id="__codelineno-2-70" name="__codelineno-2-70" href="#__codelineno-2-70"></a>    digest, opens a plan (create_plan), and stages propose_create_dir for each
+<a id="__codelineno-2-71" name="__codelineno-2-71" href="#__codelineno-2-71"></a>    folder (idempotent; no folder created for absent categories) alongside
+<a id="__codelineno-2-72" name="__codelineno-2-72" href="#__codelineno-2-72"></a>    propose_rename / propose_move / propose_quarantine / propose_create_file /
+<a id="__codelineno-2-73" name="__codelineno-2-73" href="#__codelineno-2-73"></a>    propose_update_file / propose_archive_document ops — every mutation is
+<a id="__codelineno-2-74" name="__codelineno-2-74" href="#__codelineno-2-74"></a>    staged, never applied directly. Alongside set_plan_rationale/
+<a id="__codelineno-2-75" name="__codelineno-2-75" href="#__codelineno-2-75"></a>    set_plan_folder_notes, the agent MAY also stage propose_memory_note (Z5,
+<a id="__codelineno-2-76" name="__codelineno-2-76" href="#__codelineno-2-76"></a>    #64) for a durable standing preference or non-obvious taxonomy decision
+<a id="__codelineno-2-77" name="__codelineno-2-77" href="#__codelineno-2-77"></a>    this run established — one short sentence, at most 3-4 per run; the note is
+<a id="__codelineno-2-78" name="__codelineno-2-78" href="#__codelineno-2-78"></a>    shown to the user for approval with the rest of the plan, same as any other
+<a id="__codelineno-2-79" name="__codelineno-2-79" href="#__codelineno-2-79"></a>    op, and is the only way to write to the persistent memory file (there is no
+<a id="__codelineno-2-80" name="__codelineno-2-80" href="#__codelineno-2-80"></a>    direct write tool)
+<a id="__codelineno-2-81" name="__codelineno-2-81" href="#__codelineno-2-81"></a>15. On execute_plan call:
+<a id="__codelineno-2-82" name="__codelineno-2-82" href="#__codelineno-2-82"></a>    a. Host fetches plan details (get_plan) and writes the full ops list to
+<a id="__codelineno-2-83" name="__codelineno-2-83" href="#__codelineno-2-83"></a>       .organizer/plan_ops.json (path shown in the dialog)
+<a id="__codelineno-2-84" name="__codelineno-2-84" href="#__codelineno-2-84"></a>    b. Host shows the approval dialog to the user (`build_approval_dialog`,
+<a id="__codelineno-2-85" name="__codelineno-2-85" href="#__codelineno-2-85"></a>       `host/web/dialogs.py`)
+<a id="__codelineno-2-86" name="__codelineno-2-86" href="#__codelineno-2-86"></a>    c. User approves (optionally deselecting ops), refines with free text, or rejects
+<a id="__codelineno-2-87" name="__codelineno-2-87" href="#__codelineno-2-87"></a>    d. On approve: host calls approve_plan → execute_plan; server applies ops,
+<a id="__codelineno-2-88" name="__codelineno-2-88" href="#__codelineno-2-88"></a>       journals each, reconciles registry
+<a id="__codelineno-2-89" name="__codelineno-2-89" href="#__codelineno-2-89"></a>    e. On refine: the plan is NOT executed — the free-text request is returned to the
+<a id="__codelineno-2-90" name="__codelineno-2-90" href="#__codelineno-2-90"></a>       agent as a tool result, which revises the plan (ops/rationale/folder notes) and
+<a id="__codelineno-2-91" name="__codelineno-2-91" href="#__codelineno-2-91"></a>       calls execute_plan again to re-present it (back to step 15)
+<a id="__codelineno-2-92" name="__codelineno-2-92" href="#__codelineno-2-92"></a>16. Agent calls build_graph → get_actors → list_events, then composes SUMMARY.md
+<a id="__codelineno-2-93" name="__codelineno-2-93" href="#__codelineno-2-93"></a>    from registry + events + graph + actors per the profile&#39;s [synthesis] template;
+<a id="__codelineno-2-94" name="__codelineno-2-94" href="#__codelineno-2-94"></a>    calls write_index + write_summary to persist INDEX.md, manifest.json, SUMMARY.md
+<a id="__codelineno-2-95" name="__codelineno-2-95" href="#__codelineno-2-95"></a>17. Agent calls write_folder_readme(path=&lt;folder&gt;, content=&lt;markdown&gt;) once per
+<a id="__codelineno-2-96" name="__codelineno-2-96" href="#__codelineno-2-96"></a>    meaningful folder of the organized tree; empty/trivial folders are skipped
+<a id="__codelineno-2-97" name="__codelineno-2-97" href="#__codelineno-2-97"></a>18. Agent sends final text (no tool calls) → normally the loop would end here, UNLESS a chat message is waiting in message_queue at this exact instant (P7): if so, the queued message(s) are appended as a user turn and the loop continues from step 8 instead of ending — letting a live chat message redirect an in-progress run. Otherwise, the T1 plan-completion guard checks whether a plan it has seen (`last_plan_id`) is still genuinely `pending` (live-checked via `get_plan`) despite `execute_plan` never having been dispatched this call — this is the same check that can also fire right after step 14 if the model stops immediately after staging/reviewing a plan without ever reaching step 15; either way, it re-prompts the model once, and only ends the loop if that single re-prompt still doesn&#39;t produce an `execute_plan` call (in which case the final text names the unexecuted plan instead of losing it silently). Barring that, this is one of three ways the loop can reach a terminal state — the others being an unhandled exception (caught and returned as an error, O7) or the turn budget running out
+<a id="__codelineno-2-98" name="__codelineno-2-98" href="#__codelineno-2-98"></a>19. Desktop notification fires and the &quot;press g / keep chatting&quot; cue is shown — but only on this first terminal state (O7)
+<a id="__codelineno-2-99" name="__codelineno-2-99" href="#__codelineno-2-99"></a>20. The MCP session from step 1 stays open, and the #organize-input chat box (live since the start of the run, P7) stays enabled. The host&#39;s worker loop waits on `#organize-input` for any message that arrives strictly AFTER run_agent_loop has already returned (i.e. the agent is fully idle and no live call remains to drain the queue itself) — each such message resumes run_agent_loop on the SAME session with (history=&lt;returned from the previous call&gt;, message=&lt;your text&gt;, message_queue=&lt;the same queue&gt;) — back to step 8 directly (steps 2-7 do NOT repeat; no new pre-pass or analysis happens on a continuation), with the same ORGANIZE-only toolset, its own fresh turn budget, and the same live-chat draining (step 5b/12/18) as the initial run. An unhandled exception during any of these turns is caught rather than propagating: any tool call left without a matching result is answered with a synthesized {&quot;error&quot;: ...} entry, an &quot;error&quot; AgentEvent fires, and the conversation history stays valid for the next chat message
 </code></pre></div>
 <hr />
 <h2 id="data-flow-one-query-session">Data flow (one query session)<a class="headerlink" href="#data-flow-one-query-session" title="Permanent link">&para;</a></h2>

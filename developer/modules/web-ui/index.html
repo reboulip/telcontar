@@ -1540,6 +1540,13 @@ persists one entry per macro-phase change, appended via <code>add_activity(text)
 (called alongside the pre-existing <code>activity: str</code> scalar, which is unchanged
 and still what earlier tests assert against) — giving the web UI a reviewable
 history of phase changes instead of a single line that's overwritten and lost.
+As of Z1 (#65), <code>add_activity</code> also guards against a <em>non-consecutive</em> repeat:
+before appending, it checks <code>text</code> against the last <code>_ACTIVITY_DEDUPE_WINDOW =
+4</code> entries already in <code>activity_log</code> and silently returns (consuming no <code>_seq</code>)
+if it matches one — batched tool calls interleave phases (e.g. read → record →
+read → record across an analysis batch), which defeats <code>Narrator</code>'s
+consecutive-only collapse (<code>host/narration.py</code>, above) and would otherwise fill
+the log with an A/B/A/B alternation across a whole batch loop.
 Deliberately not folded into <code>transcript</code>: <code>activity_log</code>, like <code>steps</code>, is
 telcontar's own narration, not a genuine user↔telcontar exchange — this data-model
 separation is unchanged by X3's <code>thread()</code> below, which only merges the two into
@@ -1655,7 +1662,8 @@ question into the transcript and reading the reply off <code>session.messages</c
 same queue <code>_send()</code> (<code>host/web/main.py</code>) already posts a <code>"user"</code> transcript turn
 into; the old path posted the reply twice (once via the queue, once explicitly) —
 <code>on_ask_user_needed</code> no longer touches <code>session.messages</code> at all, fixing it.
-<code>start(instructions: str | None = None)</code> launches
+<code>start(instructions: str | None = None, analyzer_batch_size: int | None = None)</code>
+launches
 <code>run(instructions)</code> as a detached <code>asyncio.Task</code> owned by the <code>RunSession</code> (not by
 any one NiceGUI client); <code>run()</code> is a near-verbatim port of
 <code>OrganizerScreen._agent_worker</code> onto a plain <code>asyncio.Task</code> — loads settings, opens
@@ -1663,15 +1671,38 @@ any one NiceGUI client); <code>run()</code> is a near-verbatim port of
 O7-style follow-up continuations, threading one <code>_TokenLedger</code> across all of them.
 <code>instructions</code> (S5) is the starter pane's optional steering text; it is passed
 only to the first <code>run_agent_loop</code> call, never to a continuation, matching
-<code>host/app.py</code>'s <code>_agent_worker(instructions=...)</code> contract.</p>
+<code>host/app.py</code>'s <code>_agent_worker(instructions=...)</code> contract. <code>analyzer_batch_size</code>
+(Z3), when given, is stashed into a new <code>self._overrides</code> dict before <code>run()</code>
+starts, rather than threaded through as a parameter — see <code>_load_settings()</code>
+below.</p>
+<p><code>_load_settings() -&gt; Settings</code> (Z3) is the single place <code>run()</code> loads settings
+from: <code>load_settings().for_target(session.target)</code>, then, if <code>self._overrides</code> is
+non-empty, <code>.model_copy(update=self._overrides)</code> on top — replacing an inline
+<code>load_settings().for_target(...)</code> call at the <code>run()</code> call site. Centralizing it
+here (rather than inlining the load) is what lets a run-scoped override like
+<code>analyzer_batch_size</code> apply without a settings-loading call site having to know
+about it individually.</p>
+<p><strong>Mid-session LLM reload (Z2, #67):</strong> <code>run()</code> now builds its client via
+<code>host/llm.py</code>'s <code>make_reloading_client(settings, on_reload=_on_reload)</code> instead
+of <code>make_client</code>, so an in-flight run recovers from a bad LLM config (wrong
+model name, HTTP 429) without a full telcontar restart — a Settings-page save
+elsewhere bumps <code>config.settings.config_revision()</code>, and the reloading client
+picks up the change on its next call. The <code>_TokenLedger</code> is now constructed
+<em>before</em> the client specifically so <code>_on_reload(message, new_model)</code> can close
+over it: it appends <code>message</code> as a visible <code>"telcontar"</code> chat turn via
+<code>session.add_turn</code> (not a silent log line) and sets <code>ledger.model = new_model</code>
+so <code>tokens.jsonl</code>'s per-call profiling stays attributed to the right model
+after a swap.</p>
 <p>As of T5/T6, <code>on_event</code>'s <code>tool_call</code>/<code>tool_result</code> handling no longer appends a
 chat turn — that fixed the "telcontar talking to itself in bubbles" issue T5 was
 written to address. <code>tool_call</code> narrates via <code>session.narrator.narrate(tool)</code> into
 <code>session.activity</code> (the log zone's "current activity" line) — and, as of V16,
 also into <code>session.activity_log</code> via <code>session.add_activity(phrase)</code>, appended
 right alongside the <code>activity</code> assignment and only when the Narrator actually
-returns a new phrase (a repeated phrase collapses to nothing before either is
-touched) — and opens a step —
+returns a new phrase (a repeated <em>consecutive</em> phrase collapses to nothing
+before either is touched — <code>add_activity</code> itself applies a further
+recency-window dedupe on top for cross-batch repeats Narrator can't catch, see
+<code>session.py</code> above) — and opens a step —
 <code>session.open_step(tool, event.text, args)</code> — reading <code>tool</code>/<code>args</code> off
 <code>event.data</code>; <code>tool_result</code> closes it — <code>session.close_step(result, ok=ok)</code> —
 inferring <code>ok</code> from whether <code>event.data</code>'s <code>"result"</code> value is a dict containing
@@ -1734,7 +1765,10 @@ parity: <code>QueryScreen</code> starts its worker in <code>on_mount</code>, no 
 button). <code>run()</code> is a near-verbatim port of <code>QueryScreen._query_worker</code>: one MCP
 session and one <code>_TokenLedger</code> for the whole chat, threading <code>history</code> across
 questions for multi-turn context. <code>done</code>/<code>error</code> here are per-question, not
-per-session: <code>QueryBridge</code> never sets <code>session.done</code>.</p>
+per-session: <code>QueryBridge</code> never sets <code>session.done</code>. Like <code>AgentBridge</code> (Z2),
+<code>run()</code> builds its client via <code>make_reloading_client</code> with the same
+<code>_on_reload</code> closure shape (chat turn + <code>ledger.model</code> update), so a running
+query chat also reconnects automatically on a mid-session config change.</p>
 <p><strong>Checkpointing (Y2):</strong> the same <code>_checkpoint(*, terminal: bool)</code> contract as
 <code>AgentBridge</code> — <code>terminal=</code> is <code>event.kind == "error"</code> here (query mode has no
 per-session <code>"done"</code>, only per-question). <code>run()</code> calls
@@ -2324,7 +2358,12 @@ through the shared <code>forms.save_with_plaintext_guard(..., button_label="Save
 recovery_action="cancel")</code>. <code>host/web/main.py</code> mounts it at <code>@ui.page("/settings")</code>,
 calling <code>build_settings_view(on_done=lambda: ui.navigate.back())</code> inside
 <code>app_shell(active="settings")</code>; both the sidebar's Settings button and (X11) the
-nav header's Settings tab (<code>host/web/shell.py</code>) route here from any screen.</p>
+nav header's Settings tab (<code>host/web/shell.py</code>) route here from any screen.
+As of Z2, a caption below the approval-mode <code>ui.select</code> tells the user that
+saving here reconnects any currently running session to the new
+model/endpoint/key immediately (<code>host/llm.py</code>'s <code>make_reloading_client</code>,
+above), while approval mode and everything else in the form only applies to
+sessions started after the save.</p>
 <p>As of V11, <code>build_settings_view</code> also awaits <code>_build_prompt_inspection()</code> after
 rendering the form — a collapsed "What telcontar tells the model" <code>ui.expansion</code>
 (<code>.mark("expansion-prompts")</code>) deliberately built OUTSIDE the <code>@ui.refreshable
@@ -2815,9 +2854,15 @@ target directory stays visible in the main content area for the whole run,
 not just on the pre-start starter pane. The organizer view (<code>/run/{run_id}</code>) now opens on a
 <strong>starter pane</strong> shown before the run begins: a directory overview (reusing
 <code>host.paths.directory_overview</code>, also offloaded via <code>run.io_bound</code>) plus an
-optional free-text steering-instructions input (mirrors the Textual TUI's
-pre-analysis steering box) and a "Start organizing" button. Only clicking that
-button constructs the <code>AgentBridge</code> and calls <code>start(instructions=...)</code> — S4's
+optional free-text steering-instructions input (<code>instructions_input</code>, mirrors
+the Textual TUI's pre-analysis steering box; as of Z4, <code>.mark("starter-
+instructions")</code> <code>ui.textarea(rows=4, autogrow)</code> rather than a single-line
+<code>ui.input</code> — Enter inserts a newline, there is no submit-on-enter handler), a
+"Documents per analysis batch" number input (<code>batch_size_input</code>, Z3,
+<code>.mark("starter-batch-size")</code> <code>ui.number(value=10, min=1, max=50,
+precision=0)</code>), and a "Start organizing" button. Only clicking that
+button constructs the <code>AgentBridge</code> and calls <code>start(instructions=...,
+analyzer_batch_size=int(batch_size_input.value or 10))</code> — S4's
 version started the run immediately on directory selection. Once started
 (<code>session.started</code>), the starter pane hides and the main view (status/progress
 bar/chat input/approval-cost-ask dialogs, now via <code>host/web/dialogs.py</code>,
