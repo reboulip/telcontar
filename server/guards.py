@@ -164,19 +164,101 @@ def is_dir_empty(path: Path) -> bool:
         return False
 
 
-def safe_quarantine_dir_path(src: Path, quarantine_dir: Path) -> Path:
+def safe_quarantine_dir_path(
+    src: Path, quarantine_dir: Path, reserved: frozenset[str] = frozenset()
+) -> Path:
     """Like ``safe_quarantine_path`` but for directories: suffixes the WHOLE
     basename on collision (``2024.backup`` -> ``2024.backup_1``) instead of
-    splitting a stem/suffix, which would mangle a dotted directory name."""
+    splitting a stem/suffix, which would mangle a dotted directory name.
+
+    ``reserved`` holds ``normkey`` values of destinations already staged by other
+    ops in the same plan, so two same-named folders get distinct destinations
+    even though neither exists on disk yet."""
+
+    def _taken(candidate: Path) -> bool:
+        return candidate.exists() or normkey(candidate) in reserved
+
     dest = quarantine_dir / src.name
-    if not dest.exists():
+    if not _taken(dest):
         return dest
     counter = 1
     while True:
         candidate = quarantine_dir / f"{src.name}_{counter}"
-        if not candidate.exists():
+        if not _taken(candidate):
             return candidate
         counter += 1
+
+
+# Files that never count as documents when deciding whether an old folder holds
+# only leftovers. Mirrors ``host.agent._DISCOVERY_SKIP_NAMES`` (a drift test
+# asserts the two stay equal); dot-names are residue too (``is_residue_name``).
+RESIDUE_NAMES = frozenset(
+    {
+        "INDEX.md",
+        "manifest.json",
+        "SUMMARY.md",
+        "README.md",
+        "Thumbs.db",
+        ".DS_Store",
+        "desktop.ini",
+    }
+)
+
+
+def is_residue_name(name: str) -> bool:
+    """True if a file of this name is leftover noise, not a document."""
+    return name in RESIDUE_NAMES or name.startswith(".")
+
+
+def non_residue_files(folder: Path, limit: int | None = None) -> list[Path]:
+    """Files under ``folder`` (recursively) that are not residue. Empty
+    subfolders and residue-named files are ignored. Fails closed: a symlink
+    or an unreadable subdirectory is reported as non-residue, so a caller
+    never treats an unknown as safe to quarantine."""
+    found: list[Path] = []
+
+    def _on_error(exc: OSError) -> None:
+        found.append(Path(exc.filename) if exc.filename else folder)
+
+    for root, dirs, files in os.walk(folder, followlinks=False, onerror=_on_error):
+        root_path = Path(root)
+        for name in dirs:
+            if (root_path / name).is_symlink():
+                found.append(root_path / name)
+        for name in files:
+            path = root_path / name
+            if path.is_symlink() or not is_residue_name(name):
+                found.append(path)
+        if limit is not None and len(found) >= limit:
+            return found[:limit]
+    return found
+
+
+def check_quarantinable_dir(
+    folder: Path,
+    *,
+    target_root: Path,
+    quarantine_dir: Path,
+    organizer_dir: Path,
+    plan_created_dirs: set[str] | None = None,
+) -> None:
+    """Raise ``ValueError`` unless ``folder`` is a real directory that may be
+    quarantined as a whole: not the target root, inside it, not the quarantine
+    dir or ``.organizer`` (nor an ancestor/descendant of either), and not a
+    directory this plan run created."""
+    if folder.is_symlink() or not folder.is_dir():
+        raise ValueError(f"Not a directory: {folder}")
+    if is_sweep_protected(
+        folder,
+        target_root=target_root,
+        quarantine_dir=quarantine_dir,
+        organizer_dir=organizer_dir,
+        plan_created_dirs=plan_created_dirs or set(),
+    ):
+        raise ValueError(
+            f"Refusing to quarantine a protected folder (the target root, outside the "
+            f"target, telcontar's own working folders, or one this plan creates): {folder}"
+        )
 
 
 def empty_marker_path(folder: Path, prefix: str = "_empty_") -> Path:

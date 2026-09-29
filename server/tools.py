@@ -454,6 +454,108 @@ def propose_quarantine(
     }
 
 
+def _is_dir_quarantine(op: "_plan.PlanOp") -> bool:
+    """True for a whole-folder quarantine op (``propose_quarantine_dir``)."""
+    return op.op_type == "quarantine" and (op.params or {}).get("target_kind") == "dir"
+
+
+def _is_within(path: Path, folder: Path) -> bool:
+    """True if ``path`` equals ``folder`` or lies inside it (resolved)."""
+    try:
+        path.resolve().relative_to(folder.resolve())
+    except ValueError:
+        return False
+    return True
+
+
+def _leftover_documents(folder: Path, limit: int = 10) -> list[Path]:
+    from server.guards import non_residue_files
+
+    return non_residue_files(folder, limit=limit)
+
+
+def propose_quarantine_dir(
+    path: str,
+    plan_id: str,
+    plans_dir: Path,
+    quarantine_dir: Path,
+    target_dir: Path,
+    reason: str = "",
+) -> dict:
+    """Append a whole-folder quarantine op to a pending plan (AA1).
+
+    Only for an old folder that will hold nothing but residue (INDEX.md,
+    dotfiles, empty subfolders) once the plan's other ops have run: the folder
+    must not be the target root, ``.organizer`` or the quarantine dir, must not
+    be reused by the new taxonomy (a ``create_dir`` or ``move`` destination in
+    it), and every document still in it must be staged to leave. The check here
+    is advisory; ``execute_plan`` re-checks the disk before the move."""
+    from server.guards import check_quarantinable_dir
+
+    src = Path(path)
+    check_quarantinable_dir(
+        src,
+        target_root=target_dir,
+        quarantine_dir=quarantine_dir,
+        organizer_dir=target_dir / ".organizer",
+    )
+    p = _load_pending_plan(plan_id, plans_dir)
+
+    reserved: set[str] = set()
+    for op in p.ops:
+        if _is_dir_quarantine(op):
+            if normkey(Path(op.src)) == normkey(src):
+                raise ValueError(f"Folder is already staged for quarantine: {path}")
+            reserved.add(normkey(Path(op.dst)))
+        elif op.op_type == "create_dir" and _is_within(Path(op.src), src):
+            raise ValueError(
+                f"Refusing to quarantine {path}: this plan creates or reuses "
+                f"{op.src} — the new taxonomy needs that folder. Choose a new "
+                f"folder name instead of reusing an old one."
+            )
+        elif op.op_type == "move" and _is_within(Path(op.dst), src):
+            raise ValueError(
+                f"Refusing to quarantine {path}: this plan moves a document into "
+                f"{op.dst}, which is inside it."
+            )
+
+    leaving: set[str] = set()
+    for op in p.ops:
+        if op.op_type in ("quarantine", "archive_document") and not _is_dir_quarantine(op):
+            leaving.add(normkey(Path(op.src)))
+        elif op.op_type == "move" and not _is_within(Path(op.dst), src):
+            leaving.add(normkey(Path(op.src)))
+    staying = [f for f in _leftover_documents(src, limit=50) if normkey(f) not in leaving]
+    if staying:
+        shown = "\n".join(f"  - {f}" for f in staying[:10])
+        more = "\n  - ..." if len(staying) > 10 else ""
+        raise ValueError(
+            f"Refusing to quarantine {path}: it still holds documents that this plan "
+            f"does not move or quarantine. Stage a move for each first:\n{shown}{more}"
+        )
+
+    quarantine_dir.mkdir(parents=True, exist_ok=True)
+    safe_dest = safe_quarantine_dir_path(src, quarantine_dir, frozenset(reserved))
+    op = _plan.PlanOp.new(
+        "quarantine",
+        str(src),
+        str(safe_dest),
+        params={"reason": reason.strip(), "target_kind": "dir"},
+    )
+    p.add_op(op)
+    _plan.save(p, plans_dir)
+    return {
+        "plan_id": plan_id,
+        "op_id": op.op_id,
+        "op_type": "quarantine",
+        "target_kind": "dir",
+        "src": str(src),
+        "dst": str(safe_dest),
+        "status": op.status,
+        "ops_count": len(p.ops),
+    }
+
+
 def _load_pending_plan(plan_id: str, plans_dir: Path) -> "_plan.Plan":
     p = _plan.load(plan_id, plans_dir)
     if p.state != "pending":
@@ -730,9 +832,19 @@ def execute_plan(
     # order), so a deselected/failed create_dir can't cascade into a hard stop for
     # a move that targets it — the move executor also self-heals via mkdir, but
     # running create_dir first keeps directory creation itself in the journal.
-    ordered = [op for op in p.ops if op.op_type == "create_dir"] + [
-        op for op in p.ops if op.op_type != "create_dir"
-    ]
+    # Whole-folder quarantines (AA1) run last, deepest first, so every document
+    # staged to leave an old folder has moved out before the folder itself does
+    # and nested folders unwind in last-in-first-out order on undo.
+    dir_quarantines = sorted(
+        (op for op in p.ops if _is_dir_quarantine(op)),
+        key=lambda op: len(Path(op.src).parts),
+        reverse=True,
+    )
+    ordered = (
+        [op for op in p.ops if op.op_type == "create_dir"]
+        + [op for op in p.ops if op.op_type != "create_dir" and not _is_dir_quarantine(op)]
+        + dir_quarantines
+    )
 
     for op in ordered:
         if op.status != "pending":
@@ -782,6 +894,10 @@ def execute_plan(
                     append_memory_note(memory_path, params.get("note", ""), journal_path)
                     new_location = src_path
                 else:
+                    if _is_dir_quarantine(op):
+                        _check_dir_quarantine_at_execution(
+                            Path(src_path), target_dir, quarantine_dir, plan_created_dirs
+                        )
                     new_location = _apply_op(op, src_path)
                 success = True
                 break
@@ -805,18 +921,24 @@ def execute_plan(
                 ):
                     emptied_candidates.add(str(Path(src_path).parent))
             if op.op_type not in _SELF_JOURNALING_OP_TYPES:
-                _journal.append(
-                    journal_path,
-                    {
-                        "op_type": op.op_type,
-                        "plan_id": plan_id,
-                        "op_id": op.op_id,
-                        "src": src_path,
-                        "dst": op.dst,
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    },
-                )
-            if reg is not None and registry_path is not None and _reconcile_op(reg, op, src_path):
+                entry = {
+                    "op_type": op.op_type,
+                    "plan_id": plan_id,
+                    "op_id": op.op_id,
+                    "src": src_path,
+                    "dst": op.dst,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+                if _is_dir_quarantine(op):
+                    entry["target_kind"] = "dir"
+                    entry["reason"] = (op.params or {}).get("reason", "")
+                _journal.append(journal_path, entry)
+            if (
+                reg is not None
+                and registry_path is not None
+                and not _is_dir_quarantine(op)
+                and _reconcile_op(reg, op, src_path)
+            ):
                 _registry.save(reg, registry_path)
         else:
             op.status = "failed"
@@ -870,6 +992,36 @@ def execute_plan(
         "hard_stop": False,
         "emptied_folders": emptied_folders,
     }
+
+
+def _check_dir_quarantine_at_execution(
+    folder: Path,
+    target_dir: Path | None,
+    quarantine_dir: Path | None,
+    plan_created_dirs: set[str],
+) -> None:
+    """Fail closed (``ValueError``, non-retryable) unless the folder is still safe
+    to quarantine on disk right now: protected-path rules hold and only residue
+    is left in it. A user who unticked a move at approval lands here — the folder
+    stays in place and the error names the documents still inside."""
+    from server.guards import check_quarantinable_dir
+
+    if target_dir is None:
+        raise ValueError("target_dir is required to execute a folder quarantine op")
+    check_quarantinable_dir(
+        folder,
+        target_root=target_dir,
+        quarantine_dir=quarantine_dir or (target_dir / "_quarantine"),
+        organizer_dir=target_dir / ".organizer",
+        plan_created_dirs=plan_created_dirs,
+    )
+    staying = _leftover_documents(folder)
+    if staying:
+        shown = ", ".join(f.name for f in staying[:10])
+        raise ValueError(
+            f"Folder {folder} still holds documents ({shown}) — a move that should "
+            f"have emptied it did not run (was it unticked?). Folder left in place."
+        )
 
 
 def _sweep_emptied_dirs(

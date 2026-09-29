@@ -349,6 +349,22 @@ def propose_quarantine(path: str, plan_id: str, reason: str = "") -> dict:
 
 
 @mcp.tool()
+def propose_quarantine_dir(path: str, plan_id: str, reason: str = "") -> dict:
+    """Stage quarantining a whole OLD folder, only when replacing an existing
+    structure. Allowed only once every document in the folder has its own staged
+    move or quarantine out of it (only residue such as INDEX.md, dotfiles or empty
+    subfolders may remain); it is rejected if the new taxonomy reuses the folder,
+    for the target root, and for telcontar's own folders. Create new folders for
+    the new taxonomy rather than renaming or reusing old ones. ``reason`` is shown
+    to the user at approval time."""
+    cfg = _get_settings()
+    _check_within_root(path, cfg)
+    return tools.propose_quarantine_dir(
+        path, plan_id, cfg.plans_dir, cfg.quarantine_dir, cfg.target_dir, reason
+    )
+
+
+@mcp.tool()
 def propose_create_file(path: str, content: str, plan_id: str) -> dict:
     """Stage creating a new file in the named plan; raises if the path already exists."""
     cfg = _get_settings()

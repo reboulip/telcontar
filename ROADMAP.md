@@ -86,7 +86,7 @@ on open work.
 
 *(Follow-ups from the GH issue backlog. Single-letter labels A–Z are all used, so items use a fresh `AA`-series label.)*
 
-- [ ] AA1 · Make the organize flow aware of an existing directory tree, whether left by an earlier telcontar session or built by hand — detect and assess it before taxonomy design, feed it into the taxonomy prompt (`host/agent.py`), ask the user whether to keep or replace it, and when it is replaced move the old folders to quarantine (`server/guards.py`, `execute_plan`), journaled and undoable. [#70]
+- [x] AA1 · Make the organize flow aware of an existing directory tree, whether left by an earlier telcontar session or built by hand — detect and assess it before taxonomy design, feed it into the taxonomy prompt (`host/agent.py`), ask the user whether to keep or replace it, and when it is replaced move the old folders to quarantine (`server/guards.py`, `execute_plan`), journaled and undoable. [#70]
 - [ ] AA2 · Add a headless `telcontar --auto-class` CLI mode (`host/main.py`, no UI, CLI output only) for a target that already has telcontar setup (`.organizer/` plus `INDEX.md`) — analyze new documents, record them in the registry, and move them into the existing directory structure without an approval prompt and without proposing any structure change. [#71]
 
 ---
