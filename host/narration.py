@@ -28,6 +28,7 @@ TOOL_NARRATION: dict[str, str] = {
     "propose_rename": "Planning changes…",
     "propose_move": "Planning changes…",
     "propose_quarantine": "Planning changes…",
+    "propose_quarantine_dir": "Planning changes…",
     "propose_create_file": "Planning changes…",
     "propose_update_file": "Planning changes…",
     "propose_create_dir": "Planning changes…",

@@ -3223,3 +3223,123 @@ async def test_plan_completion_guard_seeds_from_resumed_history(tmp_path: Path) 
 
     assert "p9" in text
     assert "never presented" in text
+
+
+# ── AA1: existing-structure awareness ─────────────────────────────────────────
+
+
+async def test_run_prepass_collects_dirs_and_root_markers_without_extra_calls(
+    tmp_path: Path,
+) -> None:
+    sub = str(tmp_path / "Plans")
+    doc = str(tmp_path / "Plans" / "a.txt")
+    hidden = str(tmp_path / ".git")
+    session = _prepass_session(
+        walk_results={
+            str(tmp_path): {
+                "path": str(tmp_path),
+                "max_depth": 3,
+                "entries": [
+                    _dir_entry(sub, [_file_entry(doc)], truncated=False),
+                    _dir_entry(hidden, [], truncated=False),
+                    _file_entry(str(tmp_path / "INDEX.md")),
+                ],
+            }
+        },
+        checksums={doc: "c1"},
+        records={"c1": None},
+    )
+
+    result = await run_prepass(
+        session=session, settings=_settings(tmp_path), target=tmp_path, on_event=lambda _: None
+    )
+
+    assert result.dirs == [sub]
+    assert result.root_markers == ["INDEX.md"]
+    # walk_tree + compute_checksum_batch + lookup_documents — structure adds none.
+    assert session.call_tool.await_count == 3
+
+
+def _structure_prepass(tmp_path: Path) -> Any:
+    from host.agent import PrepassResult
+
+    doc = str(tmp_path / "Plans" / "a.txt")
+    return PrepassResult(
+        known=[{"path": doc, "checksum": "c1", "record": {"type": "plan", "title": "Plan A"}}],
+        dirs=[str(tmp_path / "Plans")],
+        root_markers=[],
+    )
+
+
+async def test_assess_existing_structure_asks_and_renders_decision(tmp_path: Path) -> None:
+    from host.agent import _assess_existing_structure
+    from host.structure import REPLACE_LABEL, STRUCTURE_QUESTION
+
+    ask = AsyncMock(
+        return_value=AskUserResult(reply=f"{STRUCTURE_QUESTION} → {REPLACE_LABEL}", provided=True)
+    )
+
+    section = await _assess_existing_structure(
+        target=tmp_path,
+        prepass_result=_structure_prepass(tmp_path),
+        analysis_result={"recorded": [], "errors": []},
+        on_event=lambda _: None,
+        on_ask_user_needed=ask,
+    )
+
+    ask.assert_awaited_once()
+    assert "Structure decision: REPLACE" in section
+    assert "`Plans/`" in section
+
+
+async def test_assess_existing_structure_without_callback_lets_agent_decide(
+    tmp_path: Path,
+) -> None:
+    from host.agent import _assess_existing_structure
+
+    section = await _assess_existing_structure(
+        target=tmp_path,
+        prepass_result=_structure_prepass(tmp_path),
+        analysis_result={"recorded": [], "errors": []},
+        on_event=lambda _: None,
+        on_ask_user_needed=None,
+    )
+
+    assert "Structure decision: YOUR CALL" in section
+
+
+async def test_assess_existing_structure_flat_tree_does_not_ask(tmp_path: Path) -> None:
+    from host.agent import PrepassResult, _assess_existing_structure
+
+    ask = AsyncMock()
+
+    section = await _assess_existing_structure(
+        target=tmp_path,
+        prepass_result=PrepassResult(),
+        analysis_result={"recorded": [], "errors": []},
+        on_event=lambda _: None,
+        on_ask_user_needed=ask,
+    )
+
+    assert section == ""
+    ask.assert_not_awaited()
+
+
+def test_system_prompt_mentions_structure_decision_and_quarantine_dir() -> None:
+    from host.agent import _SYSTEM_PROMPT_TEMPLATE
+
+    assert "propose_quarantine_dir" in _SYSTEM_PROMPT_TEMPLATE
+    assert "Existing directory structure" in _SYSTEM_PROMPT_TEMPLATE
+
+
+def test_token_ledger_treats_place_and_summary_phases_as_additive() -> None:
+    from host.agent import _TokenLedger
+
+    ledger = _TokenLedger()
+    usage = MagicMock(prompt_tokens=100, completion_tokens=10)
+    response = MagicMock(usage=usage)
+    for phase in ("place", "place", "summary"):
+        ledger.record(response, phase=phase, step=0, on_event=lambda _e: None)
+
+    assert ledger.totals["in"] == 300
+    assert ledger.totals["out"] == 30

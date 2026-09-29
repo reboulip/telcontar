@@ -108,6 +108,13 @@ def memory_note_text(op: dict) -> str:
     return note
 
 
+def is_dir_quarantine(op: dict) -> bool:
+    """True for a whole-folder quarantine op (AA1 ``propose_quarantine_dir``)."""
+    return (
+        op.get("op_type") == "quarantine" and (op.get("params") or {}).get("target_kind") == "dir"
+    )
+
+
 def fmt_op(op: dict, target: Path | None = None, *, markup: bool = True) -> str:
     op_type = op.get("op_type", "?")
     src = Path(op.get("src", "")).name
@@ -120,7 +127,9 @@ def fmt_op(op: dict, target: Path | None = None, *, markup: bool = True) -> str:
         case "quarantine":
             reason = quarantine_reason(op)
             reason_part = f"  [dim]— {reason}[/dim]" if markup else f"  — {reason}"
-            label = f"QUARANTINE  {src}{reason_part}"
+            kind = "QUARANTINE FOLDER" if is_dir_quarantine(op) else "QUARANTINE"
+            name = f"{src}/" if is_dir_quarantine(op) else src
+            label = f"{kind}  {name}{reason_part}"
         case "update_file":
             # Subtle, not alarming (M4's discreet-styling convention): the
             # overwrite flag matters to the approver but isn't a red-banner risk.
@@ -326,7 +335,8 @@ def _chain_ops(ops: list[dict], target: Path | None) -> tuple[list[_FileChain], 
         elif op_type == "move":
             new_path = str(Path(dst) / Path(current_path).name) if dst else current_path
         elif op_type in ("quarantine", "archive_document"):
-            if not dst:
+            if not dst or is_dir_quarantine(op):
+                # A folder has no leaf slot in the file tree — list it separately.
                 other_ops.append(op)
                 continue
             new_path = dst
