@@ -86,6 +86,8 @@ Both accept `--help` and `--version`, which print and exit immediately without l
 
 `telcontar` also accepts `--browser` (launches the web UI in the system browser instead of a native window) and `--target PATH` (skips the landing page's directory picker and jumps straight to a run for `PATH`).
 
+`telcontar --auto-class --target PATH [--dry-run]` runs headless: it never opens the web UI. For a directory telcontar has already organized, it analyzes the **new** documents sitting directly at the root, records them in the registry, and moves each into one of the folders that already exist. Nothing else changes: no renames, no new folders, no quarantine, and no approval prompt (the flag is your consent for that run, whatever `APPROVAL_MODE` says). The directory must already contain `.organizer/`, `INDEX.md` and `.organizer/registry.json`; otherwise the command exits with code 2 and leaves the directory untouched. New documents in sub-folders are reported but not touched, duplicates stay where they are, and a document with no fitting folder (or whose move would collide with an existing name) is left in place. After moving, it refreshes `INDEX.md` and `manifest.json`, then re-composes `SUMMARY.md` with one LLM call. `--dry-run` still analyzes and places (so it calls the LLM) but records nothing, moves nothing, writes no index or summary, and prints "Would file N of M". `--dry-run` is only valid with `--auto-class`. Exit codes: `0` done (including nothing to do or documents left in place), `1` done with errors (analysis failures, failed moves, or a failed index/summary refresh), `2` precondition or configuration error.
+
 ---
 
 ## Advanced: developer setup

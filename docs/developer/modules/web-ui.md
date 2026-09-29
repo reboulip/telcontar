@@ -397,10 +397,12 @@ marker (`is_op_out_of_scope`, S4/M4) for any op whose source resolves outside
 `outside target` flag is OR'd across every chained op and the first
 `quarantine`/`archive_document` reason encountered wins. Ops with no clean
 tree slot (`create_dir`, `compress_quarantine`, `update_file`, and any
-`quarantine`/`archive_document` with no destination) come back as `other_ops`
+`quarantine`/`archive_document` with no destination, and — AA1 — whole-folder
+quarantines from `propose_quarantine_dir`, recognized by `is_dir_quarantine(op)`,
+since a folder has no leaf slot in the file tree) come back as `other_ops`
 instead, rendered below the tree as an "Other operations" list using the same
 `fmt_op(op, session.target, markup=False)` label the whole checklist used
-pre-V3 — so the `(overwrite)` marker (`update_file`-only, and `update_file`
+pre-V3 (a folder quarantine renders as `QUARANTINE FOLDER  name/  — reason`) — so the `(overwrite)` marker (`update_file`-only, and `update_file`
 always lands in `other_ops`) is the one marker still exclusive to that
 fallback bucket. Every op in the plan still ends up with exactly one checkbox,
 in the after-tree (shared across its whole chain, if any) or in "Other

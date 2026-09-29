@@ -95,6 +95,8 @@ The host can only call `execute_plan` on a plan in `approved` state. The `approv
 
 The MCP server has no delete tool. The `propose_quarantine` / `quarantine` path is the only way to remove files from the working tree. Quarantined files are moved to `QUARANTINE_DIR` and journaled — they can be recovered manually or via `undo_last` (see below).
 
+As of AA1, `propose_quarantine_dir` extends this path to whole old folders, used only when the user (or the agent, on its own call) replaces an existing folder structure. It is residue-only: a folder is accepted only when every document in it has its own staged move, quarantine or archive op (`INDEX.md`, dotfiles and empty subfolders do not count as documents), and `execute_plan` re-checks the disk and runs these ops last, deepest-first. The target root, `.organizer`, the quarantine folder and plan-created folders are always refused. Folder ops are journaled like any quarantine (`target_kind: "dir"`) and reversed by `undo_last`.
+
 As of V10, every `propose_quarantine` call also carries a `reason` — a short, concrete justification (duplicate of X, superseded by Y, unreadable *and* superfluous, etc.) stored on the op (`PlanOp.params["reason"]`) and shown beside the file in the approval view (`host.format.quarantine_reason`/`fmt_op`, capped at 120 chars for display — the full text is always in `plan_ops.json`). The server itself does not enforce this: an empty string is accepted like any other. The requirement lives entirely in the ORGANIZE system prompt (`host/agent.py`), which now mandates a concrete reason on every quarantine and explicitly rejects "unreadable" alone as sufficient, since the reason is what the user actually judges at approval time. As of V17, one case is escalated further: an unreadable file (present on disk, missing from the registry, corroborated by the corpus digest's error count) may not be quarantined unilaterally at all — the agent must call `ask_user` first and may only stage the op on explicit confirmation, with reason `"unreadable — user confirmed disposable"`; declining or skipping leaves the file untouched. Duplicates/superseded documents are unaffected — those stay a deterministic judgement, quarantined directly, no ask needed.
 
 `compress_quarantine` is the only other operation that removes bytes from disk (the original loose files in `QUARANTINE_DIR`, after a verified archive is produced) — staged via `propose_compress_quarantine` and applied only through `execute_plan`, like every other mutation. It is still fully reversible: `undo_last` restores each original from the archive and deletes the zip. No bytes leave the machine — compression only reclaims space within the local quarantine folder.
@@ -444,6 +446,18 @@ The web UI's own foundational design decisions — routing/session model, the pe
    system prompt — memory.md is read from the target directory (potentially
    attacker-influenced territory, the same trust class as document content),
    unlike the repo-root-trusted .organizer/NAMING.md
+5a. Existing-structure check (AA1, _assess_existing_structure, host/structure.py):
+    before the first ORGANIZE LLM call, the host assesses the folders already
+    under the target (from the pre-pass walk — no extra MCP calls) — origin
+    (earlier telcontar run vs hand-built, judged from root INDEX.md/manifest.json),
+    per-folder document counts and types, depth, filed vs loose documents,
+    coherence. If there is at least one visible sub-folder, the host asks the
+    user keep-or-replace through the existing ask_user callback and inserts an
+    "Existing directory structure" section into the step-5 seed message between
+    the digest and the memory.md text. KEEP: file documents into the existing
+    folders. REPLACE: new folder names only (never rename or reuse an old one),
+    then stage propose_quarantine_dir for each emptied old folder. A skipped
+    question or no callback: the agent decides and says why in the plan rationale
 5b. Host drains any chat message queued via message_queue since the run started
     (P7) — catches anything typed during steps 2-4 above — and appends each as
     a user turn before the first LLM call. The #organize-input chat box is
@@ -511,6 +525,36 @@ The web UI's own foundational design decisions — routing/session model, the pe
 19. Desktop notification fires and the "press g / keep chatting" cue is shown — but only on this first terminal state (O7)
 20. The MCP session from step 1 stays open, and the #organize-input chat box (live since the start of the run, P7) stays enabled. The host's worker loop waits on `#organize-input` for any message that arrives strictly AFTER run_agent_loop has already returned (i.e. the agent is fully idle and no live call remains to drain the queue itself) — each such message resumes run_agent_loop on the SAME session with (history=<returned from the previous call>, message=<your text>, message_queue=<the same queue>) — back to step 8 directly (steps 2-7 do NOT repeat; no new pre-pass or analysis happens on a continuation), with the same ORGANIZE-only toolset, its own fresh turn budget, and the same live-chat draining (step 5b/12/18) as the initial run. An unhandled exception during any of these turns is caught rather than propagating: any tool call left without a matching result is answered with a synthesized {"error": ...} entry, an "error" AgentEvent fires, and the conversation history stays valid for the next chat message
 ```
+
+---
+
+## Data flow (headless auto-class, AA2)
+
+`telcontar --auto-class --target <dir>` (`host/autoclass.py`) is a separate, non-interactive path: it never loads the web UI and never enters the agent loop.
+
+```
+1. host/main.py: --auto-class -> run_auto_class_cli(target, dry_run)
+2. check_preconditions: .organizer/, INDEX.md, .organizer/registry.json must exist
+   (before settings/LLM client are built — building the client creates .organizer/).
+   Failure -> exit 2, directory untouched
+3. Settings + client built (failure -> exit 2); MCP server subprocess started
+4. run_prepass (P4); candidates = NEW documents directly at the target root.
+   New documents in sub-folders are reported, not touched; duplicates stay put
+5. Cost estimate printed and auto-approved (the flag is the consent);
+   _analyze_new_documents (P5) analyzes + records the candidates
+6. assess_structure (AA1) lists the existing folders (up to 300, busiest first)
+7. Placement: batches of 25 -> one forced submit_placements LLM call per batch
+   (one retry). The model gets NO MCP tools. Answers matched by index; a folder
+   must match a listed folder exactly, else the document is left in place
+8. Host builds the plan by direct MCP calls: create_plan, propose_move (one per
+   document), set_plan_rationale, approve_plan, execute_plan — no approval
+   dispatch. Only propose_move; a staging error leaves the document in place
+9. write_index (INDEX.md + manifest.json, no LLM), then one LLM call re-composes
+   SUMMARY.md from the registry with the profile's synthesis template
+10. Report printed; exit 0 (done), 1 (done with errors), 2 (precondition/config)
+```
+
+`--dry-run` runs steps 1-7 (LLM calls happen) but records, stages and writes nothing, and prints "Would file N of M".
 
 ---
 

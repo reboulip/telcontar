@@ -334,6 +334,27 @@ Stage moving `path` to `QUARANTINE_DIR`. Unlike `propose_rename` and `propose_mo
 
 ---
 
+### `propose_quarantine_dir`
+
+```python
+propose_quarantine_dir(path: str, plan_id: str, reason: str = "") -> dict
+```
+
+Stage moving a whole OLD folder to `QUARANTINE_DIR` (AA1). Only for the "replace" branch of the existing-structure decision: the folder must hold nothing but residue (`INDEX.md`, `manifest.json`, `SUMMARY.md`, `README.md`, `Thumbs.db`, `desktop.ini`, dotfiles, empty subfolders — see `RESIDUE_NAMES` in `server/guards.py`) once the plan's other ops have run. The destination name is suffixed on collision, also against other folder quarantines already staged in the plan. Raises `ValueError` at proposal time if `path`:
+
+- is not a directory, is the target root, lies outside the target, is the quarantine folder or `.organizer` (or inside them);
+- is already staged for quarantine in the plan;
+- has a `create_dir` op inside it, or a `move` destination inside it, in the same plan (the new taxonomy must use new folder names, never reuse old ones);
+- still holds documents that the plan does not move outside it, quarantine, or archive (`archive_document`). The error lists up to 10 of them. Symlinks and unreadable subfolders count as documents (fails closed).
+
+`reason` is shown beside the folder at approval time (`QUARANTINE FOLDER  name/  — reason`); the server does not require it.
+
+At `execute_plan` time the op is re-checked against the disk (protected paths, only residue left) and runs **after** every other op, deepest folder first. If documents remain, the op fails non-retryably with an error naming them, and the folder stays in place. Journal entries carry `target_kind: "dir"` and `reason`; registry path reconciliation is skipped for them; `undo_last` reverses them through the ordinary quarantine branch.
+
+**Returns:** `{plan_id, op_id, op_type, target_kind, src, dst, status, ops_count}` — `op_type` is `"quarantine"` and `target_kind` is `"dir"`. Not available in QUERY mode.
+
+---
+
 ### `propose_create_file`
 
 ```python
