@@ -163,3 +163,62 @@ class TestBrowserFlagRouting:
         main()
 
         assert calls == [(Path("/tmp/some-dir"), False)]
+
+
+# ── AA2: --auto-class routes to the headless CLI, never the web UI ────────────
+
+
+class TestAutoClassRouting:
+    def test_help_lists_auto_class_flags(self) -> None:
+        r = _run_main("host.main", "telcontar", "--help")
+        assert "--auto-class" in r.stdout
+        assert "--dry-run" in r.stdout
+
+    def test_auto_class_routes_to_cli_with_exit_code(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from host.main import main
+
+        calls: list[tuple[Path, bool]] = []
+
+        def _fake_cli(target: Path, *, dry_run: bool = False) -> int:
+            calls.append((target, dry_run))
+            return 1
+
+        monkeypatch.setattr("host.autoclass.run_auto_class_cli", _fake_cli)
+        monkeypatch.setattr(
+            "host.web.main.run_web", lambda **kwargs: pytest.fail("web UI must not start")
+        )
+        monkeypatch.setattr(
+            sys, "argv", ["telcontar", "--auto-class", "--target", "/x", "--dry-run"]
+        )
+
+        with pytest.raises(SystemExit) as exc:
+            main()
+
+        assert exc.value.code == 1
+        assert calls == [(Path("/x"), True)]
+
+    def test_auto_class_requires_target(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from host.main import main
+
+        monkeypatch.setattr(sys, "argv", ["telcontar", "--auto-class"])
+        with pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 2
+
+    def test_dry_run_alone_is_an_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from host.main import main
+
+        monkeypatch.setattr(sys, "argv", ["telcontar", "--dry-run"])
+        with pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 2
+
+    def test_autoclass_module_does_not_import_web_ui(self) -> None:
+        code = (
+            "import sys, host.autoclass; "
+            "sys.exit(1 if any(m.startswith(('nicegui', 'host.web')) for m in sys.modules) else 0)"
+        )
+        r = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True, timeout=_TIMEOUT
+        )
+        assert r.returncode == 0, r.stderr

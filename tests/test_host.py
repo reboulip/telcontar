@@ -3330,3 +3330,16 @@ def test_system_prompt_mentions_structure_decision_and_quarantine_dir() -> None:
 
     assert "propose_quarantine_dir" in _SYSTEM_PROMPT_TEMPLATE
     assert "Existing directory structure" in _SYSTEM_PROMPT_TEMPLATE
+
+
+def test_token_ledger_treats_place_and_summary_phases_as_additive() -> None:
+    from host.agent import _TokenLedger
+
+    ledger = _TokenLedger()
+    usage = MagicMock(prompt_tokens=100, completion_tokens=10)
+    response = MagicMock(usage=usage)
+    for phase in ("place", "place", "summary"):
+        ledger.record(response, phase=phase, step=0, on_event=lambda _e: None)
+
+    assert ledger.totals["in"] == 300
+    assert ledger.totals["out"] == 30

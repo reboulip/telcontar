@@ -2466,7 +2466,9 @@ class _TokenLedger:
         # one shared `totals["in"]` that analyze accumulates and the first
         # organize/query call replaces) is what stops the visible collapse at
         # the analyze→organize seam: the analyze contribution survives.
-        if phase == "analyze":
+        if phase in ("analyze", "place", "summary"):
+            # Auto-class (AA2) placement batches and the summary call are
+            # independent, history-free calls like analyze batches: additive.
             self.analyze_in += prompt
         else:
             self.conversation_in = prompt
