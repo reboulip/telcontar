@@ -81,3 +81,12 @@ on open work.
 - [x] Z5 · Add a persistent per-directory `memory.md` under `.organizer/` (`memory_path` in `config/settings.py`'s `Settings`/`for_target`, resolved via a new `resolve_memory_path()` in `host/paths.py`) holding user instructions and decisions that carry across sessions over the same target directory; fold it into the system/steering prompt build (`host/agent.py`) alongside existing steering-instruction handling. [#64]
 
 ---
+
+## Phase 26 — Existing-structure awareness
+
+*(Follow-ups from the GH issue backlog. Single-letter labels A–Z are all used, so items use a fresh `AA`-series label.)*
+
+- [ ] AA1 · Make the organize flow aware of an existing directory tree, whether left by an earlier telcontar session or built by hand — detect and assess it before taxonomy design, feed it into the taxonomy prompt (`host/agent.py`), ask the user whether to keep or replace it, and when it is replaced move the old folders to quarantine (`server/guards.py`, `execute_plan`), journaled and undoable. [#70]
+- [ ] AA2 · Add a headless `telcontar --auto-class` CLI mode (`host/main.py`, no UI, CLI output only) for a target that already has telcontar setup (`.organizer/` plus `INDEX.md`) — analyze new documents, record them in the registry, and move them into the existing directory structure without an approval prompt and without proposing any structure change. [#71]
+
+---
