@@ -1339,6 +1339,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#server.tools.propose_quarantine_dir" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        propose_quarantine_dir
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#server.tools.propose_rename" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1881,6 +1892,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#server.guards.check_quarantinable_dir" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        check_quarantinable_dir
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#server.guards.check_within_root" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1936,10 +1958,32 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#server.guards.is_residue_name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        is_residue_name
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#server.guards.is_sweep_protected" class="md-nav__link">
     <span class="md-ellipsis">
       
         is_sweep_protected
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server.guards.non_residue_files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        non_residue_files
       
     </span>
   </a>
@@ -3306,6 +3350,30 @@ these are expected, not failures the agent needs to react to.</p>
 <div class="doc doc-object doc-function">
 
 
+<h3 id="server.tools.propose_quarantine_dir" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">propose_quarantine_dir</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">,</span> <span class="n">plans_dir</span><span class="p">,</span> <span class="n">quarantine_dir</span><span class="p">,</span> <span class="n">target_dir</span><span class="p">,</span> <span class="n">reason</span><span class="o">=</span><span class="s1">&#39;&#39;</span><span class="p">)</span></code>
+
+<a href="#server.tools.propose_quarantine_dir" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Append a whole-folder quarantine op to a pending plan (AA1).</p>
+<p>Only for an old folder that will hold nothing but residue (INDEX.md,
+dotfiles, empty subfolders) once the plan's other ops have run: the folder
+must not be the target root, <code>.organizer</code> or the quarantine dir, must not
+be reused by the new taxonomy (a <code>create_dir</code> or <code>move</code> destination in
+it), and every document still in it must be staged to leave. The check here
+is advisory; <code>execute_plan</code> re-checks the disk before the move.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h3 id="server.tools.propose_rename" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">propose_rename</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">new_name</span><span class="p">,</span> <span class="n">plan_id</span><span class="p">,</span> <span class="n">plans_dir</span><span class="p">)</span></code>
 
@@ -4369,6 +4437,27 @@ quarantine dir, and guarding them would break quarantine outright.</p>
 <div class="doc doc-object doc-function">
 
 
+<h3 id="server.guards.check_quarantinable_dir" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">check_quarantinable_dir</span><span class="p">(</span><span class="n">folder</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">target_root</span><span class="p">,</span> <span class="n">quarantine_dir</span><span class="p">,</span> <span class="n">organizer_dir</span><span class="p">,</span> <span class="n">plan_created_dirs</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+<a href="#server.guards.check_quarantinable_dir" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Raise <code>ValueError</code> unless <code>folder</code> is a real directory that may be
+quarantined as a whole: not the target root, inside it, not the quarantine
+dir or <code>.organizer</code> (nor an ancestor/descendant of either), and not a
+directory this plan run created.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h3 id="server.guards.check_within_root" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">check_within_root</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">roots</span><span class="p">)</span></code>
 
@@ -4474,6 +4563,24 @@ match only, never substring containment.</p>
 <div class="doc doc-object doc-function">
 
 
+<h3 id="server.guards.is_residue_name" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">is_residue_name</span><span class="p">(</span><span class="n">name</span><span class="p">)</span></code>
+
+<a href="#server.guards.is_residue_name" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>True if a file of this name is leftover noise, not a document.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
 <h3 id="server.guards.is_sweep_protected" class="doc doc-heading">
             <code class="highlight language-python"><span class="n">is_sweep_protected</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">target_root</span><span class="p">,</span> <span class="n">quarantine_dir</span><span class="p">,</span> <span class="n">organizer_dir</span><span class="p">,</span> <span class="n">plan_created_dirs</span><span class="p">)</span></code>
 
@@ -4487,6 +4594,27 @@ sweep (Y6): the target root itself, anything outside it, the quarantine
 dir (or an ancestor/descendant of it), the <code>.organizer</code> working dir
 (likewise), and any directory this same plan run created via a
 <code>create_dir</code> op (<code>plan_created_dirs</code>, pre-normalized via <code>normkey</code>).</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="server.guards.non_residue_files" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">non_residue_files</span><span class="p">(</span><span class="n">folder</span><span class="p">,</span> <span class="n">limit</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span></code>
+
+<a href="#server.guards.non_residue_files" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Files under <code>folder</code> (recursively) that are not residue. Empty
+subfolders and residue-named files are ignored. Fails closed: a symlink
+or an unreadable subdirectory is reported as non-residue, so a caller
+never treats an unknown as safe to quarantine.</p>
 
 
     </div>
@@ -4540,7 +4668,7 @@ comparisons are case-insensitive).</p>
 
 
 <h3 id="server.guards.safe_quarantine_dir_path" class="doc doc-heading">
-            <code class="highlight language-python"><span class="n">safe_quarantine_dir_path</span><span class="p">(</span><span class="n">src</span><span class="p">,</span> <span class="n">quarantine_dir</span><span class="p">)</span></code>
+            <code class="highlight language-python"><span class="n">safe_quarantine_dir_path</span><span class="p">(</span><span class="n">src</span><span class="p">,</span> <span class="n">quarantine_dir</span><span class="p">,</span> <span class="n">reserved</span><span class="o">=</span><span class="nb">frozenset</span><span class="p">())</span></code>
 
 <a href="#server.guards.safe_quarantine_dir_path" class="headerlink" title="Permanent link">&para;</a></h3>
 
@@ -4550,6 +4678,9 @@ comparisons are case-insensitive).</p>
         <p>Like <code>safe_quarantine_path</code> but for directories: suffixes the WHOLE
 basename on collision (<code>2024.backup</code> -&gt; <code>2024.backup_1</code>) instead of
 splitting a stem/suffix, which would mangle a dotted directory name.</p>
+<p><code>reserved</code> holds <code>normkey</code> values of destinations already staged by other
+ops in the same plan, so two same-named folders get distinct destinations
+even though neither exists on disk yet.</p>
 
 
     </div>

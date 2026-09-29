@@ -775,6 +775,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#headless-auto-class" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Headless auto-class
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#recommended-progression" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1556,6 +1567,9 @@
 </div>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="na">APPROVAL_MODE</span><span class="o">=</span><span class="s">never</span>
 </code></pre></div>
+<hr />
+<h2 id="headless-auto-class">Headless auto-class<a class="headerlink" href="#headless-auto-class" title="Permanent link">&para;</a></h2>
+<p><code>telcontar --auto-class --target PATH</code> skips the approval step whatever <code>APPROVAL_MODE</code> says. The flag itself is your consent for that one run. Its reach is narrow and enforced by the host: the plan holds <code>propose_move</code> ops only (new root-level documents into folders that already exist), never renames, new folders or quarantines. Moves are journaled, so they stay reversible from the web UI's journal dialog. Use <code>--dry-run</code> to preview. See <a href="../../getting-started/installation/#entry-points">Installation</a>.</p>
 <hr />
 <h2 id="recommended-progression">Recommended progression<a class="headerlink" href="#recommended-progression" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>First run on a new corpus      →  APPROVAL_MODE=always

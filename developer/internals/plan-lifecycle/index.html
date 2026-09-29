@@ -1522,6 +1522,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#propose_quarantine_dirpath-str-reason-str-dict" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        propose_quarantine_dir(path: str, reason: str = "") -&gt; dict
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#propose_quarantinepath-str-reason-str-dict" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1872,6 +1883,8 @@ Reserved for future use: if execute_plan is called on a plan that is already in 
 2. Check for collision: if a file with the same name already exists in dest_dir, raise FileExistsError.
 3. Append the operation to the plan.
 4. Write the plan file.</p>
+<h3 id="propose_quarantine_dirpath-str-reason-str-dict">propose_quarantine_dir(path: str, reason: str = "") -&gt; dict<a class="headerlink" href="#propose_quarantine_dirpath-str-reason-str-dict" title="Permanent link">&para;</a></h3>
+<p>(AA1) Propose moving a whole old folder to the quarantine directory, only when replacing an existing folder structure. Stages a <code>quarantine</code> op with <code>params {reason, target_kind: "dir"}</code>. Refused at proposal time for a protected folder (target root, outside the target, <code>.organizer</code>, quarantine dir), a folder already staged, a folder the plan creates or moves documents into, and a folder still holding non-residue documents that the plan does not move out, quarantine or archive. See <code>execute_plan</code> below for the execution-time ordering and re-check.</p>
 <h3 id="propose_quarantinepath-str-reason-str-dict">propose_quarantine(path: str, reason: str = "") -&gt; dict<a class="headerlink" href="#propose_quarantinepath-str-reason-str-dict" title="Permanent link">&para;</a></h3>
 <p>Propose moving a file to the quarantine directory.</p>
 <p><strong>Inputs:</strong>
@@ -1910,7 +1923,7 @@ Reserved for future use: if execute_plan is called on a plan that is already in 
 1. Load the plan file.
 2. Check state is approved; raise if not.
 3. Transition plan state to executing and write to disk.
-4. Execute operations in two sub-phases, not strict plan order: all <code>create_dir</code> ops run first (each group keeping its original relative order), then every other op type, also in its original relative order. This guarantees a <code>create_dir</code> an op like <code>move</code> depends on has already run, regardless of how the two were interleaved when authored. The persisted <code>Plan.ops</code> order and the approval-view display order are untouched — only the in-memory iteration order for this run is reshuffled. For each operation in that iteration order:
+4. Execute operations in three sub-phases, not strict plan order: all <code>create_dir</code> ops run first (each group keeping its original relative order), then every other op type, also in its original relative order, then (AA1) whole-folder quarantine ops (<code>quarantine</code> ops with <code>params.target_kind == "dir"</code>, from <code>propose_quarantine_dir</code>) last, sorted deepest-first by path depth. This guarantees a <code>create_dir</code> an op like <code>move</code> depends on has already run, regardless of how the two were interleaved when authored, and that every document staged to leave an old folder has moved before the folder itself does. Before a folder quarantine runs, <code>_check_dir_quarantine_at_execution</code> re-checks the disk (protected-path rules; only residue such as <code>INDEX.md</code>, dotfiles or empty subfolders left); if documents remain (for example a move was unticked at approval) the op fails non-retryably with an error naming them and the folder stays in place. Their journal entries carry <code>target_kind: "dir"</code> and <code>reason</code>, and registry reconciliation is skipped for them. The persisted <code>Plan.ops</code> order and the approval-view display order are untouched — only the in-memory iteration order for this run is reshuffled. For each operation in that iteration order:
    a. Resolve the op's source: if an earlier op in this same run already relocated the file (see below), use its current path; otherwise use the op's original <code>src</code>.
    b. Attempt to execute it against the resolved source: <code>rename</code>/<code>move</code>/<code>quarantine</code>/<code>create_file</code>/<code>update_file</code>/<code>create_dir</code> are applied directly; <code>archive_document</code>/<code>compress_quarantine</code>/<code>memory_note</code> (Z5) are delegated to the pre-existing standalone functions of the same name (they self-journal and are skipped by step c's generic journal append) — the <code>memory_note</code> branch raises <code>ValueError</code> if <code>memory_path</code> was not supplied. <code>move</code>, like <code>quarantine</code>, creates its destination directory (<code>mkdir(parents=True, exist_ok=True)</code>) before checking for collision — a second line of defense if the op's own <code>create_dir</code> was deselected, failed, or never proposed, so a move targeting a missing destination self-heals instead of hard-stopping.
    c. On success: update operation status to completed, append a journal entry for non-self-journaling op types (recording the resolved source, not necessarily the original <code>src</code>), record the file's new location for later ops, update plan file.
