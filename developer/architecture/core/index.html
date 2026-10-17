@@ -2158,13 +2158,21 @@ client was built; if it has, it reloads <code>Settings</code>, rebuilds the clie
 reports what changed as a visible chat turn (model + endpoint hostname, never
 the key).</p>
 <p>Only the LLM endpoint fields (<code>llm_base_url</code>, <code>llm_api_key</code>, <code>llm_model</code>,
-<code>llm_api_version</code>) are ever hot-swapped this way — <code>approval_mode</code> and every
+<code>llm_api_version</code>, <code>llm_reasoning_effort</code>) are ever hot-swapped this way — <code>approval_mode</code> and every
 path field stay pinned for the whole session's lifetime by design, so a live
 run's already-consented-to approval gate can never be silently relaxed by an
 unrelated settings save elsewhere. A Settings-page save while a run is in
 progress therefore reconnects that run to the new model/endpoint/key
 automatically; everything else in the settings form only takes effect for
 sessions started after the save.</p>
+<p>Two details keep a reload invisible to call sites. Call sites build their
+<code>create()</code> kwargs from settings <em>before</em> <code>create()</code> reloads, so after a model
+change the first call may still carry the old <code>model</code>; the proxy rewrites any
+superseded model name to the current one. And <code>reasoning_effort</code> is injected
+by the proxy when configured; if the endpoint rejects it with a 400/422, the
+proxy retries once (<code>reasoning_effort="none"</code> when the error mentions tools,
+otherwise without the parameter) and keeps that downgrade until the next
+settings reload, logging a <code>compat</code> entry to the LLM debug log.</p>
 <h3 id="nicegui-web-ui-foundations">NiceGUI web UI foundations<a class="headerlink" href="#nicegui-web-ui-foundations" title="Permanent link">&para;</a></h3>
 <p>The web UI's own foundational design decisions — routing/session model, the persistent nav header, dialogs, sidebar tree, reload-safety, theming, and the native-window launch — are documented separately, since they make up roughly two-thirds of this document's original content: see <a href="../web-ui/">Architecture — Web UI</a>.</p>
 <hr />
@@ -2305,6 +2313,7 @@ sessions started after the save.</p>
 <a id="__codelineno-3-19" name="__codelineno-3-19" href="#__codelineno-3-19"></a>10. Report printed; exit 0 (done), 1 (done with errors), 2 (precondition/config)
 </code></pre></div>
 <p><code>--dry-run</code> runs steps 1-7 (LLM calls happen) but records, stages and writes nothing, and prints "Would file N of M".</p>
+<p>The web UI's <strong>Auto-class</strong> button (AB4b) is a second entry point into the same flow: <code>host/web/autoclass_jobs.py</code> runs <code>run_auto_class_for_target(root, record_in_place=True)</code> as a background task. Steps 2-10 are identical, except that new documents in sub-folders are also analyzed and recorded where they are (never moved, never offered to placement). Setup failures raise <code>AutoClassSetupError</code> instead of exiting 2.</p>
 <hr />
 <h2 id="data-flow-one-query-session">Data flow (one query session)<a class="headerlink" href="#data-flow-one-query-session" title="Permanent link">&para;</a></h2>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>1. User opens the `/query/{run_id}` page — directly (landing page&#39;s &quot;Query&quot;

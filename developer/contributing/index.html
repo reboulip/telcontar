@@ -1390,6 +1390,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#windows-bundle" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Windows bundle
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#pre-commit-hooks" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1651,6 +1662,13 @@
 <p>Run all checks before opening a PR:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>uv<span class="w"> </span>run<span class="w"> </span>ruff<span class="w"> </span>check<span class="w"> </span>.<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>uv<span class="w"> </span>run<span class="w"> </span>ruff<span class="w"> </span>format<span class="w"> </span>--check<span class="w"> </span>.<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>uv<span class="w"> </span>run<span class="w"> </span>mypy<span class="w"> </span>host<span class="w"> </span>server<span class="w"> </span>config<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>uv<span class="w"> </span>run<span class="w"> </span>ty<span class="w"> </span>check<span class="w"> </span>host<span class="w"> </span>server<span class="w"> </span>config<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>uv<span class="w"> </span>run<span class="w"> </span>--group<span class="w"> </span><span class="nb">test</span><span class="w"> </span>pytest<span class="w"> </span>-q
 </code></pre></div>
+<h3 id="windows-bundle">Windows bundle<a class="headerlink" href="#windows-bundle" title="Permanent link">&para;</a></h3>
+<p>The release workflow builds a standalone Windows zip with PyInstaller (<code>packaging/windows/telcontar.spec</code>, run by <code>.github/workflows/windows-build.yml</code>). The spec also builds on Linux, which is enough to check the freeze logic locally:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>uv<span class="w"> </span>sync<span class="w"> </span>--group<span class="w"> </span>build
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>uv<span class="w"> </span>run<span class="w"> </span>pyinstaller<span class="w"> </span>--noconfirm<span class="w"> </span>packaging/windows/telcontar.spec
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>uv<span class="w"> </span>run<span class="w"> </span>python<span class="w"> </span>packaging/windows/smoke_test.py<span class="w"> </span>dist/telcontar
+</code></pre></div>
+<p>It is a one-dir build with two executables: <code>telcontar.exe</code> (windowed, what users double-click) and <code>telcontar-cli.exe</code> (console). A windowed exe has no stdio, so the host starts its MCP server subprocess through the console exe with the hidden <code>--mcp-server</code> flag (<code>host.agent._server_command</code>). If you add a package that ships data files, loads plugins by name, or is imported dynamically, add it to the <code>collect</code> list in the spec — the smoke test catches a missing import only if the server path touches it. Run <strong>Actions → Windows build → Run workflow</strong> to test a branch without tagging.</p>
 <h3 id="pre-commit-hooks">Pre-commit hooks<a class="headerlink" href="#pre-commit-hooks" title="Permanent link">&para;</a></h3>
 <p><code>.pre-commit-config.yaml</code> wires the table above (minus pytest — the full
 suite is too slow for a per-commit hook) into <code>git commit</code>, plus routine
@@ -1714,7 +1732,7 @@ gate.</p>
 <li><strong>Never push directly to <code>main</code>.</strong></li>
 </ul>
 <h3 id="commit-message-convention">Commit message convention<a class="headerlink" href="#commit-message-convention" title="Permanent link">&para;</a></h3>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>&lt;type&gt;: &lt;summary in imperative mood, ≤72 chars&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>&lt;type&gt;: &lt;summary in imperative mood, ≤72 chars&gt;
 </code></pre></div>
 <p>Types: <code>feat</code>, <code>fix</code>, <code>chore</code>, <code>docs</code>, <code>test</code>, <code>refactor</code>.</p>
 <p>Example: <code>feat: add find_modified_documents to registry</code></p>
@@ -1750,8 +1768,8 @@ gate.</p>
 <hr />
 <h2 id="writing-tests">Writing tests<a class="headerlink" href="#writing-tests" title="Permanent link">&para;</a></h2>
 <p>Tests live in <code>tests/</code>. The suite uses <code>pytest-asyncio</code> with <code>asyncio_mode = "auto"</code> (configured in <code>pyproject.toml</code>).</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>uv<span class="w"> </span>run<span class="w"> </span>--group<span class="w"> </span><span class="nb">test</span><span class="w"> </span>pytest<span class="w"> </span>-q<span class="w">                  </span><span class="c1"># full suite</span>
-<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>uv<span class="w"> </span>run<span class="w"> </span>--group<span class="w"> </span><span class="nb">test</span><span class="w"> </span>pytest<span class="w"> </span>tests/test_plan.py<span class="w">  </span><span class="c1"># single module</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>uv<span class="w"> </span>run<span class="w"> </span>--group<span class="w"> </span><span class="nb">test</span><span class="w"> </span>pytest<span class="w"> </span>-q<span class="w">                  </span><span class="c1"># full suite</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>uv<span class="w"> </span>run<span class="w"> </span>--group<span class="w"> </span><span class="nb">test</span><span class="w"> </span>pytest<span class="w"> </span>tests/test_plan.py<span class="w">  </span><span class="c1"># single module</span>
 </code></pre></div>
 <p><strong>Patterns in use:</strong></p>
 <ul>
@@ -1765,20 +1783,20 @@ gate.</p>
 <hr />
 <h2 id="roadmap-conventions">ROADMAP conventions<a class="headerlink" href="#roadmap-conventions" title="Permanent link">&para;</a></h2>
 <p>Items in <code>ROADMAP.md</code> must use the checkbox + label format so <code>/dev-pipeline</code> detects them:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">- [ ]</span> X1 · Short description of the item
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">- [ ]</span> X1 · Short description of the item
 </code></pre></div>
 <p>If an item depends on a later-listed item, annotate it:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">- [ ]</span> C3 · execute_plan — ... (requires: C5)
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">- [ ]</span> C3 · execute_plan — ... (requires: C5)
 </code></pre></div>
 <p><code>/dev-pipeline</code> handles prerequisite inversion automatically.</p>
 <hr />
 <h2 id="documentation">Documentation<a class="headerlink" href="#documentation" title="Permanent link">&para;</a></h2>
 <p>Docs are built with MkDocs Material and deployed to GitHub Pages on every push to <code>main</code>.</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Local preview</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>uv<span class="w"> </span>run<span class="w"> </span>--group<span class="w"> </span>docs<span class="w"> </span>mkdocs<span class="w"> </span>serve
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1"># Build (strict — fails on warnings)</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>uv<span class="w"> </span>run<span class="w"> </span>--group<span class="w"> </span>docs<span class="w"> </span>mkdocs<span class="w"> </span>build<span class="w"> </span>--strict
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Local preview</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>uv<span class="w"> </span>run<span class="w"> </span>--group<span class="w"> </span>docs<span class="w"> </span>mkdocs<span class="w"> </span>serve
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Build (strict — fails on warnings)</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>uv<span class="w"> </span>run<span class="w"> </span>--group<span class="w"> </span>docs<span class="w"> </span>mkdocs<span class="w"> </span>build<span class="w"> </span>--strict
 </code></pre></div>
 <p>The <code>doc-keeper</code> agent updates <code>docs/**</code> and <code>README.md</code> at the end of each feature implementation step. Do not manually update docs for feature changes — run <code>/dev-pipeline</code> and let <code>doc-keeper</code> handle it.</p>
 <hr />

@@ -526,6 +526,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#windows-standalone-download" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Windows: standalone download
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#prerequisites" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1534,6 +1545,25 @@
 
 
 <h1 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h1>
+<h2 id="windows-standalone-download">Windows: standalone download<a class="headerlink" href="#windows-standalone-download" title="Permanent link">&para;</a></h2>
+<p>On Windows you can skip Python and uv. Each <a href="https://github.com/reboulip/telcontar/releases">GitHub release</a> carries <code>telcontar-&lt;version&gt;-windows-x64.zip</code>.</p>
+<ol>
+<li>Download the zip and its <code>.sha256</code> file.</li>
+<li>Unzip the whole folder. Do not run <code>telcontar.exe</code> from inside the zip.</li>
+<li>Double-click <code>telcontar.exe</code>. The setup wizard opens.</li>
+</ol>
+<p><code>telcontar-cli.exe</code>, in the same folder, is the console build. Use it from a terminal (<code>telcontar-cli.exe --version</code>, <code>--auto-class</code>). Keep both files together.</p>
+<p>If the app does not start, read <code>%USERPROFILE%\.telcontar\telcontar.log</code>.</p>
+<div class="admonition warning">
+<p class="admonition-title">The build is not code-signed</p>
+<p>Windows SmartScreen can show "Windows protected your PC" on first launch. Choose <strong>More info</strong>, then <strong>Run anyway</strong>. On a managed PC, application-control policy can block unsigned programs. In that case, use <code>uv tool install telcontar</code> below — it needs no <code>.exe</code> download.</p>
+</div>
+<p>To check the download, compare the hash and verify where the build came from:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="p">(</span><span class="nb">Get-FileHash</span> <span class="n">telcontar</span><span class="p">-&lt;</span><span class="n">version</span><span class="p">&gt;</span><span class="n">-windows-x64</span><span class="p">.</span><span class="n">zip</span> <span class="n">-Algorithm</span> <span class="n">SHA256</span><span class="p">).</span><span class="n">Hash</span>   <span class="c"># must match the .sha256 file</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">gh</span> <span class="n">attestation</span> <span class="n">verify</span> <span class="n">telcontar</span><span class="p">-&lt;</span><span class="n">version</span><span class="p">&gt;</span><span class="n">-windows-x64</span><span class="p">.</span><span class="n">zip</span> <span class="p">-</span><span class="n">-repo</span> <span class="n">reboulip</span><span class="p">/</span><span class="n">telcontar</span>
+</code></pre></div>
+<p>The CI workflow builds the zip from the tagged source. It runs the finished build through a start-up and MCP-server test before it attaches the zip to the release.</p>
+<hr />
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -1561,11 +1591,11 @@
 <div class="tabbed-set tabbed-alternate" data-tabs="1:2"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">Windows (PowerShell)</label><label for="__tabbed_1_2">macOS / Linux</label></div>
 <div class="tabbed-content">
 <div class="tabbed-block">
-<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">powershell</span> <span class="n">-ExecutionPolicy</span> <span class="n">ByPass</span> <span class="n">-c</span> <span class="s2">&quot;irm https://astral.sh/uv/install.ps1 | iex&quot;</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">powershell</span> <span class="n">-ExecutionPolicy</span> <span class="n">ByPass</span> <span class="n">-c</span> <span class="s2">&quot;irm https://astral.sh/uv/install.ps1 | iex&quot;</span>
 </code></pre></div>
 </div>
 <div class="tabbed-block">
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>curl<span class="w"> </span>-LsSf<span class="w"> </span>https://astral.sh/uv/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>sh
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>curl<span class="w"> </span>-LsSf<span class="w"> </span>https://astral.sh/uv/install.sh<span class="w"> </span><span class="p">|</span><span class="w"> </span>sh
 </code></pre></div>
 </div>
 </div>
@@ -1575,17 +1605,17 @@
 <div class="tabbed-set tabbed-alternate" data-tabs="2:3"><input checked="checked" id="__tabbed_2_1" name="__tabbed_2" type="radio" /><input id="__tabbed_2_2" name="__tabbed_2" type="radio" /><input id="__tabbed_2_3" name="__tabbed_2" type="radio" /><div class="tabbed-labels"><label for="__tabbed_2_1">From PyPI (recommended)</label><label for="__tabbed_2_2">From GitHub</label><label for="__tabbed_2_3">From a local clone</label></div>
 <div class="tabbed-content">
 <div class="tabbed-block">
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>uv<span class="w"> </span>tool<span class="w"> </span>install<span class="w"> </span>telcontar
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>uv<span class="w"> </span>tool<span class="w"> </span>install<span class="w"> </span>telcontar
 </code></pre></div>
 </div>
 <div class="tabbed-block">
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>uv<span class="w"> </span>tool<span class="w"> </span>install<span class="w"> </span>git+https://github.com/reboulip/telcontar.git
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>uv<span class="w"> </span>tool<span class="w"> </span>install<span class="w"> </span>git+https://github.com/reboulip/telcontar.git
 </code></pre></div>
 </div>
 <div class="tabbed-block">
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/reboulip/telcontar.git
-<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nb">cd</span><span class="w"> </span>telcontar
-<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>uv<span class="w"> </span>tool<span class="w"> </span>install<span class="w"> </span>.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/reboulip/telcontar.git
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nb">cd</span><span class="w"> </span>telcontar
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>uv<span class="w"> </span>tool<span class="w"> </span>install<span class="w"> </span>.
 </code></pre></div>
 </div>
 </div>
@@ -1594,7 +1624,7 @@
 <hr />
 <h2 id="first-run">First run<a class="headerlink" href="#first-run" title="Permanent link">&para;</a></h2>
 <p>Launch the app once to complete the setup wizard:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>telcontar
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>telcontar
 </code></pre></div>
 <p>The wizard asks for your AI service URL and API key, then saves them securely (OS credential store on Windows and macOS, or <code>~/.telcontar/config.env</code> as fallback). No manual editing of config files required.</p>
 <div class="admonition tip">
@@ -1603,14 +1633,14 @@
 </div>
 <hr />
 <h2 id="verify-the-install">Verify the install<a class="headerlink" href="#verify-the-install" title="Permanent link">&para;</a></h2>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="c1"># Confirm the entry point resolves</span>
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>telcontar<span class="w"> </span>--help
-<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>
-<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="c1"># Check the installed version</span>
-<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>telcontar<span class="w"> </span>--version
-<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>
-<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="c1"># Run the test suite (if you cloned the repo)</span>
-<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>uv<span class="w"> </span>run<span class="w"> </span>--group<span class="w"> </span><span class="nb">test</span><span class="w"> </span>pytest<span class="w"> </span>-q
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="c1"># Confirm the entry point resolves</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>telcontar<span class="w"> </span>--help
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="c1"># Check the installed version</span>
+<a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>telcontar<span class="w"> </span>--version
+<a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a>
+<a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="c1"># Run the test suite (if you cloned the repo)</span>
+<a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a>uv<span class="w"> </span>run<span class="w"> </span>--group<span class="w"> </span><span class="nb">test</span><span class="w"> </span>pytest<span class="w"> </span>-q
 </code></pre></div>
 <hr />
 <h2 id="entry-points">Entry points<a class="headerlink" href="#entry-points" title="Permanent link">&para;</a></h2>
@@ -1638,9 +1668,9 @@
 <hr />
 <h2 id="advanced-developer-setup">Advanced: developer setup<a class="headerlink" href="#advanced-developer-setup" title="Permanent link">&para;</a></h2>
 <p>If you want to contribute or run the full test suite, clone and sync the dev dependencies instead:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/reboulip/telcontar.git
-<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nb">cd</span><span class="w"> </span>telcontar
-<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>uv<span class="w"> </span>sync<span class="w"> </span>--all-groups
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>git<span class="w"> </span>clone<span class="w"> </span>https://github.com/reboulip/telcontar.git
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nb">cd</span><span class="w"> </span>telcontar
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>uv<span class="w"> </span>sync<span class="w"> </span>--all-groups
 </code></pre></div>
 <p>For dev, point <code>LLM_BASE_URL</code>/<code>LLM_API_KEY</code> at your endpoint via a <code>.env</code> file in the project root.  See <a href="../configuration/">Configuration</a> for the full reference.</p>
 <p>For the full toolchain (ruff, mypy, ty, pre-commit hooks) and contribution workflow, see <a href="../../developer/contributing/">Contributing</a>.</p>

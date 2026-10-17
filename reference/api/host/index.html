@@ -1263,6 +1263,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#host.llmlog.log_compat" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        log_compat
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -2501,6 +2512,25 @@ long analyze call).</p>
         <p>Log the resolved client shape once, right after <code>make_client</code> builds it —
 this single line is enough to diagnose a future Azure/endpoint misconfiguration
 without reproducing the failure first.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="host.llmlog.log_compat" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">log_compat</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">param</span><span class="p">,</span> <span class="n">rejected</span><span class="p">,</span> <span class="n">retry_with</span><span class="p">,</span> <span class="n">status</span><span class="p">)</span></code>
+
+<a href="#host.llmlog.log_compat" class="headerlink" title="Permanent link">&para;</a></h3>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Log one reasoning-effort compatibility downgrade (AB1). Parameter names
+and status only — no request content, no key.</p>
 
 
     </div>

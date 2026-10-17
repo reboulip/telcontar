@@ -1842,8 +1842,8 @@ below and <code>host/web/sessions.py</code>/<code>host/web/sessions_view.py</cod
   <code>on_select</code> is wired in (i.e. only on the picker route, <code>/</code>; <code>/run/{run_id}</code>'s
   tree is for verification only, not re-rooting).</li>
 </ul>
-<p><strong><code>Shell.reload_tree()</code></strong> (V7) is the one writer for <code>tree.props["nodes"]</code> from
-  here on: rebuilds from disk via <code>host.web.tree.rebuild_nodes</code> (<code>run.io_bound</code>),
+<p><strong><code>Shell.reload_tree()</code></strong> (V7) is the writer that <em>replaces</em> <code>tree.props["nodes"]</code>
+  (AB4a added a second, in-place writer — <code>refresh_status</code>, below): rebuilds from disk via <code>host.web.tree.rebuild_nodes</code> (<code>run.io_bound</code>),
   preserving the expanded set, and skips the actual prop assignment (and
   <code>tree.update()</code>) when the rebuilt nodes match what's already there — a QTree
   <code>nodes</code> replacement re-renders the whole subtree and can reset scroll/
@@ -1859,6 +1859,34 @@ below and <code>host/web/sessions.py</code>/<code>host/web/sessions_view.py</cod
   default <code>5.0</code>s, same test-seam pattern as <code>REFRESH_INTERVAL</code>) is deliberately
   coarser than the 0.5s render poll, since <code>rebuild_nodes</code> recurses over every
   expanded directory.</p>
+<p><strong>Folder-status indicators (AB4a, #76):</strong> every folder node in the sidebar tree
+  carries a red/yellow/green icon (not managed / managed with files not yet
+  analyzed / up to date; grey for checking/unknown) computed by
+  <code>host/web/folderstatus.py</code>, a NiceGUI-free, read-only module. <code>reload_tree</code>
+  and the lazy-expand loader decorate nodes from the cache
+  (<code>_rebuild_decorated</code>, <code>_load_children_decorated</code>, run in <code>run.io_bound</code>).
+  <strong><code>Shell.refresh_status()</code></strong> is the second writer of <code>tree.props["nodes"]</code> and
+  deliberately an in-place one: after awaiting <code>folderstatus.states_for</code> it only
+  sets <code>icon</code>/<code>iconColor</code> on the existing node dicts (<code>folderstatus.decorate</code>),
+  never replacing the list, so a concurrent expand that spliced children in
+  keeps them. It shares the <code>_reloading</code> guard with <code>reload_tree</code>. It runs from
+  a <code>ui.timer(web_session.STATUS_POLL_INTERVAL, ...)</code> (3.0 s) plus one 0.2 s
+  once-timer, on every route except <code>/setup</code> (<code>nav=False</code>). The scan itself
+  never runs on the UI thread: one background walk per organizer root on a
+  single worker thread, cached in memory only (TTL 30 s, minimum 5 s between
+  re-scans, invalidated when the registry mtime changes), with
+  stale-while-revalidate serving.</p>
+<p><strong>Auto-class jobs (AB4b, #76):</strong> on the landing page, an <strong>Auto-class</strong> button
+  (enabled for a yellow folder whose organizer root passes
+  <code>check_preconditions</code>) opens a consent dialog and then starts a background
+  job (<code>host/web/autoclass_jobs.py</code>) running the headless AA2 flow with
+  <code>record_in_place=True</code> on the organizer root. A jobs panel renders progress
+  as plain labels (untrusted text). Because a job and an organize session
+  both spawn an MCP server writing the same registry and journal,
+  <code>autoclass_jobs.blocking_reason(root)</code> — overlapping running job or live
+  organize session — disables the button, refuses Organize / the run page's
+  Start, and blocks journal undo. Jobs are cancelled by <code>run_web</code>'s shutdown
+  hook, and a finished job invalidates the folder-status cache.</p>
 <p><strong>Landing-page picker root and controls (Y3, GH #62):</strong> when <code>app_shell</code> gets no
   explicit <code>target</code> (the picker route, <code>/</code>), the sidebar tree now roots at
   <code>web_session.get_start_dir()</code> — the directory telcontar was launched from
@@ -2019,8 +2047,9 @@ below and <code>host/web/sessions.py</code>/<code>host/web/sessions_view.py</cod
   <code>validate_credentials(url, key, model, *, key_required)</code> (url → key → model,
   first-error-wins; <code>key_required=False</code>, U3, is the settings view's blank-key-
   preserves-existing case), <code>build_wizard_updates(...)</code>, <code>build_settings_updates(url,
-  key, model, profile, approval_mode)</code> (U3 — omits <code>llm_api_key</code> entirely when <code>key</code>
-  is blank, instead of the wizard's always-include-the-key behaviour),
+  key, model, profile, approval_mode, *, reasoning_effort="")</code> (U3 — omits <code>llm_api_key</code>
+  entirely when <code>key</code> is blank, instead of the wizard's always-include-the-key
+  behaviour; AB1 — always writes <code>llm_reasoning_effort</code>),
   <code>APPROVAL_OPTIONS</code> (U3, moved out of <code>host/app.py</code>'s <code>ConfigScreen</code>), and
   <code>plaintext_warning(button_label, recovery_action="go back")</code> — the shared
   warning-message builder that fixes U8's copy bug (the TUI wizard used to say

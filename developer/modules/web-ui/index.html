@@ -2092,6 +2092,89 @@ test-seam constant in <code>host/web/session.py</code>, the same pattern <code>R
 already established — deliberately coarser than <code>REFRESH_INTERVAL</code>'s 0.5s, since
 <code>rebuild_nodes</code> recurses over every expanded directory and a live tree poll is a
 nice-to-have, not something needing sub-second latency.</p>
+<p>As of AB4a (#76), the tree also shows folder-status icons (see
+<code>host/web/folderstatus.py</code> below). <code>_rebuild_decorated(root, expanded)</code> wraps
+<code>web_tree.rebuild_nodes</code> and decorates the private copy from the cache, so
+<code>reload_tree</code>'s skip-if-unchanged comparison stays like-for-like with the
+decorated live nodes; <code>_load_children_decorated(path)</code> does the same for the
+lazy-expand loader (<code>web_tree.load_children</code>). <code>Shell.refresh_status()</code> is the
+second writer of <code>tree.props["nodes"]</code> and decorates <strong>in place</strong> (icon/iconColor
+only, never replacing the list), sharing the <code>_reloading</code> guard with
+<code>reload_tree</code>. It is driven by <code>ui.timer(web_session.STATUS_POLL_INTERVAL,
+shell.refresh_status)</code> plus one <code>ui.timer(0.2, shell.refresh_status, once=True)</code>,
+on every route except <code>/setup</code> (<code>nav=False</code>). <code>STATUS_POLL_INTERVAL</code>
+(<code>host/web/session.py</code>, default <code>3.0</code>s) is a test-seam constant like
+<code>TREE_POLL_INTERVAL</code>. On the landing page, <code>host/web/main.py</code>'s <code>index_page</code> adds a
+<code>startup-folder-status</code> caption (the selected folder's <code>STATE_LABEL</code>, plus
+"(N not yet in memory)" when yellow) refreshed on the same interval, and a
+<code>folder-status-legend</code> row of icon + label for the unmanaged / new-files /
+up-to-date states.</p>
+<p><strong><code>host/web/folderstatus.py</code></strong> (AB4a, #76) — NiceGUI-free, read-only folder-status
+engine for the sidebar tree. It never creates <code>.organizer/</code>, builds an LLM client
+or calls MCP; it reads <code>server.registry</code> directly, as <code>host/web/corpus.py</code> does.</p>
+<ul>
+<li><strong>States:</strong> <code>UNMANAGED</code> (no <code>.organizer/</code> ancestor, or no registry file),
+  <code>NEW_FILES</code> (managed, a file in the subtree is not in the registry),
+  <code>UP_TO_DATE</code>, <code>PENDING</code> (scan not finished), <code>UNKNOWN</code> (scan hit the <code>MAX_FILES</code>
+  cap of 100,000, or otherwise could not prove green — never shown as green).
+  <code>STATE_STYLE</code> maps state to a (Quasar icon, color) pair — unmanaged
+  <code>radio_button_unchecked</code>/<code>negative</code>, new files <code>error_outline</code>/<code>warning</code>,
+  up to date <code>check_circle</code>/<code>positive</code>, pending <code>hourglass_empty</code>/<code>grey-6</code>,
+  unknown <code>help_outline</code>/<code>grey-6</code>; <code>STATE_LABEL</code> holds the user-facing text.</li>
+<li><strong>Scanning:</strong> <code>scan_root(root)</code> walks an organizer root once and rolls
+  unregistered files up to every ancestor folder (<code>RootScan</code>: <code>dirty</code> set,
+  <code>new_count</code>, <code>truncated</code>). Scans run on a single <code>ThreadPoolExecutor</code> worker
+  and are cached in memory only (never persisted): <code>SCAN_TTL</code> 30 s,
+  <code>MIN_RESCAN_INTERVAL</code> 5 s between re-scans of a root, invalidated when the
+  registry mtime changes (<code>corpus.registry_mtime</code>); stale-while-revalidate, so
+  lookups never walk the tree on the calling thread.</li>
+<li><strong>"Unregistered" rule:</strong> the file's sha256 is not a registry key (the same rule
+  <code>run_prepass</code> uses for new files), with a root-relative path match against
+  registry records as a hash-free fast path. Path-unmatched files are hashed
+  (<code>server.tools.compute_checksum</code>) within <code>HASH_BUDGET_BYTES</code> (256 MB) per scan;
+  past the budget they count as new.</li>
+<li><strong>Skipped:</strong> dotfiles, <code>.organizer</code>, the quarantine folder, names in
+  <code>host.agent._DISCOVERY_SKIP_NAMES</code> (INDEX/manifest/SUMMARY/README, OS junk),
+  symlinks/junctions, and nested organizer roots (those get their own scan).</li>
+<li><strong>API:</strong> <code>organizer_root(folder)</code> (memoized nearest <code>.organizer/</code> ancestor),
+  <code>state_for(folder) -&gt; (state, root)</code>, <code>states_for(dir_ids)</code>, <code>new_count(folder)</code>,
+  <code>folder_ids(nodes)</code> (nodes with children, real or lazy placeholder; no I/O),
+  <code>decorate(nodes, states) -&gt; bool</code> (in place), <code>invalidate(root=None)</code>, <code>reset()</code>.
+  Test seams: <code>SCAN_INLINE</code>, <code>MAX_FILES</code>, <code>MIN_RESCAN_INTERVAL</code>.</li>
+</ul>
+<p><strong><code>host/web/autoclass_jobs.py</code></strong> (AB4b, #76) — NiceGUI-free background jobs behind
+the landing page's Auto-class button. <code>AutoClassJob</code> is a dataclass <code>{root,
+running, lines, report_text, error, task}</code>; <code>on_event</code> keeps only <code>progress</code>,
+<code>cost_estimate</code>, <code>warning</code> and <code>error</code> event text (warnings/errors prefixed with
+their kind), capped at the last 200 lines — <code>tool_call</code>/<code>tool_result</code> events carry
+whole document records and are never stored. <code>start(root)</code> returns <code>None</code> when
+<code>blocking_reason(root)</code> is set, otherwise registers the job (keyed by normcased
+root) and creates an <code>asyncio</code> task running <code>host.autoclass.run_auto_class_for_target(
+root, record_in_place=True, on_event=job.on_event)</code>; on any end it sets
+<code>running=False</code> and calls <code>folderstatus.invalidate(root)</code>. <code>AutoClassSetupError</code>
+becomes <code>job.error</code>; cancellation sets "Cancelled." and re-raises; other exceptions
+become "Auto-class stopped: ...". <code>blocking_reason(root)</code> returns a message when a
+running job overlaps <code>root</code> (equal, ancestor or descendant path) or an organize
+<code>RunSession</code> that is started and whose task is not done overlaps it either way,
+else <code>None</code>. Also <code>get</code>, <code>all_jobs</code>, <code>is_running</code>, <code>running_overlapping</code>,
+<code>cancel_all</code> (called from <code>run_web</code>'s shutdown hook) and <code>reset</code> (tests).</p>
+<p><strong><code>host/web/dialogs.py</code> (AB4b):</strong> <code>build_autoclass_dialog(root, new_count,
+on_confirm)</code> (<code>.mark("autoclass-dialog")</code>, buttons <code>autoclass-cancel</code> /
+<code>autoclass-confirm</code>) is the consent dialog — it states the folder, that about N
+files' content goes to the LLM endpoint, that top-level files are moved into
+existing folders only, sub-folder files are recorded in place, and that nothing is
+created, renamed or quarantined and every move is journaled and undoable.
+<code>build_journal_dialog</code>'s undo block shows "Cannot undo while auto-class is running
+on this folder." when <code>autoclass_jobs.running_overlapping(session.target)</code> is set.</p>
+<p><strong><code>host/web/main.py</code> (AB4b):</strong> <code>index_page</code> adds a <code>btn-startup-autoclass</code> button,
+enabled only when the selected folder is yellow, its organizer root passes
+<code>autoclass.check_preconditions</code>, and <code>blocking_reason</code> is <code>None</code>; otherwise a hint
+label gives the reason. It acts on the organizer root, not the selected
+sub-folder. Clicking opens <code>build_autoclass_dialog</code>, confirming calls
+<code>autoclass_jobs.start</code>. An <code>autoclass-jobs</code> column lists jobs with plain
+<code>ui.label</code>s only (the text is untrusted) and reloads the tree when a job ends.
+Organize ("Use selected directory") and the run page's Start refuse while
+<code>blocking_reason</code> is set.</p>
 <p><code>app_shell</code>'s signature stayed frozen through Phase 20/21 (U1-U7, V7 all mounted
 through it unchanged) until Phase 23's X11 extended it with <code>session</code>/<code>active</code>/
 <code>nav</code> for the persistent nav header below. <code>_apply_theme()</code> is a deliberately empty
@@ -2349,11 +2432,14 @@ persistent nav header is hidden here — see <code>host/web/shell.py</code> abov
 renders URL / API-key / model (<code>forms.credential_inputs</code>, with the
 key-preserves-existing placeholder above) plus document-profile and
 approval-mode <code>ui.select</code>s (<code>.mark("select-profile")</code>/<code>.mark("select-approval")</code>)
+and (AB1) a "Reasoning effort" <code>ui.select</code> (<code>.mark("select-reasoning")</code>, options from
+<code>configflow.REASONING_EFFORT_OPTIONS</code>; the <code>"default"</code> sentinel is saved as <code>""</code>)
 through a single <code>@ui.refreshable</code> form — one page, Save/Cancel, unlike the
 wizard's multi-step routing, since there's no first-run narrative to walk
 through. <code>_save()</code> validates via <code>configflow.validate_credentials(...,
 key_required=False)</code>, builds the update dict via
-<code>configflow.build_settings_updates(url, key, model, profile, approval_mode)</code> —
+<code>configflow.build_settings_updates(url, key, model, profile, approval_mode,
+reasoning_effort=effort)</code> —
 which omits <code>llm_api_key</code> entirely when <code>key</code> is blank, the same
 blank-key-preserves-existing rule as <code>host/app.py</code>'s <code>ConfigScreen</code> — and saves
 through the shared <code>forms.save_with_plaintext_guard(..., button_label="Save",
@@ -2363,7 +2449,7 @@ calling <code>build_settings_view(on_done=lambda: ui.navigate.back())</code> ins
 nav header's Settings tab (<code>host/web/shell.py</code>) route here from any screen.
 As of Z2, a caption below the approval-mode <code>ui.select</code> tells the user that
 saving here reconnects any currently running session to the new
-model/endpoint/key immediately (<code>host/llm.py</code>'s <code>make_reloading_client</code>,
+model/endpoint/key/reasoning effort on its next LLM call (<code>host/llm.py</code>'s <code>make_reloading_client</code>,
 above), while approval mode and everything else in the form only applies to
 sessions started after the save.</p>
 <p>As of V11, <code>build_settings_view</code> also awaits <code>_build_prompt_inspection()</code> after
