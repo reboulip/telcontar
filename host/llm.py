@@ -298,12 +298,12 @@ class _CompletionsProxy:
         if effort and "reasoning_effort" not in kwargs:
             kwargs["reasoning_effort"] = effort
         try:
-            return await h._client.chat.completions.create(**kwargs)  # type: ignore[call-overload]
+            return await h._client.chat.completions.create(**kwargs)  # type: ignore[call-overload]  # ty: ignore[no-matching-overload]
         except (openai.BadRequestError, openai.UnprocessableEntityError) as exc:
             retry = h._reasoning_fallback(kwargs, exc)
             if retry is None:
                 raise
-            return await h._client.chat.completions.create(**retry)  # type: ignore[call-overload]
+            return await h._client.chat.completions.create(**retry)  # type: ignore[call-overload]  # ty: ignore[no-matching-overload]
 
 
 def make_reloading_client(
