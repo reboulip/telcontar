@@ -2,7 +2,7 @@
 
 For most users, first-run configuration is handled entirely by the **setup wizard** that appears the first time you launch `telcontar`. The wizard stores the API key in the OS credential store (Windows Credential Manager / macOS Keychain) and saves non-sensitive settings to `~/.telcontar/config.env`. You can revisit any setting at any time via the **⚙ Settings** button on the startup screen.
 
-The reference below is for **advanced or developer use**: env vars and a project-local `.env` file always take priority over `~/.telcontar/config.env` when both are present. No code changes are required to switch environments — config only.
+The reference below is for **advanced or developer use**: env vars always take priority over both files, and when a project-local `.env` and `~/.telcontar/config.env` both set a key, `~/.telcontar/config.env` wins (it is listed last in the loader's `env_file` tuple, and the later file overrides the earlier). No code changes are required to switch environments — config only.
 
 ---
 
@@ -16,11 +16,13 @@ The reference below is for **advanced or developer use**: env vars and a project
 | `LLM_API_KEY` | **yes** | `""` | API key for the endpoint. Set by the wizard and stored in the OS credential store. If the keyring is unavailable, the wizard/settings screen warns loudly and requires pressing the save/finish button a second time to explicitly confirm storing it in plaintext at `~/.telcontar/config.env` instead — it is never written there silently. |
 | `LLM_MODEL` | no | `gpt-5` | Model name passed in chat completion requests |
 | `LLM_API_VERSION` | no | `""` | Azure only — `api-version` query parameter (e.g. `2025-01-01-preview`). Leave blank for every other provider. When left blank on an Azure host detected by hostname (`*.azure.com`) rather than an explicit version, telcontar now falls back to a built-in default API version automatically (Y4). Ignored entirely when `LLM_BASE_URL` ends in `/openai/v1` (Azure's own OpenAI-compatible surface, which must not receive an injected `api-version`). |
+| `LLM_REASONING_EFFORT` | no | `""` | Reasoning effort sent as `reasoning_effort` on every chat completion: `none`, `minimal`, `low`, `medium` or `high`. Blank (or `default`) means the parameter is never sent. If the endpoint rejects the parameter, telcontar retries once automatically (with `none` when the error mentions tools, otherwise without the parameter), remembers the downgrade until the next settings reload, and records a `compat` entry in `LLM_DEBUG_LOG_PATH`. Settable via the **Reasoning effort** select on the **⚙ Settings** screen. |
 
 !!! tip
     Got a bad LLM config mid-run (wrong model name, a `429`)? You don't need
-    to restart telcontar. Fix `LLM_BASE_URL`/`LLM_API_KEY`/`LLM_MODEL`/
-    `LLM_API_VERSION` on the **⚙ Settings** screen and save — any session
+    to restart telcontar. Fix the URL, API key, model or reasoning effort on
+    the **⚙ Settings** screen and save (`LLM_API_VERSION` is not shown there —
+    edit `~/.telcontar/config.env` for it) — any session
     currently running (organize or query) reconnects to the new
     model/endpoint/key automatically on its next LLM call, and posts a chat
     message telling you what it reconnected to. Everything else on that

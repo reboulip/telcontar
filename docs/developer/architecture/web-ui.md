@@ -373,8 +373,8 @@ below and `host/web/sessions.py`/`host/web/sessions_view.py`.
   `on_select` is wired in (i.e. only on the picker route, `/`; `/run/{run_id}`'s
   tree is for verification only, not re-rooting).
 
-  **`Shell.reload_tree()`** (V7) is the one writer for `tree.props["nodes"]` from
-  here on: rebuilds from disk via `host.web.tree.rebuild_nodes` (`run.io_bound`),
+  **`Shell.reload_tree()`** (V7) is the writer that *replaces* `tree.props["nodes"]`
+  (AB4a added a second, in-place writer — `refresh_status`, below): rebuilds from disk via `host.web.tree.rebuild_nodes` (`run.io_bound`),
   preserving the expanded set, and skips the actual prop assignment (and
   `tree.update()`) when the rebuilt nodes match what's already there — a QTree
   `nodes` replacement re-renders the whole subtree and can reset scroll/
@@ -390,6 +390,36 @@ below and `host/web/sessions.py`/`host/web/sessions_view.py`.
   default `5.0`s, same test-seam pattern as `REFRESH_INTERVAL`) is deliberately
   coarser than the 0.5s render poll, since `rebuild_nodes` recurses over every
   expanded directory.
+
+  **Folder-status indicators (AB4a, #76):** every folder node in the sidebar tree
+  carries a red/yellow/green icon (not managed / managed with files not yet
+  analyzed / up to date; grey for checking/unknown) computed by
+  `host/web/folderstatus.py`, a NiceGUI-free, read-only module. `reload_tree`
+  and the lazy-expand loader decorate nodes from the cache
+  (`_rebuild_decorated`, `_load_children_decorated`, run in `run.io_bound`).
+  **`Shell.refresh_status()`** is the second writer of `tree.props["nodes"]` and
+  deliberately an in-place one: after awaiting `folderstatus.states_for` it only
+  sets `icon`/`iconColor` on the existing node dicts (`folderstatus.decorate`),
+  never replacing the list, so a concurrent expand that spliced children in
+  keeps them. It shares the `_reloading` guard with `reload_tree`. It runs from
+  a `ui.timer(web_session.STATUS_POLL_INTERVAL, ...)` (3.0 s) plus one 0.2 s
+  once-timer, on every route except `/setup` (`nav=False`). The scan itself
+  never runs on the UI thread: one background walk per organizer root on a
+  single worker thread, cached in memory only (TTL 30 s, minimum 5 s between
+  re-scans, invalidated when the registry mtime changes), with
+  stale-while-revalidate serving.
+
+  **Auto-class jobs (AB4b, #76):** on the landing page, an **Auto-class** button
+  (enabled for a yellow folder whose organizer root passes
+  `check_preconditions`) opens a consent dialog and then starts a background
+  job (`host/web/autoclass_jobs.py`) running the headless AA2 flow with
+  `record_in_place=True` on the organizer root. A jobs panel renders progress
+  as plain labels (untrusted text). Because a job and an organize session
+  both spawn an MCP server writing the same registry and journal,
+  `autoclass_jobs.blocking_reason(root)` — overlapping running job or live
+  organize session — disables the button, refuses Organize / the run page's
+  Start, and blocks journal undo. Jobs are cancelled by `run_web`'s shutdown
+  hook, and a finished job invalidates the folder-status cache.
 
   **Landing-page picker root and controls (Y3, GH #62):** when `app_shell` gets no
   explicit `target` (the picker route, `/`), the sidebar tree now roots at
@@ -553,8 +583,9 @@ below and `host/web/sessions.py`/`host/web/sessions_view.py`.
   `validate_credentials(url, key, model, *, key_required)` (url → key → model,
   first-error-wins; `key_required=False`, U3, is the settings view's blank-key-
   preserves-existing case), `build_wizard_updates(...)`, `build_settings_updates(url,
-  key, model, profile, approval_mode)` (U3 — omits `llm_api_key` entirely when `key`
-  is blank, instead of the wizard's always-include-the-key behaviour),
+  key, model, profile, approval_mode, *, reasoning_effort="")` (U3 — omits `llm_api_key`
+  entirely when `key` is blank, instead of the wizard's always-include-the-key
+  behaviour; AB1 — always writes `llm_reasoning_effort`),
   `APPROVAL_OPTIONS` (U3, moved out of `host/app.py`'s `ConfigScreen`), and
   `plaintext_warning(button_label, recovery_action="go back")` — the shared
   warning-message builder that fixes U8's copy bug (the TUI wizard used to say

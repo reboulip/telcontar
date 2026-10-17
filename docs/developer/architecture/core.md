@@ -396,13 +396,22 @@ reports what changed as a visible chat turn (model + endpoint hostname, never
 the key).
 
 Only the LLM endpoint fields (`llm_base_url`, `llm_api_key`, `llm_model`,
-`llm_api_version`) are ever hot-swapped this way — `approval_mode` and every
+`llm_api_version`, `llm_reasoning_effort`) are ever hot-swapped this way — `approval_mode` and every
 path field stay pinned for the whole session's lifetime by design, so a live
 run's already-consented-to approval gate can never be silently relaxed by an
 unrelated settings save elsewhere. A Settings-page save while a run is in
 progress therefore reconnects that run to the new model/endpoint/key
 automatically; everything else in the settings form only takes effect for
 sessions started after the save.
+
+Two details keep a reload invisible to call sites. Call sites build their
+`create()` kwargs from settings *before* `create()` reloads, so after a model
+change the first call may still carry the old `model`; the proxy rewrites any
+superseded model name to the current one. And `reasoning_effort` is injected
+by the proxy when configured; if the endpoint rejects it with a 400/422, the
+proxy retries once (`reasoning_effort="none"` when the error mentions tools,
+otherwise without the parameter) and keeps that downgrade until the next
+settings reload, logging a `compat` entry to the LLM debug log.
 
 ### NiceGUI web UI foundations
 
@@ -555,6 +564,8 @@ The web UI's own foundational design decisions — routing/session model, the pe
 ```
 
 `--dry-run` runs steps 1-7 (LLM calls happen) but records, stages and writes nothing, and prints "Would file N of M".
+
+The web UI's **Auto-class** button (AB4b) is a second entry point into the same flow: `host/web/autoclass_jobs.py` runs `run_auto_class_for_target(root, record_in_place=True)` as a background task. Steps 2-10 are identical, except that new documents in sub-folders are also analyzed and recorded where they are (never moved, never offered to placement). Setup failures raise `AutoClassSetupError` instead of exiting 2.
 
 ---
 
