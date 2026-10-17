@@ -90,3 +90,12 @@ on open work.
 - [x] AA2 · Add a headless `telcontar --auto-class` CLI mode (`host/main.py`, no UI, CLI output only) for a target that already has telcontar setup (`.organizer/` plus `INDEX.md`) — analyze new documents, record them in the registry, and move them into the existing directory structure without an approval prompt and without proposing any structure change. [#71]
 
 ---
+
+## Phase 27 — LLM compatibility, install docs & folder status
+
+*(Follow-ups from the GH issue backlog.)*
+
+- [ ] AB1 · Fix the Azure/OpenAI `400 … Function tools with reasoning_effort are not supported` error on recent models (e.g. `gpt-6-luna`) — in `host/llm.py` / `config/settings.py`, leave `reasoning_effort` unset (or `none`) by default, keep it user-configurable, and retry once without it when the endpoint rejects it alongside function tools. [#74]
+- [ ] AB2 · Make a settings change take effect in the live conversation — after "Settings changed — reconnected", the next turn must use the reloaded `Settings` and a rebuilt client (`host/web/bridge.py`, `host/llm.py`), not the previous config. (requires: AB1) [#73]
+- [ ] AB3 · Docs: recommend `uv tool install telcontar` (PyPI) over `uv tool install git+https://…` as the primary install path (`README.md`, `docs/getting-started/installation.md`). [#75]
+- [ ] AB4 · Add a red/yellow/green folder-status indicator in the web UI tree view (red: no `.organizer`/registry; yellow: managed but files not yet in the registry; green: up to date) with lazy, cached status computation for deep trees, and a quick "auto-class" button (reusing the AA2 headless mode) that brings a yellow folder to green. [#76]
