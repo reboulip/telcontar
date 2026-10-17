@@ -92,6 +92,7 @@ from nicegui.testing import User
 
 from host import paths as host_paths
 from host.agent import AgentEvent
+from host.web import folderstatus
 from host.web import session as web_session
 from host.web import shell as web_shell
 from host.web import theme
@@ -122,6 +123,9 @@ def _fast_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(web_session, "TREE_POLL_INTERVAL", 0.02)
     monkeypatch.setattr(web_session, "CORPUS_POLL_INTERVAL", 0.02)
     monkeypatch.setattr(web_session, "GRAPH_POLL_INTERVAL", 0.02)
+    monkeypatch.setattr(web_session, "STATUS_POLL_INTERVAL", 0.1)
+    monkeypatch.setattr(folderstatus, "SCAN_INLINE", True)
+    monkeypatch.setattr(folderstatus, "MIN_RESCAN_INTERVAL", 0.0)
 
 
 @pytest.fixture(autouse=True)
@@ -131,9 +135,11 @@ def _reset_session_registry() -> Iterator[None]:
     web_session._SESSIONS.clear()
     web_session.set_default_target(None)
     web_session.set_start_dir(None)
+    folderstatus.reset()
     try:
         yield
     finally:
+        folderstatus.reset()
         web_session._SESSIONS.clear()
         web_session.set_default_target(None)
         web_session.set_start_dir(None)
@@ -177,6 +183,32 @@ async def test_landing_page_roots_tree_at_start_dir_override(user: User, tmp_pat
     await user.open("/")
 
     await user.should_see(tmp_path.name)
+
+
+async def test_landing_page_shows_folder_status_for_selection(user: User, tmp_path: Path) -> None:
+    # AB4a: an unmanaged folder reads as such, and the legend is always shown.
+    await user.open("/")
+    await user.should_see(marker="folder-status-legend")
+
+    user.find(kind=ui.tree).trigger("update:selected", args=str(tmp_path))
+
+    await user.should_see("Not managed by telcontar")
+
+
+async def test_sidebar_tree_nodes_get_status_icons(user: User, tmp_path: Path) -> None:
+    web_session.set_start_dir(tmp_path)
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "f.txt").write_text("x")
+
+    await user.open("/")
+    await user.should_see(tmp_path.name)
+    await asyncio.sleep(0.6)
+
+    tree = user.find(kind=ui.tree).elements.pop()
+    root_node = tree.props["nodes"][0]
+    assert root_node["icon"] == folderstatus.STATE_STYLE[folderstatus.UNMANAGED][0]
+    sub_node = root_node["children"][0]
+    assert sub_node["iconColor"] == folderstatus.STATE_STYLE[folderstatus.UNMANAGED][1]
 
 
 async def test_landing_page_go_up_control_renders(user: User) -> None:

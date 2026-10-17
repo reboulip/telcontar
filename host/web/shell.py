@@ -54,7 +54,7 @@ from nicegui.events import GenericEventArguments, ValueChangeEventArguments
 
 from host.paths import find_organizer_root
 from host.web import session as web_session
-from host.web import theme
+from host.web import folderstatus, theme
 from host.web import tree as web_tree
 from host.web.docpane import DocPane, build_doc_pane
 from host.web.session import RunSession
@@ -176,7 +176,7 @@ class Shell:
 
     async def reload_tree(self) -> None:
         """Rebuild the sidebar tree from disk in place, preserving whatever
-        the user had expanded (V7) — the one writer for ``tree.props["nodes"]``,
+        the user had expanded (V7) — the main writer for ``tree.props["nodes"]`` (``refresh_status`` is the other, in-place one),
         called by the manual refresh button, the periodic poll timer, and
         (via U4) `host/web/main.py`'s post-``execute_plan`` ``fs_revision``
         refresh.
@@ -195,9 +195,34 @@ class Shell:
         self._reloading = True
         try:
             expanded = set(self.tree.props.get("expanded") or [])
-            nodes = await run.io_bound(web_tree.rebuild_nodes, self.target, expanded)
+            nodes = await run.io_bound(_rebuild_decorated, self.target, expanded)
             if nodes is not None and nodes != self.tree.props.get("nodes"):
                 self.tree.props["nodes"] = nodes
+                self.tree.update()
+        finally:
+            self._reloading = False
+
+    async def refresh_status(self) -> None:
+        """Re-apply the folder-status indicators (AB4a) to the live nodes.
+
+        The second writer of ``tree.props["nodes"]``, and deliberately an
+        in-place one: ``folderstatus.decorate`` only sets ``icon`` /
+        ``iconColor`` on existing nodes after the await, so a concurrent
+        expand that spliced children in keeps them (never replace the list
+        here — the V7 lesson). Shares the ``_reloading`` guard with
+        ``reload_tree``.
+        """
+        if self._reloading:
+            return
+        self._reloading = True
+        try:
+            ids = folderstatus.folder_ids(self.tree.props.get("nodes") or [])
+            if not ids:
+                return
+            states = await run.io_bound(folderstatus.states_for, ids)
+            if states is None:  # io_bound yields None when the app is shutting down
+                return
+            if folderstatus.decorate(self.tree.props.get("nodes") or [], states):
                 self.tree.update()
         finally:
             self._reloading = False
@@ -242,6 +267,21 @@ class Shell:
     def clear_document(self) -> None:
         """Return the document-preview pane to its placeholder (Y9)."""
         self.doc_pane.clear()
+
+
+def _rebuild_decorated(root: Path, expanded: set[str]) -> list[dict]:
+    """``web_tree.rebuild_nodes`` plus cached folder-status icons, on the
+    private copy, so the reload's skip-if-unchanged comparison stays
+    like-for-like with the (decorated) live nodes."""
+    nodes = web_tree.rebuild_nodes(root, expanded)
+    folderstatus.decorate(nodes, folderstatus.states_for(folderstatus.folder_ids(nodes)))
+    return nodes
+
+
+def _load_children_decorated(path: Path) -> list[dict]:
+    children = web_tree.load_children(path)
+    folderstatus.decorate(children, folderstatus.states_for(folderstatus.folder_ids(children)))
+    return children
 
 
 def _apply_theme() -> None:
@@ -447,7 +487,7 @@ def app_shell(
             node = web_tree.find_node(tree_widget.props["nodes"], node_id)
             if node is None or not web_tree.needs_loading(node):
                 continue
-            children = await run.io_bound(web_tree.load_children, Path(node_id))
+            children = await run.io_bound(_load_children_decorated, Path(node_id))
             # V7: tree_widget.props["nodes"] may have been replaced wholesale
             # by a poll (or another expand) while the above await was in
             # flight, detaching `node` from what's actually live now — never
@@ -474,6 +514,13 @@ def app_shell(
     # Path.home() forever on the picker/setup/settings routes for no reason.
     if target is not None:
         ui.timer(web_session.TREE_POLL_INTERVAL, shell.reload_tree)
+
+    # AB4a: the folder-status indicator matters most on the picker, which has
+    # no `target`, so this timer is on every route.
+    # Not on `/setup` (nav=False): nothing is managed before first-run setup.
+    if nav:
+        ui.timer(0.2, shell.refresh_status, once=True)
+        ui.timer(web_session.STATUS_POLL_INTERVAL, shell.refresh_status)
 
     with content:
         yield shell

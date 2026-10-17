@@ -34,8 +34,8 @@ def config_revision() -> int:
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        # .env (CWD) takes priority; ~/.telcontar/config.env is the fallback for
-        # installed-tool use where no project-local .env exists.
+        # The LATER file wins (pydantic-settings), so ~/.telcontar/config.env
+        # overrides a CWD .env; the latter is the fallback for source checkouts.
         env_file=(".env", str(_USER_CONFIG)),
         env_file_encoding="utf-8",
         extra="ignore",

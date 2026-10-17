@@ -39,7 +39,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from host.agent import ApprovalResult, AskUserResult, CostApprovalResult
 from host.paths import directory_overview, find_organizer_root, memory_status_text
-from host.web import chat, corpus, journal
+from host.web import chat, corpus, folderstatus, journal
 from host.web import security
 from host.web import sessions as web_sessions_store
 from host.web import session as web_session
@@ -178,6 +178,35 @@ async def index_page() -> None:
                 return
             session = web_session.create(organizer_root, mode="query")
             ui.navigate.to(f"/query/{session.run_id}")
+
+        status_label = ui.label().classes("text-caption").mark("startup-folder-status")
+
+        async def _update_status() -> None:
+            if shell.selected is None:
+                status_label.set_text("")
+                return
+            result = await run.io_bound(folderstatus.state_for, shell.selected)
+            if result is None:  # io_bound yields None when the app is shutting down
+                return
+            state = result[0]
+            count = await run.io_bound(folderstatus.new_count, shell.selected)
+            text = f"{shell.selected.name or shell.selected}: {folderstatus.STATE_LABEL[state]}"
+            if state == folderstatus.NEW_FILES and count:
+                text += f" ({count} not yet in memory)"
+            status_label.set_text(text)
+
+        ui.timer(web_session.STATUS_POLL_INTERVAL, _update_status)
+
+        with ui.row().classes("items-center gap-3").mark("folder-status-legend"):
+            for state in (
+                folderstatus.UNMANAGED,
+                folderstatus.NEW_FILES,
+                folderstatus.UP_TO_DATE,
+            ):
+                icon, color = folderstatus.STATE_STYLE[state]
+                with ui.row().classes("items-center gap-1"):
+                    ui.icon(icon, color=color)
+                    ui.label(folderstatus.STATE_LABEL[state]).classes("text-caption")
 
         with ui.row().classes("mt-2"):
             ui.button("Use selected directory", on_click=_organize, color="primary").mark(
