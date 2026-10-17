@@ -50,7 +50,7 @@ All file I/O stays on your machine. Only the text content needed for reasoning i
 
 ```bash
 # Install
-uv tool install git+https://github.com/reboulip/telcontar.git
+uv tool install telcontar
 
 # Run (first launch opens the setup wizard)
 telcontar

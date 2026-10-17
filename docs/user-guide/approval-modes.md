@@ -43,7 +43,7 @@ APPROVAL_MODE=never
 
 ## Headless auto-class
 
-`telcontar --auto-class --target PATH` skips the approval step whatever `APPROVAL_MODE` says. The flag itself is your consent for that one run. Its reach is narrow and enforced by the host: the plan holds `propose_move` ops only (new root-level documents into folders that already exist), never renames, new folders or quarantines. Moves are journaled, so they stay reversible from the web UI's journal dialog. Use `--dry-run` to preview. See [Installation](../getting-started/installation.md#entry-points).
+`telcontar --auto-class --target PATH` skips the approval step whatever `APPROVAL_MODE` says. The flag itself is your consent for that one run. Its reach is narrow and enforced by the host: the plan holds `propose_move` ops only (new root-level documents into folders that already exist), never renames, new folders or quarantines. Moves are journaled, so they stay reversible from the web UI's journal dialog. Use `--dry-run` to preview. The **Auto-class** button on the web startup page works the same way: clicking it and confirming in the dialog is your consent, whatever `APPROVAL_MODE` says. It also records new documents in sub-folders where they are, without moving them. See [Installation](../getting-started/installation.md#entry-points).
 
 ---
 

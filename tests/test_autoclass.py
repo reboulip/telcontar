@@ -231,6 +231,37 @@ class TestRunAutoClass:
         assert report.outside_root == 1
         assert len([n for n, _ in calls if n == "propose_move"]) == 1
 
+    async def test_record_in_place_records_subfolder_docs_without_moving_them(
+        self, tmp_path: Path
+    ) -> None:
+        target, prepass, recorded = _setup(tmp_path, names=("a.pdf",))
+        deep = {"path": str(target / "Plans" / "deep.pdf"), "checksum": "c-deep"}
+        prepass.new.append(deep)
+        recorded.append({**deep, "title": "deep", "type": "report"})
+        llm = _llm([{"folder": "Reports", "reason": "r"}])
+        session, calls = _session()
+
+        report = await _run(target, prepass, recorded, llm, session, record_in_place=True)
+
+        assert report.candidates == 1
+        assert report.outside_root == 0
+        assert report.recorded_in_place == 1
+        moved = [a["path"] for n, a in calls if n == "propose_move"]
+        assert moved == [str(target / "a.pdf")]  # the sub-folder document never moves
+        assert "recorded where they are" in format_report(report)
+
+    async def test_record_in_place_alone_still_refreshes_outputs(self, tmp_path: Path) -> None:
+        target, prepass, recorded = _setup(tmp_path, names=())
+        deep = {"path": str(target / "Plans" / "deep.pdf"), "checksum": "c-deep"}
+        prepass.new.append(deep)
+        recorded.append({**deep, "title": "deep", "type": "report"})
+        session, calls = _session()
+
+        report = await _run(target, prepass, recorded, _llm([]), session, record_in_place=True)
+
+        assert report.recorded_in_place == 1 and report.filed == []
+        assert "write_index" in [n for n, _ in calls]
+
     async def test_dry_run_stages_and_writes_nothing(self, tmp_path: Path) -> None:
         target, prepass, recorded = _setup(tmp_path)
         llm = _llm([{"folder": "Plans", "reason": "p"}, {"folder": "Reports", "reason": "r"}])

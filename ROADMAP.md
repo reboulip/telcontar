@@ -90,3 +90,13 @@ on open work.
 - [x] AA2 · Add a headless `telcontar --auto-class` CLI mode (`host/main.py`, no UI, CLI output only) for a target that already has telcontar setup (`.organizer/` plus `INDEX.md`) — analyze new documents, record them in the registry, and move them into the existing directory structure without an approval prompt and without proposing any structure change. [#71]
 
 ---
+
+## Phase 27 — LLM compatibility, install docs & folder status
+
+*(Follow-ups from the GH issue backlog.)*
+
+- [x] AB1 · Fix the Azure/OpenAI `400 … Function tools with reasoning_effort are not supported` error on recent models (e.g. `gpt-6-luna`) — add a user-configurable `llm_reasoning_effort` setting (`config/settings.py`, default unset = never sent; select in the web Settings view), and in `host/llm.py`'s `_CompletionsProxy.create` retry once with `reasoning_effort="none"` on the tools rejection (or without the parameter when it is unsupported), sticky per client and logged as a `compat` entry. [#74]
+- [x] AB2 · Make a settings change take effect in the live conversation — after "Settings changed — reconnected", the next turn must use the reloaded `Settings` and a rebuilt client: rewrite a superseded `model` kwarg in `host/llm.py`, switch `run_auto_class_cli` to `make_reloading_client`, and stop `save_user_config` leaving a stale plaintext `LLM_API_KEY` behind when the keyring save works. (requires: AB1) [#73]
+- [ ] AB3 · Docs: recommend `uv tool install telcontar` (PyPI) over `uv tool install git+https://…` as the primary install path (`README.md`, `docs/getting-started/installation.md`). [#75]
+- [x] AB4a · Add a red/yellow/green folder-status indicator in the web UI tree view (red: no `.organizer`/registry; yellow: managed but files not yet in the registry; green: up to date) via a new read-only `host/web/folderstatus.py` with lazy, cached, per-root status scans and a legend on the landing page. [#76]
+- [x] AB4b · Add a quick "Auto-class" button (landing page, confirm dialog) that brings a yellow folder to green by running the AA2 headless mode as a background web job (`host/autoclass.py` `run_auto_class_for_target` with opt-in `record_in_place`, new `host/web/autoclass_jobs.py`). (requires: AB4a, AB1) [#76]

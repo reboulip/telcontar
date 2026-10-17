@@ -376,6 +376,11 @@ REFRESH_INTERVAL: float = 0.5
 
 TREE_POLL_INTERVAL: float = 5.0
 
+# AB4a: how often the sidebar re-applies folder-status icons from the
+# (cache-only) folderstatus engine. Module-level for the same test-seam
+# reason as the intervals above.
+STATUS_POLL_INTERVAL: float = 3.0
+
 
 # ── Corpus browser poll interval (X10 test-seam) ────────────────────────────
 #

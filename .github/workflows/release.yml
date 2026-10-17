@@ -7,7 +7,8 @@ on:
 
 permissions:
   contents: write   # create GitHub Release
-  id-token: write   # OIDC token for PyPI Trusted Publishing
+  id-token: write   # OIDC token for PyPI Trusted Publishing and build attestations
+  attestations: write   # provenance attestation for the Windows zip
 
 jobs:
   build:
@@ -30,15 +31,29 @@ jobs:
           name: dist
           path: dist/
 
+  build-windows:
+    name: Build Windows bundle
+    uses: ./.github/workflows/windows-build.yml
+
   github-release:
     name: Create GitHub Release
-    needs: build
+    needs: [build, build-windows]
+    # A broken Windows bundle (the job shows red) must not hold back the wheel,
+    # sdist and PyPI release; the Windows zip is attached only when it built.
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Download dist
         uses: actions/download-artifact@v4
         with:
           name: dist
+          path: dist/
+
+      - name: Download Windows bundle
+        if: ${{ needs.build-windows.result == 'success' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: windows
           path: dist/
 
       - name: Create GitHub Release

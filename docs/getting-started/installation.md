@@ -1,5 +1,31 @@
 # Installation
 
+## Windows: standalone download
+
+On Windows you can skip Python and uv. Each [GitHub release](https://github.com/reboulip/telcontar/releases) carries `telcontar-<version>-windows-x64.zip`.
+
+1. Download the zip and its `.sha256` file.
+2. Unzip the whole folder. Do not run `telcontar.exe` from inside the zip.
+3. Double-click `telcontar.exe`. The setup wizard opens.
+
+`telcontar-cli.exe`, in the same folder, is the console build. Use it from a terminal (`telcontar-cli.exe --version`, `--auto-class`). Keep both files together.
+
+If the app does not start, read `%USERPROFILE%\.telcontar\telcontar.log`.
+
+!!! warning "The build is not code-signed"
+    Windows SmartScreen can show "Windows protected your PC" on first launch. Choose **More info**, then **Run anyway**. On a managed PC, application-control policy can block unsigned programs. In that case, use `uv tool install telcontar` below — it needs no `.exe` download.
+
+To check the download, compare the hash and verify where the build came from:
+
+```powershell
+(Get-FileHash telcontar-<version>-windows-x64.zip -Algorithm SHA256).Hash   # must match the .sha256 file
+gh attestation verify telcontar-<version>-windows-x64.zip --repo reboulip/telcontar
+```
+
+The CI workflow builds the zip from the tagged source. It runs the finished build through a start-up and MCP-server test before it attaches the zip to the release.
+
+---
+
 ## Prerequisites
 
 | Requirement | Notes |

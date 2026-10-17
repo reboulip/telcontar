@@ -16,6 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from urllib.parse import urlsplit, urlunsplit
 
+import openai
 from openai import AsyncAzureOpenAI, AsyncOpenAI
 
 from config.settings import Settings
@@ -132,7 +133,15 @@ def make_client(settings: Settings) -> AsyncOpenAI:
 
 _MAX_RETRIES = 4
 
-_RELOADABLE_FIELDS = ("llm_base_url", "llm_api_key", "llm_model", "llm_api_version")
+_RELOADABLE_FIELDS = (
+    "llm_base_url",
+    "llm_api_key",
+    "llm_model",
+    "llm_api_version",
+    "llm_reasoning_effort",
+)
+
+_NO_EFFORT = "omitted"  # sticky-state marker: stop sending reasoning_effort at all
 
 
 class ReloadingClient:
@@ -160,10 +169,61 @@ class ReloadingClient:
 
         self._revision = config_revision()
         self._lock = asyncio.Lock()
+        # Models this handle has reloaded away from (AB2): call sites build
+        # ``model=settings.llm_model`` before ``create()`` runs, so the first
+        # call after a reload still carries the old name.
+        self._superseded_models: set[str] = set()
+        # AB1 sticky compat downgrade for the current client: None = use the
+        # configured value, "none" = force reasoning off, _NO_EFFORT = omit.
+        self._effort_override: str | None = None
         self.chat = _ChatProxy(self)
 
     async def aclose(self) -> None:
         await self._client.close()
+
+    async def close(self) -> None:
+        await self.aclose()
+
+    def _effective_reasoning_effort(self) -> str | None:
+        if self._effort_override == _NO_EFFORT:
+            return None
+        if self._effort_override is not None:
+            return self._effort_override
+        return self._settings.llm_reasoning_effort or None
+
+    def _reasoning_fallback(
+        self, kwargs: dict[str, object], exc: openai.APIStatusError
+    ) -> dict[str, object] | None:
+        """If ``exc`` is the endpoint rejecting ``reasoning_effort``, record a
+        sticky downgrade and return the kwargs to retry with; else None.
+
+        Ladder (one-way, never cycles back): a rejection mentioning tools
+        retries with ``"none"``; otherwise, if the parameter was sent, retry
+        without it. A 400 is deterministic, so the downgrade sticks as soon as
+        it is seen."""
+        text = f"{exc} {exc.body}".lower()
+        if getattr(exc, "param", None) != "reasoning_effort" and "reasoning_effort" not in text:
+            return None
+        sent = kwargs.get("reasoning_effort")
+        retry = dict(kwargs)
+        if kwargs.get("tools") and "tool" in text and sent != "none":
+            self._effort_override = "none"
+            retry["reasoning_effort"] = "none"
+        elif sent is not None:
+            self._effort_override = _NO_EFFORT
+            retry.pop("reasoning_effort")
+        else:
+            return None
+        llmlog.log_compat(
+            self._settings.llm_debug_log_path,
+            param="reasoning_effort",
+            rejected=str(sent) if sent is not None else "unset",
+            retry_with="omitted"
+            if "reasoning_effort" not in retry
+            else str(retry["reasoning_effort"]),
+            status=exc.status_code,
+        )
+        return retry
 
     async def ensure_current(self) -> None:
         """No-op if the config revision hasn't changed since the current
@@ -198,8 +258,12 @@ class ReloadingClient:
             }
             if not changed:
                 return
+            if "llm_model" in changed:
+                self._superseded_models.add(self._settings.llm_model)
             for field, value in changed.items():
                 setattr(self._settings, field, value)
+            self._effort_override = None
+            self._superseded_models.discard(self._settings.llm_model)
 
             old_client = self._client
             self._client = make_client(self._settings)
@@ -225,8 +289,21 @@ class _CompletionsProxy:
         self._handle = handle
 
     async def create(self, **kwargs: object) -> object:
-        await self._handle.ensure_current()
-        return await self._handle._client.chat.completions.create(**kwargs)  # type: ignore[call-overload]
+        h = self._handle
+        await h.ensure_current()
+        kwargs = dict(kwargs)
+        if kwargs.get("model") in h._superseded_models:
+            kwargs["model"] = h._settings.llm_model
+        effort = h._effective_reasoning_effort()
+        if effort and "reasoning_effort" not in kwargs:
+            kwargs["reasoning_effort"] = effort
+        try:
+            return await h._client.chat.completions.create(**kwargs)  # type: ignore[call-overload]  # ty: ignore[no-matching-overload]
+        except (openai.BadRequestError, openai.UnprocessableEntityError) as exc:
+            retry = h._reasoning_fallback(kwargs, exc)
+            if retry is None:
+                raise
+            return await h._client.chat.completions.create(**retry)  # type: ignore[call-overload]  # ty: ignore[no-matching-overload]
 
 
 def make_reloading_client(

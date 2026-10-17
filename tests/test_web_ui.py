@@ -92,6 +92,7 @@ from nicegui.testing import User
 
 from host import paths as host_paths
 from host.agent import AgentEvent
+from host.web import autoclass_jobs, folderstatus
 from host.web import session as web_session
 from host.web import shell as web_shell
 from host.web import theme
@@ -122,6 +123,9 @@ def _fast_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(web_session, "TREE_POLL_INTERVAL", 0.02)
     monkeypatch.setattr(web_session, "CORPUS_POLL_INTERVAL", 0.02)
     monkeypatch.setattr(web_session, "GRAPH_POLL_INTERVAL", 0.02)
+    monkeypatch.setattr(web_session, "STATUS_POLL_INTERVAL", 0.1)
+    monkeypatch.setattr(folderstatus, "SCAN_INLINE", True)
+    monkeypatch.setattr(folderstatus, "MIN_RESCAN_INTERVAL", 0.0)
 
 
 @pytest.fixture(autouse=True)
@@ -131,9 +135,13 @@ def _reset_session_registry() -> Iterator[None]:
     web_session._SESSIONS.clear()
     web_session.set_default_target(None)
     web_session.set_start_dir(None)
+    folderstatus.reset()
+    autoclass_jobs.reset()
     try:
         yield
     finally:
+        folderstatus.reset()
+        autoclass_jobs.reset()
         web_session._SESSIONS.clear()
         web_session.set_default_target(None)
         web_session.set_start_dir(None)
@@ -177,6 +185,86 @@ async def test_landing_page_roots_tree_at_start_dir_override(user: User, tmp_pat
     await user.open("/")
 
     await user.should_see(tmp_path.name)
+
+
+async def _wait_for_status(user: User, text: str, timeout: float = 5.0) -> None:
+    """Poll the landing page's selection-status label (not the legend, which
+    always shows every state's wording). The first scan imports host.agent, so
+    it can take longer than should_see's retry budget."""
+    deadline = asyncio.get_running_loop().time() + timeout
+    while asyncio.get_running_loop().time() < deadline:
+        label = user.find(marker="startup-folder-status").elements.pop()
+        if text in (label.text or ""):
+            return
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"status label never showed {text!r}")
+
+
+async def test_landing_page_shows_folder_status_for_selection(user: User, tmp_path: Path) -> None:
+    # AB4a: an unmanaged folder reads as such, and the legend is always shown.
+    await user.open("/")
+    await user.should_see(marker="folder-status-legend")
+
+    user.find(kind=ui.tree).trigger("update:selected", args=str(tmp_path))
+
+    await _wait_for_status(user, "Not managed by telcontar")
+
+
+async def test_autoclass_button_disabled_for_unmanaged_folder(user: User, tmp_path: Path) -> None:
+    await user.open("/")
+    user.find(kind=ui.tree).trigger("update:selected", args=str(tmp_path))
+    await _wait_for_status(user, "Not managed by telcontar")
+    button = user.find(marker="btn-startup-autoclass").elements.pop()
+    assert not button.enabled
+
+
+async def test_autoclass_button_runs_job_for_yellow_folder(
+    user: User, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from unittest.mock import AsyncMock
+
+    from host import autoclass
+    from server.registry import Registry, save
+
+    (tmp_path / ".organizer").mkdir()
+    save(Registry(), tmp_path / ".organizer" / "registry.json")
+    (tmp_path / "INDEX.md").write_text("x")
+    (tmp_path / "new.txt").write_text("not analyzed")
+    fake = AsyncMock(return_value=autoclass.AutoClassReport())
+    monkeypatch.setattr(autoclass, "run_auto_class_for_target", fake)
+
+    await user.open("/")
+    user.find(kind=ui.tree).trigger("update:selected", args=str(tmp_path))
+    await _wait_for_status(user, "some files are not analyzed yet")
+    button = user.find(marker="btn-startup-autoclass").elements.pop()
+    assert button.enabled
+
+    user.find(marker="btn-startup-autoclass").click()
+    await user.should_see("Run auto-class?")
+    user.find(marker="autoclass-confirm").click()
+    await asyncio.sleep(0.3)
+
+    fake.assert_awaited_once()
+    assert fake.await_args.args[0] == tmp_path
+    assert fake.await_args.kwargs["record_in_place"] is True
+
+
+async def test_sidebar_tree_nodes_get_status_icons(user: User, tmp_path: Path) -> None:
+    web_session.set_start_dir(tmp_path)
+    (tmp_path / "sub").mkdir()
+    (tmp_path / "sub" / "f.txt").write_text("x")
+
+    await user.open("/")
+    await user.should_see(tmp_path.name)
+    tree = user.find(kind=ui.tree).elements.pop()
+    for _ in range(100):  # the first scan imports host.agent; give it time
+        if "icon" in tree.props["nodes"][0]:
+            break
+        await asyncio.sleep(0.05)
+    root_node = tree.props["nodes"][0]
+    assert root_node["icon"] == folderstatus.STATE_STYLE[folderstatus.UNMANAGED][0]
+    sub_node = root_node["children"][0]
+    assert sub_node["iconColor"] == folderstatus.STATE_STYLE[folderstatus.UNMANAGED][1]
 
 
 async def test_landing_page_go_up_control_renders(user: User) -> None:
@@ -486,6 +574,7 @@ async def test_settings_blank_key_preserves_existing_key(
             "llm_model": "gpt-5",
             "profile": "is_it_project",
             "approval_mode": "always",
+            "llm_reasoning_effort": "",
         }
     ]
     assert "llm_api_key" not in saved[0]

@@ -36,6 +36,18 @@ Run all checks before opening a PR:
 uv run ruff check . && uv run ruff format --check . && uv run mypy host server config && uv run ty check host server config && uv run --group test pytest -q
 ```
 
+### Windows bundle
+
+The release workflow builds a standalone Windows zip with PyInstaller (`packaging/windows/telcontar.spec`, run by `.github/workflows/windows-build.yml`). The spec also builds on Linux, which is enough to check the freeze logic locally:
+
+```bash
+uv sync --group build
+uv run pyinstaller --noconfirm packaging/windows/telcontar.spec
+uv run python packaging/windows/smoke_test.py dist/telcontar
+```
+
+It is a one-dir build with two executables: `telcontar.exe` (windowed, what users double-click) and `telcontar-cli.exe` (console). A windowed exe has no stdio, so the host starts its MCP server subprocess through the console exe with the hidden `--mcp-server` flag (`host.agent._server_command`). If you add a package that ships data files, loads plugins by name, or is imported dynamically, add it to the `collect` list in the spec — the smoke test catches a missing import only if the server path touches it. Run **Actions → Windows build → Run workflow** to test a branch without tagging.
+
 ### Pre-commit hooks
 
 `.pre-commit-config.yaml` wires the table above (minus pytest — the full

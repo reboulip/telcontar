@@ -225,3 +225,6 @@ __marimo__/
 
 # dev-pipeline sprint-scratch state (forecast briefs)
 .claude/tmp/
+
+# Packaging specs are source, not build output (see packaging/windows/)
+!packaging/**/*.spec

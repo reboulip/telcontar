@@ -113,6 +113,7 @@ class AutoClassReport:
     index_written: bool = False
     summary_written: bool = False
     warnings: list[str] = field(default_factory=list)
+    recorded_in_place: int = 0  # sub-folder documents recorded where they are (web job)
     tokens_in: int = 0
     tokens_out: int = 0
 
@@ -286,8 +287,13 @@ async def run_auto_class(
     on_event: EventCallback,
     project_root: Path,
     dry_run: bool = False,
+    record_in_place: bool = False,
 ) -> AutoClassReport:
     """Analyze new root-level documents and file them into existing folders.
+
+    ``record_in_place`` (AB4b, the web button): new documents in sub-folders
+    are also analyzed and recorded — but never moved — so a yellow sub-folder
+    can turn green. The CLI leaves it off, keeping AA2's behaviour.
 
     Same injectable-session shape as `run_agent_loop`. `dry_run` runs the
     analysis and placement (so the plan is real) but records nothing, stages
@@ -305,15 +311,18 @@ async def run_auto_class(
         d for d in prepass.new if _normalize_path(str(Path(d["path"]).parent)) == root_key
     ]
     report.candidates = len(candidates)
-    report.outside_root = len(prepass.new) - len(candidates)
+    candidate_ids = {id(d) for d in candidates}
+    in_place = [d for d in prepass.new if id(d) not in candidate_ids] if record_in_place else []
+    report.outside_root = len(prepass.new) - len(candidates) - len(in_place)
     report.duplicates = max(0, prepass.total_files - len(prepass.new) - len(prepass.known))
     report.analysis_errors += len(prepass.errors)
-    if not candidates:
+    to_analyze = candidates + in_place
+    if not to_analyze:
         return _finish(report, ledger)
 
-    _, estimated = _new_docs_cost_estimate(candidates, prepass.sizes, settings.max_snippet_chars)
+    _, estimated = _new_docs_cost_estimate(to_analyze, prepass.sizes, settings.max_snippet_chars)
     await _handle_cost_approval(
-        doc_count=len(candidates),
+        doc_count=len(to_analyze),
         already_analyzed=len(prepass.known),
         estimated_tokens=estimated,
         settings=settings,
@@ -325,13 +334,13 @@ async def run_auto_class(
     recorded: list[dict[str, Any]]
     if dry_run:
         recorded = []
-        for i in range(0, len(candidates), 10):
+        for i in range(0, len(to_analyze), 10):
             docs, errors = await _analyze_batch(
                 session=session,
                 llm=llm,
                 settings=settings,
                 profile=profile,
-                batch=candidates[i : i + 10],
+                batch=to_analyze[i : i + 10],
                 ledger=ledger,
                 batch_index=i // 10,
                 on_event=on_event,
@@ -344,13 +353,20 @@ async def run_auto_class(
             llm=llm,
             settings=settings,
             profile=profile,
-            new_docs=candidates,
+            new_docs=to_analyze,
             ledger=ledger,
             on_event=on_event,
             tracker=tracker,
         )
         recorded = [r for r in analysis.get("recorded", []) if isinstance(r, dict)]
         report.analysis_errors += len(analysis.get("errors", []))
+
+    # Only root-level documents are placed; sub-folder ones stay where they are.
+    root_recorded = [
+        r for r in recorded if _normalize_path(str(Path(r["path"]).parent)) == root_key
+    ]
+    report.recorded_in_place = len(recorded) - len(root_recorded)
+    recorded = root_recorded
 
     known_docs = [
         {"path": d["path"], **{k: (d.get("record") or {}).get(k) for k in ("type", "title")}}
@@ -360,6 +376,9 @@ async def run_auto_class(
     allowed = _placement_folders(assessment)
     if not allowed:
         report.left.extend((Path(r["path"]).name, "no existing folders") for r in recorded)
+        await _refresh_if_recorded(
+            session, llm, settings, target, project_root, ledger, report, on_event
+        )
         return _finish(report, ledger)
     allowed_keys = {_folder_key(p): p for p in allowed}
     listing = _folder_listing(assessment, allowed)
@@ -396,18 +415,36 @@ async def run_auto_class(
         return _finish(report, ledger)
     if moves:
         await _execute_moves(session, target, moves, report)
-    if report.filed:
-        await _refresh_outputs(
-            session=session,
-            llm=llm,
-            settings=settings,
-            target=target,
-            project_root=project_root,
-            ledger=ledger,
-            report=report,
-            on_event=on_event,
-        )
+    await _refresh_if_recorded(
+        session, llm, settings, target, project_root, ledger, report, on_event
+    )
     return _finish(report, ledger)
+
+
+async def _refresh_if_recorded(
+    session: ClientSession,
+    llm: AsyncOpenAI,
+    settings: Settings,
+    target: Path,
+    project_root: Path,
+    ledger: _TokenLedger,
+    report: AutoClassReport,
+    on_event: EventCallback,
+) -> None:
+    """Refresh INDEX/SUMMARY when anything was filed or recorded in place (a
+    dry run records nothing, so it never refreshes)."""
+    if report.dry_run or not (report.filed or report.recorded_in_place):
+        return
+    await _refresh_outputs(
+        session=session,
+        llm=llm,
+        settings=settings,
+        target=target,
+        project_root=project_root,
+        ledger=ledger,
+        report=report,
+        on_event=on_event,
+    )
 
 
 def _finish(report: AutoClassReport, ledger: _TokenLedger) -> AutoClassReport:
@@ -525,6 +562,11 @@ def format_report(report: AutoClassReport) -> str:
         lines.extend(f"  {name} ({why})" for name, why in report.left)
     if report.outside_root:
         lines.append(f"{report.outside_root} new document(s) in sub-folders were not touched.")
+    if report.recorded_in_place:
+        verb_in_place = "would be recorded" if report.dry_run else "recorded"
+        lines.append(
+            f"{report.recorded_in_place} document(s) in sub-folders {verb_in_place} where they are."
+        )
     if report.duplicates:
         lines.append(f"{report.duplicates} duplicate file(s) stay where they are.")
     if report.analysis_errors:
@@ -539,6 +581,53 @@ def format_report(report: AutoClassReport) -> str:
     return "\n".join(lines)
 
 
+class AutoClassSetupError(Exception):
+    """A precondition or configuration problem; nothing ran. The CLI maps it to
+    exit code 2, the web job shows it as the job's error."""
+
+
+async def run_auto_class_for_target(
+    target: Path,
+    *,
+    dry_run: bool = False,
+    record_in_place: bool = False,
+    on_event: EventCallback = _print_event,
+) -> AutoClassReport:
+    """Load settings, build the reloading client, start the MCP server for
+    ``target`` and run auto-class once. Shared by the CLI and the web button.
+    Raises `AutoClassSetupError` before anything is built or written when
+    ``target`` has no telcontar setup or the configuration is unusable."""
+    problem = check_preconditions(target)
+    if problem:
+        raise AutoClassSetupError(problem)
+
+    try:
+        from config.settings import load as load_settings
+        from host.llm import make_reloading_client
+
+        # load() can hit the OS keyring, which can block.
+        settings = (await asyncio.to_thread(load_settings)).for_target(target)
+        llm = make_reloading_client(settings)
+    except Exception as exc:  # noqa: BLE001 - any config problem is a setup error
+        raise AutoClassSetupError(f"configuration problem: {exc}") from exc
+
+    project_root = Path(__file__).resolve().parent.parent
+    try:
+        async with mcp_session(project_root, target=target) as session:
+            return await run_auto_class(
+                target=target,
+                settings=settings,
+                llm=llm,
+                session=session,
+                on_event=on_event,
+                project_root=project_root,
+                dry_run=dry_run,
+                record_in_place=record_in_place,
+            )
+    finally:
+        await llm.close()
+
+
 def run_auto_class_cli(target: Path, *, dry_run: bool = False) -> int:
     """Entry point for `telcontar --auto-class`. Returns the process exit code:
     0 done (including nothing to do), 1 done with errors, 2 precondition/config error."""
@@ -549,40 +638,11 @@ def run_auto_class_cli(target: Path, *, dry_run: bool = False) -> int:
             reconfigure(errors="replace")
 
     target = target.resolve()
-    problem = check_preconditions(target)
-    if problem:
-        print(f"error: {problem}", file=sys.stderr)
-        return EXIT_PRECONDITION
-
     try:
-        from config.settings import load as load_settings
-        from host.llm import make_client
-
-        settings = load_settings().for_target(target)
-        llm = make_client(settings)
-    except Exception as exc:  # noqa: BLE001 - any config problem is exit 2
-        print(f"error: configuration problem: {exc}", file=sys.stderr)
+        report = asyncio.run(run_auto_class_for_target(target, dry_run=dry_run))
+    except AutoClassSetupError as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return EXIT_PRECONDITION
-
-    project_root = Path(__file__).resolve().parent.parent
-
-    async def _run() -> AutoClassReport:
-        try:
-            async with mcp_session(project_root, target=target) as session:
-                return await run_auto_class(
-                    target=target,
-                    settings=settings,
-                    llm=llm,
-                    session=session,
-                    on_event=_print_event,
-                    project_root=project_root,
-                    dry_run=dry_run,
-                )
-        finally:
-            await llm.close()
-
-    try:
-        report = asyncio.run(_run())
     except Exception as exc:  # noqa: BLE001
         print(f"error: auto-class stopped: {exc}", file=sys.stderr)
         return EXIT_ERRORS

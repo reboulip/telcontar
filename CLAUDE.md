@@ -281,6 +281,7 @@ Releases are always tagged on `main`: first merge the `develop` → `main` PR (p
 
 CI then runs `uv build` and creates a GitHub Release with the wheel + sdist attached and auto-generated notes — marked **prerelease** when the tag contains `a`, `b`, or `rc`. It also publishes to PyPI when the `PYPI_ENABLED` repo variable is `true` (otherwise that job is skipped).
 
+- The same tag also triggers `.github/workflows/windows-build.yml`, which builds a PyInstaller Windows zip (`telcontar-X.Y.Z-windows-x64.zip` + `.sha256`, with a provenance attestation) and attaches it to the release. A failed Windows build does not block the wheel/sdist/PyPI release — check that the zip is attached when verifying the release.
 - **Do NOT** manually `uv build` + `gh release create` — CI does it, and a manual `gh release create` conflicts with the auto-created release ("release with the same tag name already exists").
 - To improve the auto-generated notes, run `gh release edit <tag> --notes-file <file>` after the workflow has published.
 

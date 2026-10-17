@@ -1,0 +1,67 @@
+name: Windows build
+
+# Builds the standalone Windows bundle (PyInstaller one-dir, zipped) and smoke-tests
+# it. Called by release.yml on every v* tag; run it by hand (Actions → Windows build →
+# Run workflow) to check the bundle without cutting a release.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write       # sign the build provenance attestation
+  attestations: write
+
+jobs:
+  build:
+    name: Build & smoke-test Windows bundle
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install build dependencies
+        run: uv sync --group build
+
+      - name: Build bundle
+        run: uv run pyinstaller --noconfirm packaging/windows/telcontar.spec
+
+      # Gate: the frozen exe must start, report its version, and complete an MCP
+      # handshake with its own server subprocess. A bundle that fails this is
+      # never uploaded.
+      - name: Smoke-test bundle
+        run: uv run python packaging/windows/smoke_test.py dist/telcontar
+
+      - name: Package
+        id: package
+        run: |
+          $version = uv run python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])"
+          $name = "telcontar-$version-windows-x64"
+          Move-Item dist/telcontar "dist/$name"
+          Compress-Archive -Path "dist/$name" -DestinationPath "dist/$name.zip"
+          $hash = (Get-FileHash "dist/$name.zip" -Algorithm SHA256).Hash.ToLower()
+          "$hash  $name.zip" | Out-File "dist/$name.zip.sha256" -Encoding ascii
+          "zip=dist/$name.zip" >> $env:GITHUB_OUTPUT
+          "sha=dist/$name.zip.sha256" >> $env:GITHUB_OUTPUT
+
+      # Lets a user (or their IT team) verify the zip came from this repo's
+      # workflow:  gh attestation verify <zip> --repo reboulip/telcontar
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ steps.package.outputs.zip }}
+
+      - name: Upload bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            ${{ steps.package.outputs.zip }}
+            ${{ steps.package.outputs.sha }}
+          if-no-files-found: error
