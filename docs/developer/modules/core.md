@@ -265,6 +265,15 @@ dry_run=...))` before any `host.web` import, so the headless path never loads
 nicegui. Unrecognized args are tolerated
 (`parse_known_args`) so a bare launch keeps working.
 
+**Frozen-build support:** a hidden `--mcp-server` flag, checked in `main()` before
+argparse, runs `server.main.main()` instead of the host. It exists for the
+PyInstaller Windows bundle (`packaging/windows/`), which has no interpreter for
+`python -m server.main`: `host/agent.py`'s `_server_command()` returns
+`(<bundle>/telcontar-cli[.exe], ["--mcp-server"])` when `sys.frozen` is set, and
+`(sys.executable, ["-m", "server.main"])` otherwise. `_ensure_std_streams()` points
+`sys.stdin/stdout/stderr` at `~/.telcontar/telcontar.log` (or the null device) when
+the windowed exe starts with them set to `None`.
+
 **Design note:** The web UI's `from host.web.main import run_web` import is
 deferred until after `main()` prints "Loading telcontar…", so the user sees
 something immediately instead of a frozen terminal during the ~1s cost of its

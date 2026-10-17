@@ -676,6 +676,23 @@ def _wrap_untrusted_content(result: Any, tool_name: str) -> Any:
 
 # ── MCP session ───────────────────────────────────────────────────────────────
 
+# Sibling console exe in a PyInstaller bundle (packaging/windows/telcontar.spec).
+# The GUI exe is windowed, so it has no stdio to pipe MCP over; this one does.
+_FROZEN_SERVER_EXE = "telcontar-cli"
+
+
+def _server_command() -> tuple[str, list[str]]:
+    """The command that starts the MCP server subprocess.
+
+    From source or a wheel install: this interpreter running ``-m server.main``.
+    In a frozen (PyInstaller) bundle there is no interpreter to pass ``-m`` to, so
+    the sibling console exe re-enters ``host.main`` in its hidden ``--mcp-server`` mode.
+    """
+    if getattr(sys, "frozen", False):
+        exe = Path(sys.executable)
+        return str(exe.with_name(_FROZEN_SERVER_EXE + exe.suffix)), ["--mcp-server"]
+    return sys.executable, ["-m", "server.main"]
+
 
 @asynccontextmanager
 async def mcp_session(
@@ -690,9 +707,10 @@ async def mcp_session(
     within this run's target directory.
     """
     env = {**os.environ, "TARGET_DIR": str(target)} if target is not None else None
+    command, args = _server_command()
     params = StdioServerParameters(
-        command=sys.executable,
-        args=["-m", "server.main"],
+        command=command,
+        args=args,
         env=env,  # inherit environment (picks up .env via pydantic-settings)
         cwd=str(project_root),
     )

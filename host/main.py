@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from typing import TextIO
 
 
 def _version() -> str:
@@ -15,7 +17,46 @@ def _version() -> str:
         return "0.0.0+unknown"
 
 
+def _ensure_std_streams() -> None:
+    """Give a windowed (no-console) frozen exe usable stdio.
+
+    A PyInstaller ``console=False`` build starts with ``sys.stdin/stdout/stderr``
+    set to ``None``, which crashes anything that calls ``.isatty()`` or writes to
+    them (uvicorn's log formatter, for one). Point them at a log file under the
+    user config dir — also the first place to look when a double-clicked build
+    misbehaves — or at the null device if that file cannot be opened.
+    """
+    if sys.stdout is not None and sys.stderr is not None and sys.stdin is not None:
+        return
+    try:
+        from config import settings
+
+        settings._USER_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        log: TextIO = open(
+            settings._USER_CONFIG_DIR / "telcontar.log", "a", encoding="utf-8", buffering=1
+        )
+    except OSError:
+        log = open(os.devnull, "w", encoding="utf-8")
+    if sys.stdout is None:
+        sys.stdout = log
+    if sys.stderr is None:
+        sys.stderr = log
+    if sys.stdin is None:
+        sys.stdin = open(os.devnull, encoding="utf-8")
+
+
 def main() -> None:
+    # Hidden mode for frozen builds: the MCP host spawns `telcontar-cli --mcp-server`
+    # as its server subprocess (see host.agent._server_command). Checked before
+    # argparse because the server owns stdout for the MCP protocol.
+    if "--mcp-server" in sys.argv[1:]:
+        from server.main import main as server_main
+
+        server_main()
+        return
+
+    _ensure_std_streams()
+
     parser = argparse.ArgumentParser(
         prog="telcontar",
         description="Local, profile-driven document-intelligence engine (MCP-based, LLM-agnostic).",

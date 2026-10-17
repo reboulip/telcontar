@@ -18,6 +18,8 @@ uv tool install telcontar
 
 Then launch `telcontar` once. On first run the **setup wizard** appears automatically — it collects your AI service URL and API key, stores the key in the OS credential store (Windows Credential Manager / macOS Keychain), and saves non-sensitive settings to `~/.telcontar/config.env`. No manual editing of config files required.
 
+On Windows you can instead download `telcontar-<version>-windows-x64.zip` from the [latest release](https://github.com/reboulip/telcontar/releases/latest), unzip it, and run `telcontar.exe` — no Python or uv needed. The build is not code-signed, so SmartScreen may warn on first launch; see [docs/getting-started/installation.md](docs/getting-started/installation.md) for details and how to verify the download.
+
 For developer / contributor setup (clone + `uv sync`), see [docs/getting-started/installation.md](docs/getting-started/installation.md).
 
 ## Usage
