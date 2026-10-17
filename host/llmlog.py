@@ -110,6 +110,18 @@ def log_client(
     )
 
 
+def log_compat(path: Path, *, param: str, rejected: str, retry_with: str, status: int) -> None:
+    """Log one reasoning-effort compatibility downgrade (AB1). Parameter names
+    and status only — no request content, no key."""
+    append(
+        path,
+        LLMLogEntry.new(
+            "compat",
+            {"param": param, "rejected": rejected, "retry_with": retry_with, "status": status},
+        ),
+    )
+
+
 async def _on_request(path: Path, request: httpx.Request) -> None:
     try:
         request.extensions[_START_TIME_KEY] = time.monotonic()

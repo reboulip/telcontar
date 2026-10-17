@@ -66,6 +66,11 @@ def _render_form(
     current_approval = current.get("approval_mode", "always")
     approval_default = current_approval if current_approval in approval_values else "always"
 
+    current_effort = current.get("llm_reasoning_effort", "") or configflow.REASONING_EFFORT_DEFAULT
+    effort_options = {v: label for label, v in configflow.REASONING_EFFORT_OPTIONS}
+    if current_effort not in effort_options:
+        effort_options[current_effort] = current_effort  # keep hand-edited values
+
     inputs = forms.credential_inputs(
         url_value=current.get("llm_base_url", ""),
         key_placeholder="Paste a new key, or leave empty to keep the current one",
@@ -86,11 +91,16 @@ def _render_form(
         .mark("select-approval")
     )
 
+    ui.label("Reasoning effort (leave on default unless your model requires it):")
+    effort_select = (
+        ui.select(effort_options, value=current_effort).classes("w-full").mark("select-reasoning")
+    )
+
     ui.label(
         "Saving here reconnects any currently running session to the new "
-        'model/endpoint/key immediately (Z2). "How careful should the app '
-        'be?" and everything else only applies to sessions started after '
-        "this save."
+        "model/endpoint/key/reasoning effort on its next LLM call (Z2). "
+        '"How careful should the app be?" and everything else only applies '
+        "to sessions started after this save."
     ).classes("text-caption")
 
     if state.error:
@@ -109,8 +119,14 @@ def _render_form(
         profile = str(profile_select.value) if profile_select.value else "is_it_project"
         approval_mode = str(approval_select.value) if approval_select.value else "always"
 
+        effort = (
+            str(effort_select.value) if effort_select.value else configflow.REASONING_EFFORT_DEFAULT
+        )
+
         def build_updates() -> dict[str, str]:
-            return configflow.build_settings_updates(url, key, model, profile, approval_mode)
+            return configflow.build_settings_updates(
+                url, key, model, profile, approval_mode, reasoning_effort=effort
+            )
 
         ok, warning = await forms.save_with_plaintext_guard(
             build_updates,

@@ -556,10 +556,10 @@ def run_auto_class_cli(target: Path, *, dry_run: bool = False) -> int:
 
     try:
         from config.settings import load as load_settings
-        from host.llm import make_client
+        from host.llm import make_reloading_client
 
         settings = load_settings().for_target(target)
-        llm = make_client(settings)
+        llm = make_reloading_client(settings)
     except Exception as exc:  # noqa: BLE001 - any config problem is exit 2
         print(f"error: configuration problem: {exc}", file=sys.stderr)
         return EXIT_PRECONDITION

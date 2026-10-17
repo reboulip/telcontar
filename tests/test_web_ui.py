@@ -486,6 +486,7 @@ async def test_settings_blank_key_preserves_existing_key(
             "llm_model": "gpt-5",
             "profile": "is_it_project",
             "approval_mode": "always",
+            "llm_reasoning_effort": "",
         }
     ]
     assert "llm_api_key" not in saved[0]

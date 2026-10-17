@@ -316,3 +316,116 @@ class TestReloadingClient:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+# ── AB1 reasoning_effort compat + AB2 stale model ────────────────────────────
+
+import httpx  # noqa: E402
+import openai  # noqa: E402
+
+_TOOLS_MSG = (
+    "Function tools with reasoning_effort are not supported for gpt-6-luna in "
+    "/v1/chat/completions. Please use /v1/responses instead."
+)
+
+
+def _bad_request(message: str, param: str | None = "reasoning_effort") -> openai.BadRequestError:
+    req = httpx.Request("POST", "https://x/v1/chat/completions")
+    return openai.BadRequestError(
+        "Error code: 400",
+        response=httpx.Response(400, request=req),
+        body={"message": message, "type": "invalid_request_error", "param": param, "code": None},
+    )
+
+
+class TestReasoningEffortCompat:
+    async def test_not_sent_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        built = _stub_make_client(monkeypatch)
+        handle = make_reloading_client(_settings())
+        await handle.chat.completions.create(model="gpt-5", messages=[])
+        assert "reasoning_effort" not in built[0].chat.completions.create.await_args.kwargs
+
+    async def test_configured_value_is_injected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        built = _stub_make_client(monkeypatch)
+        settings = _settings()
+        settings.llm_reasoning_effort = "low"
+        handle = make_reloading_client(settings)
+        await handle.chat.completions.create(model="gpt-5", messages=[])
+        assert built[0].chat.completions.create.await_args.kwargs["reasoning_effort"] == "low"
+
+    async def test_tools_rejection_retries_with_none_and_sticks(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        built = _stub_make_client(monkeypatch)
+        handle = make_reloading_client(_settings())
+        create = built[0].chat.completions.create
+        create.side_effect = [_bad_request(_TOOLS_MSG), "ok", "ok2"]
+
+        assert await handle.chat.completions.create(model="m", messages=[], tools=[{}]) == "ok"
+        assert create.await_args_list[1].kwargs["reasoning_effort"] == "none"
+        # Sticky: the next call sends "none" up front, no second rejection.
+        await handle.chat.completions.create(model="m", messages=[], tools=[{}])
+        assert create.await_args_list[2].kwargs["reasoning_effort"] == "none"
+        assert create.await_count == 3
+
+    async def test_unsupported_parameter_retries_without_it(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        built = _stub_make_client(monkeypatch)
+        settings = _settings()
+        settings.llm_reasoning_effort = "high"
+        handle = make_reloading_client(settings)
+        create = built[0].chat.completions.create
+        create.side_effect = [_bad_request("Unrecognized request argument: reasoning_effort"), "ok"]
+
+        await handle.chat.completions.create(model="m", messages=[])
+        assert "reasoning_effort" not in create.await_args_list[1].kwargs
+
+    async def test_unrelated_400_is_reraised(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        built = _stub_make_client(monkeypatch)
+        handle = make_reloading_client(_settings())
+        built[0].chat.completions.create.side_effect = _bad_request("bad model", param="model")
+        with pytest.raises(openai.BadRequestError):
+            await handle.chat.completions.create(model="m", messages=[])
+        assert built[0].chat.completions.create.await_count == 1
+
+
+class TestStaleModelAfterReload:
+    async def test_first_create_after_reload_uses_new_model(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        built = _stub_make_client(monkeypatch)
+        revision = {"n": 0}
+        monkeypatch.setattr("config.settings.config_revision", lambda: revision["n"])
+        monkeypatch.setattr("config.settings.load", lambda: _settings(model="gpt-5-new"))
+        settings = _settings()
+        handle = make_reloading_client(settings)
+        revision["n"] = 1
+
+        # Call sites build kwargs from settings BEFORE create() reloads.
+        await handle.chat.completions.create(model=settings.llm_model, messages=[])
+
+        assert built[-1].chat.completions.create.await_args.kwargs["model"] == "gpt-5-new"
+
+    async def test_explicit_other_model_is_not_overridden(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        built = _stub_make_client(monkeypatch)
+        handle = make_reloading_client(_settings())
+        await handle.chat.completions.create(model="special", messages=[])
+        assert built[0].chat.completions.create.await_args.kwargs["model"] == "special"
+
+    async def test_reasoning_effort_only_reload_rebuilds_client(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        built = _stub_make_client(monkeypatch)
+        revision = {"n": 0}
+        monkeypatch.setattr("config.settings.config_revision", lambda: revision["n"])
+        fresh = _settings()
+        fresh.llm_reasoning_effort = "low"
+        monkeypatch.setattr("config.settings.load", lambda: fresh)
+        handle = make_reloading_client(_settings())
+        revision["n"] = 1
+        await handle.chat.completions.create(model="gpt-5", messages=[])
+        assert len(built) == 2
+        assert built[1].chat.completions.create.await_args.kwargs["reasoning_effort"] == "low"

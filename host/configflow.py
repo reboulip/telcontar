@@ -119,8 +119,25 @@ APPROVAL_OPTIONS: list[tuple[str, str]] = [
 ]
 
 
+REASONING_EFFORT_DEFAULT = "default"
+REASONING_EFFORT_OPTIONS: list[tuple[str, str]] = [
+    ("Provider default (not sent)", REASONING_EFFORT_DEFAULT),
+    ("None (turn reasoning off)", "none"),
+    ("Minimal", "minimal"),
+    ("Low", "low"),
+    ("Medium", "medium"),
+    ("High", "high"),
+]
+
+
 def build_settings_updates(
-    url: str, key: str, model: str, profile: str, approval_mode: str
+    url: str,
+    key: str,
+    model: str,
+    profile: str,
+    approval_mode: str,
+    *,
+    reasoning_effort: str = "",
 ) -> dict[str, str]:
     """Build the settings-update dict for the settings view's save step.
     Unlike ``build_wizard_updates``, ``key`` is only included when non-empty
@@ -130,6 +147,10 @@ def build_settings_updates(
         "llm_model": model,
         "profile": profile,
         "approval_mode": approval_mode,
+        # Always written: saving "" is what clears a previously set value.
+        "llm_reasoning_effort": ""
+        if reasoning_effort == REASONING_EFFORT_DEFAULT
+        else reasoning_effort,
     }
     if key:
         updates["llm_api_key"] = key

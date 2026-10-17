@@ -17,6 +17,7 @@ def _fake_llm_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LLM_BASE_URL", "https://fake.api/v1")
     monkeypatch.setenv("LLM_API_KEY", "fake-key-for-testing")
     monkeypatch.setenv("PROFILE", "is_it_project")
+    monkeypatch.setenv("LLM_REASONING_EFFORT", "")
 
 
 @pytest.fixture(autouse=True)

@@ -149,3 +149,19 @@ class TestConfigRevision:
         save_user_config({"profile": "research_papers"})
 
         assert config_revision() == before + 2
+
+
+class TestStalePlaintextKey:
+    def test_keyring_save_removes_old_plaintext_key(
+        self, monkeypatch: pytest.MonkeyPatch, _isolated_user_config: Path
+    ) -> None:
+        _isolated_user_config.parent.mkdir(parents=True)
+        _isolated_user_config.write_text("LLM_API_KEY=old-plain\nLLM_MODEL=x\n", encoding="utf-8")
+        monkeypatch.setattr(settings_module, "_keyring_set", lambda key: True)
+
+        save_user_config({"llm_api_key": "new-key"})
+
+        content = _isolated_user_config.read_text(encoding="utf-8")
+        assert "old-plain" not in content
+        assert "LLM_API_KEY" not in content
+        assert "LLM_MODEL=x" in content

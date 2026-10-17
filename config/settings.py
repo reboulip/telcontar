@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
@@ -47,6 +47,18 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = "gpt-5"
     llm_api_version: str = ""  # Azure only; leave empty for every other provider
+    # "" = never sent (the provider's own default applies). A plain str, not a
+    # Literal: a bad value in config.env must not make Settings() raise, and new
+    # provider values keep working.
+    llm_reasoning_effort: str = ""
+
+    @field_validator("llm_reasoning_effort", mode="before")
+    @classmethod
+    def _normalize_reasoning_effort(cls, v: object) -> object:
+        if not isinstance(v, str):
+            return v
+        v = v.strip().lower()
+        return "" if v == "default" else v
 
     # Safety
     approval_mode: Literal["always", "destructive_only", "never"] = "always"
@@ -253,6 +265,10 @@ def save_user_config(updates: dict[str, str], allow_plaintext_fallback: bool = F
 
     # Read the existing file so we can merge rather than overwrite.
     existing: dict[str, str] = _read_config_file()
+    if api_key is not None and stored:
+        # A plaintext key left by an earlier fallback would shadow the keyring
+        # entry on load(), so the new key would silently never take effect.
+        existing.pop("LLM_API_KEY", None)
 
     for k, v in updates.items():
         existing[k.upper()] = v
