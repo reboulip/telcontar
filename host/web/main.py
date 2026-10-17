@@ -34,12 +34,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from nicegui import app, run, ui
+from nicegui import app, background_tasks, run, ui
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from host.agent import ApprovalResult, AskUserResult, CostApprovalResult
 from host.paths import directory_overview, find_organizer_root, memory_status_text
-from host.web import chat, corpus, folderstatus, journal
+from host import autoclass as autoclass_mod
+from host.web import autoclass_jobs, chat, corpus, folderstatus, journal
 from host.web import security
 from host.web import sessions as web_sessions_store
 from host.web import session as web_session
@@ -50,6 +51,7 @@ from host.web.corpus_view import build_corpus_view
 from host.web.dialogs import (
     build_approval_dialog,
     build_ask_user_dialog,
+    build_autoclass_dialog,
     build_cost_dialog,
     build_journal_dialog,
 )
@@ -162,6 +164,10 @@ async def index_page() -> None:
             if shell.selected is None or not shell.selected.is_dir():
                 error_label.set_text("Please choose a folder to organize.")
                 return
+            blocked = autoclass_jobs.blocking_reason(shell.selected)
+            if blocked:
+                error_label.set_text(blocked)
+                return
             session = _start_run(shell.selected)
             ui.navigate.to(f"/run/{session.run_id}")
 
@@ -180,6 +186,45 @@ async def index_page() -> None:
             ui.navigate.to(f"/query/{session.run_id}")
 
         status_label = ui.label().classes("text-caption").mark("startup-folder-status")
+        autoclass_target: dict[str, Any] = {"root": None, "count": None}
+        jobs_column = ui.column().classes("w-full").mark("autoclass-jobs")
+        jobs_seen: dict[str, tuple] = {}
+
+        def _start_autoclass() -> None:
+            root = autoclass_target["root"]
+            if root is not None:
+                autoclass_jobs.start(root)
+
+        def _open_autoclass_dialog() -> None:
+            root = autoclass_target["root"]
+            if root is not None:
+                build_autoclass_dialog(root, autoclass_target["count"], _start_autoclass).open()
+
+        def _render_jobs() -> None:
+            signature = {
+                str(j.root): (j.running, len(j.lines), j.error, bool(j.report_text))
+                for j in autoclass_jobs.all_jobs()
+            }
+            if signature == jobs_seen:
+                return
+            finished = any(
+                not running and jobs_seen.get(root, (True,))[0]
+                for root, (running, *_rest) in signature.items()
+            )
+            jobs_seen.clear()
+            jobs_seen.update(signature)
+            jobs_column.clear()
+            with jobs_column:
+                for job in autoclass_jobs.all_jobs():
+                    head = "Auto-class running on " if job.running else "Auto-class finished on "
+                    ui.label(f"{head}{job.root}").classes("text-bold")
+                    # Untrusted text (file names, model-written reasons): plain label only.
+                    body = job.error or job.report_text or "\n".join(job.lines[-5:])
+                    ui.label(body).classes("whitespace-pre-wrap text-caption")
+            if finished:
+                background_tasks.create(shell.reload_tree())
+
+        ui.timer(web_session.REFRESH_INTERVAL, _render_jobs)
 
         async def _update_status() -> None:
             if shell.selected is None:
@@ -194,6 +239,19 @@ async def index_page() -> None:
             if state == folderstatus.NEW_FILES and count:
                 text += f" ({count} not yet in memory)"
             status_label.set_text(text)
+            # Auto-class works on the organizer root, never a sub-folder.
+            root = result[1]
+            reason: str | None = None
+            if state != folderstatus.NEW_FILES or root is None:
+                reason = "Auto-class is available for folders with files not yet analyzed."
+            else:
+                reason = autoclass_mod.check_preconditions(root) or autoclass_jobs.blocking_reason(
+                    root
+                )
+            autoclass_target["root"] = root if reason is None else None
+            autoclass_target["count"] = count
+            autoclass_btn.set_enabled(reason is None)
+            autoclass_hint.set_text(reason or "")
 
         ui.timer(web_session.STATUS_POLL_INTERVAL, _update_status)
 
@@ -208,11 +266,16 @@ async def index_page() -> None:
                     ui.icon(icon, color=color)
                     ui.label(folderstatus.STATE_LABEL[state]).classes("text-caption")
 
-        with ui.row().classes("mt-2"):
+        with ui.row().classes("mt-2 items-center"):
             ui.button("Use selected directory", on_click=_organize, color="primary").mark(
                 "btn-startup-organize"
             )
             ui.button("Query", on_click=_query, color="positive").mark("btn-startup-query")
+            autoclass_btn = ui.button(
+                "Auto-class", on_click=_open_autoclass_dialog, color="secondary"
+            ).mark("btn-startup-autoclass")
+            autoclass_btn.set_enabled(False)
+            autoclass_hint = ui.label().classes("text-caption")
 
 
 @ui.page("/setup")
@@ -325,6 +388,10 @@ async def run_page(run_id: str) -> None:
             )
 
             def _start() -> None:
+                blocked = autoclass_jobs.blocking_reason(session.target)
+                if blocked:
+                    ui.notify(blocked, type="warning")
+                    return
                 text = instructions_input.value.strip()
                 AgentBridge(session).start(
                     instructions=text or None,
@@ -777,6 +844,7 @@ def run_web(target: Path | None = None, *, native: bool = True) -> None:
 
     @app.on_shutdown
     def _reject_pending_on_shutdown() -> None:
+        autoclass_jobs.cancel_all()
         for session in web_session.all_sessions():
             if session.pending is not None:
                 result: ApprovalResult | CostApprovalResult | AskUserResult

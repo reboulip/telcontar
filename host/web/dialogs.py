@@ -40,7 +40,7 @@ from nicegui import ui
 from host import paths as host_paths
 from host.agent import ApprovalResult, AskUserResult, CostApprovalResult
 from host.format import fmt_journal_entry, fmt_op, plan_tree_diff
-from host.web import journal
+from host.web import autoclass_jobs, journal
 from host.web.session import PendingRequest, RunSession
 
 
@@ -323,6 +323,41 @@ def build_ask_user_dialog(session: RunSession, pending: PendingRequest) -> ui.di
     return dialog
 
 
+def build_autoclass_dialog(
+    root: Path, new_count: int | None, on_confirm: Callable[[], None]
+) -> ui.dialog:
+    """Consent dialog for the landing page's Auto-class button (AB4b). The
+    click plus this dialog is the consent — it bypasses APPROVAL_MODE the way
+    the headless AA2 mode does — so it states exactly what will happen.
+    ``on_confirm`` must be synchronous (see the dialog-handler note on
+    `build_journal_dialog`)."""
+    count_text = f"about {new_count} file(s)" if new_count else "the files"
+    dialog = ui.dialog().mark("autoclass-dialog")
+    with dialog, ui.card():
+        ui.label("Run auto-class?").classes("text-h6")
+        ui.label(f"Folder: {root}").classes("text-caption")
+        ui.label(
+            f"This analyzes {count_text} not yet in telcontar's memory. Their content is "
+            "sent to your LLM endpoint."
+        )
+        ui.label(
+            "Files at the top level are moved into existing folders only. Files already in "
+            "sub-folders are recorded where they are. Nothing is created, renamed or "
+            "quarantined, and every move is journaled and can be undone."
+        )
+
+        def _confirm() -> None:
+            dialog.close()
+            on_confirm()
+
+        with ui.row():
+            ui.button("Cancel", on_click=dialog.close).props("flat").mark("autoclass-cancel")
+            ui.button("Run auto-class", on_click=_confirm, color="primary").mark(
+                "autoclass-confirm"
+            )
+    return dialog
+
+
 def build_journal_dialog(session: RunSession) -> ui.dialog:
     """Journal viewer + undo (U6). Not tied to a PendingRequest — nothing
     is waiting on a future — so a normal dismissible dialog is used here,
@@ -367,7 +402,11 @@ def build_journal_dialog(session: RunSession) -> ui.dialog:
         if state["status"]:
             ui.label(state["status"]).mark("journal-status")
 
-        if session.has_open_step():
+        if autoclass_jobs.running_overlapping(session.target) is not None:
+            ui.label("Cannot undo while auto-class is running on this folder.").classes(
+                "text-caption text-grey"
+            ).mark("journal-busy")
+        elif session.has_open_step():
             ui.label("Cannot undo while an operation is in progress.").classes(
                 "text-caption text-grey"
             ).mark("journal-busy")
